@@ -1,0 +1,37 @@
+{
+    "endpoint": ":22537",
+    "cfx": {
+        "ws": "ws://test.confluxrpc.org/ws",
+        "http": "http://test.confluxrpc.org",
+        "retry": 3,
+        "retryInterval": 1000
+    },
+    "sync": {
+        "poll": {
+            "interval": 300
+        },
+        "sub": {
+            "buffer": 1000
+        }
+    },
+    "nearhead": {
+        "cap": 100000,
+        "logLimit": 3000
+    },
+    "metrics": {
+        "enabled": true,
+        "influxdb": {
+            "host": "http://127.0.0.1:8086",
+            "db": "infura_test",
+            "username": "",
+            "password": ""
+        },
+        "report": {
+            "enabled": false,
+            "interval": 10000
+        }
+    },
+    "log": {
+        "level": "info"
+    }
+}
