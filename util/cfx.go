@@ -10,10 +10,12 @@ import (
 
 // MustNewCfxClient creates an instance of CFX client or panic on error.
 func MustNewCfxClient(url string) *sdk.Client {
-	retry := viper.GetInt("cfx.retry")
-	interval := time.Duration(viper.GetInt("cfx.retryInterval"))
+	option := sdk.ClientOption{
+		RetryCount:    viper.GetInt("cfx.retry"),
+		RetryInterval: time.Millisecond * time.Duration(viper.GetInt("cfx.retryInterval")),
+	}
 
-	cfx, err := sdk.NewClientWithRetry(url, retry, time.Millisecond*interval)
+	cfx, err := sdk.NewClient(url, option)
 	if err != nil {
 		logrus.WithError(err).Fatalf("Failed to create CFX client to %v", url)
 	}

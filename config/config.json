@@ -1,8 +1,8 @@
 {
     "endpoint": ":22537",
     "cfx": {
-        "ws": "ws://test.confluxrpc.org/ws",
-        "http": "http://test.confluxrpc.org",
+        "ws": "ws://test.confluxrpc.org/ws/v2",
+        "http": "http://test.confluxrpc.org/v2",
         "retry": 3,
         "retryInterval": 1000
     },

@@ -73,7 +73,7 @@ func (api *cfxAPI) GetCollateralForStorage(address types.Address, epoch *types.E
 	return api.cfx.GetCollateralForStorage(address, toSlice(epoch)...)
 }
 
-func (api *cfxAPI) GetCode(contract types.Address, epoch *types.Epoch) (string, error) {
+func (api *cfxAPI) GetCode(contract types.Address, epoch *types.Epoch) (hexutil.Bytes, error) {
 	api.inputEpochMetric.update(epoch, "cfx_getCode")
 	return api.cfx.GetCode(contract, toSlice(epoch)...)
 }
