@@ -3,7 +3,7 @@ module github.com/conflux-chain/conflux-infura
 go 1.15
 
 require (
-	github.com/Conflux-Chain/go-conflux-sdk v1.0.1
+	github.com/Conflux-Chain/go-conflux-sdk v1.0.4-0.20210304030222-caa01140a9ea
 	github.com/ethereum/go-ethereum v1.9.25
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.0
