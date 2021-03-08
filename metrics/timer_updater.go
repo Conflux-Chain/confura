@@ -20,6 +20,15 @@ func NewTimerUpdater(timer metrics.Timer) TimerUpdater {
 	}
 }
 
+// NewTimerUpdaterByName creates an instance to update timer metric
+// of specified name.
+func NewTimerUpdaterByName(name string) TimerUpdater {
+	return TimerUpdater{
+		underlying: metrics.GetOrRegisterTimer(name, nil),
+		start:      time.Now(),
+	}
+}
+
 // Update updates the underlying timer metric.
 func (updater *TimerUpdater) Update() {
 	updater.underlying.UpdateSince(updater.start)

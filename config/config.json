@@ -33,5 +33,15 @@
     },
     "log": {
         "level": "info"
+    },
+    "store": {
+        "mysql": {
+            "username": "",
+            "password": "",
+            "database": "conflux_infura",
+            "connMaxLifeTime": "3m",
+            "maxOpenConns": 10,
+            "maxIdleConns": 10
+        }
     }
 }
