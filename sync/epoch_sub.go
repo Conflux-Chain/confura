@@ -14,6 +14,7 @@ import (
 
 // EpochSubscriber is an interface to consume subscribed epochs.
 type EpochSubscriber interface {
+	// any object implemented this method should handle in async mode
 	onEpochReceived(epoch types.WebsocketEpochResponse)
 }
 

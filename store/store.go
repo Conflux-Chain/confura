@@ -23,7 +23,7 @@ type Store interface {
 
 	PutEpochData(data *EpochData) error
 	PutEpochDataSlice(dataSlice []*EpochData) error
-	// Remove(epochFrom, epochTo *big.Int, includeLogs bool) error
+	Remove(epochFrom, epochTo *big.Int, includeTxs, includeLogs bool) error
 
 	Close() error
 }

@@ -132,31 +132,33 @@ func (ms *mysqlStore) PutEpochDataSlice(dataSlice []*store.EpochData) error {
 	updater := metrics.NewTimerUpdaterByName("store/mysql/write")
 	defer updater.Update()
 
+	return ms.execWithTx(func(dbTx *gorm.DB) error {
+		for _, data := range dataSlice {
+			if err := ms.putOneWithTx(dbTx, data); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func (ms *mysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) error) error {
 	dbTx := ms.db.Begin()
 	if dbTx.Error != nil {
 		return errors.WithMessage(dbTx.Error, "Failed to begin db tx")
 	}
 
-	if err := ms.putAllWithTx(dbTx, dataSlice); err != nil {
+	if err := txConsumeFunc(dbTx); err != nil {
 		if rollbackErr := dbTx.Rollback().Error; rollbackErr != nil {
 			logrus.WithError(rollbackErr).Error("Failed to rollback db tx")
 		}
 
-		return errors.WithMessage(err, "Failed to write data with db tx")
+		return errors.WithMessage(err, "Failed to handle with db tx")
 	}
 
 	if err := dbTx.Commit().Error; err != nil {
 		return errors.WithMessage(err, "Failed commit db tx")
-	}
-
-	return nil
-}
-
-func (ms *mysqlStore) putAllWithTx(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
-	for _, data := range dataSlice {
-		if err := ms.putOneWithTx(dbTx, data); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -194,6 +196,33 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) error {
 	}
 
 	return nil
+}
+
+func (ms *mysqlStore) Remove(epochFrom, epochTo *big.Int, includeTxs, includeLogs bool) error {
+	updater := metrics.NewTimerUpdaterByName("store/mysql/delete")
+	defer updater.Update()
+
+	return ms.execWithTx(func(dbTx *gorm.DB) error {
+		for i := epochFrom.Uint64(); i <= epochTo.Uint64(); i++ {
+			if err := dbTx.Delete(block{}, "epoch = ?", i).Error; err != nil {
+				return err
+			}
+
+			if includeTxs {
+				if err := dbTx.Delete(transaction{}, "epoch = ?", i).Error; err != nil {
+					return err
+				}
+			}
+
+			if includeLogs {
+				if err := dbTx.Delete(log{}, "epoch = ?", i).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
 }
 
 func (ms *mysqlStore) Close() error {

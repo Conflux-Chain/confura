@@ -15,21 +15,21 @@ import (
 )
 
 func main() {
+	// Prepare cfx instance with ws portocol for pub/sub purpose
 	cfx := util.MustNewCfxClient(viper.GetString("cfx.ws"))
 	defer cfx.Close()
 
-	// executedEpochs := sync.NewEpochExecWindow()
-	// go sync.MustSubEpoch(cfx, sync.NewConsoleEpochSubscriber(cfx))
-	// go sync.MustSubEpoch(cfx, executedEpochs)
-	// go sync.MustSubEpoch(cfx, sync.NewConsoleEpochSubscriber(cfx), executedEpochs)
-	// go nearhead.Start(cfx, executedEpochs.Executed())
-	// go executedEpochs.Diff(cfx)
-
-	// Synchronize data into database
+	// Initialize database for sync
 	config := mysql.NewConfigFromViper()
 	db := config.MustOpenOrCreate()
 	defer db.Close()
-	go sync.SynchronizeDatabase(cfx, db)
+
+	// Start to sync data
+	syncer := sync.NewDatabaseSyncer(cfx, db)
+	go syncer.Sync()
+
+	// Monitor pivot chain switch via pub/sub
+	go sync.MustSubEpoch(cfx, syncer)
 
 	// Start RPC server
 	go rpc.Serve(viper.GetString("endpoint"), cfx)

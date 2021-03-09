@@ -56,6 +56,8 @@ func (config *Config) MustOpenOrCreate() store.Store {
 	db.DB().SetMaxOpenConns(config.MaxOpenConns)
 	db.DB().SetMaxIdleConns(config.MaxIdleConns)
 
+	logrus.Info("MySQL database initialized")
+
 	return newStore(db)
 }
 
