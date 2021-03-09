@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"database/sql"
 	"math/big"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -25,14 +26,18 @@ func (ms *mysqlStore) GetBlockEpochRange() (*big.Int, *big.Int, error) {
 		return nil, nil, err
 	}
 
-	var minEpoch int64
-	var maxEpoch int64
+	var minEpoch sql.NullInt64
+	var maxEpoch sql.NullInt64
 
 	if err := row.Scan(&minEpoch, &maxEpoch); err != nil {
 		return nil, nil, err
 	}
 
-	return big.NewInt(minEpoch), big.NewInt(maxEpoch), nil
+	if !minEpoch.Valid {
+		return nil, nil, nil
+	}
+
+	return big.NewInt(minEpoch.Int64), big.NewInt(maxEpoch.Int64), nil
 }
 
 func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, error) {

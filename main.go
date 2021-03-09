@@ -7,9 +7,9 @@ import (
 	// init metrics reporter
 	_ "github.com/conflux-chain/conflux-infura/metrics"
 
-	// "github.com/conflux-chain/conflux-infura/nearhead"
 	"github.com/conflux-chain/conflux-infura/rpc"
-	// "github.com/conflux-chain/conflux-infura/sync"
+	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/spf13/viper"
 )
@@ -25,8 +25,13 @@ func main() {
 	// go nearhead.Start(cfx, executedEpochs.Executed())
 	// go executedEpochs.Diff(cfx)
 
-	rpc.Serve(viper.GetString("endpoint"), cfx)
+	config := mysql.NewConfigFromViper()
+	db := config.MustOpenOrCreate()
+	defer db.Close()
+	go store.SyncEpochData(cfx, db)
+
+	go rpc.Serve(viper.GetString("endpoint"), cfx)
 
 	// TODO monitor ctrlc for cleanup before termination?
-	// select {}
+	select {}
 }
