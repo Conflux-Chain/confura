@@ -50,7 +50,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber *big.Int) (EpochData, er
 					"epoch": epochNumber.Uint64(),
 					"block": block.Hash.String(),
 					"tx":    tx.Hash.String(),
-				}).Info("Transaction not executed in block")
+				}).Debug("Transaction not executed in block")
 
 				continue
 			}

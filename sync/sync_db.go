@@ -16,10 +16,10 @@ const maxSyncEpochs = 10
 // DatabaseSyncer is used to sync blockchain data into database
 // against the latest confirmed epoch.
 type DatabaseSyncer struct {
-	cfx           sdk.ClientOperator
-	db            store.Store
-	lastSyncEpoch int64
-	epochCh       chan int64 // receive the epoch from pub/sub to detect pivot chain switch
+	cfx       sdk.ClientOperator
+	db        store.Store
+	epochFrom int64      // epoch number to sync data from
+	epochCh   chan int64 // receive the epoch from pub/sub to detect pivot chain switch
 }
 
 // NewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
@@ -38,7 +38,7 @@ func (syncer *DatabaseSyncer) Sync() {
 		select {
 		case <-ticker.C:
 			if err := syncer.syncOnce(); err != nil {
-				logrus.WithError(err).WithField("epochFrom", syncer.lastSyncEpoch+1).Error("Failed to sync epoch data")
+				logrus.WithError(err).WithField("epochFrom", syncer.epochFrom).Error("Failed to sync epoch data")
 			}
 		case newEpoch := <-syncer.epochCh:
 			// any confirmed epoch reverted
@@ -59,7 +59,7 @@ func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 	}).Info("Start to sync epoch data to database")
 
 	if maxEpoch != nil {
-		syncer.lastSyncEpoch = maxEpoch.Int64()
+		syncer.epochFrom = maxEpoch.Int64() + 1
 	}
 }
 
@@ -69,21 +69,19 @@ func (syncer *DatabaseSyncer) syncOnce() error {
 		return errors.WithMessage(err, "Failed to query the latest confirmed epoch number")
 	}
 
-	epochFrom := syncer.lastSyncEpoch + 1
 	maxEpochTo := epoch.ToInt().Int64()
-
-	if epochFrom > maxEpochTo {
+	if syncer.epochFrom > maxEpochTo {
 		return nil
 	}
 
-	epochTo := epochFrom + maxSyncEpochs - 1
+	epochTo := syncer.epochFrom + maxSyncEpochs - 1
 	if epochTo > maxEpochTo {
 		epochTo = maxEpochTo
 	}
 
-	epochDataSlice := make([]*store.EpochData, 0, epochTo-epochFrom+1)
+	epochDataSlice := make([]*store.EpochData, 0, epochTo-syncer.epochFrom+1)
 
-	for i := epochFrom; i <= epochTo; i++ {
+	for i := syncer.epochFrom; i <= epochTo; i++ {
 		data, err := store.QueryEpochData(syncer.cfx, big.NewInt(i))
 		if err != nil {
 			return errors.WithMessagef(err, "Failed to query epoch data for epoch %v", i)
@@ -96,7 +94,7 @@ func (syncer *DatabaseSyncer) syncOnce() error {
 		return errors.WithMessage(err, "Failed to write epoch data to database")
 	}
 
-	syncer.lastSyncEpoch = epochTo
+	syncer.epochFrom = epochTo + 1
 
 	return nil
 }
@@ -107,14 +105,14 @@ func (syncer *DatabaseSyncer) onEpochReceived(epoch types.WebsocketEpochResponse
 }
 
 func (syncer *DatabaseSyncer) handleNewEpoch(newEpoch int64) {
-	if newEpoch > syncer.lastSyncEpoch {
+	if newEpoch >= syncer.epochFrom {
 		return
 	}
 
 	// remove blockchain data from database due to pivot chain switch
 
 	epochFrom := big.NewInt(newEpoch)
-	epochTo := big.NewInt(syncer.lastSyncEpoch)
+	epochTo := big.NewInt(syncer.epochFrom - 1)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"epochFrom": epochFrom,
