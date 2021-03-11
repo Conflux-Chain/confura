@@ -12,10 +12,12 @@ type transaction struct {
 	ID    uint64
 	Epoch uint64 `gorm:"not null;index"`
 	Hash  string `gorm:"size:66;not null;index"`
-	// TODO varchar(4096) is enough, otherwise, query from fullnode
-	// the same for other BLOB type data, e.g. log.Data
-	TxRawData      []byte `gorm:"type:MEDIUMBLOB;not null"`
-	ReceiptRawData []byte `gorm:"type:BLOB"`
+	// TODO maybe varchar(N) is enough, otherwise, query from other table or fullnode.
+	// The same for other BLOB type data, e.g. log.Data
+	TxRawData         []byte `gorm:"type:MEDIUMBLOB;not null"`
+	TxRawDataLen      uint64 `gorm:"not null"`
+	ReceiptRawData    []byte `gorm:"type:MEDIUMBLOB"`
+	ReceiptRawDataLen uint64 `gorm:"not null"`
 }
 
 func (transaction) TableName() string {
@@ -29,6 +31,9 @@ func newTx(tx *types.Transaction, receipt *types.TransactionReceipt) *transactio
 		TxRawData:      mustMarshalJSON(tx),
 		ReceiptRawData: mustMarshalJSON(receipt),
 	}
+
+	result.TxRawDataLen = uint64(len(result.TxRawData))
+	result.ReceiptRawDataLen = uint64(len(result.ReceiptRawData))
 
 	return result
 }
@@ -45,20 +50,25 @@ func loadTx(db *gorm.DB, txHash types.Hash) (*transaction, error) {
 }
 
 type block struct {
-	ID      uint64
-	Hash    string `gorm:"size:66;not null;index"`
-	Epoch   uint64 `gorm:"not null;index"`
-	Pivot   bool   `gorm:"not null"`
-	RawData []byte `gorm:"type:MEDIUMBLOB;not null"`
+	ID         uint64
+	Hash       string `gorm:"size:66;not null;index"`
+	Epoch      uint64 `gorm:"not null;index"`
+	Pivot      bool   `gorm:"not null"`
+	RawData    []byte `gorm:"type:MEDIUMBLOB;not null"`
+	RawDataLen uint64 `gorm:"not null"`
 }
 
 func newBlock(data *types.Block, pivot bool) *block {
-	return &block{
+	block := &block{
 		Hash:    data.Hash.String(),
 		Epoch:   data.EpochNumber.ToInt().Uint64(),
 		Pivot:   pivot,
 		RawData: mustMarshalJSON(data),
 	}
+
+	block.RawDataLen = uint64(len(block.RawData))
+
+	return block
 }
 
 func loadBlock(db *gorm.DB, whereClause string, args ...interface{}) (*types.Block, error) {
@@ -84,7 +94,8 @@ type log struct {
 	Topic1          string `gorm:"size:66"`
 	Topic2          string `gorm:"size:66"`
 	Topic3          string `gorm:"size:66"`
-	Data            string `gorm:"type:BLOB"`
+	Data            string `gorm:"type:MEDIUMBLOB"`
+	DataLen         uint64 `gorm:"not null"`
 	TxHash          string `gorm:"size:66;not null"`
 	TxIndex         uint64 `gorm:"not null"`
 	TxLogIndex      uint64 `gorm:"not null"`
@@ -103,6 +114,8 @@ func newLog(data *types.Log) *log {
 		TxLogIndex:      data.TransactionLogIndex.ToInt().Uint64(),
 		LogIndex:        data.LogIndex.ToInt().Uint64(),
 	}
+
+	log.DataLen = uint64(len(log.Data))
 
 	numTopics := len(data.Topics)
 
