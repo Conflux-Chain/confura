@@ -6,25 +6,32 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
-
-const maxSyncEpochs = 10
 
 // DatabaseSyncer is used to sync blockchain data into database
 // against the latest confirmed epoch.
 type DatabaseSyncer struct {
-	cfx       sdk.ClientOperator
-	db        store.Store
-	epochFrom int64      // epoch number to sync data from
-	epochCh   chan int64 // receive the epoch from pub/sub to detect pivot chain switch
+	cfx           sdk.ClientOperator
+	db            store.Store
+	epochFrom     int64      // epoch number to sync data from
+	maxSyncEpochs int64      // maximum number of epochs to sync once
+	epochCh       chan int64 // receive the epoch from pub/sub to detect pivot chain switch
 }
 
 // NewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
 func NewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSyncer {
-	return &DatabaseSyncer{cfx, db, 0, make(chan int64, 1000)}
+	return &DatabaseSyncer{
+		cfx:           cfx,
+		db:            db,
+		epochFrom:     0,
+		maxSyncEpochs: viper.GetInt64("sync.maxEpochs"),
+		epochCh:       make(chan int64, viper.GetInt64("sync.sub.buffer")),
+	}
 }
 
 // Sync starts to sync epoch blockchain data with specified cfx instance.
@@ -64,6 +71,9 @@ func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 }
 
 func (syncer *DatabaseSyncer) syncOnce() error {
+	updater := metrics.NewTimerUpdaterByName("infura/sync/once")
+	defer updater.Update()
+
 	epoch, err := syncer.cfx.GetEpochNumber(types.EpochLatestConfirmed)
 	if err != nil {
 		return errors.WithMessage(err, "Failed to query the latest confirmed epoch number")
@@ -74,7 +84,7 @@ func (syncer *DatabaseSyncer) syncOnce() error {
 		return nil
 	}
 
-	epochTo := syncer.epochFrom + maxSyncEpochs - 1
+	epochTo := syncer.epochFrom + syncer.maxSyncEpochs - 1
 	if epochTo > maxEpochTo {
 		epochTo = maxEpochTo
 	}

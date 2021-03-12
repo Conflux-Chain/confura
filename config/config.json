@@ -12,7 +12,8 @@
         },
         "sub": {
             "buffer": 1000
-        }
+        },
+        "maxEpochs": 10
     },
     "nearhead": {
         "cap": 100000,

@@ -129,7 +129,7 @@ func (ms *mysqlStore) PutEpochData(data *store.EpochData) error {
 }
 
 func (ms *mysqlStore) PutEpochDataSlice(dataSlice []*store.EpochData) error {
-	updater := metrics.NewTimerUpdaterByName("store/mysql/write")
+	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/write")
 	defer updater.Update()
 
 	return ms.execWithTx(func(dbTx *gorm.DB) error {
@@ -199,7 +199,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) error {
 }
 
 func (ms *mysqlStore) Remove(epochFrom, epochTo *big.Int, includeTxs, includeLogs bool) error {
-	updater := metrics.NewTimerUpdaterByName("store/mysql/delete")
+	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/delete")
 	defer updater.Update()
 
 	return ms.execWithTx(func(dbTx *gorm.DB) error {
