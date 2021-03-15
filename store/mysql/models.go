@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/jinzhu/gorm"
@@ -9,11 +10,13 @@ import (
 )
 
 type transaction struct {
-	ID    uint64
-	Epoch uint64 `gorm:"not null;index"`
-	Hash  string `gorm:"size:66;not null;index"`
+	ID     uint64
+	Epoch  uint64 `gorm:"not null;index"`
+	HashId uint64 `gorm:"not null;index"` // as an index, number is better than long string
+	Hash   string `gorm:"size:66;not null"`
 	// TODO maybe varchar(N) is enough, otherwise, query from other table or fullnode.
-	// The same for other BLOB type data, e.g. log.Data
+	// The same for other BLOB type data, e.g. log.Data.
+	// However, if mysql engine automatically handle this case, just ignore this comment.
 	TxRawData         []byte `gorm:"type:MEDIUMBLOB;not null"`
 	TxRawDataLen      uint64 `gorm:"not null"`
 	ReceiptRawData    []byte `gorm:"type:MEDIUMBLOB"`
@@ -24,6 +27,16 @@ func (transaction) TableName() string {
 	return "txs"
 }
 
+func hash2ShortId(hash string) uint64 {
+	// first 8 bytes of hex string with 0x prefixed
+	id, err := strconv.ParseUint(hash[2:18], 16, 64)
+	if err != nil {
+		logrus.WithError(err).WithField("hash", hash).Fatalf("Failed convert hash to short id")
+	}
+
+	return id
+}
+
 func newTx(tx *types.Transaction, receipt *types.TransactionReceipt) *transaction {
 	result := &transaction{
 		Epoch:          uint64(*receipt.EpochNumber),
@@ -32,16 +45,19 @@ func newTx(tx *types.Transaction, receipt *types.TransactionReceipt) *transactio
 		ReceiptRawData: mustMarshalJSON(receipt),
 	}
 
+	result.HashId = hash2ShortId(result.Hash)
 	result.TxRawDataLen = uint64(len(result.TxRawData))
 	result.ReceiptRawDataLen = uint64(len(result.ReceiptRawData))
 
 	return result
 }
 
-func loadTx(db *gorm.DB, txHash types.Hash) (*transaction, error) {
+func loadTx(db *gorm.DB, txHash string) (*transaction, error) {
+	hashId := hash2ShortId(txHash)
+
 	var tx transaction
 
-	db = db.Where("hash = ?", txHash.String()).First(&tx)
+	db = db.Where("hash_id = ? AND hash = ?", hashId, txHash).First(&tx)
 	if err := db.Scan(&tx).Error; err != nil {
 		return nil, err
 	}
@@ -51,8 +67,9 @@ func loadTx(db *gorm.DB, txHash types.Hash) (*transaction, error) {
 
 type block struct {
 	ID         uint64
-	Hash       string `gorm:"size:66;not null;index"`
 	Epoch      uint64 `gorm:"not null;index"`
+	HashId     uint64 `gorm:"not null;index"`
+	Hash       string `gorm:"size:66;not null"`
 	Pivot      bool   `gorm:"not null"`
 	RawData    []byte `gorm:"type:MEDIUMBLOB;not null"`
 	RawDataLen uint64 `gorm:"not null"`
@@ -60,18 +77,32 @@ type block struct {
 
 func newBlock(data *types.Block, pivot bool) *block {
 	block := &block{
-		Hash:    data.Hash.String(),
 		Epoch:   data.EpochNumber.ToInt().Uint64(),
+		Hash:    data.Hash.String(),
 		Pivot:   pivot,
-		RawData: mustMarshalJSON(data),
+		RawData: mustMarshalJSON(block2Summary(data)),
 	}
 
+	block.HashId = hash2ShortId(block.Hash)
 	block.RawDataLen = uint64(len(block.RawData))
 
 	return block
 }
 
-func loadBlock(db *gorm.DB, whereClause string, args ...interface{}) (*types.Block, error) {
+func block2Summary(block *types.Block) *types.BlockSummary {
+	summary := types.BlockSummary{
+		BlockHeader:  block.BlockHeader,
+		Transactions: make([]types.Hash, 0, len(block.Transactions)),
+	}
+
+	for _, tx := range block.Transactions {
+		summary.Transactions = append(summary.Transactions, tx.Hash)
+	}
+
+	return &summary
+}
+
+func loadBlock(db *gorm.DB, whereClause string, args ...interface{}) (*types.BlockSummary, error) {
 	var blk block
 
 	db = db.Where(whereClause, args...).First(&blk)
@@ -79,10 +110,10 @@ func loadBlock(db *gorm.DB, whereClause string, args ...interface{}) (*types.Blo
 		return nil, err
 	}
 
-	var rpcBlock types.Block
-	mustUnmarshalJSON(blk.RawData, &rpcBlock)
+	var summary types.BlockSummary
+	mustUnmarshalJSON(blk.RawData, &summary)
 
-	return &rpcBlock, nil
+	return &summary, nil
 }
 
 type log struct {
@@ -94,7 +125,7 @@ type log struct {
 	Topic1          string `gorm:"size:66"`
 	Topic2          string `gorm:"size:66"`
 	Topic3          string `gorm:"size:66"`
-	Data            string `gorm:"type:MEDIUMBLOB"`
+	Data            []byte `gorm:"type:MEDIUMBLOB"`
 	DataLen         uint64 `gorm:"not null"`
 	TxHash          string `gorm:"size:66;not null"`
 	TxIndex         uint64 `gorm:"not null"`
@@ -107,7 +138,7 @@ func newLog(data *types.Log) *log {
 		Epoch:           data.EpochNumber.ToInt().Uint64(),
 		BlockHash:       data.BlockHash.String(),
 		ContractAddress: data.Address.MustGetBase32Address(),
-		Data:            data.Data.String(),
+		Data:            []byte(data.Data),
 		Topic0:          data.Topics[0].String(),
 		TxHash:          data.TransactionHash.String(),
 		TxIndex:         data.TransactionIndex.ToInt().Uint64(),

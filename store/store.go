@@ -1,6 +1,7 @@
 package store
 
 import (
+	"io"
 	"math/big"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -8,6 +9,10 @@ import (
 
 // Store is implemented by any object that persist blockchain data, especially for event logs.
 type Store interface {
+	io.Closer
+
+	IsRecordNotFound(err error) bool
+
 	GetBlockEpochRange() (*big.Int, *big.Int, error)
 
 	// GetLogs(filter types.LogFilter) ([]types.Log, error)
@@ -23,7 +28,5 @@ type Store interface {
 
 	PutEpochData(data *EpochData) error
 	PutEpochDataSlice(dataSlice []*EpochData) error
-	Remove(epochFrom, epochTo *big.Int, includeTxs, includeLogs bool) error
-
-	Close() error
+	Remove(epochFrom, epochTo *big.Int) error
 }

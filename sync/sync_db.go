@@ -147,7 +147,7 @@ func (syncer *DatabaseSyncer) handleNewEpoch(newEpoch int64) {
 
 	// must ensure the reverted data removed from database
 	for {
-		err := syncer.db.Remove(epochFrom, epochTo, true, true)
+		err := syncer.db.Remove(epochFrom, epochTo)
 		if err == nil {
 			break
 		}

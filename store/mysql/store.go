@@ -12,12 +12,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var errUnsupported = errors.New("not supported")
+
 type mysqlStore struct {
 	db *gorm.DB
 }
 
 func newStore(db *gorm.DB) *mysqlStore {
 	return &mysqlStore{db}
+}
+
+func (ms *mysqlStore) IsRecordNotFound(err error) bool {
+	return gorm.IsRecordNotFoundError(err)
 }
 
 func (ms *mysqlStore) GetBlockEpochRange() (*big.Int, *big.Int, error) {
@@ -41,7 +47,7 @@ func (ms *mysqlStore) GetBlockEpochRange() (*big.Int, *big.Int, error) {
 }
 
 func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, error) {
-	tx, err := loadTx(ms.db, txHash)
+	tx, err := loadTx(ms.db, txHash.String())
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +59,7 @@ func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, err
 }
 
 func (ms *mysqlStore) GetReceipt(txHash types.Hash) (*types.TransactionReceipt, error) {
-	tx, err := loadTx(ms.db, txHash)
+	tx, err := loadTx(ms.db, txHash.String())
 	if err != nil {
 		return nil, err
 	}
@@ -87,41 +93,21 @@ func (ms *mysqlStore) GetBlocksByEpoch(epochNumber *big.Int) ([]types.Hash, erro
 }
 
 func (ms *mysqlStore) GetBlockByEpoch(epochNumber *big.Int) (*types.Block, error) {
-	return loadBlock(ms.db, "epoch = ? AND pivot = true", epochNumber.Uint64())
+	// Cannot get tx from db in advance, since only executed txs saved in db
+	return nil, errUnsupported
 }
 
 func (ms *mysqlStore) GetBlockSummaryByEpoch(epochNumber *big.Int) (*types.BlockSummary, error) {
-	block, err := ms.GetBlockByEpoch(epochNumber)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert2Summary(block), nil
-}
-
-func convert2Summary(block *types.Block) *types.BlockSummary {
-	summary := types.BlockSummary{
-		BlockHeader: block.BlockHeader,
-	}
-
-	for _, tx := range block.Transactions {
-		summary.Transactions = append(summary.Transactions, tx.Hash)
-	}
-
-	return &summary
+	return loadBlock(ms.db, "epoch = ? AND pivot = true", epochNumber.Uint64())
 }
 
 func (ms *mysqlStore) GetBlockByHash(blockHash types.Hash) (*types.Block, error) {
-	return loadBlock(ms.db, "hash = ?", blockHash.String())
+	return nil, errUnsupported
 }
 
 func (ms *mysqlStore) GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error) {
-	block, err := ms.GetBlockByHash(blockHash)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert2Summary(block), nil
+	hash := blockHash.String()
+	return loadBlock(ms.db, "hash_id = ? AND hash = ?", hash2ShortId(hash), hash)
 }
 
 func (ms *mysqlStore) PutEpochData(data *store.EpochData) error {
@@ -198,7 +184,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) error {
 	return nil
 }
 
-func (ms *mysqlStore) Remove(epochFrom, epochTo *big.Int, includeTxs, includeLogs bool) error {
+func (ms *mysqlStore) Remove(epochFrom, epochTo *big.Int) error {
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/delete")
 	defer updater.Update()
 
@@ -208,16 +194,12 @@ func (ms *mysqlStore) Remove(epochFrom, epochTo *big.Int, includeTxs, includeLog
 				return err
 			}
 
-			if includeTxs {
-				if err := dbTx.Delete(transaction{}, "epoch = ?", i).Error; err != nil {
-					return err
-				}
+			if err := dbTx.Delete(transaction{}, "epoch = ?", i).Error; err != nil {
+				return err
 			}
 
-			if includeLogs {
-				if err := dbTx.Delete(log{}, "epoch = ?", i).Error; err != nil {
-					return err
-				}
+			if err := dbTx.Delete(log{}, "epoch = ?", i).Error; err != nil {
+				return err
 			}
 		}
 
