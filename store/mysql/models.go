@@ -1,10 +1,10 @@
 package mysql
 
 import (
-	"encoding/json"
 	"strconv"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/jinzhu/gorm"
 	"github.com/sirupsen/logrus"
 )
@@ -41,8 +41,8 @@ func newTx(tx *types.Transaction, receipt *types.TransactionReceipt) *transactio
 	result := &transaction{
 		Epoch:          uint64(*receipt.EpochNumber),
 		Hash:           tx.Hash.String(),
-		TxRawData:      mustMarshalJSON(tx),
-		ReceiptRawData: mustMarshalJSON(receipt),
+		TxRawData:      mustMarshalRLP(tx),
+		ReceiptRawData: mustMarshalRLP(receipt),
 	}
 
 	result.HashId = hash2ShortId(result.Hash)
@@ -80,7 +80,7 @@ func newBlock(data *types.Block, pivot bool) *block {
 		Epoch:   data.EpochNumber.ToInt().Uint64(),
 		Hash:    data.Hash.String(),
 		Pivot:   pivot,
-		RawData: mustMarshalJSON(block2Summary(data)),
+		RawData: mustMarshalRLP(block2Summary(data)),
 	}
 
 	block.HashId = hash2ShortId(block.Hash)
@@ -111,7 +111,7 @@ func loadBlock(db *gorm.DB, whereClause string, args ...interface{}) (*types.Blo
 	}
 
 	var summary types.BlockSummary
-	mustUnmarshalJSON(blk.RawData, &summary)
+	mustUnmarshalRLP(blk.RawData, &summary)
 
 	return &summary, nil
 }
@@ -165,21 +165,21 @@ func newLog(data *types.Log) *log {
 	return log
 }
 
-func mustMarshalJSON(v interface{}) []byte {
+func mustMarshalRLP(v interface{}) []byte {
 	if v == nil {
 		return nil
 	}
 
-	data, err := json.Marshal(v)
+	data, err := rlp.EncodeToBytes(v)
 	if err != nil {
-		logrus.WithError(err).Fatalf("Failed to marshal data to JSON, value = %+v", v)
+		logrus.WithError(err).Fatalf("Failed to marshal data to RLP, value = %+v", v)
 	}
 
 	return data
 }
 
-func mustUnmarshalJSON(data []byte, v interface{}) {
-	if err := json.Unmarshal(data, v); err != nil {
-		logrus.WithError(err).Fatalf("Failed to unmarshal data, data = %v", string(data))
+func mustUnmarshalRLP(data []byte, v interface{}) {
+	if err := rlp.DecodeBytes(data, v); err != nil {
+		logrus.WithError(err).Fatalf("Failed to unmarshal RLP data, v = %v, data = %x", v, data)
 	}
 }

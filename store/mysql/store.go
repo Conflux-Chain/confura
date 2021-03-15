@@ -53,7 +53,7 @@ func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, err
 	}
 
 	var rpcTx types.Transaction
-	mustUnmarshalJSON(tx.TxRawData, &rpcTx)
+	mustUnmarshalRLP(tx.TxRawData, &rpcTx)
 
 	return &rpcTx, nil
 }
@@ -65,7 +65,7 @@ func (ms *mysqlStore) GetReceipt(txHash types.Hash) (*types.TransactionReceipt, 
 	}
 
 	var receipt types.TransactionReceipt
-	mustUnmarshalJSON(tx.ReceiptRawData, &receipt)
+	mustUnmarshalRLP(tx.ReceiptRawData, &receipt)
 
 	return &receipt, nil
 }
