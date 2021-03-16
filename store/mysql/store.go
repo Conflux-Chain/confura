@@ -46,6 +46,10 @@ func (ms *mysqlStore) GetBlockEpochRange() (*big.Int, *big.Int, error) {
 	return big.NewInt(minEpoch.Int64), big.NewInt(maxEpoch.Int64), nil
 }
 
+func (ms *mysqlStore) GetLogs(filter store.LogFilter) ([]types.Log, error) {
+	return loadLogs(ms.db, filter)
+}
+
 func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, error) {
 	tx, err := loadTx(ms.db, txHash.String())
 	if err != nil {

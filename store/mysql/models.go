@@ -1,22 +1,22 @@
 package mysql
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
+	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/jinzhu/gorm"
 	"github.com/sirupsen/logrus"
 )
 
 type transaction struct {
-	ID     uint64
-	Epoch  uint64 `gorm:"not null;index"`
-	HashId uint64 `gorm:"not null;index"` // as an index, number is better than long string
-	Hash   string `gorm:"size:66;not null"`
-	// TODO maybe varchar(N) is enough, otherwise, query from other table or fullnode.
-	// The same for other BLOB type data, e.g. log.Data.
-	// However, if mysql engine automatically handle this case, just ignore this comment.
+	ID                uint64
+	Epoch             uint64 `gorm:"not null;index"`
+	HashId            uint64 `gorm:"not null;index"` // as an index, number is better than long string
+	Hash              string `gorm:"size:66;not null"`
 	TxRawData         []byte `gorm:"type:MEDIUMBLOB;not null"`
 	TxRawDataLen      uint64 `gorm:"not null"`
 	ReceiptRawData    []byte `gorm:"type:MEDIUMBLOB"`
@@ -163,6 +163,88 @@ func newLog(data *types.Log) *log {
 	}
 
 	return log
+}
+
+func (log *log) toRPCLog() types.Log {
+	blockHash := types.Hash(log.BlockHash)
+	txHash := types.Hash(log.TxHash)
+
+	topics := []types.Hash{types.Hash(log.Topic0)}
+
+	// in case of empty hex string with 0x prefix
+	if len(log.Topic1) > 2 {
+		topics = append(topics, types.Hash(log.Topic1))
+	}
+
+	if len(log.Topic2) > 2 {
+		topics = append(topics, types.Hash(log.Topic2))
+	}
+
+	if len(log.Topic3) > 2 {
+		topics = append(topics, types.Hash(log.Topic3))
+	}
+
+	return types.Log{
+		Address:             cfxaddress.MustNewFromBase32(log.ContractAddress),
+		Topics:              topics,
+		Data:                types.NewBytes(log.Data),
+		BlockHash:           &blockHash,
+		EpochNumber:         types.NewBigInt(log.Epoch),
+		TransactionHash:     &txHash,
+		TransactionIndex:    types.NewBigInt(log.TxIndex),
+		LogIndex:            types.NewBigInt(log.LogIndex),
+		TransactionLogIndex: types.NewBigInt(log.TxLogIndex),
+	}
+}
+
+func loadLogs(db *gorm.DB, filter store.LogFilter) ([]types.Log, error) {
+	db = db.Where("epoch BETWEEN ? AND ?", filter.EpochFrom, filter.EpochTo)
+	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
+	db = applyVariadicFilter(db, "block_hash", filter.Blocks)
+
+	numTopics := len(filter.Topics)
+
+	if numTopics > 0 {
+		db = applyVariadicFilter(db, "topic0", filter.Topics[0])
+	}
+
+	if numTopics > 1 {
+		db = applyVariadicFilter(db, "topic1", filter.Topics[1])
+	}
+
+	if numTopics > 2 {
+		db = applyVariadicFilter(db, "topic2", filter.Topics[2])
+	}
+
+	if numTopics > 3 {
+		db = applyVariadicFilter(db, "topic3", filter.Topics[3])
+	}
+
+	db.Limit(filter.Limit)
+
+	var logs []log
+	if err := db.Find(&logs).Error; err != nil {
+		return nil, err
+	}
+
+	var result []types.Log
+	for _, l := range logs {
+		result = append(result, l.toRPCLog())
+	}
+
+	return result, nil
+}
+
+func applyVariadicFilter(db *gorm.DB, column string, value store.VariadicValue) *gorm.DB {
+	if single, ok := value.Single(); ok {
+		return db.Where(fmt.Sprintf("%v = ?", column), single)
+	}
+
+	if multiple, ok := value.FlatMultiple(); ok {
+		return db.Where(fmt.Sprintf("%v IN (?)", column), multiple)
+	}
+
+	return db
 }
 
 func mustMarshalRLP(v interface{}) []byte {

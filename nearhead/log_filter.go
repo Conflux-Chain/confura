@@ -7,6 +7,7 @@ import (
 
 var defaultLogLimit = viper.GetInt("nearhead.logLimit")
 
+// TODO use store.LogFilter instead
 type logFilter struct {
 	epochFrom uint64
 	epochTo   uint64

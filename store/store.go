@@ -15,7 +15,7 @@ type Store interface {
 
 	GetBlockEpochRange() (*big.Int, *big.Int, error)
 
-	// GetLogs(filter types.LogFilter) ([]types.Log, error)
+	GetLogs(filter LogFilter) ([]types.Log, error)
 
 	GetTransaction(txHash types.Hash) (*types.Transaction, error)
 	GetReceipt(txHash types.Hash) (*types.TransactionReceipt, error)
