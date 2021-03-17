@@ -3,8 +3,11 @@ package rpc
 import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 var emptyEpochs = []*types.Epoch{}
@@ -12,12 +15,14 @@ var emptyEpochs = []*types.Epoch{}
 type cfxAPI struct {
 	cfx              sdk.ClientOperator
 	inputEpochMetric *inputEpochMetric
+	db               store.Store
 }
 
-func newCfxAPI(cfx sdk.ClientOperator) *cfxAPI {
+func newCfxAPI(cfx sdk.ClientOperator, db store.Store) *cfxAPI {
 	return &cfxAPI{
 		cfx:              cfx,
 		inputEpochMetric: newInputEpochMetric(cfx),
+		db:               db,
 	}
 }
 
@@ -131,9 +136,52 @@ func (api *cfxAPI) Call(request types.CallRequest, epoch *types.Epoch) (hexutil.
 }
 
 func (api *cfxAPI) GetLogs(filter types.LogFilter) ([]types.Log, error) {
+	if err := api.validateLogFilter(&filter); err != nil {
+		return nil, err
+	}
+
 	api.inputEpochMetric.update(filter.FromEpoch, "cfx_getLogs/from")
 	api.inputEpochMetric.update(filter.ToEpoch, "cfx_getLogs/to")
+
+	if dbFilter, ok := store.ParseLogFilter(&filter); ok {
+		logs, err := api.db.GetLogs(dbFilter)
+		if err == nil {
+			return logs, nil
+		}
+
+		// for any error, delegate request to full node, including:
+		// 1. database level error
+		// 2. record not found (log range mismatch)
+		if !api.db.IsRecordNotFound(err) {
+			logrus.WithError(err).Fatal("Failed to get logs from database")
+		}
+	}
+
 	return api.cfx.GetLogs(filter)
+}
+
+func (api *cfxAPI) validateLogFilter(filter *types.LogFilter) error {
+	// TODO validate against non-number case, e.g. latest_confirmed
+	if epochFrom, ok := filter.FromEpoch.ToInt(); ok {
+		if epochTo, ok := filter.ToEpoch.ToInt(); ok {
+			epochFrom := epochFrom.Uint64()
+			epochTo := epochTo.Uint64()
+
+			if epochFrom > epochTo {
+				return errors.New("invalid epoch range (from > to)")
+			}
+
+			if count := epochTo - epochFrom + 1; count > store.MaxLogEpochRange {
+				return errors.Errorf("epoch range exceeds maximum value %v", store.MaxLogEpochRange)
+			}
+		}
+	}
+
+	if filter.Limit != nil && uint64(*filter.Limit) > store.MaxLogLimit {
+		return errors.Errorf("limit field exceed the maximum value %v", store.MaxLogLimit)
+	}
+
+	return nil
 }
 
 func (api *cfxAPI) GetTransactionByHash(txHash types.Hash) (*types.Transaction, error) {

@@ -58,7 +58,7 @@ func (config *Config) MustOpenOrCreate() store.Store {
 
 	logrus.Info("MySQL database initialized")
 
-	return newStore(db)
+	return mustNewStore(db)
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {
@@ -88,6 +88,8 @@ func (config *Config) mustCreateDatabaseIfAbsent() bool {
 	if err = db.Exec("CREATE DATABASE IF NOT EXISTS " + config.Database).Error; err != nil {
 		logrus.WithError(err).Fatal("Failed to create database")
 	}
+
+	logrus.Info("Create database for the first time")
 
 	return true
 }

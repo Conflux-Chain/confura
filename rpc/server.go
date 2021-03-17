@@ -6,6 +6,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
+	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -18,10 +19,10 @@ const (
 )
 
 // Serve starts to serve RPC requests.
-func Serve(endpoint string, cfx sdk.ClientOperator) {
+func Serve(endpoint string, cfx sdk.ClientOperator, db store.Store) {
 	handler := rpc.NewServer()
 
-	mustRegisterService(handler, namespaceCfx, newCfxAPI(cfx))
+	mustRegisterService(handler, namespaceCfx, newCfxAPI(cfx, db))
 	mustRegisterService(handler, namespaceTrace, newTraceAPI(cfx))
 	mustRegisterService(handler, namespaceMetrics, &metricsAPI{})
 

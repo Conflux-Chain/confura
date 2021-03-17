@@ -1,9 +1,15 @@
 package store
 
-import "github.com/Conflux-Chain/go-conflux-sdk/types"
+import (
+	"math"
 
-// DefaultLogLimit is the maximum number of logs to query at a time.
-const DefaultLogLimit = 1000
+	"github.com/Conflux-Chain/go-conflux-sdk/types"
+)
+
+const (
+	MaxLogEpochRange uint64 = 1000
+	MaxLogLimit      uint64 = math.MaxUint64 // do not limit in early phase
+)
 
 // LogFilter is used to filter logs when query in any store.
 type LogFilter struct {
@@ -12,7 +18,22 @@ type LogFilter struct {
 	Contracts VariadicValue
 	Blocks    VariadicValue
 	Topics    []VariadicValue // event hash and indexed data 1, 2, 3
-	Limit     int
+	Limit     uint64
+}
+
+// ParseLogFilter creates an instance of LogFilter with specified RPC log filter.
+func ParseLogFilter(filter *types.LogFilter) (LogFilter, bool) {
+	epochFrom, ok := filter.FromEpoch.ToInt()
+	if !ok {
+		return LogFilter{}, false
+	}
+
+	epochTo, ok := filter.ToEpoch.ToInt()
+	if !ok {
+		return LogFilter{}, false
+	}
+
+	return NewLogFilter(epochFrom.Uint64(), epochTo.Uint64(), filter), true
 }
 
 // NewLogFilter creates an instance of LogFilter with specified RPC log filter.
@@ -22,7 +43,7 @@ func NewLogFilter(epochNumFrom, epochNumTo uint64, filter *types.LogFilter) LogF
 		EpochTo:   epochNumTo,
 		Contracts: newVariadicValueByAddress(filter.Address),
 		Blocks:    newVariadicValueByHashes(filter.BlockHashes),
-		Limit:     DefaultLogLimit,
+		Limit:     MaxLogLimit,
 	}
 
 	// init topics filter
@@ -36,8 +57,8 @@ func NewLogFilter(epochNumFrom, epochNumTo uint64, filter *types.LogFilter) LogF
 	}
 
 	// init limit filter
-	if filter.Limit != nil && uint64(*filter.Limit) < uint64(DefaultLogLimit) {
-		result.Limit = int(*filter.Limit)
+	if filter.Limit != nil && uint64(*filter.Limit) < MaxLogLimit {
+		result.Limit = uint64(*filter.Limit)
 	}
 
 	return result

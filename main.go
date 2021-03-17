@@ -32,7 +32,7 @@ func main() {
 	go sync.MustSubEpoch(cfx, syncer)
 
 	// Start RPC server
-	go rpc.Serve(viper.GetString("endpoint"), cfx)
+	go rpc.Serve(viper.GetString("endpoint"), cfx, db)
 
 	select {}
 }

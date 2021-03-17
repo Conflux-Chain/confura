@@ -1,8 +1,6 @@
 package store
 
 import (
-	"math/big"
-
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/pkg/errors"
@@ -11,15 +9,15 @@ import (
 
 // EpochData wraps the blockchain data of an epoch.
 type EpochData struct {
-	Number   *big.Int       // epoch number
+	Number   uint64         // epoch number
 	Blocks   []*types.Block // blocks in order and the last one is pivot block
 	Receipts map[types.Hash]*types.TransactionReceipt
 }
 
 // QueryEpochData queries blockchain data for the specified epoch number.
 // TODO better to use batch API to return all if performance is low in case of high TPS.
-func QueryEpochData(cfx sdk.ClientOperator, epochNumber *big.Int) (EpochData, error) {
-	epoch := types.NewEpochNumberBig(epochNumber)
+func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, error) {
+	epoch := types.NewEpochNumberUint64(epochNumber)
 
 	blockHashes, err := cfx.GetBlocksByEpoch(epoch)
 	if err != nil {
@@ -46,11 +44,13 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber *big.Int) (EpochData, er
 			// 1) already executed in previous block
 			// 2) never executed, e.g. nonce mismatch
 			if tx.Status == nil || tx.BlockHash == nil {
-				logrus.WithFields(logrus.Fields{
-					"epoch": epochNumber.Uint64(),
-					"block": block.Hash.String(),
-					"tx":    tx.Hash.String(),
-				}).Debug("Transaction not executed in block")
+				if logrus.IsLevelEnabled(logrus.DebugLevel) {
+					logrus.WithFields(logrus.Fields{
+						"epoch": epochNumber,
+						"block": block.Hash.String(),
+						"tx":    tx.Hash.String(),
+					}).Debug("Transaction not executed in block")
+				}
 
 				continue
 			}
@@ -62,7 +62,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber *big.Int) (EpochData, er
 
 			if receipt == nil {
 				logrus.WithFields(logrus.Fields{
-					"epoch": epochNumber.Uint64(),
+					"epoch": epochNumber,
 					"block": block.Hash.String(),
 					"tx":    tx.Hash.String(),
 				}).Error("Transaction receipt not found")
@@ -70,9 +70,9 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber *big.Int) (EpochData, er
 				continue
 			}
 
-			if uint64(*receipt.EpochNumber) != epochNumber.Uint64() {
+			if uint64(*receipt.EpochNumber) != epochNumber {
 				logrus.WithFields(logrus.Fields{
-					"epoch": epochNumber.Uint64(),
+					"epoch": epochNumber,
 					"block": block.Hash.String(),
 					"tx":    tx.Hash.String(),
 				}).Errorf("Receipt epoch number mismatch, value = %v", uint64(*receipt.EpochNumber))
@@ -80,7 +80,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber *big.Int) (EpochData, er
 
 			if receipt.BlockHash.String() != block.Hash.String() {
 				logrus.WithFields(logrus.Fields{
-					"epoch": epochNumber.Uint64(),
+					"epoch": epochNumber,
 					"block": block.Hash.String(),
 					"tx":    tx.Hash.String(),
 				}).Errorf("Receipt block hash mismatch, value = %v", receipt.BlockHash.String())

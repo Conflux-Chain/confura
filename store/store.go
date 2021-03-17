@@ -2,7 +2,6 @@ package store
 
 import (
 	"io"
-	"math/big"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 )
@@ -13,20 +12,21 @@ type Store interface {
 
 	IsRecordNotFound(err error) bool
 
-	GetBlockEpochRange() (*big.Int, *big.Int, error)
+	GetBlockEpochRange() (uint64, uint64, error)
 
 	GetLogs(filter LogFilter) ([]types.Log, error)
 
 	GetTransaction(txHash types.Hash) (*types.Transaction, error)
 	GetReceipt(txHash types.Hash) (*types.TransactionReceipt, error)
 
-	GetBlocksByEpoch(epochNumber *big.Int) ([]types.Hash, error)
-	GetBlockByEpoch(epochNumber *big.Int) (*types.Block, error)
-	GetBlockSummaryByEpoch(epochNumber *big.Int) (*types.BlockSummary, error)
+	GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error)
+	GetBlockByEpoch(epochNumber uint64) (*types.Block, error)
+	GetBlockSummaryByEpoch(epochNumber uint64) (*types.BlockSummary, error)
 	GetBlockByHash(blockHash types.Hash) (*types.Block, error)
 	GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error)
 
-	PutEpochData(data *EpochData) error
-	PutEpochDataSlice(dataSlice []*EpochData) error
-	Remove(epochFrom, epochTo *big.Int) error
+	Push(data *EpochData) error
+	Pushn(dataSlice []*EpochData) error
+	Pop() error
+	Popn(epochUntil uint64) error
 }
