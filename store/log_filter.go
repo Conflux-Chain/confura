@@ -8,7 +8,7 @@ import (
 
 const (
 	MaxLogEpochRange uint64 = 1000
-	MaxLogLimit      uint64 = math.MaxUint64 // do not limit in early phase
+	MaxLogLimit      uint64 = math.MaxUint16 // do not limit in early phase
 )
 
 // LogFilter is used to filter logs when query in any store.
@@ -69,6 +69,30 @@ type VariadicValue struct {
 	count    int
 	single   string
 	multiple map[string]bool
+}
+
+func NewVariadicValue(values ...string) VariadicValue {
+	count := len(values)
+	if count == 0 {
+		return VariadicValue{0, "", nil}
+	}
+
+	if count == 1 {
+		return VariadicValue{1, values[0], nil}
+	}
+
+	multiple := make(map[string]bool)
+
+	for _, v := range values {
+		multiple[v] = true
+	}
+
+	count = len(multiple)
+	if count == 1 {
+		return VariadicValue{1, values[0], nil}
+	}
+
+	return VariadicValue{count, "", multiple}
 }
 
 func newVariadicValueByHashes(hashes []types.Hash) VariadicValue {

@@ -220,10 +220,8 @@ func loadLogs(db *gorm.DB, filter store.LogFilter) ([]types.Log, error) {
 		db = applyVariadicFilter(db, "topic3", filter.Topics[3])
 	}
 
-	db.Limit(filter.Limit)
-
 	var logs []log
-	if err := db.Find(&logs).Error; err != nil {
+	if err := db.Limit(filter.Limit).Find(&logs).Error; err != nil {
 		return nil, err
 	}
 
