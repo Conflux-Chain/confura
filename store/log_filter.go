@@ -126,18 +126,18 @@ func newVariadicValueByAddress(addresses []types.Address) VariadicValue {
 	}
 
 	if count == 1 {
-		return VariadicValue{1, addresses[0].String(), nil}
+		return VariadicValue{1, addresses[0].MustGetBase32Address(), nil}
 	}
 
 	values := make(map[string]bool)
 
 	for _, v := range addresses {
-		values[v.String()] = true
+		values[v.MustGetBase32Address()] = true
 	}
 
 	count = len(values)
 	if count == 1 {
-		return VariadicValue{1, addresses[0].String(), nil}
+		return VariadicValue{1, addresses[0].MustGetBase32Address(), nil}
 	}
 
 	return VariadicValue{count, "", values}
