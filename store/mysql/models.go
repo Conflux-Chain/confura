@@ -221,8 +221,13 @@ func loadLogs(db *gorm.DB, filter store.LogFilter) ([]types.Log, error) {
 	}
 
 	var logs []log
-	if err := db.Limit(filter.Limit).Find(&logs).Error; err != nil {
+	if err := db.Find(&logs).Error; err != nil {
 		return nil, err
+	}
+
+	// IMPORTANT: full node return the last N logs
+	if len := uint64(len(logs)); len > filter.Limit {
+		logs = logs[len-filter.Limit:]
 	}
 
 	var result []types.Log
