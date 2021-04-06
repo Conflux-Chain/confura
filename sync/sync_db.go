@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
+	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -22,11 +23,12 @@ type DatabaseSyncer struct {
 	syncIntervalNormal  time.Duration // interval to sync data in normal status
 	syncIntervalCatchUp time.Duration // interval to sync data in catching up mode
 	subEpochCh          chan uint64   // receive the epoch from pub/sub to detect pivot chain switch
+	checkPointCh        chan bool     // checkpoint channel received to check sync data
 }
 
 // NewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
 func NewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSyncer {
-	return &DatabaseSyncer{
+	syncer := &DatabaseSyncer{
 		cfx:                 cfx,
 		db:                  db,
 		epochFrom:           0,
@@ -34,29 +36,38 @@ func NewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSyncer {
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		subEpochCh:          make(chan uint64, viper.GetInt64("sync.sub.buffer")),
+		checkPointCh:        make(chan bool, 2),
 	}
+
+	// Ensure confirmed sync epoch not reverted
+	if err := syncer.ensureLastConfirmedEpochOk(); err != nil {
+		logrus.WithError(err).Fatal("failed to ensure last confirmed epoch data not reverted")
+	}
+
+	// Load last sync epoch information
+	syncer.mustLoadLastSyncEpoch()
+
+	return syncer
 }
 
 // Sync starts to sync epoch blockchain data with specified cfx instance.
 func (syncer *DatabaseSyncer) Sync() {
-	syncer.mustLoadLastSyncEpoch()
+	logrus.WithField("epochFrom", syncer.epochFrom).Infof("DB sync starting to sync epoch data")
 
 	ticker := time.NewTicker(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-syncer.checkPointCh:
+			if err := syncer.doCheckPoint(); err != nil {
+				logrus.WithError(err).Error("Failed to do sync checkpoint")
+			}
 		case newEpoch := <-syncer.subEpochCh:
 			syncer.handleNewEpoch(newEpoch)
 		case <-ticker.C:
-			complete, err := syncer.syncOnce()
-			if err != nil {
+			if err := syncer.doTicker(ticker); err != nil {
 				logrus.WithError(err).WithField("epochFrom", syncer.epochFrom).Error("Failed to sync epoch data")
-				ticker.Reset(syncer.syncIntervalNormal)
-			} else if complete {
-				ticker.Reset(syncer.syncIntervalNormal)
-			} else {
-				ticker.Reset(syncer.syncIntervalCatchUp)
 			}
 		}
 	}
@@ -70,10 +81,6 @@ func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 	} else if !syncer.db.IsRecordNotFound(err) {
 		logrus.WithError(err).Fatal("Failed to read block epoch range from database")
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"epochFrom": syncer.epochFrom,
-	}).Info("Start to sync epoch data to database")
 }
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
@@ -90,6 +97,10 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 
 	// already catch up to the latest confirmed epoch
 	if syncer.epochFrom > maxEpochTo {
+		logrus.WithFields(logrus.Fields{
+			"epochRange": citypes.EpochRange{EpochFrom: syncer.epochFrom, EpochTo: maxEpochTo},
+		}).Debug("DB sync skipped for invalid epoch range")
+
 		return true, nil
 	}
 
@@ -99,31 +110,82 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 		epochTo = maxEpochTo
 	}
 
+	logger := logrus.WithFields(logrus.Fields{
+		"epochRange": citypes.EpochRange{EpochFrom: syncer.epochFrom, EpochTo: epochTo},
+	})
+	logger.Debug("DB sync started to sync with epoch range")
+
 	epochDataSlice := make([]*store.EpochData, 0, epochTo-syncer.epochFrom+1)
 
 	for i := syncer.epochFrom; i <= epochTo; i++ {
 		data, err := store.QueryEpochData(syncer.cfx, i)
 		if err != nil {
+			logrus.WithError(err).WithField("epoch", i).Error("Failed to query epoch data")
+
 			return false, errors.WithMessagef(err, "Failed to query epoch data for epoch %v", i)
 		}
+
+		logrus.WithField("epoch", i).Debug("Succeeded to query epoch data")
 
 		epochDataSlice = append(epochDataSlice, &data)
 	}
 
 	if err = syncer.db.Pushn(epochDataSlice); err != nil {
+		logger.WithError(err).Error("Failed to write epoch data to database")
+
 		return false, errors.WithMessage(err, "Failed to write epoch data to database")
 	}
 
-	logrus.Tracef("Succeeded to sync data from epoch %v to %v", syncer.epochFrom, epochTo)
+	logger.Trace("Succeeded to sync epoch data range")
 
 	syncer.epochFrom = epochTo + 1
 
 	return false, nil
 }
 
+func (syncer *DatabaseSyncer) doCheckPoint() error {
+	logrus.Debug("DB sync doing checkpoint")
+
+	// Try at most 50 times to ensure confirmed epoch data in db not reverted
+	maxTries := 50
+	for tryTimes := 0; tryTimes < maxTries; tryTimes++ {
+		if err := syncer.ensureLastConfirmedEpochOk(); err == nil {
+			return nil
+		} else if tryTimes == maxTries-1 {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (syncer *DatabaseSyncer) doTicker(ticker *time.Ticker) error {
+	logrus.Debug("DB sync ticking")
+
+	if complete, err := syncer.syncOnce(); err != nil {
+		ticker.Reset(syncer.syncIntervalNormal)
+		return err
+	} else if complete {
+		ticker.Reset(syncer.syncIntervalNormal)
+	} else {
+		ticker.Reset(syncer.syncIntervalCatchUp)
+	}
+
+	return nil
+}
+
 // implement the EpochSubscriber interface.
 func (syncer *DatabaseSyncer) onEpochReceived(epoch types.WebsocketEpochResponse) {
-	syncer.subEpochCh <- epoch.EpochNumber.ToInt().Uint64()
+	epochNo := epoch.EpochNumber.ToInt().Uint64()
+
+	logrus.WithField("epoch", epochNo).Debug("DB sync onEpochReceived new epoch received")
+	syncer.subEpochCh <- epochNo
+}
+
+func (syncer *DatabaseSyncer) onEpochSubStart() {
+	logrus.Debug("DB sync onEpochSubStart event received")
+
+	syncer.checkPointCh <- true
 }
 
 func (syncer *DatabaseSyncer) handleNewEpoch(newEpoch uint64) {
@@ -137,7 +199,6 @@ func (syncer *DatabaseSyncer) handleNewEpoch(newEpoch uint64) {
 		"epochFrom": newEpoch,
 		"epochTo":   syncer.epochFrom - 1,
 	})
-
 	logger.Info("Begin to remove blockchain data due to pivot chain switch")
 
 	// must ensure the reverted data removed from database

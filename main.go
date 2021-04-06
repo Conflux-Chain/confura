@@ -3,6 +3,7 @@ package main
 import (
 	// ensure viper based configuration initialized at the very beginning
 	_ "github.com/conflux-chain/conflux-infura/config"
+	"github.com/sirupsen/logrus"
 
 	// init metrics reporter
 	_ "github.com/conflux-chain/conflux-infura/metrics"
@@ -25,13 +26,16 @@ func main() {
 	defer db.Close()
 
 	// Start to sync data
+	logrus.Info("Starting to sync epoch data...")
 	syncer := sync.NewDatabaseSyncer(cfx, db)
 	go syncer.Sync()
 
 	// Monitor pivot chain switch via pub/sub
+	logrus.Info("Starting to pub/sub conflux chain...")
 	go sync.MustSubEpoch(cfx, syncer)
 
 	// Start RPC server
+	logrus.Info("Starting to run rpc server...")
 	go rpc.Serve(viper.GetString("endpoint"), cfx, db)
 
 	select {}

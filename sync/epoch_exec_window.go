@@ -63,6 +63,10 @@ func (window *EpochExecWindow) onEpochReceived(epoch types.WebsocketEpochRespons
 	}
 }
 
+func (window *EpochExecWindow) onEpochSubStart() {
+	// Nothing to do for the moment (no concern)
+}
+
 func (window *EpochExecWindow) update(epoch uint64) bool {
 	if epoch == 0 {
 		panic("cannot push epoch 0")

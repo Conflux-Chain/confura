@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"database/sql"
+	"fmt"
 	"math"
 	"sync/atomic"
 
@@ -259,18 +260,18 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64) error {
 	defer updater.Update()
 
 	err := ms.execWithTx(func(dbTx *gorm.DB) error {
-		for i := epochFrom; i <= epochTo; i++ {
-			if err := dbTx.Delete(block{}, "epoch = ?", i).Error; err != nil {
-				return err
-			}
+		// Batch delete for better performance
+		cond := fmt.Sprintf("epoch BETWEEN %v AND %v", epochFrom, epochTo)
+		if err := dbTx.Delete(block{}, cond).Error; err != nil {
+			return err
+		}
 
-			if err := dbTx.Delete(transaction{}, "epoch = ?", i).Error; err != nil {
-				return err
-			}
+		if err := dbTx.Delete(transaction{}, cond).Error; err != nil {
+			return err
+		}
 
-			if err := dbTx.Delete(log{}, "epoch = ?", i).Error; err != nil {
-				return err
-			}
+		if err := dbTx.Delete(log{}, cond).Error; err != nil {
+			return err
 		}
 
 		return nil
