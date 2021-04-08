@@ -81,6 +81,9 @@ func (ms *mysqlStore) GetLogs(filter store.LogFilter) ([]types.Log, error) {
 		return nil, gorm.ErrRecordNotFound
 	}
 
+	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
+	defer updater.Update()
+
 	return loadLogs(ms.db, filter)
 }
 

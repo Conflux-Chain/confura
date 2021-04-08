@@ -11,6 +11,7 @@ import (
 )
 
 var emptyEpochs = []*types.Epoch{}
+var emptyLogs = []types.Log{}
 
 type cfxAPI struct {
 	cfx              sdk.ClientOperator
@@ -137,7 +138,7 @@ func (api *cfxAPI) Call(request types.CallRequest, epoch *types.Epoch) (hexutil.
 
 func (api *cfxAPI) GetLogs(filter types.LogFilter) ([]types.Log, error) {
 	if err := api.validateLogFilter(&filter); err != nil {
-		return nil, err
+		return emptyLogs, err
 	}
 
 	api.inputEpochMetric.update(filter.FromEpoch, "cfx_getLogs/from")
@@ -145,9 +146,17 @@ func (api *cfxAPI) GetLogs(filter types.LogFilter) ([]types.Log, error) {
 
 	if dbFilter, ok := store.ParseLogFilter(&filter); ok {
 		logs, err := api.db.GetLogs(dbFilter)
+
+		// return empty slice rather than nil to comply with fullnode
+		if logs == nil {
+			logs = emptyLogs
+		}
+
 		if err == nil {
 			return logs, nil
 		}
+
+		logrus.WithField("error", err).Warning("Failed to get logs from database")
 
 		// for any error, delegate request to full node, including:
 		// 1. database level error
@@ -157,6 +166,7 @@ func (api *cfxAPI) GetLogs(filter types.LogFilter) ([]types.Log, error) {
 		}
 	}
 
+	logrus.Debug("Logs not found in database, delegated to fullnode")
 	return api.cfx.GetLogs(filter)
 }
 
