@@ -64,6 +64,11 @@ func (config *Config) MustOpenOrCreate() store.Store {
 func (config *Config) mustNewDB(database string) *gorm.DB {
 	dsn := fmt.Sprintf("%v:%v@/%v", config.Username, config.Password, database)
 	db, err := gorm.Open("mysql", dsn)
+
+	if logrus.GetLevel() == logrus.DebugLevel {
+		db = db.Debug()
+	}
+
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to open mysql")
 	}
