@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Determine if use pm2 or not
+USE_PM2=false
+if  [[ $1 = "--pm2" ]]; then
+    echo "Use pm2 for daemon guard..."
+    USE_PM2=true
+fi
+
 # Save the pwd before we run anything
 PRE_PWD=`pwd`
 
@@ -39,31 +46,69 @@ check() {
     fi
 }
 
+# Build binary executable
+build() {
+    mkdir -p bin
+    rm -fr bin/$PROJECT
+    go build -o bin/$PROJECT main.go
+    check "Build $PROJECT"
+}
+
 # Build the project
 cd $BUILD_DIR
-mkdir -p bin
-rm -fr bin/$PROJECT
-go build -o bin/$PROJECT main.go
+build
 
-check "Build $PROJECT"
+# Kill old process
+pgrep_kill() {
+    if pgrep -x "$PROJECT" 2>&1 > /dev/null
+    then
+        pgrep -x "$PROJECT" | xargs kill -9
+        check "Kill $PROJECT"
+    else
+        echo "No $PROJECT is running, skip killing"
+    fi
+}
+
+pm2_kill() {
+    if pm2 describe $PROJECT 2>&1 > /dev/null
+    then
+        pm2 delete $PROJECT
+        check "Kill $PROJECT"
+    else
+        echo "No $PROJECT is running, skip killing"
+    fi
+}
 
 # Kill the old process if necessary
-if pgrep -x "$PROJECT" 2>&1 > /dev/null
-then
-    pgrep -x "$PROJECT" | xargs kill -9
-    check "Kill $PROJECT"
+if [ "$USE_PM2" = true ]; then
+    pm2_kill
 else
-    echo "No $PROJECT is running, skip killing"
+    pgrep_kill
 fi
 
+# Run new process
+nohup_run() {
+    mkdir -p logs
+    NOW=`date +'%Y_%m_%d_%H_%M_%S'`
+    LOGFILE="./logs/nohup_conflux-infura_$NOW.log"
+    nohup bin/$PROJECT > $LOGFILE 2>&1 &
+    check "Run $PROJECT"
+}
+
+pm2_run() {
+    mkdir -p logs
+    NOW=`date +'%Y_%m_%d_%H_%M_%S'`
+    LOGFILE="./logs/pm2_conflux-infura_$NOW.log"
+    pm2 start --name $PROJECT --log $LOGFILE --time bin/$PROJECT
+    check "Run $PROJECT"
+}
+
 # Start up a new background process
-mkdir -p logs
-now=`date +'%Y_%m_%d_%H_%M_%S'`
-nohup bin/$PROJECT > ./logs/conflux-infura_$now.log 2>&1 &
+if [ "$USE_PM2" = true ]; then
+    pm2_run
+else
+    nohup_run
+fi
 
-check "Run $PROJECT"
-
+# Quit
 quit
-
-
-
