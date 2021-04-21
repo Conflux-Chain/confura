@@ -52,5 +52,16 @@
             "atMobiles": [],
             "isAtAll": false
         }
+    },
+    "prune": {
+        "db": {
+            "interval": 30000,
+            "maxEpochs": 10,
+            "threshold": {
+                "maxBlocks": 20000000,
+                "maxTxs": 20000000,
+                "maxLogs": 20000000
+            }
+        }
     }
 }

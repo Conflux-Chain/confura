@@ -13,6 +13,13 @@ type Store interface {
 	IsRecordNotFound(err error) bool
 
 	GetBlockEpochRange() (uint64, uint64, error)
+	GetTransactionEpochRange() (uint64, uint64, error)
+	GetLogEpochRange() (uint64, uint64, error)
+	GetGlobalEpochRange() (uint64, uint64, error)
+
+	GetNumBlocks() uint64
+	GetNumTransactions() uint64
+	GetNumLogs() uint64
 
 	GetLogs(filter LogFilter) ([]types.Log, error)
 
@@ -25,8 +32,21 @@ type Store interface {
 	GetBlockByHash(blockHash types.Hash) (*types.Block, error)
 	GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error)
 
+	// Push appends epoch data to the store
 	Push(data *EpochData) error
 	Pushn(dataSlice []*EpochData) error
+	// Pop removes epoch data from the store like popping a stack, which is deleting
+	// data from the most recently appended epoch to some old epoch
 	Pop() error
 	Popn(epochUntil uint64) error
+
+	// DequeueBlocks removes epoch blocks from the store like dequeuing a queue,
+	// which is deleting data from the oldest epoch to some new epoch
+	DequeueBlocks(epochUntil uint64) error
+	// DequeueTransactions removes epoch transactions from the store like dequeuing a queue,
+	// which is deleting data from the oldest epoch to some new epoch
+	DequeueTransactions(epochUntil uint64) error
+	// DequeueLogs removes epoch logs from the store like dequeuing a queue,
+	// which is deleting data from the oldest epoch to some new epoch
+	DequeueLogs(epochUntil uint64) error
 }

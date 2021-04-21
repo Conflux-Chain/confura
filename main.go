@@ -34,6 +34,11 @@ func main() {
 	logrus.Info("Starting to pub/sub conflux chain...")
 	go sync.MustSubEpoch(cfx, syncer)
 
+	// Start database pruner
+	logrus.Info("Starting db pruner...")
+	pruner := sync.NewDBPruner(db)
+	go pruner.Prune()
+
 	// Start RPC server
 	logrus.Info("Starting to run rpc server...")
 	go rpc.Serve(viper.GetString("endpoint"), cfx, db)

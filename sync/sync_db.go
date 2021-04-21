@@ -75,7 +75,7 @@ func (syncer *DatabaseSyncer) Sync() {
 
 // Load last sync epoch from databse to continue synchronization
 func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
-	_, maxEpoch, err := syncer.db.GetBlockEpochRange()
+	_, maxEpoch, err := syncer.db.GetGlobalEpochRange()
 	if err == nil {
 		syncer.epochFrom = maxEpoch + 1
 	} else if !syncer.db.IsRecordNotFound(err) {

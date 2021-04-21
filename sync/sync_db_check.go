@@ -16,7 +16,7 @@ type epochRevertedPruner func(epochRange citypes.EpochRange) error
 // Ensure last confirmed epoch data valid such as not reverted etc.,
 func (syncer *DatabaseSyncer) ensureLastConfirmedEpochOk() error {
 	// Get the latest confirmed sync epoch number from db
-	minEpoch, maxEpoch, err := syncer.db.GetBlockEpochRange()
+	minEpoch, maxEpoch, err := syncer.db.GetGlobalEpochRange()
 
 	// If there is no epoch data in db yet, nothing needs to be done
 	if syncer.db.IsRecordNotFound(err) {
