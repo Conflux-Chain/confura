@@ -1,6 +1,9 @@
 package config
 
 import (
+	"strings"
+
+	"github.com/conflux-chain/conflux-infura/alert"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -14,6 +17,12 @@ func init() {
 }
 
 func mustInitViper() {
+	// Read system enviroment variables prefixed with "INFURA_"
+	// eg., INFURA__LOG_LEVEL will override "log.level" config item from config file
+	viper.AutomaticEnv()
+	viper.SetEnvPrefix("infura")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
 	viper.SetConfigName("config")
 	viper.SetConfigType("json")
 	viper.AddConfigPath(".")
@@ -31,6 +40,10 @@ func initLogger() {
 		logrus.WithError(err).Fatalf("invalid log level configured: %v", lvl)
 	}
 	logrus.SetLevel(level)
+
+	// Add alert hook for logrus fatal/warn/error level
+	hookLevels := []logrus.Level{logrus.FatalLevel, logrus.WarnLevel, logrus.ErrorLevel}
+	logrus.AddHook(alert.NewLogrusAlertHook(hookLevels))
 }
 
 func initMetrics() {

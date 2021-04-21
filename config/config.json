@@ -44,5 +44,13 @@
             "maxOpenConns": 10,
             "maxIdleConns": 10
         }
+    },
+    "alert": {
+        "dingtalk": {
+            "webhook": "can also be defined with INFURA_ALERT_DINGTALK_WEBHOOK enviroment variable",
+            "secret":  "can also be defined with INFURA_ALERT_DINGTALK_SECRET enviroment variable",
+            "atMobiles": [],
+            "isAtAll": false
+        }
     }
 }
