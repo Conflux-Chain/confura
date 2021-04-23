@@ -88,6 +88,7 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 	updater := metrics.NewTimerUpdaterByName("infura/sync/once")
 	defer updater.Update()
 
+	// Fetch latest confirmed epoch info from blockchain
 	epoch, err := syncer.cfx.GetEpochNumber(types.EpochLatestConfirmed)
 	if err != nil {
 		return false, errors.WithMessage(err, "Failed to query the latest confirmed epoch number")
@@ -205,6 +206,8 @@ func (syncer *DatabaseSyncer) handleNewEpoch(newEpoch uint64) {
 	for {
 		err := syncer.db.Popn(newEpoch)
 		if err == nil {
+			// update syncer start epoch
+			syncer.epochFrom = newEpoch
 			break
 		}
 
