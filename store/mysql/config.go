@@ -5,16 +5,12 @@ import (
 	"time"
 
 	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/go-sql-driver/mysql"
-	"github.com/jinzhu/gorm"
+	"gorm.io/driver/mysql"
+
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"gorm.io/gorm"
 )
-
-func init() {
-	// Just to load the mysql driver
-	mysql.NewConfig()
-}
 
 // Config represents the mysql configurations to open a database instance.
 type Config struct {
@@ -47,14 +43,18 @@ func (config *Config) MustOpenOrCreate() store.Store {
 	db := config.mustNewDB(config.Database)
 
 	if newCreated {
-		if err := db.CreateTable(&transaction{}, &block{}, &log{}).Error; err != nil {
+		if err := db.Migrator().CreateTable(&transaction{}, &block{}, &log{}); err != nil {
 			logrus.WithError(err).Fatal("Failed to create tables")
 		}
 	}
 
-	db.DB().SetConnMaxLifetime(config.ConnMaxLifetime)
-	db.DB().SetMaxOpenConns(config.MaxOpenConns)
-	db.DB().SetMaxIdleConns(config.MaxIdleConns)
+	if sqlDb, err := db.DB(); err != nil {
+		logrus.WithError(err).Fatal("Failed to init mysql db")
+	} else {
+		sqlDb.SetConnMaxLifetime(config.ConnMaxLifetime)
+		sqlDb.SetMaxOpenConns(config.MaxOpenConns)
+		sqlDb.SetMaxIdleConns(config.MaxIdleConns)
+	}
 
 	logrus.Info("MySQL database initialized")
 
@@ -63,7 +63,7 @@ func (config *Config) MustOpenOrCreate() store.Store {
 
 func (config *Config) mustNewDB(database string) *gorm.DB {
 	dsn := fmt.Sprintf("%v:%v@/%v", config.Username, config.Password, database)
-	db, err := gorm.Open("mysql", dsn)
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 
 	if logrus.GetLevel() == logrus.DebugLevel {
 		db = db.Debug()
@@ -78,7 +78,11 @@ func (config *Config) mustNewDB(database string) *gorm.DB {
 
 func (config *Config) mustCreateDatabaseIfAbsent() bool {
 	db := config.mustNewDB("")
-	defer db.Close()
+	if mysqlDb, err := db.DB(); err != nil {
+		return false
+	} else {
+		defer mysqlDb.Close()
+	}
 
 	rows, err := db.Raw(fmt.Sprintf("SHOW DATABASES LIKE '%v'", config.Database)).Rows()
 	if err != nil {

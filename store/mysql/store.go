@@ -12,9 +12,9 @@ import (
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
-	"github.com/jinzhu/gorm"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 // Epoch data type
@@ -84,7 +84,7 @@ func mustNewStore(db *gorm.DB) *mysqlStore {
 	for _, t := range OpEpochDataTypes {
 		// Load epoch range
 		minEpoch, maxEpoch, err := mysqlStore.loadEpochRange(t)
-		if err != nil && !gorm.IsRecordNotFoundError(err) {
+		if err != nil && !mysqlStore.IsRecordNotFound(err) {
 			logrus.WithError(err).Fatal("Failed to load epoch range")
 		} else if err == nil { // update global epoch range
 			mysqlStore.minEpoch = util.MinUint64(mysqlStore.minEpoch, minEpoch)
@@ -140,7 +140,7 @@ func (ms *mysqlStore) dumpEpochTotals() string {
 }
 
 func (ms *mysqlStore) IsRecordNotFound(err error) bool {
-	return gorm.IsRecordNotFoundError(err)
+	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
 func (ms *mysqlStore) loadEpochRange(t EpochDataType) (uint64, uint64, error) {
@@ -424,10 +424,14 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (EpochD
 
 	for i, block := range data.Blocks {
 		if err := dbTx.Create(newBlock(block, i == pivotIndex)).Error; err != nil {
-			return opHistory, errors.WithMessage(err, "Failed to write block")
+			return opHistory, errors.WithMessagef(err, "Failed to write block #%v", block.Hash)
 		}
 
 		opHistory[EpochBlock]++
+
+		// Containers to collect block trxs & trx logs for batch inserting
+		trxs := make([]*transaction, 0)
+		trxlogs := make([]*log, 0)
 
 		for _, tx := range block.Transactions {
 			receipt := data.Receipts[tx.Hash]
@@ -437,19 +441,32 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (EpochD
 				continue
 			}
 
-			if err := dbTx.Create(newTx(&tx, receipt)).Error; err != nil {
-				return opHistory, errors.WithMessage(err, "Failed to write tx and receipt")
-			}
-
-			opHistory[EpochTransaction]++
-
+			trxs = append(trxs, newTx(&tx, receipt))
 			for _, log := range receipt.Logs {
-				if err := dbTx.Create(newLog(&log)).Error; err != nil {
-					return opHistory, errors.WithMessage(err, "Failed to write event log")
-				}
-
-				opHistory[EpochLog]++
+				trxlogs = append(trxlogs, newLog(&log))
 			}
+		}
+
+		// Batch insert block transactions
+		if len(trxs) == 0 {
+			continue
+		}
+
+		opHistory[EpochTransaction] += int64(len(trxs))
+
+		if err := dbTx.Create(trxs).Error; err != nil {
+			return opHistory, errors.WithMessagef(err, "Failed to batch write txs and receipts for block #%v", block.Hash)
+		}
+
+		// Batch insert block transaction event logs
+		if len(trxlogs) == 0 {
+			continue
+		}
+
+		opHistory[EpochLog] += int64(len(trxlogs))
+
+		if err := dbTx.Create(trxlogs).Error; err != nil {
+			return opHistory, errors.WithMessagef(err, "Failed to batch write event logs for block #%v", block.Hash)
 		}
 	}
 
@@ -591,5 +608,9 @@ func (ms *mysqlStore) dequeueEpochRangeData(rt EpochDataType, epochUntil uint64)
 }
 
 func (ms *mysqlStore) Close() error {
-	return ms.db.Close()
+	if mysqlDb, err := ms.db.DB(); err != nil {
+		return err
+	} else {
+		return mysqlDb.Close()
+	}
 }

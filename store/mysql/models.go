@@ -8,7 +8,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 	"github.com/sirupsen/logrus"
 )
 

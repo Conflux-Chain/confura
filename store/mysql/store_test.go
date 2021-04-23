@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jinzhu/gorm"
 	mocket "github.com/selvatico/go-mocket"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -14,13 +15,27 @@ import (
 func setupMockStub() *gorm.DB {
 	mocket.Catcher.Register()
 	mocket.Catcher.Logging = true
-	db, err := gorm.Open(mocket.DriverName, "dbmock")
+	mocket.Catcher.PanicOnEmptyResponse = true
 
+	setVersion()
+
+	db, err := gorm.Open(mysql.New(mysql.Config{DriverName: mocket.DriverName, DSN: "mocket"}))
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to setup gorm db stub")
 	}
 
 	return db
+}
+
+func setVersion() {
+	commonReply := []map[string]interface{}{{"VERSION()": "5.7.32-log"}}
+	mocket.Catcher.Attach([]*mocket.FakeResponse{
+		{
+			Pattern:  "SELECT VERSION()",
+			Response: commonReply,
+			Once:     false,
+		},
+	})
 }
 
 func setEpochRange(t EpochDataType, minEpoch, maxEpoch uint64) {
