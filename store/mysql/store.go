@@ -14,6 +14,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )
 
@@ -41,14 +42,14 @@ const (
 type EpochDataOpAffects map[EpochDataType]int64
 
 func (affects EpochDataOpAffects) String() string {
-	sb := &strings.Builder{}
-	sb.Grow(len(affects) * 30)
+	strBuilder := &strings.Builder{}
+	strBuilder.Grow(len(affects) * 30)
 
 	for t, v := range affects {
-		sb.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], v))
+		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], v))
 	}
 
-	return sb.String()
+	return strBuilder.String()
 }
 
 var (
@@ -63,6 +64,11 @@ var (
 	}
 )
 
+const (
+	// Logs table partition range (by ID) size
+	logsTablePartitionRangeSize = uint64(20000000)
+)
+
 type mysqlStore struct {
 	db       *gorm.DB
 	minEpoch uint64 // minimum epoch number in database (historical data may be pruned)
@@ -72,13 +78,22 @@ type mysqlStore struct {
 	epochRanges map[EpochDataType]*atomic.Value
 	// Total rows for block/transaction/log table in db
 	epochTotals map[EpochDataType]*uint64
+
+	// Epoch range configurations for logs table partitions. It will be loaded from
+	// database when store created.
+	// Also be reminded logs table partitions must be created manually, and partitioned
+	// by ID field with range size of 20,000,000 records.
+	logsTablePartitionEpochRanges map[string]*atomic.Value
 }
 
 func mustNewStore(db *gorm.DB) *mysqlStore {
 	mysqlStore := mysqlStore{
 		db: db, minEpoch: math.MaxUint64, maxEpoch: math.MaxUint64,
+
 		epochRanges: make(map[EpochDataType]*atomic.Value),
 		epochTotals: make(map[EpochDataType]*uint64),
+
+		logsTablePartitionEpochRanges: make(map[string]*atomic.Value),
 	}
 
 	for _, t := range OpEpochDataTypes {
@@ -108,39 +123,98 @@ func mustNewStore(db *gorm.DB) *mysqlStore {
 		mysqlStore.epochTotals[t] = &total
 	}
 
+	// Load logs table partition information
+	if err := mysqlStore.loadLogsTablePartitionInfo(); err != nil {
+		logrus.WithError(err).Fatal("Failed to load logs table partition info")
+	}
+
 	logrus.WithFields(logrus.Fields{
-		"globalEpochRange": citypes.EpochRange{mysqlStore.minEpoch, mysqlStore.maxEpoch},
-		"epochRanges":      mysqlStore.dumpEpochRanges(),
-		"epochTotals":      mysqlStore.dumpEpochTotals(),
+		"globalEpochRange":       citypes.EpochRange{mysqlStore.minEpoch, mysqlStore.maxEpoch},
+		"epochRanges":            mysqlStore.dumpEpochRanges(),
+		"epochTotals":            mysqlStore.dumpEpochTotals(),
+		"logsTablePartitionInfo": mysqlStore.dumpLogsTablePartitionInfo(),
 	}).Debug("New mysql store loaded")
 
 	return &mysqlStore
 }
 
-func (ms *mysqlStore) dumpEpochRanges() string {
-	sb := &strings.Builder{}
-	sb.Grow(len(ms.epochRanges) * 30)
+func (ms *mysqlStore) dumpLogsTablePartitionInfo() string {
+	strBuilder := &strings.Builder{}
+	strBuilder.Grow(len(ms.logsTablePartitionEpochRanges) * 30)
 
-	for t, er := range ms.epochRanges {
-		sb.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], er.Load().(citypes.EpochRange)))
+	for p, er := range ms.logsTablePartitionEpochRanges {
+		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", p, er.Load().(citypes.EpochRange)))
 	}
 
-	return sb.String()
+	return strBuilder.String()
+}
+
+func (ms *mysqlStore) dumpEpochRanges() string {
+	strBuilder := &strings.Builder{}
+	strBuilder.Grow(len(ms.epochRanges) * 30)
+
+	for t, er := range ms.epochRanges {
+		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], er.Load().(citypes.EpochRange)))
+	}
+
+	return strBuilder.String()
 }
 
 func (ms *mysqlStore) dumpEpochTotals() string {
-	sb := &strings.Builder{}
-	sb.Grow(len(ms.epochRanges) * 30)
+	strBuilder := &strings.Builder{}
+	strBuilder.Grow(len(ms.epochRanges) * 30)
 
 	for t, v := range ms.epochTotals {
-		sb.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], *v))
+		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], *v))
 	}
 
-	return sb.String()
+	return strBuilder.String()
 }
 
 func (ms *mysqlStore) IsRecordNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+// Load logs table partitioning information from database.
+// Specifically, it will retrieve all logs table partitions, and then the
+// epoch nunber ranges for each partition from the database.
+// The epoch number ranges will be used to find the right partition(s) to
+// boost the db query performance when conditioned with epoch
+func (ms *mysqlStore) loadLogsTablePartitionInfo() error {
+	sqlStatement := `SELECT PARTITION_NAME AS partiname FROM information_schema.partitions WHERE TABLE_SCHEMA='%v'
+AND TABLE_NAME = 'logs' AND PARTITION_NAME IS NOT NULL ORDER BY PARTITION_ORDINAL_POSITION ASC`
+	sqlStatement = fmt.Sprintf(sqlStatement, viper.GetString("store.mysql.database"))
+
+	// Load all logs table partition names
+	logsTblPartiNames := []string{}
+	if err := ms.db.Raw(sqlStatement).Scan(&logsTblPartiNames).Error; err != nil {
+		return err
+	}
+
+	// Load all logs table partition epoch number range
+	for _, partiName := range logsTblPartiNames {
+		sqlStatement := fmt.Sprintf("SELECT MIN(epoch) as minEpoch, MAX(epoch) as maxEpoch FROM LOGS PARTITION (%v)", partiName)
+
+		row := ms.db.Raw(sqlStatement).Row()
+		if err := row.Err(); err != nil {
+			return err
+		}
+
+		var minEpoch, maxEpoch sql.NullInt64
+		if err := row.Scan(&minEpoch, &maxEpoch); err != nil {
+			return err
+		}
+
+		// Table partition not used yet, skip all next.
+		if !minEpoch.Valid || !maxEpoch.Valid {
+			break
+		}
+
+		ms.logsTablePartitionEpochRanges[partiName] = &atomic.Value{}
+		ms.logsTablePartitionEpochRanges[partiName].Store(citypes.EpochRange{uint64(minEpoch.Int64), uint64(maxEpoch.Int64)})
+	}
+
+	return nil
 }
 
 func (ms *mysqlStore) loadEpochRange(t EpochDataType) (uint64, uint64, error) {
@@ -198,9 +272,9 @@ func (ms *mysqlStore) GetGlobalEpochRange() (uint64, uint64, error) {
 func (ms *mysqlStore) getEpochRange(rt EpochDataType) (uint64, uint64, error) {
 	var minEpoch, maxEpoch uint64
 
-	if av, ok := ms.epochRanges[rt]; ok {
+	if atmV, ok := ms.epochRanges[rt]; ok {
 		// Get local epoch range for block/tx/log
-		epochRange := av.Load().(citypes.EpochRange)
+		epochRange := atmV.Load().(citypes.EpochRange)
 		minEpoch, maxEpoch = epochRange.EpochFrom, epochRange.EpochTo
 	} else {
 		// Default return as global epoch range
@@ -231,6 +305,12 @@ func (ms *mysqlStore) GetLogs(filter store.LogFilter) (logs []types.Log, err err
 	epochRange := ms.epochRanges[EpochLog].Load().(citypes.EpochRange)
 	minEpoch, maxEpoch := epochRange.EpochFrom, epochRange.EpochTo
 
+	logrus.WithFields(logrus.Fields{
+		"epochRange":        epochRange,
+		"logFilterMinEpoch": filter.EpochFrom,
+		"logFilterMaxEpoch": filter.EpochTo,
+	}).Debug("RPC getLogs requested from client")
+
 	if filter.EpochFrom < minEpoch || filter.EpochTo > maxEpoch {
 		return nil, gorm.ErrRecordNotFound
 	}
@@ -238,7 +318,33 @@ func (ms *mysqlStore) GetLogs(filter store.LogFilter) (logs []types.Log, err err
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
 	defer updater.Update()
 
-	return loadLogs(ms.db, filter)
+	// Calcuate logs table partitions to get logs within the filter epoch range
+	logsTblPartitions := ms.getLogsTablePartitionsForEpochRange(citypes.EpochRange{filter.EpochFrom, filter.EpochTo})
+
+	return loadLogs(ms.db, filter, logsTblPartitions)
+}
+
+// Find the right logs table partition(s) for the specified epoch range.
+// It will check all logs table paritions and return all the partitions of which
+// epoch range are overlapped with the specified one.
+func (ms *mysqlStore) getLogsTablePartitionsForEpochRange(epochRange citypes.EpochRange) []string {
+	logsTblPartitions := make([]string, 0, 1)
+
+	for partikey, atmV := range ms.logsTablePartitionEpochRanges {
+		partiEpochRange := atmV.Load().(citypes.EpochRange)
+
+		// Check if specified epoch range overlaps table partition epoch range
+		if partiEpochRange.EpochFrom <= epochRange.EpochTo && partiEpochRange.EpochTo >= epochRange.EpochFrom {
+			logsTblPartitions = append(logsTblPartitions, partikey)
+		}
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"epochRange":        epochRange,
+		"logsTblPartitions": logsTblPartitions,
+	}).Debug("Logs table partitions for epoch range calculated")
+
+	return logsTblPartitions
 }
 
 func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, error) {
@@ -468,6 +574,36 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (EpochD
 		if err := dbTx.Create(trxlogs).Error; err != nil {
 			return opHistory, errors.WithMessagef(err, "Failed to batch write event logs for block #%v", block.Hash)
 		}
+
+		// Collect table partitions to be updated with new epoch range
+		updatedPartitions := make(map[string]bool, 2)
+
+		for i := len(trxlogs) - 1; i >= 0; i-- {
+			partiKey := fmt.Sprintf("logs%v", trxlogs[i].ID/logsTablePartitionRangeSize)
+			if updatedPartitions[partiKey] {
+				break
+			}
+
+			if atmV, ok := ms.logsTablePartitionEpochRanges[partiKey]; ok {
+				epochRange := atmV.Load().(citypes.EpochRange)
+				epochRange.EpochTo = util.MaxUint64(data.Number, epochRange.EpochTo)
+				atmV.Store(epochRange)
+
+				logrus.WithField("epochRange", epochRange).Debugf("Update epoch range for logs table partition %v", partiKey)
+			} else {
+				atmV = &atomic.Value{}
+				epochRange := citypes.EpochRange{data.Number, data.Number}
+
+				atmV.Store(epochRange)
+				ms.logsTablePartitionEpochRanges[partiKey] = atmV
+
+				logrus.WithField("epochRange", epochRange).Debugf("Add epoch range for logs table partition %v", partiKey)
+			}
+
+			updatedPartitions[partiKey] = true
+		}
+
+		logrus.WithField("logsTblPartitionEpochRanges", ms.dumpLogsTablePartitionInfo()).Debug("Logs table partition epoch ranges info updated")
 	}
 
 	return opHistory, nil
@@ -552,6 +688,11 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option EpochRemoveOption
 
 		// Remove logs
 		if option&EpochRemoveLog != 0 {
+			partitions := ms.getLogsTablePartitionsForEpochRange(citypes.EpochRange{epochFrom, epochTo})
+			if len(partitions) > 0 {
+				dbTx = dbTx.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
+			}
+
 			db := dbTx.Delete(log{}, cond)
 			if db.Error != nil {
 				return opHistory, db.Error

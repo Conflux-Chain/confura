@@ -3,13 +3,14 @@ package mysql
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/ethereum/go-ethereum/rlp"
-	"gorm.io/gorm"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 type transaction struct {
@@ -197,7 +198,7 @@ func (log *log) toRPCLog() types.Log {
 	}
 }
 
-func loadLogs(db *gorm.DB, filter store.LogFilter) ([]types.Log, error) {
+func loadLogs(db *gorm.DB, filter store.LogFilter, partitions []string) ([]types.Log, error) {
 	db = db.Where("epoch BETWEEN ? AND ?", filter.EpochFrom, filter.EpochTo)
 	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
 	db = applyVariadicFilter(db, "block_hash", filter.Blocks)
@@ -218,6 +219,10 @@ func loadLogs(db *gorm.DB, filter store.LogFilter) ([]types.Log, error) {
 
 	if numTopics > 3 {
 		db = applyVariadicFilter(db, "topic3", filter.Topics[3])
+	}
+
+	if len(partitions) > 0 {
+		db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
 	}
 
 	var logs []log
