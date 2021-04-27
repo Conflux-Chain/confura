@@ -14,5 +14,5 @@ func newTraceAPI(cfx sdk.ClientOperator) *traceAPI {
 }
 
 func (api *traceAPI) Block(blockHash types.Hash) (*types.LocalizedBlockTrace, error) {
-	return api.cfx.GetBlockTrace(blockHash)
+	return api.cfx.GetBlockTraces(blockHash)
 }
