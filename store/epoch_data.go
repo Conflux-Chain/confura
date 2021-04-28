@@ -3,6 +3,7 @@ package store
 import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -17,6 +18,9 @@ type EpochData struct {
 // QueryEpochData queries blockchain data for the specified epoch number.
 // TODO better to use batch API to return all if performance is low in case of high TPS.
 func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, error) {
+	updater := metrics.NewTimerUpdaterByName("infura/store/epoch/query")
+	defer updater.Update()
+
 	epoch := types.NewEpochNumberUint64(epochNumber)
 
 	blockHashes, err := cfx.GetBlocksByEpoch(epoch)
@@ -33,6 +37,19 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 		}
 
 		blocks = append(blocks, block)
+	}
+
+	epochReceipts, err := cfx.GetEpochReceipts(*epoch)
+	if err != nil {
+		return EpochData{}, errors.WithMessagef(err, "Failed to get epoch receipts for epoch %v", epoch)
+	}
+
+	// Retrieve epoch tx receipts and build map from tx hash to tx receipt
+	txReceiptsMap := make(map[types.Hash]*types.TransactionReceipt)
+	for _, blockReceipts := range epochReceipts {
+		for i, txReceipt := range blockReceipts {
+			txReceiptsMap[txReceipt.TransactionHash] = &blockReceipts[i]
+		}
 	}
 
 	receipts := make(map[types.Hash]*types.TransactionReceipt)
@@ -55,8 +72,8 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 				continue
 			}
 
-			receipt, err := cfx.GetTransactionReceipt(tx.Hash)
-			if err != nil {
+			receipt, ok := txReceiptsMap[tx.Hash]
+			if !ok {
 				return EpochData{}, errors.WithMessagef(err, "Failed to get receipt by tx hash %v", tx.Hash)
 			}
 
