@@ -2,6 +2,7 @@ package alert
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/royeo/dingrobot"
@@ -28,10 +29,19 @@ func (hook *LogrusAlertHook) Levels() []logrus.Level {
 }
 
 func (hook *LogrusAlertHook) Fire(logEntry *logrus.Entry) error {
+	msgTpl := "logrus alert notification\nlevel:\t%v;\nbrief:\t%v;\ndetail:\t%v;\ntime:\t%v\n"
+
+	formatter := &logrus.JSONFormatter{}
+	detailBytes, _ := formatter.Format(logEntry)
+
+	// Trim last newline char to uniform message format
+	detail := strings.TrimSuffix(string(detailBytes), "\n")
+
 	levelStr := logEntry.Level.String()
 	nowStr := time.Now().Format("2006-01-02T15:04:05-0700")
-	msg := fmt.Sprintf("logrus alert notification\nlevel: %v;\nmessage: %v;\ntime: %v\n", levelStr, logEntry.Message, nowStr)
+	brief := logEntry.Message
 
+	msg := fmt.Sprintf(msgTpl, levelStr, brief, detail, nowStr)
 	atMobiles := viper.GetStringSlice("alert.dingtalk.atMobiles")
 	isAtAll := viper.GetBool("alert.dingtalk.isAtAll")
 
