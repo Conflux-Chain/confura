@@ -193,7 +193,7 @@ AND TABLE_NAME = 'logs' AND PARTITION_NAME IS NOT NULL ORDER BY PARTITION_ORDINA
 
 	// Load all logs table partition epoch number range
 	for _, partiName := range logsTblPartiNames {
-		sqlStatement := fmt.Sprintf("SELECT MIN(epoch) as minEpoch, MAX(epoch) as maxEpoch FROM LOGS PARTITION (%v)", partiName)
+		sqlStatement := fmt.Sprintf("SELECT MIN(epoch) as minEpoch, MAX(epoch) as maxEpoch FROM logs PARTITION (%v)", partiName)
 
 		row := ms.db.Raw(sqlStatement).Row()
 		if err := row.Err(); err != nil {
