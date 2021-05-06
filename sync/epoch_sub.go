@@ -116,6 +116,8 @@ func MustSubEpoch(cfx *sdk.Client, subscribers ...EpochSubscriber) {
 			time.Sleep(resubWaitDuration)
 			err = subMan.reSub()
 		}
+
+		logrus.Warn("Epoch resub ok!")
 	}
 }
 
