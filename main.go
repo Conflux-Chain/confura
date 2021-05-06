@@ -16,32 +16,40 @@ import (
 )
 
 func main() {
-	// Prepare cfx instance with ws portocol for pub/sub purpose
-	cfx := util.MustNewCfxClient(viper.GetString("cfx.ws"))
-	defer cfx.Close()
-
 	// Initialize database for sync
 	config := mysql.NewConfigFromViper()
 	db := config.MustOpenOrCreate()
 	defer db.Close()
 
+	// Prepare cfx instance with http protocol for epoch sync purpose
+	syncCfx := util.MustNewCfxClient(viper.GetString("cfx.http"))
+	defer syncCfx.Close()
+
 	// Start to sync data
 	logrus.Info("Starting to sync epoch data...")
-	syncer := sync.NewDatabaseSyncer(cfx, db)
+	syncer := sync.NewDatabaseSyncer(syncCfx, db)
 	go syncer.Sync()
+
+	// Prepare cfx instance with ws portocol for pub/sub purpose
+	subCfx := util.MustNewCfxClient(viper.GetString("cfx.ws"))
+	defer subCfx.Close()
 
 	// Monitor pivot chain switch via pub/sub
 	logrus.Info("Starting to pub/sub conflux chain...")
-	go sync.MustSubEpoch(cfx, syncer)
+	go sync.MustSubEpoch(subCfx, syncer)
 
 	// Start database pruner
 	logrus.Info("Starting db pruner...")
 	pruner := sync.NewDBPruner(db)
 	go pruner.Prune()
 
+	// Prepare cfx instance with http protocol for rpc proxy purpose
+	rpcProxyCfx := util.MustNewCfxClient(viper.GetString("cfx.http"))
+	defer rpcProxyCfx.Close()
+
 	// Start RPC server
 	logrus.Info("Starting to run rpc server...")
-	go rpc.Serve(viper.GetString("endpoint"), cfx, db)
+	go rpc.Serve(viper.GetString("endpoint"), rpcProxyCfx, db)
 
 	select {}
 }
