@@ -112,7 +112,7 @@ func mustNewStore(db *gorm.DB) *mysqlStore {
 		}
 
 		mysqlStore.epochRanges[t] = &atomic.Value{}
-		mysqlStore.epochRanges[t].Store(citypes.EpochRange{minEpoch, maxEpoch})
+		mysqlStore.epochRanges[t].Store(citypes.EpochRange{EpochFrom: minEpoch, EpochTo: maxEpoch})
 
 		// Load epoch total
 		total, err := mysqlStore.loadEpochTotal(t)
@@ -129,7 +129,7 @@ func mustNewStore(db *gorm.DB) *mysqlStore {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"globalEpochRange":       citypes.EpochRange{mysqlStore.minEpoch, mysqlStore.maxEpoch},
+		"globalEpochRange":       citypes.EpochRange{EpochFrom: mysqlStore.minEpoch, EpochTo: mysqlStore.maxEpoch},
 		"epochRanges":            mysqlStore.dumpEpochRanges(),
 		"epochTotals":            mysqlStore.dumpEpochTotals(),
 		"logsTablePartitionInfo": mysqlStore.dumpLogsTablePartitionInfo(),
@@ -211,7 +211,9 @@ AND TABLE_NAME = 'logs' AND PARTITION_NAME IS NOT NULL ORDER BY PARTITION_ORDINA
 		}
 
 		ms.logsTablePartitionEpochRanges[partiName] = &atomic.Value{}
-		ms.logsTablePartitionEpochRanges[partiName].Store(citypes.EpochRange{uint64(minEpoch.Int64), uint64(maxEpoch.Int64)})
+		ms.logsTablePartitionEpochRanges[partiName].Store(citypes.EpochRange{
+			EpochFrom: uint64(minEpoch.Int64), EpochTo: uint64(maxEpoch.Int64),
+		})
 	}
 
 	return nil
@@ -319,7 +321,9 @@ func (ms *mysqlStore) GetLogs(filter store.LogFilter) (logs []types.Log, err err
 	defer updater.Update()
 
 	// Calcuate logs table partitions to get logs within the filter epoch range
-	logsTblPartitions := ms.getLogsTablePartitionsForEpochRange(citypes.EpochRange{filter.EpochFrom, filter.EpochTo})
+	logsTblPartitions := ms.getLogsTablePartitionsForEpochRange(citypes.EpochRange{
+		EpochFrom: filter.EpochFrom, EpochTo: filter.EpochTo,
+	})
 
 	return loadLogs(ms.db, filter, logsTblPartitions)
 }
@@ -592,7 +596,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (EpochD
 				logrus.WithField("epochRange", epochRange).Debugf("Update epoch range for logs table partition %v", partiKey)
 			} else {
 				atmV = &atomic.Value{}
-				epochRange := citypes.EpochRange{data.Number, data.Number}
+				epochRange := citypes.EpochRange{EpochFrom: data.Number, EpochTo: data.Number}
 
 				atmV.Store(epochRange)
 				ms.logsTablePartitionEpochRanges[partiKey] = atmV
@@ -688,7 +692,7 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option EpochRemoveOption
 
 		// Remove logs
 		if option&EpochRemoveLog != 0 {
-			partitions := ms.getLogsTablePartitionsForEpochRange(citypes.EpochRange{epochFrom, epochTo})
+			partitions := ms.getLogsTablePartitionsForEpochRange(citypes.EpochRange{EpochFrom: epochFrom, EpochTo: epochTo})
 			if len(partitions) > 0 {
 				dbTx = dbTx.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
 			}

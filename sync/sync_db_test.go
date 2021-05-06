@@ -17,27 +17,27 @@ func TestFindFirstRevertedEpochInRange(t *testing.T) {
 		expected      uint64
 	}{
 		{ // first reverted in middle of epoch range
-			epochRange:    citypes.EpochRange{10, 50},
+			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
 			firstReverted: 20,
 			expected:      20,
 		},
 		{ // first reverted in right edge of epoch range
-			epochRange:    citypes.EpochRange{10, 50},
+			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
 			firstReverted: 50,
 			expected:      50,
 		},
 		{ // first reverted in left edge of epoch range
-			epochRange:    citypes.EpochRange{10, 50},
+			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
 			firstReverted: 1,
 			expected:      10,
 		},
 		{ // first reverted out of right side of epoch range
-			epochRange:    citypes.EpochRange{10, 50},
+			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
 			firstReverted: 51,
 			expected:      0,
 		},
 		{ // first reverted out of left side of epoch range
-			epochRange:    citypes.EpochRange{10, 50},
+			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
 			firstReverted: 1,
 			expected:      10,
 		},
@@ -69,27 +69,27 @@ func TestEnsureEpochRangeNotRerverted(t *testing.T) {
 		expectedPrunedEpochFrom uint64
 	}{
 		{ // first reverted in middle of epoch range
-			epochRange:              citypes.EpochRange{100, 501},
+			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
 			firstReverted:           200,
 			expectedPrunedEpochFrom: 200,
 		},
 		{ // first reverted in left edge of epoch range
-			epochRange:              citypes.EpochRange{100, 501},
+			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
 			firstReverted:           100,
 			expectedPrunedEpochFrom: 100,
 		},
 		{ // first reverted in right edge of epoch range
-			epochRange:              citypes.EpochRange{100, 501},
+			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
 			firstReverted:           501,
 			expectedPrunedEpochFrom: 501,
 		},
 		{ // first reverted out right side of epoch range
-			epochRange:              citypes.EpochRange{100, 501},
+			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
 			firstReverted:           600,
 			expectedPrunedEpochFrom: math.MaxUint64, // should never prune at all
 		},
 		{ // first reverted out left side of epoch range
-			epochRange:              citypes.EpochRange{100, 501},
+			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
 			firstReverted:           10,
 			expectedPrunedEpochFrom: 100,
 		},

@@ -45,12 +45,9 @@ func (pruner *DBPruner) Prune() {
 	ticker := time.NewTicker(pruner.pruneConfig.PruneInterval * time.Millisecond)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			if err := pruner.doTicker(); err != nil {
-				logrus.WithError(err).Error("DBPruner ticked error")
-			}
+	for range ticker.C {
+		if err := pruner.doTicker(); err != nil {
+			logrus.WithError(err).Error("DBPruner ticked error")
 		}
 	}
 }

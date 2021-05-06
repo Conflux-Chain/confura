@@ -28,7 +28,7 @@ func (syncer *DatabaseSyncer) ensureLastConfirmedEpochOk() error {
 		return errors.Wrap(err, "failed to read block epoch range from database")
 	}
 
-	epochRange := citypes.EpochRange{minEpoch, maxEpoch}
+	epochRange := citypes.EpochRange{EpochFrom: minEpoch, EpochTo: maxEpoch}
 
 	logger := logrus.WithField("epochRange", epochRange)
 	logger.Debug("Ensure epoch data within range ok")
@@ -50,7 +50,7 @@ func (syncer *DatabaseSyncer) ensureEpochRangeNotRerverted(epochRange citypes.Ep
 	var winSize, winStart, winEnd, matched uint64 = 200, epochRange.EpochTo, epochRange.EpochTo, 0
 	for winStart <= winEnd && winEnd > 0 {
 		// Find the first reverted epoch within epoch range (winStart, winEnd)
-		firstRevertedEpoch, err := searcher(citypes.EpochRange{winStart, winEnd})
+		firstRevertedEpoch, err := searcher(citypes.EpochRange{EpochFrom: winStart, EpochTo: winEnd})
 		if err != nil {
 			logrus.WithField("epochRange", citypes.EpochRange{
 				EpochFrom: winStart, EpochTo: winEnd,
@@ -79,7 +79,7 @@ func (syncer *DatabaseSyncer) ensureEpochRangeNotRerverted(epochRange citypes.Ep
 	if matched != 0 && matched >= epochRange.EpochFrom && matched <= epochRange.EpochTo {
 		logger.WithField("matched", matched).Debug("Found the first reverted epoch within range")
 
-		if err := pruner(citypes.EpochRange{matched, epochRange.EpochTo}); err != nil {
+		if err := pruner(citypes.EpochRange{EpochFrom: matched, EpochTo: epochRange.EpochTo}); err != nil {
 			logger.WithField("epochFrom", matched).Error("Failed to prune reverted epoch within range")
 
 			return errors.Wrap(err, "failed to prune reverted epoch data")
