@@ -156,8 +156,6 @@ func (api *cfxAPI) GetLogs(filter types.LogFilter) ([]types.Log, error) {
 			return logs, nil
 		}
 
-		logrus.WithField("error", err).Warning("Failed to get logs from database")
-
 		// for any error, delegate request to full node, including:
 		// 1. database level error
 		// 2. record not found (log range mismatch)
