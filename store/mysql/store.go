@@ -426,7 +426,7 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		lastEpoch++
 
 		if data.Number != lastEpoch {
-			return errContinousEpochRequired
+			return errors.WithMessagef(errContinousEpochRequired, "expected epoch #%v, but #%v got", lastEpoch, data.Number)
 		}
 	}
 
