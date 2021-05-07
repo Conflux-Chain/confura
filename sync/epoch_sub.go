@@ -48,7 +48,7 @@ func newEpochSubMan(cfx *sdk.Client, subscribers ...EpochSubscriber) *epochSubMa
 
 // Start subscribing
 func (subMan *epochSubMan) doSub() error {
-	sub, err := subMan.cfxSdk.SubscribeEpochs(subMan.subCh)
+	sub, err := subMan.cfxSdk.SubscribeEpochs(subMan.subCh, *types.EpochLatestState)
 	subMan.cfxSub = sub
 
 	return err
