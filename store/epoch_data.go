@@ -39,24 +39,17 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 		blocks = append(blocks, block)
 	}
 
+	// Batch get epoch receipts
 	epochReceipts, err := cfx.GetEpochReceipts(*epoch)
 	if err != nil {
 		return EpochData{}, errors.WithMessagef(err, "Failed to get epoch receipts for epoch %v", epoch)
 	}
 
-	// Retrieve epoch tx receipts and build map from tx hash to tx receipt
-	txReceiptsMap := make(map[types.Hash]*types.TransactionReceipt)
-	for _, blockReceipts := range epochReceipts {
-		for i, txReceipt := range blockReceipts {
-			txReceiptsMap[txReceipt.TransactionHash] = &blockReceipts[i]
-		}
-	}
-
 	receipts := make(map[types.Hash]*types.TransactionReceipt)
 	var logIndex uint64
 
-	for _, block := range blocks {
-		for _, tx := range block.Transactions {
+	for i, block := range blocks {
+		for j, tx := range block.Transactions {
 			// skip unexecuted transaction, e.g.
 			// 1) already executed in previous block
 			// 2) never executed, e.g. nonce mismatch
@@ -72,10 +65,21 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 				continue
 			}
 
-			receipt, ok := txReceiptsMap[tx.Hash]
-			if !ok {
-				return EpochData{}, errors.WithMessagef(err, "Failed to get receipt by tx hash %v", tx.Hash)
+			// Find transaction receipts from above batch retrieved receipts
+			// We assume the order of batched retrieved receipts is the same with
+			// the fetched blocks & transactions. Even so, we still need to do some
+			// bound checking and fault tolerance to be robust.
+			if i >= len(epochReceipts) || j >= len(epochReceipts[i]) {
+				logrus.WithFields(logrus.Fields{
+					"epoch": epochNumber,
+					"block": block.Hash.String(),
+					"tx":    tx.Hash.String(),
+				}).Error("Batch retrieved receipts out of bound")
+
+				continue
 			}
+
+			receipt := &epochReceipts[i][j]
 
 			if receipt == nil {
 				logrus.WithFields(logrus.Fields{
@@ -87,20 +91,37 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 				continue
 			}
 
+			// Check receipt epoch number
 			if uint64(*receipt.EpochNumber) != epochNumber {
 				logrus.WithFields(logrus.Fields{
 					"epoch": epochNumber,
 					"block": block.Hash.String(),
 					"tx":    tx.Hash.String(),
 				}).Errorf("Receipt epoch number mismatch, value = %v", uint64(*receipt.EpochNumber))
+
+				continue
 			}
 
+			// Check receipt block hash
 			if receipt.BlockHash.String() != block.Hash.String() {
 				logrus.WithFields(logrus.Fields{
 					"epoch": epochNumber,
 					"block": block.Hash.String(),
 					"tx":    tx.Hash.String(),
 				}).Errorf("Receipt block hash mismatch, value = %v", receipt.BlockHash.String())
+
+				continue
+			}
+
+			// Check receipt transaction hash
+			if receipt.TransactionHash.String() != tx.Hash.String() {
+				logrus.WithFields(logrus.Fields{
+					"epoch": epochNumber,
+					"block": block.Hash.String(),
+					"tx":    tx.Hash.String(),
+				}).Errorf("Receipt transaction hash mismatch, value = %v", receipt.TransactionHash.String())
+
+				continue
 			}
 
 			// TODO enhance full node RPC to return receipts by block hash
