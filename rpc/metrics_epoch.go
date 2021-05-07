@@ -7,6 +7,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	infuraMetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
@@ -110,8 +111,7 @@ func (metric *inputEpochMetric) getGapMetric(method string) metrics.Histogram {
 		return h
 	}
 
-	name := fmt.Sprintf("rpc/input/epoch/gap/%v", method)
-	h := metrics.GetOrRegisterHistogram(name, nil, metrics.NewExpDecaySample(1028, 0.015))
+	h := infuraMetrics.GetOrRegisterHistogram(nil, "rpc/input/epoch/gap/%v", method)
 	metric.gaps[method] = h
 
 	return h
