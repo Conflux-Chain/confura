@@ -21,7 +21,7 @@ func NewMananger() *Manager {
 	var members []consistent.Member
 
 	for _, url := range viper.GetStringSlice("node.urls") {
-		nodeName := manager.url2NodeName(url)
+		nodeName := url2NodeName(url)
 		if _, ok := manager.nodes[nodeName]; !ok {
 			node := NewNode(nodeName, url)
 			manager.nodes[nodeName] = node
@@ -39,7 +39,7 @@ func NewMananger() *Manager {
 	return &manager
 }
 
-func (m *Manager) url2NodeName(url string) string {
+func url2NodeName(url string) string {
 	nodeName := strings.ToLower(url)
 	nodeName = strings.TrimPrefix(nodeName, "http://")
 	nodeName = strings.TrimPrefix(nodeName, "https://")
@@ -56,7 +56,7 @@ func (m *Manager) Sum64(data []byte) uint64 {
 }
 
 func (m *Manager) Add(url string) {
-	nodeName := m.url2NodeName(url)
+	nodeName := url2NodeName(url)
 	if _, ok := m.nodes[nodeName]; !ok {
 		node := NewNode(nodeName, url)
 		m.nodes[nodeName] = node
@@ -65,7 +65,7 @@ func (m *Manager) Add(url string) {
 }
 
 func (m *Manager) Remove(url string) {
-	nodeName := m.url2NodeName(url)
+	nodeName := url2NodeName(url)
 	if node, ok := m.nodes[nodeName]; ok {
 		node.Close()
 		delete(m.nodes, nodeName)
@@ -74,7 +74,7 @@ func (m *Manager) Remove(url string) {
 }
 
 func (m *Manager) Get(url string) *Node {
-	nodeName := m.url2NodeName(url)
+	nodeName := url2NodeName(url)
 	return m.nodes[nodeName]
 }
 
@@ -106,4 +106,9 @@ func (m *Manager) Distribute(key []byte) *Node {
 	// be distributed with the same full node within 10 minutes,
 	// even re-location occurred in hash ring.
 	return m.hashRing.LocateKey(key).(*Node)
+}
+
+// Route implements the Router interface.
+func (m *Manager) Route(key []byte) string {
+	return m.Distribute(key).GetNodeURL()
 }
