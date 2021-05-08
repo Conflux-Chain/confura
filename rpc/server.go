@@ -4,8 +4,8 @@ import (
 	"net"
 	"net/http"
 
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
+	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/pkg/errors"
@@ -19,11 +19,12 @@ const (
 )
 
 // Serve starts to serve RPC requests.
-func Serve(endpoint string, cfx sdk.ClientOperator, db store.Store) {
+func Serve(endpoint string, router infuraNode.Router, db store.Store) {
+	clientProvider := infuraNode.NewClientProvider(router)
 	handler := rpc.NewServer()
 
-	mustRegisterService(handler, namespaceCfx, newCfxAPI(cfx, db))
-	mustRegisterService(handler, namespaceTrace, newTraceAPI(cfx))
+	mustRegisterService(handler, namespaceCfx, newCfxAPI(clientProvider, db))
+	mustRegisterService(handler, namespaceTrace, newTraceAPI(clientProvider))
 	mustRegisterService(handler, namespaceMetrics, &metricsAPI{})
 
 	listener, err := net.Listen("tcp", endpoint)

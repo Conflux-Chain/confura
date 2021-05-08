@@ -21,15 +21,8 @@ var defaultEpochs = map[string]bool{
 
 // inputEpochMetric is used to add metrics for input epoch parameter.
 type inputEpochMetric struct {
-	cfx   sdk.ClientOperator
 	cache util.ConcurrentMap // method -> epoch -> metric name
 	gaps  util.ConcurrentMap // method -> histogram
-}
-
-func newInputEpochMetric(cfx sdk.ClientOperator) *inputEpochMetric {
-	return &inputEpochMetric{
-		cfx: cfx,
-	}
 }
 
 func (metric *inputEpochMetric) getMetricName(method string, epoch string) string {
@@ -47,7 +40,7 @@ func (metric *inputEpochMetric) getMetricName(method string, epoch string) strin
 	return val.(string)
 }
 
-func (metric *inputEpochMetric) update(epoch *types.Epoch, method string) {
+func (metric *inputEpochMetric) update(epoch *types.Epoch, method string, cfx sdk.ClientOperator) {
 	if epoch == nil {
 		name := metric.getMetricName(method, "default")
 		metrics.GetOrRegisterGauge(name, nil).Inc(1)
@@ -55,7 +48,7 @@ func (metric *inputEpochMetric) update(epoch *types.Epoch, method string) {
 		name := metric.getMetricName(method, "number")
 		metrics.GetOrRegisterGauge(name, nil).Inc(1)
 
-		if latestMined, err := metric.cfx.GetEpochNumber(types.EpochLatestMined); err == nil {
+		if latestMined, err := cfx.GetEpochNumber(types.EpochLatestMined); err == nil {
 			gap := new(big.Int).Sub(latestMined.ToInt(), num)
 			metric.getGapMetric(method).Update(gap.Int64())
 		}

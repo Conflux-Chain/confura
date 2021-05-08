@@ -3,15 +3,16 @@ package main
 import (
 	// ensure viper based configuration initialized at the very beginning
 	_ "github.com/conflux-chain/conflux-infura/config"
-	"github.com/sirupsen/logrus"
 
 	// init metrics reporter
 	_ "github.com/conflux-chain/conflux-infura/metrics"
 
+	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/sync"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -43,13 +44,12 @@ func main() {
 	pruner := sync.NewDBPruner(db)
 	go pruner.Prune()
 
-	// Prepare cfx instance with http protocol for rpc proxy purpose
-	rpcProxyCfx := util.MustNewCfxClient(viper.GetString("cfx.http"))
-	defer rpcProxyCfx.Close()
+	// Initialize node manager to route RPC requests
+	nm := node.NewMananger()
 
 	// Start RPC server
 	logrus.Info("Starting to run rpc server...")
-	go rpc.Serve(viper.GetString("endpoint"), rpcProxyCfx, db)
+	go rpc.Serve(viper.GetString("endpoint"), nm, db)
 
 	select {}
 }

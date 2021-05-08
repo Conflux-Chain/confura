@@ -1,18 +1,43 @@
 package rpc
 
 import (
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"context"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/conflux-chain/conflux-infura/node"
 )
 
 type traceAPI struct {
-	cfx sdk.ClientOperator
+	provider *node.ClientProvider
 }
 
-func newTraceAPI(cfx sdk.ClientOperator) *traceAPI {
-	return &traceAPI{cfx}
+func newTraceAPI(provider *node.ClientProvider) *traceAPI {
+	return &traceAPI{provider}
 }
 
-func (api *traceAPI) Block(blockHash types.Hash) (*types.LocalizedBlockTrace, error) {
-	return api.cfx.GetBlockTraces(blockHash)
+func (api *traceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.LocalizedBlockTrace, error) {
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfx.GetBlockTraces(blockHash)
+}
+
+func (api *traceAPI) Filter(ctx context.Context, filter types.TraceFilter) ([]types.LocalizedTrace, error) {
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfx.FilterTraces(filter)
+}
+
+func (api *traceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]types.LocalizedTrace, error) {
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfx.GetTransactionTraces(txHash)
 }
