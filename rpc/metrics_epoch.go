@@ -3,11 +3,11 @@ package rpc
 import (
 	"fmt"
 	"math/big"
-	"sync"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	infuraMetrics "github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
@@ -22,56 +22,29 @@ var defaultEpochs = map[string]bool{
 // inputEpochMetric is used to add metrics for input epoch parameter.
 type inputEpochMetric struct {
 	cfx   sdk.ClientOperator
-	cache map[string]map[string]string // method -> epoch -> metric
-	gaps  map[string]metrics.Histogram // method -> histogram
-	mutex sync.Mutex
+	cache util.ConcurrentMap // method -> epoch -> metric name
+	gaps  util.ConcurrentMap // method -> histogram
 }
 
 func newInputEpochMetric(cfx sdk.ClientOperator) *inputEpochMetric {
 	return &inputEpochMetric{
-		cfx:   cfx,
-		cache: make(map[string]map[string]string),
-		gaps:  make(map[string]metrics.Histogram),
+		cfx: cfx,
 	}
-}
-
-func (metric *inputEpochMetric) getCacheByMethod(method string) map[string]string {
-	if result, ok := metric.cache[method]; ok {
-		return result
-	}
-
-	metric.mutex.Lock()
-	defer metric.mutex.Unlock()
-
-	// double check
-	if result, ok := metric.cache[method]; ok {
-		return result
-	}
-
-	result := make(map[string]string)
-	metric.cache[method] = result
-
-	return result
 }
 
 func (metric *inputEpochMetric) getMetricName(method string, epoch string) string {
-	cache := metric.getCacheByMethod(method)
-	if name, ok := cache[epoch]; ok {
-		return name
-	}
+	val, _ := metric.cache.LoadOrStoreFn(method, func(k interface{}) interface{} {
+		// need to return pointer type for noCopy
+		return &util.ConcurrentMap{}
+	})
 
-	metric.mutex.Lock()
-	defer metric.mutex.Unlock()
+	epoch2MetricNames := val.(*util.ConcurrentMap)
 
-	// double check
-	if name, ok := cache[epoch]; ok {
-		return name
-	}
+	val, _ = epoch2MetricNames.LoadOrStoreFn(epoch, func(k interface{}) interface{} {
+		return fmt.Sprintf("rpc/input/epoch/%v/%v", method, epoch)
+	})
 
-	name := fmt.Sprintf("rpc/input/epoch/%v/%v", method, epoch)
-	cache[epoch] = name
-
-	return name
+	return val.(string)
 }
 
 func (metric *inputEpochMetric) update(epoch *types.Epoch, method string) {
@@ -99,20 +72,9 @@ func (metric *inputEpochMetric) update(epoch *types.Epoch, method string) {
 }
 
 func (metric *inputEpochMetric) getGapMetric(method string) metrics.Histogram {
-	if h, ok := metric.gaps[method]; ok {
-		return h
-	}
+	val, _ := metric.gaps.LoadOrStoreFn(method, func(k interface{}) interface{} {
+		return infuraMetrics.GetOrRegisterHistogram(nil, "rpc/input/epoch/gap/%v", method)
+	})
 
-	metric.mutex.Lock()
-	defer metric.mutex.Unlock()
-
-	// double check
-	if h, ok := metric.gaps[method]; ok {
-		return h
-	}
-
-	h := infuraMetrics.GetOrRegisterHistogram(nil, "rpc/input/epoch/gap/%v", method)
-	metric.gaps[method] = h
-
-	return h
+	return val.(metrics.Histogram)
 }

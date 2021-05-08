@@ -3,9 +3,9 @@ package node
 import (
 	"context"
 	"strings"
-	"sync"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,8 +17,7 @@ type Router interface {
 
 type ClientProvider struct {
 	router  Router
-	clients sync.Map
-	mu      sync.Mutex
+	clients util.ConcurrentMap
 }
 
 func NewClientProvider(router Router) *ClientProvider {
@@ -45,32 +44,24 @@ func (p *ClientProvider) GetClient(key string) (sdk.ClientOperator, error) {
 		"node": nodeName,
 	}).Trace("Route RPC requests")
 
-	if client, ok := p.clients.Load(nodeName); ok {
-		return client.(sdk.ClientOperator), nil
-	}
+	client, loaded, err := p.clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+		// TODO improvements required
+		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
+		// 2. Different metrics for different full nodes.
+		return sdk.NewClient(url)
+	})
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if client, ok := p.clients.Load(nodeName); ok {
-		return client.(sdk.ClientOperator), nil
-	}
-
-	// TODO improvements required
-	// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
-	// 2. Different metrics for different full nodes.
-	client, err := sdk.NewClient(url)
 	if err != nil {
 		logrus.WithError(err).WithField("url", url).Error("Failed to connect to full node")
 		return nil, err
 	}
 
-	p.clients.Store(nodeName, client)
+	if !loaded {
+		logrus.WithFields(logrus.Fields{
+			"node": nodeName,
+			"url":  url,
+		}).Info("Succeeded to connect to full node")
+	}
 
-	logrus.WithFields(logrus.Fields{
-		"node": nodeName,
-		"url":  url,
-	}).Info("Succeeded to connect to full node")
-
-	return client, nil
+	return client.(sdk.ClientOperator), nil
 }
