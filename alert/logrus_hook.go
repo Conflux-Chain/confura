@@ -10,6 +10,22 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	dingTalkAlertMsgTpl = "logrus alert notification\ntags:\t%v;\nlevel:\t%v;\nbrief:\t%v;\ndetail:\t%v;\ntime:\t%v\n"
+)
+
+var (
+	// custom tags are usually used to differentiate between different networks and enviroments
+	// such as mainnet/testnet, prod/test/dev or any custom info for more details.
+	customTags    []string
+	customTagsStr string
+)
+
+func init() {
+	customTags = viper.GetStringSlice("alert.customTags")
+	customTagsStr = strings.Join(customTags, "/")
+}
+
 type LogrusAlertHook struct {
 	levels    []logrus.Level
 	dingRobot dingrobot.Roboter
@@ -29,8 +45,6 @@ func (hook *LogrusAlertHook) Levels() []logrus.Level {
 }
 
 func (hook *LogrusAlertHook) Fire(logEntry *logrus.Entry) error {
-	msgTpl := "logrus alert notification\nlevel:\t%v;\nbrief:\t%v;\ndetail:\t%v;\ntime:\t%v\n"
-
 	formatter := &logrus.JSONFormatter{}
 	detailBytes, _ := formatter.Format(logEntry)
 
@@ -41,7 +55,7 @@ func (hook *LogrusAlertHook) Fire(logEntry *logrus.Entry) error {
 	nowStr := time.Now().Format("2006-01-02T15:04:05-0700")
 	brief := logEntry.Message
 
-	msg := fmt.Sprintf(msgTpl, levelStr, brief, detail, nowStr)
+	msg := fmt.Sprintf(dingTalkAlertMsgTpl, customTagsStr, levelStr, brief, detail, nowStr)
 	atMobiles := viper.GetStringSlice("alert.dingtalk.atMobiles")
 	isAtAll := viper.GetBool("alert.dingtalk.isAtAll")
 
