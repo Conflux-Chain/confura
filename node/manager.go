@@ -11,11 +11,17 @@ import (
 type Manager struct {
 	nodes    map[string]*Node
 	hashRing *consistent.Consistent
+	resolver RepartitionResolver
 }
 
 func NewMananger() *Manager {
+	return NewManangerRepartitionable(&noopRepartitionResolver{})
+}
+
+func NewManangerRepartitionable(resolver RepartitionResolver) *Manager {
 	manager := Manager{
-		nodes: make(map[string]*Node),
+		nodes:    make(map[string]*Node),
+		resolver: resolver,
 	}
 
 	var members []consistent.Member
@@ -100,12 +106,16 @@ func (m *Manager) String() string {
 
 // Distribute distributes a full node by specified key.
 func (m *Manager) Distribute(key []byte) *Node {
-	// TODO keep consistent even when full node added or removed.
-	// Basically, we could cache the key-nodename pair in Redis
-	// with proper timeout, e.g. 10 minutes. Then, same key will
-	// be distributed with the same full node within 10 minutes,
-	// even re-location occurred in hash ring.
-	return m.hashRing.LocateKey(key).(*Node)
+	k := m.Sum64(key)
+
+	if name, ok := m.resolver.Get(k); ok {
+		return m.nodes[name]
+	}
+
+	node := m.hashRing.LocateKey(key).(*Node)
+	m.resolver.Put(k, node.Name())
+
+	return node
 }
 
 // Route implements the Router interface.
