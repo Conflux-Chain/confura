@@ -12,6 +12,7 @@ require (
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
 	github.com/selvatico/go-mocket v1.0.7
 	github.com/sirupsen/logrus v1.8.0
+	github.com/spf13/cobra v1.1.3
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	gorm.io/driver/mysql v1.0.5
