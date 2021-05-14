@@ -62,7 +62,7 @@ build
 pgrep_kill() {
     if pgrep -x "$PROJECT" 2>&1 > /dev/null
     then
-        pgrep -x "$PROJECT" | xargs kill -9
+        pgrep -x "$PROJECT" | xargs kill
         check "Kill $PROJECT"
     else
         echo "No $PROJECT is running, skip killing"

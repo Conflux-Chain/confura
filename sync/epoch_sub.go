@@ -1,14 +1,17 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -16,6 +19,10 @@ import (
 const (
 	// Sleep for a while after resub error
 	resubWaitDuration time.Duration = 5 * time.Second
+)
+
+var (
+	errSubAlreadyStopped = errors.New("epoch subscription already stopped")
 )
 
 // EpochSubscriber is an interface to consume subscribed epochs.
@@ -33,6 +40,7 @@ type epochSubMan struct {
 	cfxSub      *rpc.ClientSubscription // conflux subscription stub
 	cfxSdk      *sdk.Client             // conflux sdk
 	subscribers []EpochSubscriber       // subscription observers
+	stopped     bool                    // subscription stopped or not
 }
 
 // Create epoch subscription manager
@@ -43,11 +51,16 @@ func newEpochSubMan(cfx *sdk.Client, subscribers ...EpochSubscriber) *epochSubMa
 		subCh:       make(epochSubChan, bufferSize),
 		cfxSdk:      cfx,
 		subscribers: subscribers,
+		stopped:     false,
 	}
 }
 
 // Start subscribing
 func (subMan *epochSubMan) doSub() error {
+	if subMan.stopped {
+		return errSubAlreadyStopped
+	}
+
 	sub, err := subMan.cfxSdk.SubscribeEpochs(subMan.subCh, *types.EpochLatestState)
 	subMan.cfxSub = sub
 
@@ -55,7 +68,11 @@ func (subMan *epochSubMan) doSub() error {
 }
 
 // Run subscribing to handle channel signals in block mode
-func (subMan *epochSubMan) runSub() error {
+func (subMan *epochSubMan) runSub(ctx context.Context) error {
+	if subMan.stopped {
+		return errSubAlreadyStopped
+	}
+
 	logrus.Debug("Epoch subscription starting to handle channel signals")
 
 	// Notify all subscribers epoch sub started
@@ -65,6 +82,9 @@ func (subMan *epochSubMan) runSub() error {
 
 	for { // Start handling epoch subscription
 		select {
+		case <-ctx.Done():
+			subMan.stopped = true
+			return nil
 		case err := <-subMan.cfxSub.Err():
 			logrus.WithError(err).Error("Epoch subscription error")
 			return err
@@ -78,6 +98,10 @@ func (subMan *epochSubMan) runSub() error {
 
 // Retry subscribing
 func (subMan *epochSubMan) reSub() error {
+	if subMan.stopped {
+		return errSubAlreadyStopped
+	}
+
 	logrus.Debug("Epoch subscription restarting")
 
 	subMan.close()
@@ -99,22 +123,35 @@ func (subMan *epochSubMan) close() {
 
 // MustSubEpoch subscribes the latest mined epoch.
 // Note, it will block the current thread.
-func MustSubEpoch(cfx *sdk.Client, subscribers ...EpochSubscriber) {
+func MustSubEpoch(ctx context.Context, wg *sync.WaitGroup, cfx *sdk.Client, subscribers ...EpochSubscriber) {
 	subMan := newEpochSubMan(cfx, subscribers...)
-
 	if err := subMan.doSub(); err != nil {
 		logrus.WithError(err).Fatal("Failed to subscribe epoch")
 	}
-	defer subMan.close()
+
+	wg.Add(1)
+	defer func() {
+		subMan.close()
+		wg.Done()
+
+		logrus.Info("Epoch subscription shutdown ok")
+	}()
 
 	for {
-		subMan.runSub() // blocks until sub error
+		if err := subMan.runSub(ctx); err == nil { // blocks until sub error or stopped
+			return
+		}
 
-		for err := subMan.reSub(); err != nil; { // resub until suceess
+		for err := subMan.reSub(); err != nil; { // resub until suceess or stopped
 			logrus.WithError(err).Debug("Failed to resub epoch")
 
-			time.Sleep(resubWaitDuration)
-			err = subMan.reSub()
+			tc := time.After(resubWaitDuration)
+			select {
+			case <-ctx.Done():
+				return
+			case <-tc:
+				err = subMan.reSub()
+			}
 		}
 
 		logrus.Warn("Epoch resub ok!")

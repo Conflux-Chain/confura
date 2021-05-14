@@ -1,6 +1,12 @@
 package main
 
 import (
+	"context"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+
 	// ensure viper based configuration initialized at the very beginning
 	_ "github.com/conflux-chain/conflux-infura/config"
 
@@ -10,13 +16,17 @@ import (
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
-	"github.com/conflux-chain/conflux-infura/sync"
+	cisync "github.com/conflux-chain/conflux-infura/sync"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
 func main() {
+	// Context to control child go routines
+	ctx, cancel := context.WithCancel(context.Background())
+	wg := &sync.WaitGroup{}
+
 	// Initialize database for sync
 	config := mysql.NewConfigFromViper()
 	db := config.MustOpenOrCreate()
@@ -28,8 +38,8 @@ func main() {
 
 	// Start to sync data
 	logrus.Info("Starting to sync epoch data...")
-	syncer := sync.NewDatabaseSyncer(syncCfx, db)
-	go syncer.Sync()
+	syncer := cisync.NewDatabaseSyncer(syncCfx, db)
+	go syncer.Sync(ctx, wg)
 
 	// Prepare cfx instance with ws portocol for pub/sub purpose
 	subCfx := util.MustNewCfxClient(viper.GetString("cfx.ws"))
@@ -37,12 +47,12 @@ func main() {
 
 	// Monitor pivot chain switch via pub/sub
 	logrus.Info("Starting to pub/sub conflux chain...")
-	go sync.MustSubEpoch(subCfx, syncer)
+	go cisync.MustSubEpoch(ctx, wg, subCfx, syncer)
 
 	// Start database pruner
 	logrus.Info("Starting db pruner...")
-	pruner := sync.NewDBPruner(db)
-	go pruner.Prune()
+	pruner := cisync.NewDBPruner(db)
+	go pruner.Prune(ctx, wg)
 
 	// Initialize node manager to route RPC requests
 	nm := node.NewMananger()
@@ -51,5 +61,29 @@ func main() {
 	logrus.Info("Starting to run rpc server...")
 	go rpc.Serve(viper.GetString("endpoint"), nm, db)
 
-	select {}
+	gracefulShutdown(ctx, wg, cancel)
+}
+
+func gracefulShutdown(ctx context.Context, wg *sync.WaitGroup, cancel context.CancelFunc) {
+	// Handle sigterm and await termChan signal
+	termChan := make(chan os.Signal, 1)
+	signal.Notify(termChan, syscall.SIGTERM, syscall.SIGINT)
+
+	// Wait for SIGTERM to be captured
+	<-termChan
+	logrus.Info("SIGTERM/SIGINT received, shutdown process initiated")
+
+	// Shutdown the RPC server
+	if err := rpc.Shutdown(ctx); err != nil {
+		logrus.WithError(err).Error("RPC server shutdown failed")
+	}
+	logrus.Info("RPC server shutdown ok")
+
+	// Cancel the context
+	cancel()
+
+	logrus.Info("Waiting for shutdown...")
+	wg.Wait()
+
+	logrus.Info("Shutdown gracefully")
 }

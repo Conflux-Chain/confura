@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"context"
 	"net"
 	"net/http"
 
@@ -16,6 +17,10 @@ const (
 	namespaceCfx     = "cfx"
 	namespaceTrace   = "trace"
 	namespaceMetrics = "metrics"
+)
+
+var (
+	stdServer *http.Server
 )
 
 // Serve starts to serve RPC requests.
@@ -35,10 +40,18 @@ func Serve(endpoint string, router infuraNode.Router, db store.Store) {
 	server := http.Server{
 		Handler: node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
 	}
+	stdServer = &server
 
 	logrus.Info("JSON RPC services started...")
 
 	server.Serve(listener)
+}
+
+func Shutdown(ctx context.Context) error {
+	if stdServer != nil {
+		return stdServer.Shutdown(ctx)
+	}
+	return nil
 }
 
 func mustRegisterService(server *rpc.Server, namespace string, impl interface{}) {

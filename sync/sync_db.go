@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"context"
+	"sync"
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -51,14 +53,20 @@ func NewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSyncer {
 }
 
 // Sync starts to sync epoch blockchain data with specified cfx instance.
-func (syncer *DatabaseSyncer) Sync() {
+func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	logrus.WithField("epochFrom", syncer.epochFrom).Infof("DB sync starting to sync epoch data")
+
+	wg.Add(1)
+	defer wg.Done()
 
 	ticker := time.NewTicker(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-ctx.Done():
+			logrus.Info("DB syncer shutdown ok")
+			return
 		case <-syncer.checkPointCh:
 			if err := syncer.doCheckPoint(); err != nil {
 				logrus.WithError(err).Error("Failed to do sync checkpoint")

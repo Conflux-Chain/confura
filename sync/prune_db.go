@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"context"
+	"sync"
 	"time"
 
 	"github.com/conflux-chain/conflux-infura/store"
@@ -41,13 +43,22 @@ func NewDBPruner(db store.Store) *DBPruner {
 	return pruner
 }
 
-func (pruner *DBPruner) Prune() {
+func (pruner *DBPruner) Prune(ctx context.Context, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
 	ticker := time.NewTicker(pruner.pruneConfig.PruneInterval * time.Millisecond)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if err := pruner.doTicker(); err != nil {
-			logrus.WithError(err).Error("DBPruner ticked error")
+	for {
+		select {
+		case <-ctx.Done():
+			logrus.Info("DB pruner shutdown ok")
+			return
+		case <-ticker.C:
+			if err := pruner.doTicker(); err != nil {
+				logrus.WithError(err).Error("DBPruner ticked error")
+			}
 		}
 	}
 }
