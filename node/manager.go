@@ -2,6 +2,7 @@ package node
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
@@ -12,6 +13,7 @@ type Manager struct {
 	nodes    map[string]*Node
 	hashRing *consistent.Consistent
 	resolver RepartitionResolver
+	mu       sync.RWMutex
 }
 
 func NewMananger() *Manager {
@@ -62,6 +64,9 @@ func (m *Manager) Sum64(data []byte) uint64 {
 }
 
 func (m *Manager) Add(url string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	nodeName := url2NodeName(url)
 	if _, ok := m.nodes[nodeName]; !ok {
 		node := NewNode(nodeName, url)
@@ -71,6 +76,9 @@ func (m *Manager) Add(url string) {
 }
 
 func (m *Manager) Remove(url string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	nodeName := url2NodeName(url)
 	if node, ok := m.nodes[nodeName]; ok {
 		node.Close()
@@ -80,11 +88,17 @@ func (m *Manager) Remove(url string) {
 }
 
 func (m *Manager) Get(url string) *Node {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	nodeName := url2NodeName(url)
 	return m.nodes[nodeName]
 }
 
 func (m *Manager) List() []*Node {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	var nodes []*Node
 
 	for _, v := range m.nodes {
@@ -95,6 +109,9 @@ func (m *Manager) List() []*Node {
 }
 
 func (m *Manager) String() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	var nodes []string
 
 	for n := range m.nodes {
@@ -107,6 +124,9 @@ func (m *Manager) String() string {
 // Distribute distributes a full node by specified key.
 func (m *Manager) Distribute(key []byte) *Node {
 	k := m.Sum64(key)
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
 	if name, ok := m.resolver.Get(k); ok {
 		return m.nodes[name]
