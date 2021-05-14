@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	// ensure viper based configuration initialized at the very beginning
 	_ "github.com/conflux-chain/conflux-infura/config"
@@ -59,12 +60,13 @@ func main() {
 
 	// Start RPC server
 	logrus.Info("Starting to run rpc server...")
-	go rpc.Serve(viper.GetString("endpoint"), nm, db)
+	rpcServer := rpc.NewServer(nm, db)
+	go rpcServer.MustServe(viper.GetString("endpoint"))
 
-	gracefulShutdown(ctx, wg, cancel)
+	gracefulShutdown(ctx, rpcServer, wg, cancel)
 }
 
-func gracefulShutdown(ctx context.Context, wg *sync.WaitGroup, cancel context.CancelFunc) {
+func gracefulShutdown(ctx context.Context, rpcServer *util.RpcServer, wg *sync.WaitGroup, cancel context.CancelFunc) {
 	// Handle sigterm and await termChan signal
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGTERM, syscall.SIGINT)
@@ -73,13 +75,14 @@ func gracefulShutdown(ctx context.Context, wg *sync.WaitGroup, cancel context.Ca
 	<-termChan
 	logrus.Info("SIGTERM/SIGINT received, shutdown process initiated")
 
-	// Shutdown the RPC server
-	if err := rpc.Shutdown(ctx); err != nil {
+	// Shutdown the RPC server gracefully
+	if err := rpcServer.Shutdown(3 * time.Second); err != nil {
 		logrus.WithError(err).Error("RPC server shutdown failed")
+	} else {
+		logrus.Info("RPC server shutdown ok")
 	}
-	logrus.Info("RPC server shutdown ok")
 
-	// Cancel the context
+	// Cancel to notify active goroutines to clean up.
 	cancel()
 
 	logrus.Info("Waiting for shutdown...")
