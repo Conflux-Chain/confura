@@ -251,6 +251,10 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	api.inputEpochMetric.update(filter.FromEpoch, "cfx_getLogs/from", cfx)
 	api.inputEpochMetric.update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 
+	if api.db == nil {
+		return cfx.GetLogs(filter)
+	}
+
 	if dbFilter, ok := store.ParseLogFilter(&filter); ok {
 		logs, err := api.db.GetLogs(dbFilter)
 

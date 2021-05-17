@@ -16,14 +16,15 @@ type Manager struct {
 	mu       sync.RWMutex
 }
 
-func NewMananger() *Manager {
-	return NewManangerRepartitionable(&noopRepartitionResolver{})
-}
-
-func NewManangerRepartitionable(resolver RepartitionResolver) *Manager {
+func NewMananger(resolver ...RepartitionResolver) *Manager {
 	manager := Manager{
-		nodes:    make(map[string]*Node),
-		resolver: resolver,
+		nodes: make(map[string]*Node),
+	}
+
+	if len(resolver) == 0 {
+		manager.resolver = &noopRepartitionResolver{}
+	} else {
+		manager.resolver = resolver[0]
 	}
 
 	var members []consistent.Member

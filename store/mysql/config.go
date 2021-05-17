@@ -24,7 +24,11 @@ type Config struct {
 }
 
 // NewConfigFromViper creates an instance of Config from Viper.
-func NewConfigFromViper() Config {
+func NewConfigFromViper() (Config, bool) {
+	if !viper.GetBool("store.mysql.enabled") {
+		return Config{}, false
+	}
+
 	return Config{
 		Username: viper.GetString("store.mysql.username"),
 		Password: viper.GetString("store.mysql.password"),
@@ -33,7 +37,7 @@ func NewConfigFromViper() Config {
 		ConnMaxLifetime: viper.GetDuration("store.mysql.connMaxLifeTime"),
 		MaxOpenConns:    viper.GetInt("store.mysql.maxOpenConns"),
 		MaxIdleConns:    viper.GetInt("store.mysql.maxIdleConns"),
-	}
+	}, true
 }
 
 // MustOpenOrCreate creates an instance of store or exits on any erorr.

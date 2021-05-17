@@ -13,11 +13,12 @@ import (
 
 // RpcServer serves JSON RPC services.
 type RpcServer struct {
+	name   string
 	server *http.Server
 }
 
 // MustNewRpcServer creates an instance of RpcServer with specified RPC services.
-func MustNewRpcServer(rpcs map[string]interface{}) *RpcServer {
+func MustNewRpcServer(name string, rpcs map[string]interface{}) *RpcServer {
 	handler := rpc.NewServer()
 
 	for namespace, impl := range rpcs {
@@ -27,6 +28,7 @@ func MustNewRpcServer(rpcs map[string]interface{}) *RpcServer {
 	}
 
 	return &RpcServer{
+		name: name,
 		server: &http.Server{
 			Handler: node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
 		},
@@ -57,3 +59,5 @@ func (s *RpcServer) Shutdown(timeout time.Duration) error {
 
 	return s.server.Shutdown(ctx)
 }
+
+func (s *RpcServer) String() string { return s.name }

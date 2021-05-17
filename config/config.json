@@ -37,6 +37,7 @@
     },
     "store": {
         "mysql": {
+            "enabled": false,
             "username": "",
             "password": "",
             "database": "conflux_infura",
@@ -78,6 +79,7 @@
         },
         "monitor": {
             "interval": "1s"
-        }
+        },
+        "endpoint": ":22530"
     }
 }
