@@ -38,14 +38,18 @@ func NewMananger(resolver ...RepartitionResolver) *Manager {
 		}
 	}
 
-	manager.hashRing = consistent.New(members, consistent.Config{
+	manager.hashRing = consistent.New(members, newConsistentConfigFromViper())
+
+	return &manager
+}
+
+func newConsistentConfigFromViper() consistent.Config {
+	return consistent.Config{
 		PartitionCount:    viper.GetInt("node.hashring.partitionCount"),
 		ReplicationFactor: viper.GetInt("node.hashring.replicationFactor"),
 		Load:              viper.GetFloat64("node.hashring.load"),
-		Hasher:            &manager,
-	})
-
-	return &manager
+		Hasher:            &hasher{},
+	}
 }
 
 func url2NodeName(url string) string {

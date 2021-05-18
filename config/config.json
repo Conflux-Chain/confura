@@ -80,6 +80,10 @@
         "monitor": {
             "interval": "1s"
         },
-        "endpoint": ":22530"
+        "endpoint": ":22530",
+        "router": {
+            "redis": "",
+            "rpc": ""
+        }
     }
 }

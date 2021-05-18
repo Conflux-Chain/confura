@@ -1,6 +1,9 @@
 package node
 
-import "github.com/conflux-chain/conflux-infura/util"
+import (
+	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+)
 
 func NewServer() *util.RpcServer {
 	return util.MustNewRpcServer("node", map[string]interface{}{
@@ -33,6 +36,6 @@ func (api *api) List() []string {
 
 // Route implements the Router interface. It routes the specified key to any node
 // and return the node URL.
-func (api *api) Route(key []byte) string {
+func (api *api) Route(key hexutil.Bytes) string {
 	return api.manager.Route(key)
 }

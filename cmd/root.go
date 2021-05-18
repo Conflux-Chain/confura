@@ -40,7 +40,7 @@ func init() {
 
 func start(cmd *cobra.Command, args []string) {
 	if !nodeServerEnabled && !rpcServerEnabled && !syncServerEnabled {
-		logrus.Info("No services started")
+		logrus.Fatal("No services started")
 		return
 	}
 
@@ -56,6 +56,10 @@ func start(cmd *cobra.Command, args []string) {
 	}
 
 	if syncServerEnabled {
+		if db == nil {
+			logrus.Fatal("database not enabled")
+		}
+
 		// Prepare cfx instance with http protocol for epoch sync purpose
 		syncCfx := util.MustNewCfxClient(viper.GetString("cfx.http"))
 		defer syncCfx.Close()
@@ -95,13 +99,12 @@ func start(cmd *cobra.Command, args []string) {
 }
 
 func startRpcServer(db store.Store) *util.RpcServer {
-	// Initialize node manager to route RPC requests
-	// TODO use node management RPC for distributed deployment
-	nm := node.NewMananger()
-
 	// Start RPC server
 	logrus.Info("Start to run public rpc server...")
-	server := rpc.NewServer(nm, db)
+
+	router := node.MustNewRouterFromViper()
+
+	server := rpc.NewServer(router, db)
 	go server.MustServe(viper.GetString("endpoint"))
 	return server
 }

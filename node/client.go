@@ -9,12 +9,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Router is used to route RPC requests to multiple full nodes.
-type Router interface {
-	// Route returns the full node URL for specified key.
-	Route(key []byte) string
-}
-
 type ClientProvider struct {
 	router  Router
 	clients util.ConcurrentMap
