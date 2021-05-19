@@ -79,7 +79,17 @@
             "load": 1.25
         },
         "monitor": {
-            "interval": "1s"
+            "interval": "1s",
+            "unhealth": {
+                "failures": 3,
+                "epochsFallBehind": 30,
+                "latencyPercentile": 0.9,
+                "maxLatency": "3s"
+            },
+            "recover": {
+                "remindInterval": "5m",
+                "successCounter": 60
+            }
         },
         "endpoint": ":22530",
         "router": {

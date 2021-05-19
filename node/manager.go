@@ -14,11 +14,15 @@ type Manager struct {
 	hashRing *consistent.Consistent
 	resolver RepartitionResolver
 	mu       sync.RWMutex
+
+	nodeName2Epochs map[string]uint64
+	midEpoch        uint64
 }
 
 func NewMananger(resolver ...RepartitionResolver) *Manager {
 	manager := Manager{
-		nodes: make(map[string]*Node),
+		nodes:           make(map[string]*Node),
+		nodeName2Epochs: make(map[string]uint64),
 	}
 
 	if len(resolver) == 0 {
@@ -32,7 +36,7 @@ func NewMananger(resolver ...RepartitionResolver) *Manager {
 	for _, url := range viper.GetStringSlice("node.urls") {
 		nodeName := url2NodeName(url)
 		if _, ok := manager.nodes[nodeName]; !ok {
-			node := NewNode(nodeName, url)
+			node := NewNode(nodeName, url, &manager)
 			manager.nodes[nodeName] = node
 			members = append(members, node)
 		}
@@ -74,7 +78,7 @@ func (m *Manager) Add(url string) {
 
 	nodeName := url2NodeName(url)
 	if _, ok := m.nodes[nodeName]; !ok {
-		node := NewNode(nodeName, url)
+		node := NewNode(nodeName, url, m)
 		m.nodes[nodeName] = node
 		m.hashRing.Add(node)
 	}
@@ -88,6 +92,7 @@ func (m *Manager) Remove(url string) {
 	if node, ok := m.nodes[nodeName]; ok {
 		node.Close()
 		delete(m.nodes, nodeName)
+		delete(m.nodeName2Epochs, nodeName)
 		m.hashRing.Remove(nodeName)
 	}
 }

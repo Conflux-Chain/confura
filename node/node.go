@@ -18,7 +18,7 @@ type Node struct {
 	atomicStatus atomic.Value
 }
 
-func NewNode(name, url string) *Node {
+func NewNode(name, url string, hm HealthMonitor) *Node {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	n := Node{
@@ -29,7 +29,7 @@ func NewNode(name, url string) *Node {
 
 	n.atomicStatus.Store(NewStatus(name))
 
-	go n.monitor(ctx)
+	go n.monitor(ctx, hm)
 
 	return &n
 }
@@ -46,7 +46,7 @@ func (n *Node) String() string {
 	return n.name
 }
 
-func (n *Node) monitor(ctx context.Context) {
+func (n *Node) monitor(ctx context.Context, hm HealthMonitor) {
 	interval := viper.GetDuration("node.monitor.interval")
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -58,7 +58,7 @@ func (n *Node) monitor(ctx context.Context) {
 			return
 		case <-ticker.C:
 			status := n.atomicStatus.Load().(Status)
-			status.Update(n)
+			status.Update(n, hm)
 			n.atomicStatus.Store(status)
 		}
 	}
