@@ -73,7 +73,7 @@
             "http://test.confluxrpc.org/v2",
             "http://portal-test.confluxrpc.com"
         ],
-        "hashring": {
+        "hashRing": {
             "partitionCount": 15739,
             "replicationFactor": 51,
             "load": 1.25
@@ -93,8 +93,8 @@
         },
         "endpoint": ":22530",
         "router": {
-            "redis": "",
-            "rpc": ""
+            "redisUrl": "",
+            "nodeRpcUrl": ""
         }
     }
 }

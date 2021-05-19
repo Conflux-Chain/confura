@@ -8,7 +8,6 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 type Node struct {
@@ -47,8 +46,7 @@ func (n *Node) String() string {
 }
 
 func (n *Node) monitor(ctx context.Context, hm HealthMonitor) {
-	interval := viper.GetDuration("node.monitor.interval")
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(cfg.Monitor.Interval)
 	defer ticker.Stop()
 
 	for {

@@ -6,7 +6,6 @@ import (
 
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
-	"github.com/spf13/viper"
 )
 
 type Manager struct {
@@ -33,7 +32,7 @@ func NewMananger(resolver ...RepartitionResolver) *Manager {
 
 	var members []consistent.Member
 
-	for _, url := range viper.GetStringSlice("node.urls") {
+	for _, url := range cfg.URLs {
 		nodeName := url2NodeName(url)
 		if _, ok := manager.nodes[nodeName]; !ok {
 			node := NewNode(nodeName, url, &manager)
@@ -42,18 +41,9 @@ func NewMananger(resolver ...RepartitionResolver) *Manager {
 		}
 	}
 
-	manager.hashRing = consistent.New(members, newConsistentConfigFromViper())
+	manager.hashRing = consistent.New(members, cfg.HashRing)
 
 	return &manager
-}
-
-func newConsistentConfigFromViper() consistent.Config {
-	return consistent.Config{
-		PartitionCount:    viper.GetInt("node.hashring.partitionCount"),
-		ReplicationFactor: viper.GetInt("node.hashring.replicationFactor"),
-		Load:              viper.GetFloat64("node.hashring.load"),
-		Hasher:            &hasher{},
-	}
 }
 
 func url2NodeName(url string) string {
@@ -65,11 +55,6 @@ func url2NodeName(url string) string {
 		nodeName = nodeName[:idx]
 	}
 	return nodeName
-}
-
-// Sum64 implements the consistent.Hasher interface.
-func (m *Manager) Sum64(data []byte) uint64 {
-	return xxhash.Sum64(data)
 }
 
 func (m *Manager) Add(url string) {
@@ -133,7 +118,7 @@ func (m *Manager) String() string {
 
 // Distribute distributes a full node by specified key.
 func (m *Manager) Distribute(key []byte) *Node {
-	k := m.Sum64(key)
+	k := xxhash.Sum64(key)
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()

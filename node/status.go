@@ -9,7 +9,6 @@ import (
 	infuraMetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
-	"github.com/spf13/viper"
 )
 
 type HealthMonitor interface {
@@ -65,16 +64,14 @@ func (s *Status) updateHealth(monitor HealthMonitor) {
 	if s.unhealthy {
 		if reason == nil {
 			// node become healthy after N success
-			recoverThreshold := viper.GetUint64("node.monitor.recover.successCounter")
-			if s.successCounter >= recoverThreshold {
+			if s.successCounter >= cfg.Monitor.Recover.SuccessCounter {
 				s.unhealthy = false
 				s.unhealthReportAt = time.Time{}
 				monitor.ReportHealthy(s.nodeName)
 			}
 		} else {
 			// remind long unhealthy every N minutes, even occasionally suscceeded
-			remindInterval := viper.GetDuration("node.monitor.recover.remindInterval")
-			remindTime := s.unhealthReportAt.Add(remindInterval)
+			remindTime := s.unhealthReportAt.Add(cfg.Monitor.Recover.RemindInterval)
 			if now := time.Now(); now.After(remindTime) {
 				monitor.ReportUnhealthy(s.nodeName, true, reason)
 				s.unhealthReportAt = now
@@ -94,20 +91,18 @@ func (s *Status) updateHealth(monitor HealthMonitor) {
 
 func (s *Status) checkHealth(targetEpoch uint64) error {
 	// RPC failures
-	failureThreshold := viper.GetUint64("node.monitor.unhealth.failures")
-	if s.failureCounter >= failureThreshold {
+	if s.failureCounter >= cfg.Monitor.Unhealth.Failures {
 		return errors.Errorf("RPC failures (%v)", s.failureCounter)
 	}
 
 	// epoch fall behind
-	numEpochsFallBehind := viper.GetUint64("node.monitor.unhealth.epochsFallBehind")
-	if s.latestStateEpoch+numEpochsFallBehind < targetEpoch {
+	if s.latestStateEpoch+cfg.Monitor.Unhealth.EpochsFallBehind < targetEpoch {
 		return errors.Errorf("Epoch fall behind (%v)", targetEpoch-s.latestStateEpoch)
 	}
 
 	// latency too high
-	percentile := viper.GetFloat64("node.monitor.unhealth.latencyPercentile")
-	maxLatency := viper.GetDuration("node.monitor.unhealth.maxLatency")
+	percentile := cfg.Monitor.Unhealth.LatencyPercentile
+	maxLatency := cfg.Monitor.Unhealth.MaxLatency
 	latency := time.Duration(s.latencyMetric.Snapshot().Percentile(percentile))
 	if latency > maxLatency {
 		return errors.Errorf("Latency too high (%v)", latency)

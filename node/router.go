@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 // Router is used to route RPC requests to multiple full nodes.
@@ -25,7 +24,7 @@ func MustNewRouterFromViper() Router {
 	var routers []Router
 
 	// Add redis router if configured
-	if url := viper.GetString("node.router.redis"); len(url) > 0 {
+	if url := cfg.Router.RedisURL; len(url) > 0 {
 		// redis://<user>:<password>@<host>:<port>/<db_number>
 		opt, err := redis.ParseURL(url)
 		if err != nil {
@@ -37,7 +36,7 @@ func MustNewRouterFromViper() Router {
 	}
 
 	// Add node rpc router if configured
-	if url := viper.GetString("node.router.rpc"); len(url) > 0 {
+	if url := cfg.Router.NodeRPCURL; len(url) > 0 {
 		// http://127.0.0.1:22530
 		client := util.MustNewCfxClient(url)
 		routers = append(routers, NewNodeRpcRouter(client))
@@ -157,13 +156,12 @@ func NewLocalRouter(urls []string) *LocalRouter {
 
 	return &LocalRouter{
 		nodes:    nodes,
-		hashRing: consistent.New(members, newConsistentConfigFromViper()),
+		hashRing: consistent.New(members, cfg.HashRing),
 	}
 }
 
 func NewLocalRouterFromViper() *LocalRouter {
-	urls := viper.GetStringSlice("node.urls")
-	return NewLocalRouter(urls)
+	return NewLocalRouter(cfg.URLs)
 }
 
 func (r *LocalRouter) Route(key []byte) string {
