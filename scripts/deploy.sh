@@ -134,7 +134,7 @@ pm2_run() {
     mkdir -p logs
     NOW=`date +'%Y_%m_%d_%H_%M_%S'`
     LOGFILE="./logs/pm2_${RUNTIME_INSTANCE}_$NOW.log"
-    pm2 start --name ${RUNTIME_INSTANCE} --log $LOGFILE --time bin/$PROJECT ${RUNTIME_ARGS}
+    pm2 start --name ${RUNTIME_INSTANCE} --log $LOGFILE --time bin/$PROJECT -- ${RUNTIME_ARGS}
     check "Run ${RUNTIME_INSTANCE}"
 }
 
