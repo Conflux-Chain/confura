@@ -10,6 +10,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/conflux-chain/conflux-infura/store"
 )
 
 func setupMockStub() *gorm.DB {
@@ -38,7 +40,7 @@ func setVersion() {
 	})
 }
 
-func setEpochRange(t EpochDataType, minEpoch, maxEpoch uint64) {
+func setEpochRange(t store.EpochDataType, minEpoch, maxEpoch uint64) {
 	statement := fmt.Sprintf("SELECT MIN(epoch) AS min_epoch, MAX(epoch) AS max_epoch FROM %v", EpochDataTypeTableMap[t])
 	commonReply := []map[string]interface{}{{"min_epoch": minEpoch, "max_epoch": maxEpoch}}
 	mocket.Catcher.Attach([]*mocket.FakeResponse{
@@ -50,7 +52,7 @@ func setEpochRange(t EpochDataType, minEpoch, maxEpoch uint64) {
 	})
 }
 
-func setEpochTotal(t EpochDataType, total uint64) {
+func setEpochTotal(t store.EpochDataType, total uint64) {
 	statement := fmt.Sprintf("SELECT COUNT(*) AS total FROM %v", EpochDataTypeTableMap[t])
 	commonReply := []map[string]interface{}{{"total": total}}
 	mocket.Catcher.Attach([]*mocket.FakeResponse{
@@ -64,14 +66,14 @@ func setEpochTotal(t EpochDataType, total uint64) {
 
 func TestLoadEpochRange(t *testing.T) {
 	testCases := []struct {
-		dataType EpochDataType
+		dataType store.EpochDataType
 		minEpoch uint64
 		maxEpoch uint64
 		total    uint64
 	}{
-		{EpochBlock, 0, 1000, 4000},
-		{EpochTransaction, 0, 1000, 40000},
-		{EpochLog, 0, 1000, 400000},
+		{store.EpochBlock, 0, 1000, 4000},
+		{store.EpochTransaction, 0, 1000, 40000},
+		{store.EpochLog, 0, 1000, 400000},
 	}
 
 	// Setup testcases
@@ -87,11 +89,11 @@ func TestLoadEpochRange(t *testing.T) {
 	var getEpochRange func() (uint64, uint64, error)
 	for _, tc := range testCases {
 		switch tc.dataType {
-		case EpochBlock:
+		case store.EpochBlock:
 			getEpochRange = mysqlStore.GetBlockEpochRange
-		case EpochTransaction:
+		case store.EpochTransaction:
 			getEpochRange = mysqlStore.GetTransactionEpochRange
-		case EpochLog:
+		case store.EpochLog:
 			getEpochRange = mysqlStore.GetLogEpochRange
 		}
 

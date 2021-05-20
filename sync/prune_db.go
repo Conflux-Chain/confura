@@ -64,7 +64,7 @@ func (pruner *DBPruner) Prune(ctx context.Context, wg *sync.WaitGroup) {
 }
 
 func (pruner *DBPruner) doTicker() error {
-	for _, dt := range mstore.OpEpochDataTypes {
+	for _, dt := range store.OpEpochDataTypes {
 		if err := pruner.pruneEpochData(dt); err != nil {
 			logrus.WithError(err).Errorf("DB pruner failed to prune epoch %v", mstore.EpochDataTypeTableMap[dt])
 			return err
@@ -74,18 +74,18 @@ func (pruner *DBPruner) doTicker() error {
 	return nil
 }
 
-func (pruner *DBPruner) pruneEpochData(dt mstore.EpochDataType) error {
+func (pruner *DBPruner) pruneEpochData(dt store.EpochDataType) error {
 	var getNumEpochData func() uint64
 	var threshold uint64
 
 	switch dt {
-	case mstore.EpochBlock:
+	case store.EpochBlock:
 		threshold = pruner.pruneConfig.Threshold.MaxBlocks
 		getNumEpochData = pruner.db.GetNumBlocks
-	case mstore.EpochTransaction:
+	case store.EpochTransaction:
 		threshold = pruner.pruneConfig.Threshold.MaxTxs
 		getNumEpochData = pruner.db.GetNumTransactions
-	case mstore.EpochLog:
+	case store.EpochLog:
 		threshold = pruner.pruneConfig.Threshold.MaxLogs
 		getNumEpochData = pruner.db.GetNumLogs
 	default:
@@ -109,18 +109,18 @@ func (pruner *DBPruner) pruneEpochData(dt mstore.EpochDataType) error {
 	return nil
 }
 
-func (pruner *DBPruner) doPruneEpochData(dt mstore.EpochDataType) error {
+func (pruner *DBPruner) doPruneEpochData(dt store.EpochDataType) error {
 	var getEpochRange func() (uint64, uint64, error)
 	var dequeue func(uint64) error
 
 	switch dt {
-	case mstore.EpochBlock:
+	case store.EpochBlock:
 		dequeue = pruner.db.DequeueBlocks
 		getEpochRange = pruner.db.GetBlockEpochRange
-	case mstore.EpochTransaction:
+	case store.EpochTransaction:
 		dequeue = pruner.db.DequeueTransactions
 		getEpochRange = pruner.db.GetTransactionEpochRange
-	case mstore.EpochLog:
+	case store.EpochLog:
 		dequeue = pruner.db.DequeueLogs
 		getEpochRange = pruner.db.GetLogEpochRange
 	default:

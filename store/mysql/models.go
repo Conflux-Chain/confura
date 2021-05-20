@@ -2,14 +2,12 @@ package mysql
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/sirupsen/logrus"
+	"github.com/conflux-chain/conflux-infura/util"
 	"gorm.io/gorm"
 )
 
@@ -28,25 +26,15 @@ func (transaction) TableName() string {
 	return "txs"
 }
 
-func hash2ShortId(hash string) uint64 {
-	// first 8 bytes of hex string with 0x prefixed
-	id, err := strconv.ParseUint(hash[2:18], 16, 64)
-	if err != nil {
-		logrus.WithError(err).WithField("hash", hash).Fatalf("Failed convert hash to short id")
-	}
-
-	return id
-}
-
 func newTx(tx *types.Transaction, receipt *types.TransactionReceipt) *transaction {
 	result := &transaction{
 		Epoch:          uint64(*receipt.EpochNumber),
 		Hash:           tx.Hash.String(),
-		TxRawData:      mustMarshalRLP(tx),
-		ReceiptRawData: mustMarshalRLP(receipt),
+		TxRawData:      util.MustMarshalRLP(tx),
+		ReceiptRawData: util.MustMarshalRLP(receipt),
 	}
 
-	result.HashId = hash2ShortId(result.Hash)
+	result.HashId = util.GetShortIdOfHash(result.Hash)
 	result.TxRawDataLen = uint64(len(result.TxRawData))
 	result.ReceiptRawDataLen = uint64(len(result.ReceiptRawData))
 
@@ -54,7 +42,7 @@ func newTx(tx *types.Transaction, receipt *types.TransactionReceipt) *transactio
 }
 
 func loadTx(db *gorm.DB, txHash string) (*transaction, error) {
-	hashId := hash2ShortId(txHash)
+	hashId := util.GetShortIdOfHash(txHash)
 
 	var tx transaction
 
@@ -81,26 +69,13 @@ func newBlock(data *types.Block, pivot bool) *block {
 		Epoch:   data.EpochNumber.ToInt().Uint64(),
 		Hash:    data.Hash.String(),
 		Pivot:   pivot,
-		RawData: mustMarshalRLP(block2Summary(data)),
+		RawData: util.MustMarshalRLP(util.GetSummaryOfBlock(data)),
 	}
 
-	block.HashId = hash2ShortId(block.Hash)
+	block.HashId = util.GetShortIdOfHash(block.Hash)
 	block.RawDataLen = uint64(len(block.RawData))
 
 	return block
-}
-
-func block2Summary(block *types.Block) *types.BlockSummary {
-	summary := types.BlockSummary{
-		BlockHeader:  block.BlockHeader,
-		Transactions: make([]types.Hash, 0, len(block.Transactions)),
-	}
-
-	for _, tx := range block.Transactions {
-		summary.Transactions = append(summary.Transactions, tx.Hash)
-	}
-
-	return &summary
 }
 
 func loadBlock(db *gorm.DB, whereClause string, args ...interface{}) (*types.BlockSummary, error) {
@@ -112,7 +87,7 @@ func loadBlock(db *gorm.DB, whereClause string, args ...interface{}) (*types.Blo
 	}
 
 	var summary types.BlockSummary
-	mustUnmarshalRLP(blk.RawData, &summary)
+	util.MustUnmarshalRLP(blk.RawData, &summary)
 
 	return &summary, nil
 }
@@ -253,23 +228,4 @@ func applyVariadicFilter(db *gorm.DB, column string, value store.VariadicValue) 
 	}
 
 	return db
-}
-
-func mustMarshalRLP(v interface{}) []byte {
-	if v == nil {
-		return nil
-	}
-
-	data, err := rlp.EncodeToBytes(v)
-	if err != nil {
-		logrus.WithError(err).Fatalf("Failed to marshal data to RLP, value = %+v", v)
-	}
-
-	return data
-}
-
-func mustUnmarshalRLP(data []byte, v interface{}) {
-	if err := rlp.DecodeBytes(data, v); err != nil {
-		logrus.WithError(err).Fatalf("Failed to unmarshal RLP data, v = %v, data = %x", v, data)
-	}
 }

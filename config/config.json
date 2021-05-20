@@ -44,6 +44,10 @@
             "connMaxLifeTime": "3m",
             "maxOpenConns": 10,
             "maxIdleConns": 10
+        },
+        "redis": {
+            "enabled": false,
+            "url": "redis://<user>:<pass>@localhost:6379/<db>"
         }
     },
     "alert": {

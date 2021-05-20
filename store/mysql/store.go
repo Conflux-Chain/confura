@@ -18,55 +18,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// Epoch data type
-type EpochDataType uint
-
-const (
-	EpochNil EpochDataType = iota
-	EpochTransaction
-	EpochLog
-	EpochBlock
-)
-
-// Epoch data remove option
-type EpochRemoveOption uint8
-
-const (
-	EpochRemoveAll         EpochRemoveOption = 0xff
-	EpochRemoveBlock                         = 0x01 << 0
-	EpochRemoveTransaction                   = 0x01 << 1
-	EpochRemoveLog                           = 0x01 << 2
-)
-
-// EpochDataOpAffects to record num of changes for epoch data
-type EpochDataOpAffects map[EpochDataType]int64
-
-func (affects EpochDataOpAffects) String() string {
-	strBuilder := &strings.Builder{}
-	strBuilder.Grow(len(affects) * 30)
-
-	for t, v := range affects {
-		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], v))
-	}
-
-	return strBuilder.String()
-}
-
-var (
-	errUnsupported            = errors.New("not supported")
-	errContinousEpochRequired = errors.New("continous epoch required")
-
-	OpEpochDataTypes      = []EpochDataType{EpochBlock, EpochTransaction, EpochLog}
-	EpochDataTypeTableMap = map[EpochDataType]string{EpochBlock: "blocks", EpochTransaction: "txs", EpochLog: "logs"}
-
-	epochDataTypeRemoveOptionMap = map[EpochDataType]EpochRemoveOption{
-		EpochBlock: EpochRemoveBlock, EpochTransaction: EpochRemoveTransaction, EpochLog: EpochRemoveLog,
-	}
-)
-
 const (
 	// Logs table partition range (by ID) size
 	logsTablePartitionRangeSize = uint64(20000000)
+)
+
+var (
+	// Epoch data type mapping to mysql table name
+	EpochDataTypeTableMap = map[store.EpochDataType]string{
+		store.EpochBlock:       "blocks",
+		store.EpochTransaction: "txs",
+		store.EpochLog:         "logs",
+	}
 )
 
 type mysqlStore struct {
@@ -75,9 +38,9 @@ type mysqlStore struct {
 	maxEpoch uint64 // maximum epoch number in database
 
 	// Epoch range for block/transaction/log table in db
-	epochRanges map[EpochDataType]*atomic.Value
+	epochRanges map[store.EpochDataType]*atomic.Value
 	// Total rows for block/transaction/log table in db
-	epochTotals map[EpochDataType]*uint64
+	epochTotals map[store.EpochDataType]*uint64
 
 	// Epoch range configurations for logs table partitions. It will be loaded from
 	// database when store created.
@@ -90,13 +53,13 @@ func mustNewStore(db *gorm.DB) *mysqlStore {
 	mysqlStore := mysqlStore{
 		db: db, minEpoch: math.MaxUint64, maxEpoch: math.MaxUint64,
 
-		epochRanges: make(map[EpochDataType]*atomic.Value),
-		epochTotals: make(map[EpochDataType]*uint64),
+		epochRanges: make(map[store.EpochDataType]*atomic.Value),
+		epochTotals: make(map[store.EpochDataType]*uint64),
 
 		logsTablePartitionEpochRanges: make(map[string]*atomic.Value),
 	}
 
-	for _, t := range OpEpochDataTypes {
+	for _, t := range store.OpEpochDataTypes {
 		// Load epoch range
 		minEpoch, maxEpoch, err := mysqlStore.loadEpochRange(t)
 		if err != nil && !mysqlStore.IsRecordNotFound(err) {
@@ -172,7 +135,7 @@ func (ms *mysqlStore) dumpEpochTotals() string {
 }
 
 func (ms *mysqlStore) IsRecordNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound)
+	return errors.Is(err, gorm.ErrRecordNotFound) || err == store.ErrNotFound
 }
 
 // Load logs table partitioning information from database.
@@ -219,7 +182,7 @@ AND TABLE_NAME = 'logs' AND PARTITION_NAME IS NOT NULL ORDER BY PARTITION_ORDINA
 	return nil
 }
 
-func (ms *mysqlStore) loadEpochRange(t EpochDataType) (uint64, uint64, error) {
+func (ms *mysqlStore) loadEpochRange(t store.EpochDataType) (uint64, uint64, error) {
 	sqlStatement := fmt.Sprintf("SELECT MIN(epoch) AS min_epoch, MAX(epoch) AS max_epoch FROM %v", EpochDataTypeTableMap[t])
 
 	row := ms.db.Raw(sqlStatement).Row()
@@ -241,7 +204,7 @@ func (ms *mysqlStore) loadEpochRange(t EpochDataType) (uint64, uint64, error) {
 	return uint64(minEpoch.Int64), uint64(maxEpoch.Int64), nil
 }
 
-func (ms *mysqlStore) loadEpochTotal(t EpochDataType) (uint64, error) {
+func (ms *mysqlStore) loadEpochTotal(t store.EpochDataType) (uint64, error) {
 	sqlStatement := fmt.Sprintf("SELECT COUNT(*) AS total FROM %v", EpochDataTypeTableMap[t])
 
 	row := ms.db.Raw(sqlStatement).Row()
@@ -256,22 +219,22 @@ func (ms *mysqlStore) loadEpochTotal(t EpochDataType) (uint64, error) {
 }
 
 func (ms *mysqlStore) GetBlockEpochRange() (uint64, uint64, error) {
-	return ms.getEpochRange(EpochBlock)
+	return ms.getEpochRange(store.EpochBlock)
 }
 
 func (ms *mysqlStore) GetTransactionEpochRange() (uint64, uint64, error) {
-	return ms.getEpochRange(EpochTransaction)
+	return ms.getEpochRange(store.EpochTransaction)
 }
 
 func (ms *mysqlStore) GetLogEpochRange() (uint64, uint64, error) {
-	return ms.getEpochRange(EpochLog)
+	return ms.getEpochRange(store.EpochLog)
 }
 
 func (ms *mysqlStore) GetGlobalEpochRange() (uint64, uint64, error) {
-	return ms.getEpochRange(EpochNil)
+	return ms.getEpochRange(store.EpochNil)
 }
 
-func (ms *mysqlStore) getEpochRange(rt EpochDataType) (uint64, uint64, error) {
+func (ms *mysqlStore) getEpochRange(rt store.EpochDataType) (uint64, uint64, error) {
 	var minEpoch, maxEpoch uint64
 
 	if atmV, ok := ms.epochRanges[rt]; ok {
@@ -292,19 +255,19 @@ func (ms *mysqlStore) getEpochRange(rt EpochDataType) (uint64, uint64, error) {
 }
 
 func (ms *mysqlStore) GetNumBlocks() uint64 {
-	return atomic.LoadUint64(ms.epochTotals[EpochBlock])
+	return atomic.LoadUint64(ms.epochTotals[store.EpochBlock])
 }
 
 func (ms *mysqlStore) GetNumTransactions() uint64 {
-	return atomic.LoadUint64(ms.epochTotals[EpochTransaction])
+	return atomic.LoadUint64(ms.epochTotals[store.EpochTransaction])
 }
 
 func (ms *mysqlStore) GetNumLogs() uint64 {
-	return atomic.LoadUint64(ms.epochTotals[EpochLog])
+	return atomic.LoadUint64(ms.epochTotals[store.EpochLog])
 }
 
 func (ms *mysqlStore) GetLogs(filter store.LogFilter) (logs []types.Log, err error) {
-	epochRange := ms.epochRanges[EpochLog].Load().(citypes.EpochRange)
+	epochRange := ms.epochRanges[store.EpochLog].Load().(citypes.EpochRange)
 	minEpoch, maxEpoch := epochRange.EpochFrom, epochRange.EpochTo
 
 	logrus.WithFields(logrus.Fields{
@@ -358,7 +321,7 @@ func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, err
 	}
 
 	var rpcTx types.Transaction
-	mustUnmarshalRLP(tx.TxRawData, &rpcTx)
+	util.MustUnmarshalRLP(tx.TxRawData, &rpcTx)
 
 	return &rpcTx, nil
 }
@@ -370,7 +333,7 @@ func (ms *mysqlStore) GetReceipt(txHash types.Hash) (*types.TransactionReceipt, 
 	}
 
 	var receipt types.TransactionReceipt
-	mustUnmarshalRLP(tx.ReceiptRawData, &receipt)
+	util.MustUnmarshalRLP(tx.ReceiptRawData, &receipt)
 
 	return &receipt, nil
 }
@@ -399,7 +362,7 @@ func (ms *mysqlStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error)
 
 func (ms *mysqlStore) GetBlockByEpoch(epochNumber uint64) (*types.Block, error) {
 	// Cannot get tx from db in advance, since only executed txs saved in db
-	return nil, errUnsupported
+	return nil, store.ErrUnsupported
 }
 
 func (ms *mysqlStore) GetBlockSummaryByEpoch(epochNumber uint64) (*types.BlockSummary, error) {
@@ -407,12 +370,12 @@ func (ms *mysqlStore) GetBlockSummaryByEpoch(epochNumber uint64) (*types.BlockSu
 }
 
 func (ms *mysqlStore) GetBlockByHash(blockHash types.Hash) (*types.Block, error) {
-	return nil, errUnsupported
+	return nil, store.ErrUnsupported
 }
 
 func (ms *mysqlStore) GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error) {
 	hash := blockHash.String()
-	return loadBlock(ms.db, "hash_id = ? AND hash = ?", hash2ShortId(hash), hash)
+	return loadBlock(ms.db, "hash_id = ? AND hash = ?", util.GetShortIdOfHash(hash), hash)
 }
 
 func (ms *mysqlStore) Push(data *store.EpochData) error {
@@ -430,15 +393,15 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		lastEpoch++
 
 		if data.Number != lastEpoch {
-			return errors.WithMessagef(errContinousEpochRequired, "expected epoch #%v, but #%v got", lastEpoch, data.Number)
+			return errors.WithMessagef(store.ErrContinousEpochRequired, "expected epoch #%v, but #%v got", lastEpoch, data.Number)
 		}
 	}
 
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/write")
 	defer updater.Update()
 
-	err := ms.execWithTx(func(dbTx *gorm.DB) (EpochDataOpAffects, error) {
-		txOpHistory := EpochDataOpAffects{}
+	err := ms.execWithTx(func(dbTx *gorm.DB) (store.EpochDataOpAffects, error) {
+		txOpHistory := store.EpochDataOpAffects{}
 
 		for _, data := range dataSlice {
 			if opHistory, err := ms.putOneWithTx(dbTx, data); err != nil {
@@ -464,7 +427,7 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		}
 
 		// Update all local min epoch ranges
-		for _, t := range OpEpochDataTypes {
+		for _, t := range store.OpEpochDataTypes {
 			er := ms.epochRanges[t].Load().(citypes.EpochRange)
 			er.EpochFrom = 0
 			ms.epochRanges[t].Store(er)
@@ -474,7 +437,7 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 	return err
 }
 
-func (ms *mysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) (EpochDataOpAffects, error)) error {
+func (ms *mysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) (store.EpochDataOpAffects, error)) error {
 	dbTx := ms.db.Begin()
 	if dbTx.Error != nil {
 		return errors.WithMessage(dbTx.Error, "Failed to begin db tx")
@@ -528,8 +491,8 @@ func (ms *mysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) (EpochDataOpA
 	return nil
 }
 
-func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (EpochDataOpAffects, error) {
-	opHistory := EpochDataOpAffects{}
+func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (store.EpochDataOpAffects, error) {
+	opHistory := store.EpochDataOpAffects{}
 	pivotIndex := len(data.Blocks) - 1
 
 	for i, block := range data.Blocks {
@@ -537,7 +500,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (EpochD
 			return opHistory, errors.WithMessagef(err, "Failed to write block #%v", block.Hash)
 		}
 
-		opHistory[EpochBlock]++
+		opHistory[store.EpochBlock]++
 
 		// Containers to collect block trxs & trx logs for batch inserting
 		trxs := make([]*transaction, 0)
@@ -562,7 +525,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (EpochD
 			continue
 		}
 
-		opHistory[EpochTransaction] += int64(len(trxs))
+		opHistory[store.EpochTransaction] += int64(len(trxs))
 
 		if err := dbTx.Create(trxs).Error; err != nil {
 			return opHistory, errors.WithMessagef(err, "Failed to batch write txs and receipts for block #%v", block.Hash)
@@ -573,7 +536,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (EpochD
 			continue
 		}
 
-		opHistory[EpochLog] += int64(len(trxlogs))
+		opHistory[store.EpochLog] += int64(len(trxlogs))
 
 		// According to statistics, some epoch block even has more than 2200 event logs (eg. epoch #13329688).
 		// It would be better to insert limited event logs per time for good performance. With some testing, the
@@ -639,7 +602,7 @@ func (ms *mysqlStore) Pop() error {
 		return nil
 	}
 
-	if err := ms.remove(maxEpoch, maxEpoch, EpochRemoveAll); err != nil {
+	if err := ms.remove(maxEpoch, maxEpoch, store.EpochRemoveAll); err != nil {
 		return err
 	}
 
@@ -658,7 +621,7 @@ func (ms *mysqlStore) Popn(epochUntil uint64) error {
 		return nil
 	}
 
-	if err := ms.remove(epochUntil, maxEpoch, EpochRemoveAll); err != nil {
+	if err := ms.remove(epochUntil, maxEpoch, store.EpochRemoveAll); err != nil {
 		return err
 	}
 
@@ -672,7 +635,7 @@ func (ms *mysqlStore) updateMaxEpoch(lastEpoch uint64) {
 	atomic.StoreUint64(&ms.maxEpoch, lastEpoch)
 
 	// Update local epoch ranges
-	for _, t := range OpEpochDataTypes {
+	for _, t := range store.OpEpochDataTypes {
 		epochRange := ms.epochRanges[t].Load().(citypes.EpochRange)
 
 		epochRange.EpochTo = lastEpoch
@@ -680,37 +643,37 @@ func (ms *mysqlStore) updateMaxEpoch(lastEpoch uint64) {
 	}
 }
 
-func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option EpochRemoveOption) error {
+func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemoveOption) error {
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/delete")
 	defer updater.Update()
 
-	err := ms.execWithTx(func(dbTx *gorm.DB) (EpochDataOpAffects, error) {
-		opHistory := EpochDataOpAffects{}
+	err := ms.execWithTx(func(dbTx *gorm.DB) (store.EpochDataOpAffects, error) {
+		opHistory := store.EpochDataOpAffects{}
 		// Batch delete for better performance
 		cond := fmt.Sprintf("epoch BETWEEN %v AND %v", epochFrom, epochTo)
 
 		// Remove blocks
-		if option&EpochRemoveBlock != 0 {
+		if option&store.EpochRemoveBlock != 0 {
 			db := dbTx.Delete(block{}, cond)
 			if db.Error != nil {
 				return opHistory, db.Error
 			}
 
-			opHistory[EpochBlock] -= db.RowsAffected
+			opHistory[store.EpochBlock] -= db.RowsAffected
 		}
 
 		// Remove txs
-		if option&EpochRemoveTransaction != 0 {
+		if option&store.EpochRemoveTransaction != 0 {
 			db := dbTx.Delete(transaction{}, cond)
 			if db.Error != nil {
 				return opHistory, db.Error
 			}
 
-			opHistory[EpochTransaction] -= db.RowsAffected
+			opHistory[store.EpochTransaction] -= db.RowsAffected
 		}
 
 		// Remove logs
-		if option&EpochRemoveLog != 0 {
+		if option&store.EpochRemoveLog != 0 {
 			partitions := ms.getLogsTablePartitionsForEpochRange(citypes.EpochRange{EpochFrom: epochFrom, EpochTo: epochTo})
 			if len(partitions) > 0 {
 				dbTx = dbTx.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
@@ -721,7 +684,7 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option EpochRemoveOption
 				return opHistory, db.Error
 			}
 
-			opHistory[EpochLog] -= db.RowsAffected
+			opHistory[store.EpochLog] -= db.RowsAffected
 		}
 
 		return opHistory, nil
@@ -731,18 +694,18 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option EpochRemoveOption
 }
 
 func (ms *mysqlStore) DequeueBlocks(epochUntil uint64) error {
-	return ms.dequeueEpochRangeData(EpochBlock, epochUntil)
+	return ms.dequeueEpochRangeData(store.EpochBlock, epochUntil)
 }
 
 func (ms *mysqlStore) DequeueTransactions(epochUntil uint64) error {
-	return ms.dequeueEpochRangeData(EpochTransaction, epochUntil)
+	return ms.dequeueEpochRangeData(store.EpochTransaction, epochUntil)
 }
 
 func (ms *mysqlStore) DequeueLogs(epochUntil uint64) error {
-	return ms.dequeueEpochRangeData(EpochLog, epochUntil)
+	return ms.dequeueEpochRangeData(store.EpochLog, epochUntil)
 }
 
-func (ms *mysqlStore) dequeueEpochRangeData(rt EpochDataType, epochUntil uint64) error {
+func (ms *mysqlStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil uint64) error {
 	// Genesis block will never be dequeued
 	epochUntil = util.MaxUint64(epochUntil, 1)
 
@@ -752,7 +715,7 @@ func (ms *mysqlStore) dequeueEpochRangeData(rt EpochDataType, epochUntil uint64)
 		return nil
 	}
 
-	if err := ms.remove(epochRange.EpochFrom, epochUntil, epochDataTypeRemoveOptionMap[rt]); err != nil {
+	if err := ms.remove(epochRange.EpochFrom, epochUntil, store.EpochDataTypeRemoveOptionMap[rt]); err != nil {
 		return err
 	}
 
@@ -762,7 +725,7 @@ func (ms *mysqlStore) dequeueEpochRangeData(rt EpochDataType, epochUntil uint64)
 
 	// Update global epoch ranges
 	minEpoch := atomic.LoadUint64(&ms.minEpoch)
-	for _, t := range OpEpochDataTypes {
+	for _, t := range store.OpEpochDataTypes {
 		er := ms.epochRanges[t].Load().(citypes.EpochRange)
 		minEpoch = util.MinUint64(minEpoch, er.EpochFrom)
 	}
