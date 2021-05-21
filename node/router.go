@@ -4,11 +4,10 @@ import (
 	"context"
 	"time"
 
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 )
@@ -38,7 +37,11 @@ func MustNewRouterFromViper() Router {
 	// Add node rpc router if configured
 	if url := cfg.Router.NodeRPCURL; len(url) > 0 {
 		// http://127.0.0.1:22530
-		client := util.MustNewCfxClient(url)
+		client, err := rpc.DialHTTP(url)
+		if err != nil {
+			logrus.WithError(err).Fatal("Failed to create rpc client")
+		}
+
 		routers = append(routers, NewNodeRpcRouter(client))
 
 		// Also add local router in case node rpc temporary unavailable
@@ -107,10 +110,10 @@ func (r *RedisRouter) Route(key []byte) string {
 
 // NodeRpcRouter routes RPC requests via node management RPC service.
 type NodeRpcRouter struct {
-	client sdk.ClientOperator
+	client *rpc.Client
 }
 
-func NewNodeRpcRouter(client sdk.ClientOperator) *NodeRpcRouter {
+func NewNodeRpcRouter(client *rpc.Client) *NodeRpcRouter {
 	return &NodeRpcRouter{
 		client: client,
 	}
@@ -118,7 +121,7 @@ func NewNodeRpcRouter(client sdk.ClientOperator) *NodeRpcRouter {
 
 func (r *NodeRpcRouter) Route(key []byte) string {
 	var result string
-	if err := r.client.CallRPC(&result, "node_route", hexutil.Bytes(key)); err != nil {
+	if err := r.client.Call(&result, "node_route", hexutil.Bytes(key)); err != nil {
 		logrus.WithError(err).Error("Failed to route key from node RPC")
 		return ""
 	}
@@ -168,9 +171,9 @@ func (r *LocalRouter) Route(key []byte) string {
 	return r.hashRing.LocateKey(key).String()
 }
 
-func NewLocalRouterFromNodeRPC(client sdk.ClientOperator) (*LocalRouter, error) {
+func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
 	var urls []string
-	if err := client.CallRPC(&urls, "node_list"); err != nil {
+	if err := client.Call(&urls, "node_list"); err != nil {
 		logrus.WithError(err).Error("Failed to get nodes from node RPC")
 		return nil, err
 	}
@@ -182,14 +185,14 @@ func NewLocalRouterFromNodeRPC(client sdk.ClientOperator) (*LocalRouter, error) 
 	return router, nil
 }
 
-func (r *LocalRouter) update(client sdk.ClientOperator) {
+func (r *LocalRouter) update(client *rpc.Client) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 
 	// could update nodes periodically all the time
 	for range ticker.C {
 		var urls []string
-		if err := client.CallRPC(&urls, "node_list"); err != nil {
+		if err := client.Call(&urls, "node_list"); err != nil {
 			logrus.WithError(err).Debug("Failed to get nodes from node RPC periodically")
 		} else {
 			r.updateOnce(urls)
