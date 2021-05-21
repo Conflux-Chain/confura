@@ -25,11 +25,7 @@ var (
 	dingRobot dingrobot.Roboter
 )
 
-func init() {
-	if !viper.GetBool("alert.dingtalk.enabled") {
-		return
-	}
-
+func InitDingRobot() {
 	dingTalkCustomTags = viper.GetStringSlice("alert.customTags")
 	dingTalkCustomTagsStr = strings.Join(dingTalkCustomTags, "/")
 
@@ -51,8 +47,5 @@ func SendDingTalkTextMessage(level, brief, detail string) error {
 	nowStr := time.Now().Format("2006-01-02T15:04:05-0700")
 	msg := fmt.Sprintf(dingTalkAlertMsgTpl, dingTalkCustomTagsStr, level, brief, detail, nowStr)
 
-	atMobiles := viper.GetStringSlice("alert.dingtalk.atMobiles")
-	isAtAll := viper.GetBool("alert.dingtalk.isAtAll")
-
-	return dingRobot.SendText(msg, atMobiles, isAtAll)
+	return dingRobot.SendText(msg, dingTalkAtMobiles, dingTalkIsAtAll)
 }

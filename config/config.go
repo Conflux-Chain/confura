@@ -14,6 +14,7 @@ func init() {
 	mustInitViper()
 	initLogger()
 	initMetrics()
+	initAlert()
 }
 
 func mustInitViper() {
@@ -30,6 +31,12 @@ func mustInitViper() {
 
 	if err := viper.ReadInConfig(); err != nil {
 		panic(errors.WithMessage(err, "Failed to initialize viper"))
+	}
+}
+
+func initAlert() {
+	if viper.GetBool("alert.dingtalk.enabled") {
+		alert.InitDingRobot()
 	}
 }
 
