@@ -14,6 +14,7 @@ import (
 
 // Config represents the mysql configurations to open a database instance.
 type Config struct {
+	Host     string
 	Username string
 	Password string
 	Database string
@@ -30,6 +31,7 @@ func NewConfigFromViper() (Config, bool) {
 	}
 
 	return Config{
+		Host:     viper.GetString("store.mysql.host"),
 		Username: viper.GetString("store.mysql.username"),
 		Password: viper.GetString("store.mysql.password"),
 		Database: viper.GetString("store.mysql.database"),
@@ -66,7 +68,8 @@ func (config *Config) MustOpenOrCreate() store.Store {
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {
-	dsn := fmt.Sprintf("%v:%v@/%v", config.Username, config.Password, database)
+	// refer to https://github.com/go-sql-driver/mysql#dsn-data-source-name
+	dsn := fmt.Sprintf("%v:%v@tcp(%v)/%v", config.Username, config.Password, config.Host, database)
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 
 	if logrus.GetLevel() == logrus.DebugLevel {

@@ -38,6 +38,7 @@
     "store": {
         "mysql": {
             "enabled": false,
+            "host": "127.0.0.1:3306",
             "username": "",
             "password": "",
             "database": "conflux_infura",
