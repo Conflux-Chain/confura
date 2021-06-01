@@ -4,6 +4,8 @@ import (
 	"math"
 	"testing"
 
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -47,14 +49,14 @@ func TestFindFirstRevertedEpochInRange(t *testing.T) {
 		t.Logf(">>>>>> run testcase %v", i+1)
 
 		// Epoch reverted checker
-		checker := func(epochNo uint64) (bool, error) {
+		checker := func(cfx sdk.ClientOperator, s store.Store, epochNo uint64) (bool, error) {
 			t.Logf("check epoch: %v", epochNo)
 			if epochNo >= tc.firstReverted {
 				return true, nil
 			}
 			return false, nil
 		}
-		res, err := syncer.findFirstRevertedEpochInRange(tc.epochRange, checker)
+		res, err := findFirstRevertedEpochInRange(syncer.cfx, syncer.db, tc.epochRange, checker)
 		assert.Nil(t, err)
 		assert.Equal(t, tc.expected, res)
 	}
@@ -99,21 +101,21 @@ func TestEnsureEpochRangeNotRerverted(t *testing.T) {
 		t.Logf(">>>>>> run testcase %v", i+1)
 
 		// Epoch reverted checker
-		checker := func(epochNo uint64) (bool, error) {
+		checker := func(cfx sdk.ClientOperator, s store.Store, epochNo uint64) (bool, error) {
 			t.Logf("check epoch: %v", epochNo)
 			if epochNo >= tc.firstReverted {
 				return true, nil
 			}
 			return false, nil
 		}
-		searcher := func(epochRange citypes.EpochRange) (uint64, error) {
-			return syncer.findFirstRevertedEpochInRange(epochRange, checker)
+		searcher := func(cfx sdk.ClientOperator, s store.Store, epochRange citypes.EpochRange) (uint64, error) {
+			return findFirstRevertedEpochInRange(syncer.cfx, syncer.db, epochRange, checker)
 		}
-		pruner := func(epochRange citypes.EpochRange) error {
+		pruner := func(s store.Store, epochRange citypes.EpochRange) error {
 			assert.Equal(t, tc.expectedPrunedEpochFrom, epochRange.EpochFrom)
 			return nil
 		}
-		err := syncer.ensureEpochRangeNotRerverted(tc.epochRange, searcher, pruner)
+		err := ensureEpochRangeNotRerverted(syncer.cfx, syncer.db, tc.epochRange, searcher, pruner)
 		assert.Nil(t, err)
 	}
 }

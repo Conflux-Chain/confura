@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
+	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
@@ -58,7 +59,7 @@ func (rs *redisStore) GetLogEpochRange() (uint64, uint64, error) {
 }
 
 func (rs *redisStore) GetGlobalEpochRange() (uint64, uint64, error) {
-	return loadEpochRange(rs.ctx, rs.rdb, store.EpochNil)
+	return loadEpochRange(rs.ctx, rs.rdb, store.EpochDataNil)
 }
 
 func (rs *redisStore) GetNumBlocks() uint64 {
@@ -141,13 +142,19 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 	defer updater.Update()
 
 	_, lastEpoch, err := rs.GetGlobalEpochRange()
-	if err != nil {
-		return errors.WithMessage(err, "Failed to get global epoch range")
+	if rs.IsRecordNotFound(err) { // epoch range not found in redis
+		lastEpoch = citypes.EpochNumberNil
+	} else if err != nil {
+		return errors.WithMessage(err, "failed to get global epoch range from redis")
 	}
 
 	watchKeys := make([]string, 0, len(dataSlice)+1)
 	for _, data := range dataSlice {
-		lastEpoch++
+		if lastEpoch == citypes.EpochNumberNil {
+			lastEpoch = data.Number
+		} else {
+			lastEpoch++
+		}
 
 		if data.Number != lastEpoch { // ensure continous epoch
 			return errors.WithMessagef(store.ErrContinousEpochRequired,
@@ -170,6 +177,8 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 
 			txOpHistory.Merge(opHistory)
 		}
+
+		logrus.WithField("opHistory", txOpHistory).Debug("Pushn db operation history")
 
 		if err := rs.updateEpochDataCount(txOpHistory); err != nil { // update epoch data count
 			return err
@@ -220,6 +229,10 @@ func (rs *redisStore) DequeueLogs(epochUntil uint64) error {
 
 func (rs *redisStore) Close() error {
 	return rs.rdb.Close()
+}
+
+func (rs *redisStore) Flush() error {
+	return rs.rdb.FlushDBAsync(rs.ctx).Err()
 }
 
 func (rs *redisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKeys ...string) error {
@@ -423,18 +436,42 @@ func (rs *redisStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil u
 }
 
 func (rs *redisStore) updateEpochRangeMax(epochNo uint64) error {
-	batchKV := make([]interface{}, 0, 4*2)
+	cacheKey := getMetaCacheKey("epoch.ranges")
+	batchKVTo := make([]interface{}, 0, 4*2)
+	batchKFrom := make([]string, 0, 4)
 
 	opEpochDataTypes := append([]store.EpochDataType{}, store.OpEpochDataTypes...)
+	opEpochDataTypes = append(opEpochDataTypes, store.EpochDataNil)
 	for _, rt := range opEpochDataTypes {
-		_, fieldTo := getMetaEpochRangeField(rt)
-		batchKV = append(batchKV, fieldTo, epochNo)
+		fieldFrom, fieldTo := getMetaEpochRangeField(rt)
+		batchKVTo = append(batchKVTo, fieldTo, epochNo)
+		batchKFrom = append(batchKFrom, fieldFrom)
 	}
 
-	_, err := rs.rdb.HSet(rs.ctx, getMetaCacheKey("epoch.ranges"), batchKV...).Result()
+	// Batch update max of epoch range
+	if _, err := rs.rdb.HSet(rs.ctx, cacheKey, batchKVTo...).Result(); err != nil {
+		logrus.WithField("batchFieldValues", batchKVTo).WithError(err).Error("Failed to update max of epoch range to cache store")
+		return errors.WithMessage(err, "failed to update max of epoch range to cache store")
+	}
+
+	// Also update min of epoch range if field not set yet
+	iSlice, err := rs.rdb.HMGet(rs.ctx, cacheKey, batchKFrom...).Result()
 	if err != nil {
-		logrus.WithError(err).Error("Failed to update max of epoch range")
-		return err
+		logrus.WithField("batchFields", batchKFrom).WithError(err).Error("Failed to get min of epoch range from cache store")
+		return errors.WithMessage(err, "failed to get min of epoch range from cache store")
+	}
+
+	for i, v := range iSlice {
+		if v != nil { // already set
+			continue
+		}
+
+		logrus.WithField("field", batchKFrom[i]).Debugf("Updating min of epoch range with value %v to cache store", epochNo)
+
+		if err := rs.rdb.HSetNX(rs.ctx, cacheKey, batchKFrom[i], epochNo).Err(); err != nil {
+			logrus.WithField("field", batchKFrom[i]).WithError(err).Error("Failed to update min of epoch range to cache store")
+			return errors.WithMessage(err, "failed to update min of epoch range to cache store")
+		}
 	}
 
 	return nil
@@ -451,7 +488,7 @@ func (rs *redisStore) updateEpochRangeMin(epochNo uint64, rt store.EpochDataType
 		return err
 	}
 
-	gFieldFrom, _ := getMetaEpochRangeField(store.EpochNil)
+	gFieldFrom, _ := getMetaEpochRangeField(store.EpochDataNil)
 	luaKeys := make([]string, 0, len(store.OpEpochDataTypes)+1)
 	luaKeys = append(luaKeys, cacheKey)
 

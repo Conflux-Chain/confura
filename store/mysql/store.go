@@ -231,7 +231,7 @@ func (ms *mysqlStore) GetLogEpochRange() (uint64, uint64, error) {
 }
 
 func (ms *mysqlStore) GetGlobalEpochRange() (uint64, uint64, error) {
-	return ms.getEpochRange(store.EpochNil)
+	return ms.getEpochRange(store.EpochDataNil)
 }
 
 func (ms *mysqlStore) getEpochRange(rt store.EpochDataType) (uint64, uint64, error) {

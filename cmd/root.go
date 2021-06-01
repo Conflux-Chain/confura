@@ -13,6 +13,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/rpc"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
+	"github.com/conflux-chain/conflux-infura/store/redis"
 	cisync "github.com/conflux-chain/conflux-infura/sync"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
@@ -55,9 +56,20 @@ func start(cmd *cobra.Command, args []string) {
 		defer db.Close()
 	}
 
+	// Initialize cache store
+	var cache store.CacheStore
+	if viper.GetBool("store.redis.enabled") {
+		cache = redis.MustNewCacheStore()
+		defer cache.Close()
+	}
+
 	if syncServerEnabled {
 		if db == nil {
 			logrus.Fatal("database not enabled")
+		}
+
+		if cache == nil {
+			logrus.Fatal("cache not enabled")
 		}
 
 		// Prepare cfx instance with http protocol for epoch sync purpose
@@ -65,9 +77,13 @@ func start(cmd *cobra.Command, args []string) {
 		defer syncCfx.Close()
 
 		// Start to sync data
-		logrus.Info("Starting to sync epoch data...")
+		logrus.Info("Starting to sync epoch data into db...")
 		syncer := cisync.NewDatabaseSyncer(syncCfx, db)
 		go syncer.Sync(ctx, wg)
+
+		logrus.Info("Starting to sync epoch data into cache...")
+		csyncer := cisync.NewKVCacheSyncer(syncCfx, cache)
+		go csyncer.Sync(ctx, wg)
 
 		// Prepare cfx instance with ws portocol for pub/sub purpose
 		subCfx := util.MustNewCfxClient(viper.GetString("cfx.ws"))
@@ -75,7 +91,7 @@ func start(cmd *cobra.Command, args []string) {
 
 		// Monitor pivot chain switch via pub/sub
 		logrus.Info("Starting to pub/sub conflux chain...")
-		go cisync.MustSubEpoch(ctx, wg, subCfx, syncer)
+		go cisync.MustSubEpoch(ctx, wg, subCfx, syncer, csyncer)
 
 		// Start database pruner
 		logrus.Info("Starting db pruner...")

@@ -32,7 +32,7 @@ const (
 type EpochDataType uint
 
 const (
-	EpochNil EpochDataType = iota
+	EpochDataNil EpochDataType = iota
 	EpochTransaction
 	EpochLog
 	EpochBlock
@@ -50,12 +50,14 @@ var (
 		EpochTransaction,
 		EpochLog,
 	}
+
 	// epoch data remove options
 	EpochDataTypeRemoveOptionMap = map[EpochDataType]EpochRemoveOption{
 		EpochBlock:       EpochRemoveBlock,
 		EpochTransaction: EpochRemoveTransaction,
 		EpochLog:         EpochRemoveLog,
 	}
+
 	// epoch data dequeue options
 	EpochDataTypeDequeueOptionMap = map[EpochDataType]EpochOpType{
 		EpochBlock:       EpochOpDequeueBlock,
@@ -63,6 +65,19 @@ var (
 		EpochLog:         EpochOpDequeueLog,
 	}
 )
+
+func EpochDataTypeToStr(t EpochDataType) string {
+	switch t {
+	case EpochTransaction:
+		return "tx"
+	case EpochLog:
+		return "log"
+	case EpochBlock:
+		return "block"
+	}
+
+	return "unknown"
+}
 
 // EpochDataOpAffects to record num of changes for epoch data
 type EpochDataOpAffects map[EpochDataType]int64
@@ -72,13 +87,13 @@ func (affects EpochDataOpAffects) String() string {
 	strBuilder.Grow(len(affects) * 30)
 
 	for t, v := range affects {
-		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", t, v))
+		strBuilder.WriteString(fmt.Sprintf("%v:%v;", EpochDataTypeToStr(t), v))
 	}
 
 	return strBuilder.String()
 }
 
-// Merge operation history
+// Merge merges operation history into the receiver
 func (affects EpochDataOpAffects) Merge(af EpochDataOpAffects) {
 	for k, v := range af {
 		affects[k] += v

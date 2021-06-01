@@ -1,7 +1,9 @@
 package sync
 
 import (
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
@@ -9,48 +11,48 @@ import (
 )
 
 // Epoch reverted handler function injected support for flexibility and testability
-type epochRevertedChecker func(uint64) (bool, error)
-type firstRevertedEpochSearcher func(epochRange citypes.EpochRange) (uint64, error)
-type epochRevertedPruner func(epochRange citypes.EpochRange) error
+type epochRevertedChecker func(cfx sdk.ClientOperator, s store.Store, epochNo uint64) (res bool, err error)
+type firstRevertedEpochSearcher func(cfx sdk.ClientOperator, s store.Store, epochRange citypes.EpochRange) (uint64, error)
+type epochRevertedPruner func(s store.Store, er citypes.EpochRange) error
 
-// Ensure last confirmed epoch data valid such as not reverted etc.,
-func (syncer *DatabaseSyncer) ensureLastConfirmedEpochOk() error {
-	// Get the latest confirmed sync epoch number from db
-	minEpoch, maxEpoch, err := syncer.db.GetGlobalEpochRange()
+// Ensure epoch data in store valid such as not reverted etc.,
+func ensureStoreEpochDataOk(cfx sdk.ClientOperator, s store.Store) error {
+	// Get the latest confirmed sync epoch number from store
+	minEpoch, maxEpoch, err := s.GetGlobalEpochRange()
 
-	// If there is no epoch data in db yet, nothing needs to be done
-	if syncer.db.IsRecordNotFound(err) {
+	// If there is no epoch data in store yet, nothing needs to be done
+	if s.IsRecordNotFound(err) {
 		return nil
 	}
 
 	// Otherwise return err
 	if err != nil {
-		return errors.Wrap(err, "failed to read block epoch range from database")
+		return errors.WithMessage(err, "failed to read block epoch range from store")
 	}
 
 	epochRange := citypes.EpochRange{EpochFrom: minEpoch, EpochTo: maxEpoch}
 
-	logger := logrus.WithField("epochRange", epochRange)
-	logger.Debug("Ensure epoch data within range ok")
+	logrus.WithField("epochRange", epochRange).Debug("Ensuring epoch data within range ok...")
 
 	// Epoch reverted handler
-	searcher := func(epochRange citypes.EpochRange) (uint64, error) {
-		return syncer.findFirstRevertedEpochInRange(epochRange, syncer.checkIfEpochIsReverted)
+	searcher := func(cfx sdk.ClientOperator, s store.Store, epochRange citypes.EpochRange) (uint64, error) {
+		return findFirstRevertedEpochInRange(cfx, s, epochRange, checkIfEpochIsReverted)
 	}
 
-	return syncer.ensureEpochRangeNotRerverted(epochRange, searcher, syncer.pruneRevertedEpochData)
+	return ensureEpochRangeNotRerverted(cfx, s, epochRange, searcher, pruneRevertedEpochData)
 }
 
 // Ensure epoch within the specified range not reverted or prune the reverted epoch data
-func (syncer *DatabaseSyncer) ensureEpochRangeNotRerverted(epochRange citypes.EpochRange, searcher firstRevertedEpochSearcher, pruner epochRevertedPruner) error {
+func ensureEpochRangeNotRerverted(cfx sdk.ClientOperator, s store.Store, epochRange citypes.EpochRange, searcher firstRevertedEpochSearcher, pruner epochRevertedPruner) error {
 	logger := logrus.WithField("epochRange", epochRange)
-	logger.Debug("Ensure epoch data within range not reverted")
+	logger.Debug("Ensuring epoch data within range not reverted...")
 
 	// Handle 200 epochs per window for each loop
 	var winSize, winStart, winEnd, matched uint64 = 200, epochRange.EpochTo, epochRange.EpochTo, 0
 	for winStart <= winEnd && winEnd > 0 {
 		// Find the first reverted epoch within epoch range (winStart, winEnd)
-		firstRevertedEpoch, err := searcher(citypes.EpochRange{EpochFrom: winStart, EpochTo: winEnd})
+		firstRevertedEpoch, err := searcher(cfx, s, citypes.EpochRange{EpochFrom: winStart, EpochTo: winEnd})
+
 		if err != nil {
 			logrus.WithField("epochRange", citypes.EpochRange{
 				EpochFrom: winStart, EpochTo: winEnd,
@@ -79,10 +81,10 @@ func (syncer *DatabaseSyncer) ensureEpochRangeNotRerverted(epochRange citypes.Ep
 	if matched != 0 && matched >= epochRange.EpochFrom && matched <= epochRange.EpochTo {
 		logger.WithField("matched", matched).Debug("Found the first reverted epoch within range")
 
-		if err := pruner(citypes.EpochRange{EpochFrom: matched, EpochTo: epochRange.EpochTo}); err != nil {
+		if err := pruner(s, citypes.EpochRange{EpochFrom: matched, EpochTo: epochRange.EpochTo}); err != nil {
 			logger.WithField("epochFrom", matched).Error("Failed to prune reverted epoch within range")
 
-			return errors.Wrap(err, "failed to prune reverted epoch data")
+			return errors.WithMessage(err, "failed to prune reverted epoch data")
 		}
 	}
 
@@ -90,15 +92,15 @@ func (syncer *DatabaseSyncer) ensureEpochRangeNotRerverted(epochRange citypes.Ep
 }
 
 // Find the first reverted epoch number from a specified epoch range
-func (syncer *DatabaseSyncer) findFirstRevertedEpochInRange(er citypes.EpochRange, checker epochRevertedChecker) (uint64, error) {
+func findFirstRevertedEpochInRange(cfx sdk.ClientOperator, s store.Store, er citypes.EpochRange, checker epochRevertedChecker) (uint64, error) {
 	// Find the first reverted sync epoch with binary probing
 	start, mid, end, matched := er.EpochFrom, er.EpochTo, er.EpochTo, uint64(0)
 	for start <= end && mid >= er.EpochFrom && mid <= er.EpochTo {
-		reverted, err := checker(mid)
+		reverted, err := checker(cfx, s, mid)
 		if err != nil {
 			logrus.WithError(err).WithField("epoch", mid).Error("Failed to check epoch reverted")
 
-			return 0, errors.Wrapf(err, "failed to check epoch reverted")
+			return 0, errors.WithMessage(err, "failed to check epoch reverted")
 		}
 
 		if reverted {
@@ -121,26 +123,31 @@ func (syncer *DatabaseSyncer) findFirstRevertedEpochInRange(er citypes.EpochRang
 	return matched, nil
 }
 
-// Check if the confirmed epoch data in db is reverted
-func (syncer *DatabaseSyncer) checkIfEpochIsReverted(epochNo uint64) (res bool, err error) {
-	// Get the confirmed sync epoch block from db
-	dbBlock, err := syncer.db.GetBlockSummaryByEpoch(epochNo)
+// Check if the epoch data in store is reverted
+func checkIfEpochIsReverted(cfx sdk.ClientOperator, s store.Store, epochNo uint64) (res bool, err error) {
+	// Get the sync epoch block from store
+	sBlock, err := s.GetBlockSummaryByEpoch(epochNo)
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to get pivot block for epoch %v from db", epochNo)
+		// Epoch data not found in store, take it as not reverted
+		if s.IsRecordNotFound(errors.Cause(err)) {
+			return false, nil
+		}
+
+		return false, errors.WithMessagef(err, "failed to get pivot block for epoch %v from store", epochNo)
 	}
 
-	// Fetch the confirmed epoch block from blockchain
-	epBlock, err := syncer.cfx.GetBlockByEpoch(types.NewEpochNumberUint64(epochNo))
+	// Fetch the epoch pivot block from blockchain
+	epBlock, err := cfx.GetBlockByEpoch(types.NewEpochNumberUint64(epochNo))
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to get pivot block for epoch %v from chain", epochNo)
+		return false, errors.WithMessagef(err, "failed to get pivot block for epoch %v from blockchain", epochNo)
 	}
 
 	// Compare block hash to see if the epoch is reverted
-	return dbBlock.BlockHeader.Hash != epBlock.BlockHeader.Hash, nil
+	return sBlock.BlockHeader.Hash != epBlock.BlockHeader.Hash, nil
 }
 
-// Remove reverted epoch data (blocks, trxs, logs etc.,)
-func (syncer *DatabaseSyncer) pruneRevertedEpochData(er citypes.EpochRange) error {
+// Remove reverted epoch data (blocks, trxs, and logs) from store
+func pruneRevertedEpochData(s store.Store, er citypes.EpochRange) error {
 	numsEpochs := er.EpochTo - er.EpochFrom + 1
 	// Delete at most 200 records per round
 	maxDelete := uint64(200)
@@ -150,8 +157,8 @@ func (syncer *DatabaseSyncer) pruneRevertedEpochData(er citypes.EpochRange) erro
 	}
 
 	for i := rounds; i > 0; i-- {
-		// Remove reverted epoch data from db
-		if err := syncer.db.Popn(er.EpochFrom + (i-1)*maxDelete); err != nil {
+		// Remove reverted epoch data from store
+		if err := s.Popn(er.EpochFrom + (i-1)*maxDelete); err != nil {
 			return err
 		}
 	}

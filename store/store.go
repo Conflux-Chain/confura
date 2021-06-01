@@ -50,3 +50,10 @@ type Store interface {
 	// which is deleting data from the oldest epoch to some new epoch
 	DequeueLogs(epochUntil uint64) error
 }
+
+type CacheStore interface {
+	Store
+
+	// Flush deletes all kv pairs in cache
+	Flush() error
+}

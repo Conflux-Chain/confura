@@ -42,7 +42,7 @@ func NewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSyncer {
 	}
 
 	// Ensure confirmed sync epoch not reverted
-	if err := syncer.ensureLastConfirmedEpochOk(); err != nil {
+	if err := ensureStoreEpochDataOk(cfx, db); err != nil {
 		logrus.WithError(err).Fatal("failed to ensure last confirmed epoch data not reverted")
 	}
 
@@ -158,7 +158,7 @@ func (syncer *DatabaseSyncer) doCheckPoint() error {
 	// Try at most 50 times to ensure confirmed epoch data in db not reverted
 	maxTries := 50
 	for tryTimes := 0; tryTimes < maxTries; tryTimes++ {
-		if err := syncer.ensureLastConfirmedEpochOk(); err == nil {
+		if err := ensureStoreEpochDataOk(syncer.cfx, syncer.db); err == nil {
 			return nil
 		} else if tryTimes == maxTries-1 {
 			return err

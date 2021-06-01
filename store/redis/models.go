@@ -2,12 +2,12 @@ package redis
 
 import (
 	"context"
-	"math"
 	"strconv"
 	"strings"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
+	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
@@ -194,10 +194,10 @@ func loadEpochRange(ctx context.Context, rdb *redis.Client, dt store.EpochDataTy
 		return 0, 0, err
 	}
 
-	epochRanges := [2]uint64{math.MaxUint64, math.MaxUint64}
+	epochRanges := [2]uint64{citypes.EpochNumberNil, citypes.EpochNumberNil}
 	for i, v := range iSlice {
 		sv, ok := v.(string)
-		if !ok { // not found
+		if !ok { // field not found
 			continue
 		}
 
@@ -207,11 +207,11 @@ func loadEpochRange(ctx context.Context, rdb *redis.Client, dt store.EpochDataTy
 	}
 
 	epochRanges[0] = util.MinUint64(epochRanges[0], epochRanges[1])
-	if epochRanges[0] == math.MaxUint64 { // both are math.MaxUint64
+	if epochRanges[0] == citypes.EpochNumberNil { // both epoch number are uninitialized
 		return 0, 0, store.ErrNotFound
 	}
 
-	if epochRanges[1] == math.MaxUint64 {
+	if epochRanges[1] == citypes.EpochNumberNil { // align both end when upper end not set
 		epochRanges[1] = epochRanges[0]
 	}
 
