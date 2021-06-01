@@ -416,7 +416,7 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			logrus.WithField("removeOperationType", rmOpType).Fatal("Invalid remove operation type for redis store")
 		}
 
-		return rs.updateEpochRangeMin(epochFrom+1, edt) // update min of epoch range for dequeue
+		return rs.updateEpochRangeMin(epochTo+1, edt) // update min of epoch range for dequeue
 	}, watchKeys...)
 }
 
@@ -443,6 +443,9 @@ func (rs *redisStore) updateEpochRangeMax(epochNo uint64) error {
 	opEpochDataTypes := append([]store.EpochDataType{}, store.OpEpochDataTypes...)
 	opEpochDataTypes = append(opEpochDataTypes, store.EpochDataNil)
 	for _, rt := range opEpochDataTypes {
+		if rt == store.EpochLog { // TODO add event logs support
+			continue
+		}
 		fieldFrom, fieldTo := getMetaEpochRangeField(rt)
 		batchKVTo = append(batchKVTo, fieldTo, epochNo)
 		batchKFrom = append(batchKFrom, fieldFrom)
@@ -500,7 +503,7 @@ func (rs *redisStore) updateEpochRangeMin(epochNo uint64, rt store.EpochDataType
 	// It's not possible to get key value from redis inside a multi transaction.
 	// So we need to update min of global epoch range in lua script to make it atomic.
 	// We can run the following command in redis concole to test the lua script:
-	// eval "local a,b=redis.call('HMGET',unpack(KEYS)),nil;for c,d in pairs(a)do local e=tonumber(d)if b==nil or e~=nil and b>e then b=e end end;if b~=nil then redis.call('HSET',KEYS[1],ARGV[1],b)redis.log(redis.LOG_DEBUG,'update min of epoch range (key='..KEYS[1]..',field='..ARGV[1]..',value='..b..')')end" 4 "metadata:epoch.ranges" "block.epoch.from" "tx.epoch.from" "log.epoch.from" "epoch.from"
+	// eval "local a,b=redis.call('HMGET',unpack(KEYS)),nil;for c,d in pairs(a)do local e=tonumber(d)if b==nil or e~=nil and b>e then b=e end end;if b~=nil then redis.call('HSET',KEYS[1],ARGV[1],b)redis.log(redis.LOG_WARNING,'update min of epoch range (key='..KEYS[1]..',field='..ARGV[1]..',value='..b..')')end" 4 "metadata:epoch.ranges" "block.epoch.from" "tx.epoch.from" "log.epoch.from" "epoch.from"
 	luaScript := `
 local vals, minv = redis.call('HMGET', unpack(KEYS)), nil
 
@@ -518,13 +521,14 @@ then
 	redis.call('HSET', KEYS[1], ARGV[1], minv)
 	redis.log(redis.LOG_DEBUG, 'update min of epoch range (key='..KEYS[1]..',field='..ARGV[1]..',value='..minv..')')
 end
+
+return true
 `
-	_, err = rs.rdb.Eval(rs.ctx, luaScript, luaKeys, gFieldFrom).Result()
-	if err != nil {
+	if err := rs.rdb.Eval(rs.ctx, luaScript, luaKeys, gFieldFrom).Err(); err != nil {
 		logrus.WithError(err).Error("Failed to execute lua script to update min of global epoch range")
 	}
 
-	return err
+	return nil
 }
 
 func (rs *redisStore) updateEpochDataCount(opHistory store.EpochDataOpAffects) error {

@@ -95,8 +95,13 @@ func start(cmd *cobra.Command, args []string) {
 
 		// Start database pruner
 		logrus.Info("Starting db pruner...")
-		pruner := cisync.NewDBPruner(db)
+		pruner := cisync.MustNewDBPruner(db)
 		go pruner.Prune(ctx, wg)
+
+		// Start kv cache pruner
+		logrus.Info("Starting kv cache pruner...")
+		cpruner := cisync.MustNewKVCachePruner(cache)
+		go cpruner.Prune(ctx, wg)
 	}
 
 	var rpcServers []*util.RpcServer

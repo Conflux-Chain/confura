@@ -70,6 +70,15 @@
                 "maxTxs": 20000000,
                 "maxLogs": 20000000
             }
+        },
+        "cache": {
+            "interval": 30000,
+            "maxEpochs": 10,
+            "threshold": {
+                "maxBlocks": 100000,
+                "maxTxs": 100000,
+                "maxLogs": 100000
+            }
         }
     },
     "node": {
