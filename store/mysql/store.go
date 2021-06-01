@@ -397,7 +397,7 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		}
 	}
 
-	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/write")
+	updater := metrics.NewTimerUpdaterByName("infura/duration/store/mysql/write")
 	defer updater.Update()
 
 	err := ms.execWithTx(func(dbTx *gorm.DB) (store.EpochDataOpAffects, error) {

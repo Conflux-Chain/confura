@@ -177,20 +177,20 @@ func (syncer *KVCacheSyncer) doTicker(ticker *time.Ticker) error {
 func (syncer *KVCacheSyncer) syncOnce() (bool, error) {
 	logger := logrus.WithField("syncWindow", syncer.syncWindow)
 
-	updater := metrics.NewTimerUpdaterByName("infura/cache/sync/once")
-	defer updater.Update()
-
 	if syncer.syncWindow.isEmpty() {
 		logger.Debug("Cache syncer syncOnce skipped with epoch sync window empty")
 		return true, nil
 	}
+
+	updater := metrics.NewTimerUpdaterByName("infura/duration/cache/sync/once")
+	defer updater.Update()
 
 	syncFrom, syncSize := syncer.syncWindow.peekShrinkFrom(uint32(syncer.maxSyncEpochs))
 
 	logger = logger.WithFields(logrus.Fields{"syncFrom": syncFrom, "syncSize": syncSize})
 	logger.Debug("Cache syncer starting to sync epoch(s)...")
 
-	syncSizeGauge := gometrics.GetOrRegisterGauge("infura/cache/sync/epoch/size/stated", nil)
+	syncSizeGauge := gometrics.GetOrRegisterGauge("infura/cache/sync/size/stated", nil)
 	syncSizeGauge.Update(int64(syncSize))
 
 	epochDataSlice := make([]*store.EpochData, 0, syncSize)

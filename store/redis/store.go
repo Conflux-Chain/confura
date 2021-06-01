@@ -138,7 +138,7 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 		return nil
 	}
 
-	updater := metrics.NewTimerUpdaterByName("infura/store/redis/write")
+	updater := metrics.NewTimerUpdaterByName("infura/duration/store/redis/write")
 	defer updater.Update()
 
 	_, lastEpoch, err := rs.GetGlobalEpochRange()
@@ -324,7 +324,7 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 		return errors.Errorf("invalid epoch range (%v,%v) to remove from redis", epochFrom, epochTo)
 	}
 
-	updater := metrics.NewTimerUpdaterByName("infura/store/redis/delete")
+	updater := metrics.NewTimerUpdaterByName("infura/duration/store/redis/delete")
 	defer updater.Update()
 
 	numEpochs := epochTo - epochFrom + 1

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -13,6 +14,7 @@ import (
 )
 
 var (
+	// Flyweight objects
 	emptyEpochs         = []*types.Epoch{}
 	emptyLogs           = []types.Log{}
 	emptyDepositInfos   = []types.DepositInfo{}
@@ -21,6 +23,8 @@ var (
 	emptyRewards        = []types.RewardInfo{}
 	emptySponsorInfo    = types.SponsorInfo{}
 	emptyBlock          = types.Block{}
+
+	hitStatsCollector = cimetrics.NewHitStatsCollector()
 )
 
 type cfxAPI struct {
@@ -167,10 +171,16 @@ func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, inc
 	logger := logrus.WithFields(logrus.Fields{"blockHash": blockHash, "includeTxs": includeTxs})
 
 	if api.handler != nil {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlockByHash/store/hitratio", *isHit)
+		}(&isStoreHit)
+
 		block, err := api.handler.GetBlockByHash(ctx, blockHash, includeTxs)
 		if err == nil {
 			logger.Debug("Loading epoch data for cfx_getBlockByHash hit in the store")
 
+			isStoreHit = true
 			return block, err
 		}
 
@@ -206,10 +216,16 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch *types.Epoch
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch, "includeTxs": includeTxs})
 
 	if api.handler != nil {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlockByEpochNumber/store/hitratio", *isHit)
+		}(&isStoreHit)
+
 		block, err := api.handler.GetBlockByEpochNumber(ctx, epoch, includeTxs)
 		if err == nil {
 			logger.Debug("Loading epoch data for cfx_getBlockByEpochNumber hit in the store")
 
+			isStoreHit = true
 			return block, err
 		}
 
@@ -291,6 +307,11 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	api.inputEpochMetric.update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 
 	if sfilter, ok := store.ParseLogFilter(&filter); ok && api.handler != nil {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getLogs/store/hitratio", *isHit)
+		}(&isStoreHit)
+
 		if logs, err := api.handler.GetLogs(ctx, sfilter); err == nil {
 			// return empty slice rather than nil to comply with fullnode
 			if logs == nil {
@@ -299,6 +320,7 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 
 			logger.Debug("Loading epoch data for cfx_getLogs hit in the store")
 
+			isStoreHit = true
 			return logs, nil
 		}
 
@@ -341,10 +363,16 @@ func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) 
 	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
 
 	if api.handler != nil {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getTransactionByHash/store/hitratio", *isHit)
+		}(&isStoreHit)
+
 		tx, err := api.handler.GetTransactionByHash(ctx, txHash)
 		if err == nil {
 			logger.Debug("Loading epoch data for cfx_getTransactionByHash hit in the store")
 
+			isStoreHit = true
 			return tx, err
 		}
 
@@ -387,10 +415,16 @@ func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) ([]
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch})
 
 	if api.handler != nil {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlocksByEpoch/store/hitratio", *isHit)
+		}(&isStoreHit)
+
 		blockHashes, err := api.handler.GetBlocksByEpoch(ctx, epoch)
 		if err == nil {
 			logger.Debug("Loading epoch data for cfx_getBlocksByEpoch hit in the store")
 
+			isStoreHit = true
 			return blockHashes, err
 		}
 
@@ -423,10 +457,16 @@ func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash)
 	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
 
 	if api.handler != nil {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getTransactionReceipt/store/hitratio", *isHit)
+		}(&isStoreHit)
+
 		txRcpt, err := api.handler.GetTransactionReceipt(ctx, txHash)
 		if err == nil {
 			logger.Debug("Loading epoch data for cfx_getTransactionReceipt hit in the store")
 
+			isStoreHit = true
 			return txRcpt, err
 		}
 

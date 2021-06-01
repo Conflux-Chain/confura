@@ -10,6 +10,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
+	gometrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -93,14 +94,14 @@ func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
 func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
-	updater := metrics.NewTimerUpdaterByName("infura/sync/once")
-	defer updater.Update()
-
 	// Fetch latest confirmed epoch info from blockchain
 	epoch, err := syncer.cfx.GetEpochNumber(types.EpochLatestConfirmed)
 	if err != nil {
 		return false, errors.WithMessage(err, "Failed to query the latest confirmed epoch number")
 	}
+
+	updater := metrics.NewTimerUpdaterByName("infura/duration/db/sync/once")
+	defer updater.Update()
 
 	maxEpochTo := epoch.ToInt().Uint64()
 
@@ -118,13 +119,18 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 	if epochTo > maxEpochTo {
 		epochTo = maxEpochTo
 	}
+	syncSize := epochTo - syncer.epochFrom + 1
+
+	syncSizeGauge := gometrics.GetOrRegisterGauge("infura/db/sync/size/confirmed", nil)
+	syncSizeGauge.Update(int64(syncSize))
 
 	logger := logrus.WithFields(logrus.Fields{
+		"syncSize":   syncSize,
 		"epochRange": citypes.EpochRange{EpochFrom: syncer.epochFrom, EpochTo: epochTo},
 	})
 	logger.Debug("DB sync started to sync with epoch range")
 
-	epochDataSlice := make([]*store.EpochData, 0, epochTo-syncer.epochFrom+1)
+	epochDataSlice := make([]*store.EpochData, 0, syncSize)
 
 	for i := syncer.epochFrom; i <= epochTo; i++ {
 		data, err := store.QueryEpochData(syncer.cfx, i)

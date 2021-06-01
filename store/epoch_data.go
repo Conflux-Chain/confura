@@ -18,7 +18,7 @@ type EpochData struct {
 // QueryEpochData queries blockchain data for the specified epoch number.
 // TODO better to use batch API to return all if performance is low in case of high TPS.
 func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, error) {
-	updater := metrics.NewTimerUpdaterByName("infura/store/epoch/query")
+	updater := metrics.NewTimerUpdaterByName("infura/duration/store/epoch/query")
 	defer updater.Update()
 
 	epoch := types.NewEpochNumberUint64(epochNumber)
