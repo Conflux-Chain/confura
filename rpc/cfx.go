@@ -19,18 +19,20 @@ var (
 	emptyVoteStakeInfos = []types.VoteStakeInfo{}
 	emptyHashes         = []types.Hash{}
 	emptyRewards        = []types.RewardInfo{}
+	emptySponsorInfo    = types.SponsorInfo{}
+	emptyBlock          = types.Block{}
 )
 
 type cfxAPI struct {
 	provider         *node.ClientProvider
 	inputEpochMetric inputEpochMetric
-	db               store.Store
+	handler          cfxHandler
 }
 
-func newCfxAPI(provider *node.ClientProvider, db store.Store) *cfxAPI {
+func newCfxAPI(provider *node.ClientProvider, handler cfxHandler) *cfxAPI {
 	return &cfxAPI{
 		provider: provider,
-		db:       db,
+		handler:  handler,
 	}
 }
 
@@ -84,7 +86,7 @@ func (api *cfxAPI) GetAdmin(ctx context.Context, contract types.Address, epoch *
 func (api *cfxAPI) GetSponsorInfo(ctx context.Context, contract types.Address, epoch *types.Epoch) (types.SponsorInfo, error) {
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
-		return types.SponsorInfo{}, err
+		return emptySponsorInfo, err
 	}
 
 	api.inputEpochMetric.update(epoch, "cfx_getSponsorInfo", cfx)
@@ -162,8 +164,24 @@ func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, ep
 }
 
 func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (interface{}, error) {
+	logger := logrus.WithFields(logrus.Fields{"blockHash": blockHash, "includeTxs": includeTxs})
+
+	if api.handler != nil {
+		block, err := api.handler.GetBlockByHash(ctx, blockHash, includeTxs)
+		if err == nil {
+			logger.Debug("Loading epoch data for cfx_getBlockByHash hit in the store")
+
+			return block, err
+		}
+
+		logger.WithError(err).Debug("Loading epoch data for cfx_getBlockByHash hit missed from the store")
+	}
+
+	logger.Debug("Delegating cfx_getBlockByHash rpc request to fullnode")
+
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
+		logger.WithError(err).Debug("Failed to delegate cfx_getBlockByHash rpc request to fullnode")
 		return nil, err
 	}
 
@@ -178,15 +196,31 @@ func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, inc
 func (api *cfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockHash, pivotHash types.Hash, epoch hexutil.Uint64) (types.Block, error) {
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
-		return types.Block{}, err
+		return emptyBlock, err
 	}
 
 	return cfx.GetBlockByHashWithPivotAssumption(blockHash, pivotHash, epoch)
 }
 
 func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch *types.Epoch, includeTxs bool) (interface{}, error) {
+	logger := logrus.WithFields(logrus.Fields{"epoch": epoch, "includeTxs": includeTxs})
+
+	if api.handler != nil {
+		block, err := api.handler.GetBlockByEpochNumber(ctx, epoch, includeTxs)
+		if err == nil {
+			logger.Debug("Loading epoch data for cfx_getBlockByEpochNumber hit in the store")
+
+			return block, err
+		}
+
+		logger.WithError(err).Debug("Loading epoch data for cfx_getBlockByEpochNumber hit missed from the store")
+	}
+
+	logger.Debug("Delegating cfx_getBlockByEpochNumber rpc request to fullnode")
+
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
+		logger.WithError(err).Debug("Failed to delegate cfx_getBlockByEpochNumber rpc request to fullnode")
 		return nil, err
 	}
 
@@ -239,43 +273,43 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 }
 
 func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
+	logger := logrus.WithField("filter", filter)
+
 	if err := api.validateLogFilter(&filter); err != nil {
+		logger.WithError(err).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
 		return emptyLogs, err
 	}
 
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
+		logger.WithError(err).Debug("Failed to get available cfx client for cfx_getLogs rpc request")
 		return emptyLogs, err
 	}
 
+	// TODO optimize cfx_getLogs metrics with asynchronization to minimize side effect for rpc request
 	api.inputEpochMetric.update(filter.FromEpoch, "cfx_getLogs/from", cfx)
 	api.inputEpochMetric.update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 
-	if api.db == nil {
-		return cfx.GetLogs(filter)
-	}
+	if sfilter, ok := store.ParseLogFilter(&filter); ok && api.handler != nil {
+		if logs, err := api.handler.GetLogs(ctx, sfilter); err == nil {
+			// return empty slice rather than nil to comply with fullnode
+			if logs == nil {
+				logs = emptyLogs
+			}
 
-	if dbFilter, ok := store.ParseLogFilter(&filter); ok {
-		logs, err := api.db.GetLogs(dbFilter)
+			logger.Debug("Loading epoch data for cfx_getLogs hit in the store")
 
-		// return empty slice rather than nil to comply with fullnode
-		if logs == nil {
-			logs = emptyLogs
-		}
-
-		if err == nil {
 			return logs, nil
 		}
 
-		// for any error, delegate request to full node, including:
-		// 1. database level error
-		// 2. record not found (log range mismatch)
-		if !api.db.IsRecordNotFound(err) {
-			logrus.WithError(err).Fatal("Failed to get logs from database")
-		}
+		logger.WithError(err).Debug("Loading epoch data for cfx_getLogs hit missed from the store")
 	}
 
-	logrus.Debug("Logs not found in database, delegated to fullnode")
+	logger.Debug("Delegating cfx_getLogs rpc request to fullnode")
+
+	// for any error, delegate request to full node, including:
+	// 1. database level error
+	// 2. record not found (log range mismatch)
 	return cfx.GetLogs(filter)
 }
 
@@ -304,8 +338,25 @@ func (api *cfxAPI) validateLogFilter(filter *types.LogFilter) error {
 }
 
 func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
+	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
+
+	if api.handler != nil {
+		tx, err := api.handler.GetTransactionByHash(ctx, txHash)
+		if err == nil {
+			logger.Debug("Loading epoch data for cfx_getTransactionByHash hit in the store")
+
+			return tx, err
+		}
+
+		logger.WithError(err).Debug("Loading epoch data for cfx_getTransactionByHash hit missed from the store")
+	}
+
+	logger.Debug("Delegating cfx_getTransactionByHash rpc request to fullnode")
+
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
+		logger.WithError(err).Debug("Failed to delegate cfx_getTransactionByHash rpc request to fullnode")
+
 		return nil, err
 	}
 
@@ -333,8 +384,24 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(ctx context.Context, account, 
 }
 
 func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) ([]types.Hash, error) {
+	logger := logrus.WithFields(logrus.Fields{"epoch": epoch})
+
+	if api.handler != nil {
+		blockHashes, err := api.handler.GetBlocksByEpoch(ctx, epoch)
+		if err == nil {
+			logger.Debug("Loading epoch data for cfx_getBlocksByEpoch hit in the store")
+
+			return blockHashes, err
+		}
+
+		logger.WithError(err).Debug("Loading epoch data for cfx_getBlocksByEpoch hit missed from the store")
+	}
+
+	logger.Debug("Delegating cfx_getBlocksByEpoch rpc request to fullnode")
+
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
+		logger.WithError(err).Debug("Failed to delegate cfx_getBlocksByEpoch rpc request to fullnode")
 		return emptyHashes, err
 	}
 
@@ -353,8 +420,24 @@ func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch *types.Epo
 }
 
 func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
+	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
+
+	if api.handler != nil {
+		txRcpt, err := api.handler.GetTransactionReceipt(ctx, txHash)
+		if err == nil {
+			logger.Debug("Loading epoch data for cfx_getTransactionReceipt hit in the store")
+
+			return txRcpt, err
+		}
+
+		logger.WithError(err).Debug("Loading epoch data for cfx_getTransactionReceipt hit missed from the store")
+	}
+
+	logger.Debug("Delegating cfx_getTransactionReceipt rpc request to fullnode")
+
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
+		logger.WithError(err).Debug("Failed to delegate cfx_getTransactionReceipt rpc request to fullnode")
 		return nil, err
 	}
 

@@ -107,7 +107,7 @@ func start(cmd *cobra.Command, args []string) {
 	var rpcServers []*util.RpcServer
 
 	if rpcServerEnabled {
-		server := startRpcServer(db)
+		server := startRpcServer(db, cache)
 		rpcServers = append(rpcServers, server)
 	}
 
@@ -119,13 +119,14 @@ func start(cmd *cobra.Command, args []string) {
 	gracefulShutdown(ctx, rpcServers, wg, cancel)
 }
 
-func startRpcServer(db store.Store) *util.RpcServer {
+func startRpcServer(db, cache store.Store) *util.RpcServer {
 	// Start RPC server
 	logrus.Info("Start to run public rpc server...")
 
 	router := node.MustNewRouterFromViper()
+	cfxHandler := rpc.NewCfxStoreHandler(cache, rpc.NewCfxStoreHandler(db, nil))
 
-	server := rpc.NewServer(router, db)
+	server := rpc.NewServer(router, cfxHandler)
 	go server.MustServe(viper.GetString("endpoint"))
 	return server
 }
