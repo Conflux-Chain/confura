@@ -132,10 +132,14 @@ func loadEpochPivotBlock(ctx context.Context, rdb *redis.Client, epochNo uint64)
 // Load epoch block hash collections by epoch number with range from redis
 func loadEpochBlocksByRange(ctx context.Context, rdb *redis.Client, epochNo uint64, rangeStart, rangeEnd int64) ([]types.Hash, error) {
 	cacheKey := getEpochBlocksCacheKey(epochNo)
-	strSlice, err := rdb.LRange(ctx, cacheKey, rangeStart, rangeEnd).Result()
 
+	strSlice, err := rdb.LRange(ctx, cacheKey, rangeStart, rangeEnd).Result()
 	if err != nil {
 		return nil, err
+	}
+
+	if len(strSlice) == 0 { // key not exists since each epoch has at least 1 block (pivot block)
+		return nil, store.ErrNotFound
 	}
 
 	ret := make([]types.Hash, 0, len(strSlice))
@@ -149,8 +153,8 @@ func loadEpochBlocksByRange(ctx context.Context, rdb *redis.Client, epochNo uint
 // Load epoch transaction hash collections by epoch number from redis
 func loadEpochTxs(ctx context.Context, rdb *redis.Client, epochNo uint64, rangeStart, rangeEnd int64) ([]types.Hash, error) {
 	cacheKey := getEpochTxsCacheKey(epochNo)
-	strSlice, err := rdb.LRange(ctx, cacheKey, rangeStart, rangeEnd).Result()
 
+	strSlice, err := rdb.LRange(ctx, cacheKey, rangeStart, rangeEnd).Result()
 	if err != nil {
 		return nil, err
 	}

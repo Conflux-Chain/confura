@@ -357,6 +357,10 @@ func (ms *mysqlStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error)
 		result = append(result, types.Hash(hash))
 	}
 
+	if len(result) == 0 { // no data in db since each epoch has at least 1 block (pivot block)
+		return result, gorm.ErrRecordNotFound
+	}
+
 	return result, nil
 }
 
