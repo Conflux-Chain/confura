@@ -34,9 +34,11 @@ var (
 )
 
 func init() {
-	rootCmd.Flags().BoolVar(&nodeServerEnabled, "nm", false, "Whether to start node management service")
-	rootCmd.Flags().BoolVar(&rpcServerEnabled, "rpc", false, "Whether to start Conflux public RPC service")
-	rootCmd.Flags().BoolVar(&syncServerEnabled, "sync", false, "Whether to start data sync/prune service")
+	rootCmd.Flags().BoolVar(&nodeServerEnabled, "nm", false, "whether to start node management service")
+	rootCmd.Flags().BoolVar(&rpcServerEnabled, "rpc", false, "whether to start Conflux public RPC service")
+	rootCmd.Flags().BoolVar(&syncServerEnabled, "sync", false, "whether to start data sync/prune service")
+
+	rootCmd.AddCommand(testCmd)
 }
 
 func start(cmd *cobra.Command, args []string) {
@@ -116,7 +118,17 @@ func start(cmd *cobra.Command, args []string) {
 		rpcServers = append(rpcServers, server)
 	}
 
-	gracefulShutdown(ctx, rpcServers, wg, cancel)
+	gracefulShutdown(ctx, func() error {
+		// Shutdown the RPC server gracefully
+		for _, server := range rpcServers {
+			if err := server.Shutdown(3 * time.Second); err != nil {
+				logrus.WithError(err).WithField("name", server.String()).Error("RPC server shutdown failed")
+			} else {
+				logrus.WithField("name", server.String()).Info("RPC server shutdown ok")
+			}
+		}
+		return nil
+	}, wg, cancel)
 }
 
 func startRpcServer(db, cache store.Store) *util.RpcServer {
@@ -138,7 +150,7 @@ func startNodeServer() *util.RpcServer {
 	return server
 }
 
-func gracefulShutdown(ctx context.Context, rpcServers []*util.RpcServer, wg *sync.WaitGroup, cancel context.CancelFunc) {
+func gracefulShutdown(ctx context.Context, destroy func() error, wg *sync.WaitGroup, cancel context.CancelFunc) {
 	// Handle sigterm and await termChan signal
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGTERM, syscall.SIGINT)
@@ -147,13 +159,8 @@ func gracefulShutdown(ctx context.Context, rpcServers []*util.RpcServer, wg *syn
 	<-termChan
 	logrus.Info("SIGTERM/SIGINT received, shutdown process initiated")
 
-	// Shutdown the RPC server gracefully
-	for _, server := range rpcServers {
-		if err := server.Shutdown(3 * time.Second); err != nil {
-			logrus.WithError(err).WithField("name", server.String()).Error("RPC server shutdown failed")
-		} else {
-			logrus.WithField("name", server.String()).Info("RPC server shutdown ok")
-		}
+	if destroy != nil {
+		destroy()
 	}
 
 	// Cancel to notify active goroutines to clean up.
