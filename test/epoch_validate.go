@@ -132,7 +132,13 @@ func (validator *EpochValidator) doSampling() error {
 
 	// Shuffle epoch number by reduction of random number less than 100
 	minedEpochNo := epoch.ToInt().Uint64()
-	epochNo := minedEpochNo - util.RandUint64(100)
+
+	randomDiff := util.RandUint64(100)
+	if minedEpochNo < randomDiff {
+		randomDiff = 0
+	}
+
+	epochNo := minedEpochNo - randomDiff
 
 	logrus.WithFields(logrus.Fields{
 		"minedEpochNo": minedEpochNo, "shuffledEpochNo": epochNo,
