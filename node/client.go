@@ -7,6 +7,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 type ClientProvider struct {
@@ -42,7 +43,11 @@ func (p *ClientProvider) GetClient(key string) (sdk.ClientOperator, error) {
 		// TODO improvements required
 		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
 		// 2. Different metrics for different full nodes.
-		return sdk.NewClient(url)
+
+		requestTimeout := viper.GetDuration("cfx.requestTimeout")
+		return sdk.NewClient(url, sdk.ClientOption{
+			RequestTimeout: requestTimeout,
+		})
 	})
 
 	if err != nil {

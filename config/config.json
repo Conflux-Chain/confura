@@ -4,11 +4,12 @@
         "ws": "ws://test.confluxrpc.com/ws",
         "http": "http://test.confluxrpc.com",
         "retry": 3,
-        "retryInterval": 1000
+        "retryInterval": "1s",
+        "requestTimeout": "3s"
     },
     "sync": {
         "poll": {
-            "interval": 300
+            "interval": "300ms"
         },
         "sub": {
             "buffer": 1000
@@ -29,7 +30,7 @@
         },
         "report": {
             "enabled": false,
-            "interval": 10000
+            "interval": "10s"
         }
     },
     "log": {
@@ -63,7 +64,7 @@
     },
     "prune": {
         "db": {
-            "interval": 30000,
+            "interval": "30s",
             "maxEpochs": 10,
             "threshold": {
                 "maxBlocks": 20000000,
@@ -72,7 +73,7 @@
             }
         },
         "cache": {
-            "interval": 30000,
+            "interval": "30s",
             "maxEpochs": 10,
             "threshold": {
                 "maxBlocks": 100000,

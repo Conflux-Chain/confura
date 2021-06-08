@@ -1,8 +1,6 @@
 package metrics
 
 import (
-	"time"
-
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/influxdb"
 	"github.com/sirupsen/logrus"
@@ -18,11 +16,11 @@ func init() {
 		return
 	}
 
-	interval := time.Duration(viper.GetInt64("metrics.report.interval"))
+	interval := viper.GetDuration("metrics.report.interval")
 
 	go influxdb.InfluxDB(
 		metrics.DefaultRegistry,
-		interval*time.Millisecond,
+		interval,
 		viper.GetString("metrics.influxdb.host"),
 		viper.GetString("metrics.influxdb.db"),
 		viper.GetString("metrics.influxdb.username"),

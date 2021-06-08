@@ -20,14 +20,17 @@ var (
 // MustNewCfxClient creates an instance of CFX client or panic on error.
 func MustNewCfxClient(url string) *sdk.Client {
 	retryCount := viper.GetInt("cfx.retry")
-	retryInterval := time.Millisecond * time.Duration(viper.GetInt("cfx.retryInterval"))
-	return MustNewCfxClientWithRetry(url, retryCount, retryInterval)
+	retryInterval := viper.GetDuration("cfx.retryInterval")
+	requestTimeout := viper.GetDuration("cfx.requestTimeout")
+
+	return MustNewCfxClientWithRetry(url, retryCount, retryInterval, requestTimeout)
 }
 
-func MustNewCfxClientWithRetry(url string, retry int, retryInterval time.Duration) *sdk.Client {
+func MustNewCfxClientWithRetry(url string, retry int, retryInterval, requestTimeout time.Duration) *sdk.Client {
 	cfx, err := sdk.NewClient(url, sdk.ClientOption{
-		RetryCount:    retry,
-		RetryInterval: retryInterval,
+		RetryCount:     retry,
+		RetryInterval:  retryInterval,
+		RequestTimeout: requestTimeout,
 	})
 
 	if err != nil {

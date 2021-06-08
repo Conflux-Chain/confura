@@ -17,7 +17,7 @@ var (
 )
 
 type PruneConfig struct {
-	PruneInterval  time.Duration  `mapstructure:"interval"`  // interval to run pruning (ms)
+	PruneInterval  time.Duration  `mapstructure:"interval"`  // interval to run pruning
 	Threshold      PruneThresHold `mapstructure:"threshold"` // threshold for pruning
 	MaxPruneEpochs uint64         `mapstructure:"maxEpochs"` // max epochs to prune if threshold condition met
 }
@@ -65,7 +65,7 @@ func (pruner *Pruner) Prune(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
-	ticker := time.NewTicker(pruner.pruneConfig.PruneInterval * time.Millisecond)
+	ticker := time.NewTicker(pruner.pruneConfig.PruneInterval)
 	defer ticker.Stop()
 
 	for {

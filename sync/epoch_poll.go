@@ -13,8 +13,8 @@ import (
 
 // PollEpoch polls specific epoch periodically.
 func PollEpoch(cfx sdk.ClientOperator, epoch *types.Epoch) {
-	interval := viper.GetInt64("sync.poll.interval")
-	ticker := time.NewTicker(time.Millisecond * time.Duration(interval))
+	interval := viper.GetDuration("sync.poll.interval")
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	initData, err := pollEpoch(cfx, epoch)

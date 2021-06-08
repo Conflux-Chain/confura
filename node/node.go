@@ -8,6 +8,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 type Node struct {
@@ -19,9 +20,10 @@ type Node struct {
 
 func NewNode(name, url string, hm HealthMonitor) *Node {
 	ctx, cancel := context.WithCancel(context.Background())
+	requestTimeout := viper.GetDuration("cfx.requestTimeout")
 
 	n := Node{
-		ClientOperator: util.MustNewCfxClientWithRetry(url, 0, time.Millisecond),
+		ClientOperator: util.MustNewCfxClientWithRetry(url, 0, time.Millisecond, requestTimeout),
 		name:           name,
 		cancel:         cancel,
 	}
