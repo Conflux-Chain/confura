@@ -7,6 +7,7 @@ import (
 	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
@@ -467,6 +468,8 @@ func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash)
 			logger.Debug("Loading epoch data for cfx_getTransactionReceipt hit in the store")
 
 			isStoreHit = true
+			util.StripLogExtraFieldsForRPC(txRcpt.Logs)
+
 			return txRcpt, err
 		}
 
