@@ -304,6 +304,7 @@ func (validator *EpochValidator) validateGetTransactionReceipt(txHash types.Hash
 	json2 := string(encoded)
 
 	if json1 != json2 {
+		logrus.WithFields(logrus.Fields{"json1": json1, "json2": json2}).Debug("Epoch validator result not match for cfx_getTransactionReceipt")
 		return errors.New("result not match for cfx_getTransactionReceipt")
 	}
 
@@ -354,6 +355,7 @@ func (validator *EpochValidator) validateGetTransactionByHash(txHash types.Hash)
 	json2 := string(encoded)
 
 	if json1 != json2 {
+		logrus.WithFields(logrus.Fields{"json1": json1, "json2": json2}).Debug("Epoch validator result not match for cfx_getTransactionByHash")
 		return errors.New("result not match for cfx_getTransactionByHash")
 	}
 
@@ -404,6 +406,7 @@ func (validator *EpochValidator) validateGetBlockByHash(blockHash types.Hash) (*
 	json2 := string(encoded)
 
 	if json1 != json2 {
+		logrus.WithFields(logrus.Fields{"json1": json1, "json2": json2}).Debug("Epoch validator result not match for cfx_getBlockByHash")
 		return nil, errors.New("result not match for cfx_getBlockByHash")
 	}
 
@@ -454,10 +457,7 @@ func (validator *EpochValidator) validateGetBlocksByEpoch(epoch *types.Epoch) er
 	json2 := string(encoded)
 
 	if json1 != json2 {
-		logrus.WithFields(logrus.Fields{
-			"epoch": epoch, "json1": json1, "json2": json2,
-		}).Debug("Epoch validator result not match for cfx_getBlocksByEpoch")
-
+		logrus.WithFields(logrus.Fields{"epoch": epoch, "json1": json1, "json2": json2}).Debug("Epoch validator result not match for cfx_getBlocksByEpoch")
 		return errors.New("result not match for cfx_getBlocksByEpoch")
 	}
 
@@ -508,6 +508,7 @@ func (validator *EpochValidator) validateGetBlockByEpoch(epoch *types.Epoch) err
 	json2 := string(encoded)
 
 	if json1 != json2 {
+		logrus.WithFields(logrus.Fields{"json1": json1, "json2": json2}).Debug("Epoch validator (block) result not match for cfx_getBlockByEpochNumber")
 		return errors.New("(block) result not match for cfx_getBlockByEpochNumber")
 	}
 
@@ -558,6 +559,7 @@ func (validator *EpochValidator) validateGetBlockSummaryByEpoch(epoch *types.Epo
 	json2 := string(encoded)
 
 	if json1 != json2 {
+		logrus.WithFields(logrus.Fields{"json1": json1, "json2": json2}).Debug("Epoch validator (block summary) result not match for cfx_getBlockByEpochNumber")
 		return errors.New("(block summary) result not match for cfx_getBlockByEpochNumber")
 	}
 
@@ -635,6 +637,7 @@ func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error
 	json2 := string(encoded)
 
 	if json1 != json2 {
+		logrus.WithFields(logrus.Fields{"json1": json1, "json2": json2}).Debug("Epoch validator result not match for cfx_getLogs")
 		return errors.New("result not match for cfx_getLogs")
 	}
 
