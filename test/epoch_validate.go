@@ -3,8 +3,10 @@ package test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +19,10 @@ import (
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+)
+
+var (
+	validEpochFromNoFilePath = ".evno" // file path to read/write epoch number from which the validation will start
 )
 
 type epochValidationFunc func(epoch *types.Epoch) error
@@ -39,6 +45,12 @@ type EpochValidator struct {
 	scanIntervalCatchUp time.Duration // interval to scan to validate epoch in catching up mode
 }
 
+func init() {
+	if len(os.Getenv("HOME")) > 0 {
+		validEpochFromNoFilePath = fmt.Sprintf("%v/.evno", os.Getenv("HOME"))
+	}
+}
+
 func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
 	// Prepare fullnode client instance
 	cfx := util.MustNewCfxClient(conf.FullnodeRpcEndpoint)
@@ -55,18 +67,18 @@ func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
 		scanIntervalCatchUp: time.Millisecond * 100,
 	}
 
-	// Read last validated epoch from .ev file, from which the validation will continue
-	dat, err := ioutil.ReadFile(".ev")
+	// Read last validated epoch from config, from which the validation will continue
+	dat, err := ioutil.ReadFile(validEpochFromNoFilePath)
 	if err != nil {
-		logrus.WithError(err).Debug("Epoch validator failed to load last validated epoch from .ev file")
+		logrus.WithError(err).Debugf("Epoch validator failed to load last validated epoch from file %v", validEpochFromNoFilePath)
 		return validator
 	}
 
 	datStr := strings.TrimSpace(string(dat))
 	if validator.epochFrom, err = strconv.ParseUint(datStr, 10, 64); err == nil {
-		logrus.WithField("epochFrom", validator.epochFrom).Info("Epoch validator loaded last validated epoch from .ev file")
+		logrus.WithField("epochFrom", validator.epochFrom).Infof("Epoch validator loaded last validated epoch from file %v", validEpochFromNoFilePath)
 	} else {
-		logrus.WithError(err).Debug("Epoch validator failed to load last validated epoch from .ev file")
+		logrus.WithError(err).Debugf("Epoch validator failed to load last validated epoch from file %v", validEpochFromNoFilePath)
 	}
 
 	return validator
@@ -666,10 +678,10 @@ func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error
 }
 
 func (validator *EpochValidator) saveScanCursor() error {
-	// Write last validated epoch to .ev file
+	// Write last validated epoch to config file
 	epochStr := strconv.FormatUint(atomic.LoadUint64(&validator.epochFrom), 10)
-	if err := ioutil.WriteFile(".ev", []byte(epochStr), fs.ModePerm); err != nil {
-		logrus.WithError(err).Info("Epoch validator failed to write last validated epoch to .ev file")
+	if err := ioutil.WriteFile(validEpochFromNoFilePath, []byte(epochStr), fs.ModePerm); err != nil {
+		logrus.WithError(err).Infof("Epoch validator failed to write last validated epoch to file %v", validEpochFromNoFilePath)
 
 		return err
 	}
