@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/nsf/jsondiff"
@@ -14,19 +15,24 @@ import (
 )
 
 var (
-	fullnode = MustNewCfxClientWithRetry("http://main.confluxrpc.com", 3, time.Second, time.Second)
+	mFullnode = MustNewCfxClientWithRetry("http://main.confluxrpc.com", 3, time.Second, time.Second*5)
+	tFullnode = MustNewCfxClientWithRetry("http://test.confluxrpc.com", 3, time.Second, time.Second*5)
 )
 
 func TestTransactionRLPMarshal(t *testing.T) {
-	testTxHashes := []types.Hash{
-		types.Hash("0x4016c5b1675182700ef67b9df90c13ddf2e774b12385af63ba43576039b13f8a"),
-		types.Hash("0xb50a9350d407a1d2fa0c58dea2cd1d5d406ca23023779f6af1b223fe5482e518"),
+	testCases := []struct {
+		txHash types.Hash
+		cfx    sdk.ClientOperator
+	}{
+		{types.Hash("0xdeffba5291f0d669ca63514f2f9c95fd313fcf6c2855ec929076225890113b59"), tFullnode},
+		{types.Hash("0x4016c5b1675182700ef67b9df90c13ddf2e774b12385af63ba43576039b13f8a"), mFullnode},
+		{types.Hash("0xb50a9350d407a1d2fa0c58dea2cd1d5d406ca23023779f6af1b223fe5482e518"), mFullnode},
 	}
 
-	for i, txHash := range testTxHashes {
+	for i, tc := range testCases {
 		fmt.Println("Running test case #", i+1, "for TestTransactionRLPMarshal")
 
-		ptx, err := fullnode.GetTransactionByHash(txHash)
+		ptx, err := tc.cfx.GetTransactionByHash(tc.txHash)
 		if err != nil {
 			logrus.WithError(err).Fatal("Failed to get transaction from fullnode")
 		}
@@ -39,15 +45,19 @@ func TestTransactionRLPMarshal(t *testing.T) {
 }
 
 func TestTransactionReceiptRLPMarshal(t *testing.T) {
-	testTxHashes := []types.Hash{
-		types.Hash("0xa2c678cc97e07ce060b71f87ac65e68d482abf8e1a93b7d1bc425504c4584ca7"),
-		types.Hash("0x2ceccc75b871d50f90cb819b758eec179d6b1ff0a435297359c33ba96ec21135"),
+	testCases := []struct {
+		txHash types.Hash
+		cfx    sdk.ClientOperator
+	}{
+		{types.Hash("0xdeffba5291f0d669ca63514f2f9c95fd313fcf6c2855ec929076225890113b59"), tFullnode},
+		{types.Hash("0xa2c678cc97e07ce060b71f87ac65e68d482abf8e1a93b7d1bc425504c4584ca7"), mFullnode},
+		{types.Hash("0x2ceccc75b871d50f90cb819b758eec179d6b1ff0a435297359c33ba96ec21135"), mFullnode},
 	}
 
-	for i, txHash := range testTxHashes {
+	for i, tc := range testCases {
 		fmt.Println("Running test case #", i+1, "for TestTransactionReceiptRLPMarshal")
 
-		prcpt, err := fullnode.GetTransactionReceipt(txHash)
+		prcpt, err := tc.cfx.GetTransactionReceipt(tc.txHash)
 		if err != nil {
 			logrus.WithError(err).Fatal("Failed to get transaction receipt from fullnode")
 		}
@@ -68,7 +78,7 @@ func TestBlockSummaryRLPMarshal(t *testing.T) {
 	for i, blockHash := range testBlockHashes {
 		fmt.Println("Running test case #", i+1, "for TestBlockSummaryRLPMarshal")
 
-		pbs, err := fullnode.GetBlockSummaryByHash(blockHash)
+		pbs, err := mFullnode.GetBlockSummaryByHash(blockHash)
 		if err != nil {
 			logrus.WithError(err).Fatal("Failed to get block summary from fullnode")
 		}
@@ -89,7 +99,7 @@ func TestBlockRLPMarshal(t *testing.T) {
 	for i, blockHash := range testBlockHashes {
 		fmt.Println("Running test case #", i+1, "for TestBlockRLPMarshal")
 
-		pb, err := fullnode.GetBlockByHash(blockHash)
+		pb, err := mFullnode.GetBlockByHash(blockHash)
 		if err != nil {
 			logrus.WithError(err).Fatal("Failed to get block from fullnode")
 		}
