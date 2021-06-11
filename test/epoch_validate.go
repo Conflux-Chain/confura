@@ -136,24 +136,24 @@ func (validator *EpochValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 func (validator *EpochValidator) doSampling() error {
 	logrus.Debug("Epoch validator ticking to sample nearhead for validation...")
 
-	// Fetch latest mined epoch from blockchain
-	epoch, err := validator.cfx.GetEpochNumber(types.EpochLatestMined)
+	// Fetch latest state epoch from blockchain
+	epoch, err := validator.cfx.GetEpochNumber(types.EpochLatestState)
 	if err != nil {
-		return errors.WithMessage(err, "failed to query the latest mined epoch number")
+		return errors.WithMessage(err, "failed to query the latest state epoch number")
 	}
 
 	// Shuffle epoch number by reduction of random number less than 100
-	minedEpochNo := epoch.ToInt().Uint64()
+	stateEpochNo := epoch.ToInt().Uint64()
 
 	randomDiff := util.RandUint64(100)
-	if minedEpochNo < randomDiff {
+	if stateEpochNo < randomDiff {
 		randomDiff = 0
 	}
 
-	epochNo := minedEpochNo - randomDiff
+	epochNo := stateEpochNo - randomDiff
 
 	logrus.WithFields(logrus.Fields{
-		"minedEpochNo": minedEpochNo, "shuffledEpochNo": epochNo,
+		"stateEpochNo": stateEpochNo, "shuffledEpochNo": epochNo,
 	}).Debug("Epoch validator sampled random nearhead epoch for validation")
 
 	// Validate the new shuffled epoch number
@@ -263,18 +263,6 @@ func (validator *EpochValidator) validateEpochCombo(epoch *types.Epoch) error {
 
 	if err := validator.validateGetTransactionByHash(tx.Hash); err != nil {
 		return err
-	}
-
-	// Check if epoch executed or not to determine whether to validate transaction receipt
-	if isExec, lsEpochNo, execCheckErr := validator.checkIfEpochExecuted(epoch); !isExec {
-		epochBigInt, _ := epoch.ToInt()
-		epochNo := epochBigInt.Uint64()
-
-		logrus.WithFields(logrus.Fields{
-			"latestStateEpochNo": lsEpochNo, "epochNo": epochNo,
-		}).WithError(execCheckErr).Debug("Epoch validator skipped validateGetTransactionReceipt due to getting latest state epoch error or epoch not executed yet")
-
-		return nil
 	}
 
 	if err := validator.validateGetTransactionReceipt(tx.Hash); err != nil {
@@ -595,15 +583,6 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	epochBigInt, _ := epoch.ToInt()
 	epochNo := epochBigInt.Uint64()
 
-	// Check if epoch executed or not to determine whether to validate logs
-	if isExec, lsEpochNo, execCheckErr := validator.checkIfEpochExecuted(epoch); !isExec {
-		logrus.WithFields(logrus.Fields{
-			"latestStateEpochNo": lsEpochNo, "epochNo": epochNo,
-		}).WithError(execCheckErr).Debug("Epoch validator skipped validateGetLogs due to getting latest state epoch error or epoch not executed yet")
-
-		return nil
-	}
-
 	randomDiff := util.RandUint64(1000)
 	if epochNo < randomDiff {
 		randomDiff = 0
@@ -687,24 +666,6 @@ func (validator *EpochValidator) saveScanCursor() error {
 	}
 
 	return nil
-}
-
-func (validator *EpochValidator) checkIfEpochExecuted(epoch *types.Epoch) (bool, uint64, error) {
-	epochBigInt, _ := epoch.ToInt()
-	epochNo := epochBigInt.Uint64()
-
-	// Fetch latest state epoch from blockchain
-	lsEpoch, err := validator.cfx.GetEpochNumber(types.EpochLatestState)
-	if err != nil {
-		return false, 0, err
-	}
-
-	lsEpochNo := lsEpoch.ToInt().Uint64()
-	if lsEpochNo < epochNo {
-		return false, lsEpochNo, nil
-	}
-
-	return true, lsEpochNo, nil
 }
 
 func (validator *EpochValidator) Destroy() {
