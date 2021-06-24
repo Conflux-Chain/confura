@@ -169,26 +169,38 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 	return rs.execWithTx(func(tx *redis.Tx) error {
 		txOpHistory := store.EpochDataOpAffects{}
 
-		for _, data := range dataSlice {
-			opHistory, err := rs.putOneWithTx(tx, data)
-			if err != nil {
+		// Operation is commited only if the watched keys remain unchanged.
+		_, err = tx.TxPipelined(rs.ctx, func(pipe redis.Pipeliner) error {
+			for _, data := range dataSlice {
+				opHistory, err := rs.putOneWithTx(pipe, data)
+				if err != nil {
+					return err
+				}
+
+				txOpHistory.Merge(opHistory)
+			}
+
+			logrus.WithField("opHistory", txOpHistory).Debug("Pushn db operation history")
+
+			// update epoch data count
+			if err := rs.updateEpochDataCount(pipe, txOpHistory); err != nil {
 				return err
 			}
 
-			txOpHistory.Merge(opHistory)
+			// update max of epoch range
+			if err := rs.updateEpochRangeMax(pipe, lastEpoch); err != nil {
+				return err
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			logrus.WithField("lastEpoch", lastEpoch).WithError(err).Error("Failed to push epoch data to reids store with pipeline")
 		}
 
-		logrus.WithField("opHistory", txOpHistory).Debug("Pushn db operation history")
+		return err
 
-		if err := rs.updateEpochDataCount(txOpHistory); err != nil { // update epoch data count
-			return err
-		}
-
-		if err := rs.updateEpochRangeMax(lastEpoch); err != nil { // update max of epoch range
-			return err
-		}
-
-		return nil
 	}, watchKeys...)
 }
 
@@ -254,7 +266,7 @@ func (rs *redisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKe
 	}
 }
 
-func (rs *redisStore) putOneWithTx(tx *redis.Tx, data *store.EpochData) (store.EpochDataOpAffects, error) {
+func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (store.EpochDataOpAffects, error) {
 	opHistory := store.EpochDataOpAffects{}
 
 	// Epoch blocks & transactions hash collections
@@ -269,7 +281,7 @@ func (rs *redisStore) putOneWithTx(tx *redis.Tx, data *store.EpochData) (store.E
 		blockRaw := util.MustMarshalRLP(blockSummary)
 
 		blockCacheKey := getBlockCacheKey(block.Hash)
-		if err := tx.Set(rs.ctx, blockCacheKey, blockRaw, redisCacheExpireDuration).Err(); err != nil {
+		if err := rp.Set(rs.ctx, blockCacheKey, blockRaw, redisCacheExpireDuration).Err(); err != nil {
 			return opHistory, err
 		}
 
@@ -287,14 +299,14 @@ func (rs *redisStore) putOneWithTx(tx *redis.Tx, data *store.EpochData) (store.E
 			// Cache store transactions
 			txRaw := util.MustMarshalRLP(btx)
 			txCacheKey := getTxCacheKey(btx.Hash)
-			if err := tx.Set(rs.ctx, txCacheKey, txRaw, redisCacheExpireDuration).Err(); err != nil {
+			if err := rp.Set(rs.ctx, txCacheKey, txRaw, redisCacheExpireDuration).Err(); err != nil {
 				return opHistory, err
 			}
 
 			// Cache store transaction receipts
 			receiptRaw := util.MustMarshalRLP(receipt)
 			receiptCacheKey := getTxReceiptCacheKey(btx.Hash)
-			if err := tx.Set(rs.ctx, receiptCacheKey, receiptRaw, redisCacheExpireDuration).Err(); err != nil {
+			if err := rp.Set(rs.ctx, receiptCacheKey, receiptRaw, redisCacheExpireDuration).Err(); err != nil {
 				return opHistory, err
 			}
 
@@ -306,7 +318,7 @@ func (rs *redisStore) putOneWithTx(tx *redis.Tx, data *store.EpochData) (store.E
 
 	// Cache store epoch blocks mapping
 	epbCacheKey := getEpochBlocksCacheKey(data.Number)
-	if err := tx.RPush(rs.ctx, epbCacheKey, epochBlocks...).Err(); err != nil {
+	if err := rp.RPush(rs.ctx, epbCacheKey, epochBlocks...).Err(); err != nil {
 		return opHistory, err
 	}
 
@@ -316,7 +328,7 @@ func (rs *redisStore) putOneWithTx(tx *redis.Tx, data *store.EpochData) (store.E
 
 	// Cache store epoch transactions mapping
 	eptCacheKey := getEpochTxsCacheKey(data.Number)
-	return opHistory, tx.RPush(rs.ctx, eptCacheKey, epochTxs...).Err()
+	return opHistory, rp.RPush(rs.ctx, eptCacheKey, epochTxs...).Err()
 }
 
 func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemoveOption, rmOpType store.EpochOpType) error {
@@ -338,6 +350,8 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 	removeOpHistory := store.EpochDataOpAffects{}
 
 	return rs.execWithTx(func(tx *redis.Tx) error {
+		unlinkKeys := make([]string, 0, 100)
+
 		for i := epochFrom; i <= epochTo; i++ {
 			opHistory := store.EpochDataOpAffects{}
 
@@ -352,7 +366,7 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			// Remove blocks
 			if option&store.EpochRemoveBlock != 0 {
 				// Load epoch blocks mapping
-				blockHashes, err := loadEpochBlocks(rs.ctx, rs.rdb, epochNo)
+				blockHashes, err := loadEpochBlocks(rs.ctx, tx, epochNo)
 				if err != nil {
 					return err
 				}
@@ -365,15 +379,13 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 				opHistory[store.EpochBlock] = int64(-len(blockHashes))
 				cacheKeys = append(cacheKeys, epbCacheKey)
 
-				if err := tx.Unlink(rs.ctx, cacheKeys...).Err(); err != nil {
-					return err
-				}
+				unlinkKeys = append(unlinkKeys, cacheKeys...)
 			}
 
 			// Remove transactions
 			if option&store.EpochRemoveTransaction != 0 {
 				// Load epoch transactions mapping
-				txHashes, err := loadEpochTxs(rs.ctx, rs.rdb, epochNo, 0, -1)
+				txHashes, err := loadEpochTxs(rs.ctx, tx, epochNo, 0, -1)
 				if err != nil {
 					return err
 				}
@@ -386,9 +398,7 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 				opHistory[store.EpochTransaction] = int64(-len(txHashes))
 				cacheKeys = append(cacheKeys, ebtCacheKey)
 
-				if err := tx.Unlink(rs.ctx, cacheKeys...).Err(); err != nil {
-					return err
-				}
+				unlinkKeys = append(unlinkKeys, cacheKeys...)
 			}
 
 			// TODO remove logs
@@ -396,27 +406,48 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			removeOpHistory.Merge(opHistory)
 		}
 
-		if err := rs.updateEpochDataCount(removeOpHistory); err != nil { // update epoch data count
-			return err
+		// Operation is commited only if the watched keys remain unchanged.
+		_, err := tx.TxPipelined(rs.ctx, func(pipe redis.Pipeliner) error {
+			// unlink epoch cache keys
+			if err := pipe.Unlink(rs.ctx, unlinkKeys...).Err(); err != nil {
+				return err
+			}
+
+			// update epoch data count
+			if err := rs.updateEpochDataCount(pipe, removeOpHistory); err != nil {
+				return err
+			}
+
+			if rmOpType == store.EpochOpPop {
+				// update max of epoch range for pop operation
+				return rs.updateEpochRangeMax(pipe, epochFrom-1)
+			}
+
+			var edt store.EpochDataType
+			switch rmOpType {
+			case store.EpochOpDequeueBlock:
+				edt = store.EpochBlock
+			case store.EpochOpDequeueTx:
+				edt = store.EpochTransaction
+			case store.EpochOpDequeueLog:
+				edt = store.EpochLog
+			default:
+				logrus.WithField("removeOperationType", rmOpType).Fatal("Invalid remove operation type for redis store")
+			}
+
+			// update min of epoch range for dequeue operation
+			return rs.updateEpochRangeMin(pipe, epochTo+1, edt)
+		})
+
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"epochFrom": epochFrom, "epochTo": epochTo,
+				"rmOption": option, "rmOpType": rmOpType,
+			}).WithError(err).Error("Failed to remove epoch data from reids store with pipeline unlink")
 		}
 
-		if rmOpType == store.EpochOpPop {
-			return rs.updateEpochRangeMax(epochFrom - 1) // update max of epoch range for pop
-		}
+		return err
 
-		var edt store.EpochDataType
-		switch rmOpType {
-		case store.EpochOpDequeueBlock:
-			edt = store.EpochBlock
-		case store.EpochOpDequeueTx:
-			edt = store.EpochTransaction
-		case store.EpochOpDequeueLog:
-			edt = store.EpochLog
-		default:
-			logrus.WithField("removeOperationType", rmOpType).Fatal("Invalid remove operation type for redis store")
-		}
-
-		return rs.updateEpochRangeMin(epochTo+1, edt) // update min of epoch range for dequeue
 	}, watchKeys...)
 }
 
@@ -435,7 +466,7 @@ func (rs *redisStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil u
 	return rs.remove(epochFrom, epochUntil, rmOpt, dqOpt)
 }
 
-func (rs *redisStore) updateEpochRangeMax(epochNo uint64) error {
+func (rs *redisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64) error {
 	cacheKey := getMetaCacheKey("epoch.ranges")
 	batchKVTo := make([]interface{}, 0, 4*2)
 	batchKFrom := make([]string, 0, 4)
@@ -452,27 +483,15 @@ func (rs *redisStore) updateEpochRangeMax(epochNo uint64) error {
 	}
 
 	// Batch update max of epoch range
-	if _, err := rs.rdb.HSet(rs.ctx, cacheKey, batchKVTo...).Result(); err != nil {
+	if _, err := rp.HSet(rs.ctx, cacheKey, batchKVTo...).Result(); err != nil {
 		logrus.WithField("batchFieldValues", batchKVTo).WithError(err).Error("Failed to update max of epoch range to cache store")
 		return errors.WithMessage(err, "failed to update max of epoch range to cache store")
 	}
 
-	// Also update min of epoch range if field not set yet
-	iSlice, err := rs.rdb.HMGet(rs.ctx, cacheKey, batchKFrom...).Result()
-	if err != nil {
-		logrus.WithField("batchFields", batchKFrom).WithError(err).Error("Failed to get min of epoch range from cache store")
-		return errors.WithMessage(err, "failed to get min of epoch range from cache store")
-	}
-
-	for i, v := range iSlice {
-		if v != nil { // already set
-			continue
-		}
-
-		logrus.WithField("field", batchKFrom[i]).Debugf("Updating min of epoch range with value %v to cache store", epochNo)
-
-		if err := rs.rdb.HSetNX(rs.ctx, cacheKey, batchKFrom[i], epochNo).Err(); err != nil {
-			logrus.WithField("field", batchKFrom[i]).WithError(err).Error("Failed to update min of epoch range to cache store")
+	// Also update min of epoch range if field not set yet.
+	for _, fieldFrom := range batchKFrom {
+		if err := rp.HSetNX(rs.ctx, cacheKey, fieldFrom, epochNo).Err(); err != nil {
+			logrus.WithField("field", fieldFrom).WithError(err).Error("Failed to update min of epoch range to cache store")
 			return errors.WithMessage(err, "failed to update min of epoch range to cache store")
 		}
 	}
@@ -480,14 +499,14 @@ func (rs *redisStore) updateEpochRangeMax(epochNo uint64) error {
 	return nil
 }
 
-func (rs *redisStore) updateEpochRangeMin(epochNo uint64, rt store.EpochDataType) error {
+func (rs *redisStore) updateEpochRangeMin(rp redis.Pipeliner, epochNo uint64, rt store.EpochDataType) error {
 	cacheKey := getMetaCacheKey("epoch.ranges")
 
 	// Update min epoch for local epoch range
 	fieldFrom, _ := getMetaEpochRangeField(rt)
-	_, err := rs.rdb.HSet(rs.ctx, cacheKey, fieldFrom, epochNo).Result()
+	_, err := rp.HSet(rs.ctx, cacheKey, fieldFrom, epochNo).Result()
 	if err != nil {
-		logrus.WithError(err).Error("Failed to update min of epoch range")
+		logrus.WithField("epochDataType", rt).WithError(err).Error("Failed to update min of epoch range")
 		return err
 	}
 
@@ -524,22 +543,22 @@ end
 
 return true
 `
-	if err := rs.rdb.Eval(rs.ctx, luaScript, luaKeys, gFieldFrom).Err(); err != nil {
+	if err := rp.Eval(rs.ctx, luaScript, luaKeys, gFieldFrom).Err(); err != nil {
 		logrus.WithError(err).Error("Failed to execute lua script to update min of global epoch range")
+		return err
 	}
 
 	return nil
 }
 
-func (rs *redisStore) updateEpochDataCount(opHistory store.EpochDataOpAffects) error {
+func (rs *redisStore) updateEpochDataCount(rp redis.Pipeliner, opHistory store.EpochDataOpAffects) error {
 	// Update epoch totals
 	for k, v := range opHistory {
 		if v == 0 {
 			continue
 		}
 
-		_, err := incrEpochDataCount(rs.ctx, rs.rdb, k, v)
-		if err != nil {
+		if _, err := incrEpochDataCount(rs.ctx, rp, k, v); err != nil {
 			logrus.WithField("epochDataType", k).WithError(err).Error("Failed to update epoch data count")
 			return err
 		}

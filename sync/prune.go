@@ -115,7 +115,7 @@ func (pruner *Pruner) pruneEpochData(dt store.EpochDataType) error {
 	for numData > threshold {
 		logrus.WithFields(logrus.Fields{
 			"numData": numData, "threshold": threshold,
-		}).Debugf("Pruner starting to prune epoch %v", store.EpochDataTypeToStr(dt))
+		}).Infof("Pruner starting to prune epoch %v", store.EpochDataTypeToStr(dt))
 
 		if err := pruner.doPruneEpochData(dt); err != nil {
 			return err
@@ -148,7 +148,7 @@ func (pruner *Pruner) doPruneEpochData(dt store.EpochDataType) error {
 	// Get epoch range
 	minEpoch, maxEpoch, err := getEpochRange()
 	if err != nil {
-		werr := errors.WithMessagef(err, "Failed to get %v epoch range", store.EpochDataTypeToStr(dt))
+		werr := errors.WithMessagef(err, "failed to get %v epoch range", store.EpochDataTypeToStr(dt))
 		return werr
 	}
 
@@ -156,11 +156,11 @@ func (pruner *Pruner) doPruneEpochData(dt store.EpochDataType) error {
 	epochUntil := minEpoch + pruner.pruneConfig.MaxPruneEpochs - 1
 	epochUntil = util.MinUint64(epochUntil, maxEpoch)
 
-	logrus.WithField("epochUntil", epochUntil).Debugf("DB pruner dequeue epoch %v data", store.EpochDataTypeToStr(dt))
+	logrus.WithField("epochUntil", epochUntil).Infof("DB pruner dequeue epoch %v data", store.EpochDataTypeToStr(dt))
 
 	// Dequeue epoch data
 	if err := dequeue(epochUntil); err != nil {
-		werr := errors.WithMessagef(err, "Failed to dequeue epoch %v", store.EpochDataTypeToStr(dt))
+		werr := errors.WithMessagef(err, "failed to dequeue epoch %v", store.EpochDataTypeToStr(dt))
 		return werr
 	}
 

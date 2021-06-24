@@ -21,8 +21,8 @@ func RedisKey(keyParts ...string) string {
 // Unmarshal RLP raw data read from redis by key
 // key: redis key
 // v: value for unmarshal, e.g. types.transaction, and use pointer type
-func RedisRLPGet(ctx context.Context, rdb *redis.Client, key string, pVal interface{}) error {
-	strBytes, err := rdb.Get(ctx, key).Result()
+func RedisRLPGet(ctx context.Context, rc redis.Cmdable, key string, pVal interface{}) error {
+	strBytes, err := rc.Get(ctx, key).Result()
 
 	err = ParseRedisNil(err)
 	if err == nil {
@@ -89,39 +89,39 @@ func getMetaCacheKey(keys ...string) string {
 }
 
 // Load block summary data by block hash from redis
-func loadBlock(ctx context.Context, rdb *redis.Client, blockHash types.Hash) (*types.BlockSummary, error) {
+func loadBlock(ctx context.Context, rc redis.Cmdable, blockHash types.Hash) (*types.BlockSummary, error) {
 	var rpcBlock types.BlockSummary
-	err := RedisRLPGet(ctx, rdb, getBlockCacheKey(blockHash), &rpcBlock)
+	err := RedisRLPGet(ctx, rc, getBlockCacheKey(blockHash), &rpcBlock)
 
 	return &rpcBlock, err
 }
 
 // Load transaction data by transaction hash from redis
-func loadTx(ctx context.Context, rdb *redis.Client, txHash types.Hash) (*types.Transaction, error) {
+func loadTx(ctx context.Context, rc redis.Cmdable, txHash types.Hash) (*types.Transaction, error) {
 	var rpcTx types.Transaction
-	err := RedisRLPGet(ctx, rdb, getTxCacheKey(txHash), &rpcTx)
+	err := RedisRLPGet(ctx, rc, getTxCacheKey(txHash), &rpcTx)
 
 	return &rpcTx, err
 }
 
 // Load transaction receipt data by transaction hash from redis
-func loadTxReceipt(ctx context.Context, rdb *redis.Client, txHash types.Hash) (*types.TransactionReceipt, error) {
+func loadTxReceipt(ctx context.Context, rc redis.Cmdable, txHash types.Hash) (*types.TransactionReceipt, error) {
 	var rpcTxReceipt types.TransactionReceipt
-	err := RedisRLPGet(ctx, rdb, getTxReceiptCacheKey(txHash), &rpcTxReceipt)
+	err := RedisRLPGet(ctx, rc, getTxReceiptCacheKey(txHash), &rpcTxReceipt)
 
 	return &rpcTxReceipt, err
 }
 
 // Load epoch block hash collections by epoch number from redis
-func loadEpochBlocks(ctx context.Context, rdb *redis.Client, epochNo uint64) ([]types.Hash, error) {
-	return loadEpochBlocksByRange(ctx, rdb, epochNo, 0, -1)
+func loadEpochBlocks(ctx context.Context, rc redis.Cmdable, epochNo uint64) ([]types.Hash, error) {
+	return loadEpochBlocksByRange(ctx, rc, epochNo, 0, -1)
 }
 
 // Load epoch block hash collections by epoch number from redis
-func loadEpochPivotBlock(ctx context.Context, rdb *redis.Client, epochNo uint64) (types.Hash, error) {
+func loadEpochPivotBlock(ctx context.Context, rc redis.Cmdable, epochNo uint64) (types.Hash, error) {
 	var emptyHash types.Hash
 
-	epochBlocks, err := loadEpochBlocksByRange(ctx, rdb, epochNo, -1, -1)
+	epochBlocks, err := loadEpochBlocksByRange(ctx, rc, epochNo, -1, -1)
 	if err != nil {
 		return emptyHash, errors.WithMessage(err, "failed to get epoch blocks")
 	}
@@ -130,10 +130,10 @@ func loadEpochPivotBlock(ctx context.Context, rdb *redis.Client, epochNo uint64)
 }
 
 // Load epoch block hash collections by epoch number with range from redis
-func loadEpochBlocksByRange(ctx context.Context, rdb *redis.Client, epochNo uint64, rangeStart, rangeEnd int64) ([]types.Hash, error) {
+func loadEpochBlocksByRange(ctx context.Context, rc redis.Cmdable, epochNo uint64, rangeStart, rangeEnd int64) ([]types.Hash, error) {
 	cacheKey := getEpochBlocksCacheKey(epochNo)
 
-	strSlice, err := rdb.LRange(ctx, cacheKey, rangeStart, rangeEnd).Result()
+	strSlice, err := rc.LRange(ctx, cacheKey, rangeStart, rangeEnd).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -151,10 +151,10 @@ func loadEpochBlocksByRange(ctx context.Context, rdb *redis.Client, epochNo uint
 }
 
 // Load epoch transaction hash collections by epoch number from redis
-func loadEpochTxs(ctx context.Context, rdb *redis.Client, epochNo uint64, rangeStart, rangeEnd int64) ([]types.Hash, error) {
+func loadEpochTxs(ctx context.Context, rc redis.Cmdable, epochNo uint64, rangeStart, rangeEnd int64) ([]types.Hash, error) {
 	cacheKey := getEpochTxsCacheKey(epochNo)
 
-	strSlice, err := rdb.LRange(ctx, cacheKey, rangeStart, rangeEnd).Result()
+	strSlice, err := rc.LRange(ctx, cacheKey, rangeStart, rangeEnd).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func loadEpochTxs(ctx context.Context, rdb *redis.Client, epochNo uint64, rangeS
 }
 
 // Load epoch logs by log filter from redis
-func loadLogs(ctx context.Context, rdb *redis.Client, filter store.LogFilter, partitions []string) ([]types.Log, error) {
+func loadLogs(ctx context.Context, rc redis.Cmdable, filter store.LogFilter, partitions []string) ([]types.Log, error) {
 	// TODO add implementation here
 	return nil, store.ErrUnsupported
 }
@@ -190,9 +190,9 @@ func getMetaEpochRangeField(dt store.EpochDataType) (string, string) {
 	return fromKey, toKey
 }
 
-func loadEpochRange(ctx context.Context, rdb *redis.Client, dt store.EpochDataType) (uint64, uint64, error) {
+func loadEpochRange(ctx context.Context, rc redis.Cmdable, dt store.EpochDataType) (uint64, uint64, error) {
 	fromField, toField := getMetaEpochRangeField(dt)
-	iSlice, err := rdb.HMGet(ctx, getMetaCacheKey("epoch.ranges"), fromField, toField).Result()
+	iSlice, err := rc.HMGet(ctx, getMetaCacheKey("epoch.ranges"), fromField, toField).Result()
 
 	if err != nil {
 		return 0, 0, err
@@ -239,9 +239,9 @@ func getMetaEpochCountField(dt store.EpochDataType) string {
 	return key
 }
 
-func loadEpochDataCount(ctx context.Context, rdb *redis.Client, dt store.EpochDataType) (uint64, error) {
+func loadEpochDataCount(ctx context.Context, rc redis.Cmdable, dt store.EpochDataType) (uint64, error) {
 	field := getMetaEpochCountField(dt)
-	strBytes, err := rdb.HGet(ctx, getMetaCacheKey("epoch.statistics"), field).Result()
+	strBytes, err := rc.HGet(ctx, getMetaCacheKey("epoch.statistics"), field).Result()
 
 	err = ParseRedisNil(err)
 	if err != nil {
@@ -252,9 +252,9 @@ func loadEpochDataCount(ctx context.Context, rdb *redis.Client, dt store.EpochDa
 	return ev, nil
 }
 
-func incrEpochDataCount(ctx context.Context, rdb *redis.Client, dt store.EpochDataType, cnt int64) (int64, error) {
+func incrEpochDataCount(ctx context.Context, rc redis.Cmdable, dt store.EpochDataType, cnt int64) (int64, error) {
 	field := getMetaEpochCountField(dt)
 
-	newCnt, err := rdb.HIncrBy(ctx, getMetaCacheKey("epoch.statistics"), field, cnt).Result()
+	newCnt, err := rc.HIncrBy(ctx, getMetaCacheKey("epoch.statistics"), field, cnt).Result()
 	return newCnt, err
 }

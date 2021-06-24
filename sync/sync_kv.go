@@ -113,7 +113,7 @@ func (syncer *KVCacheSyncer) doCheckPoint() error {
 func (syncer *KVCacheSyncer) pivotSwitchRevert(revertTo uint64) error {
 	logrus.WithFields(logrus.Fields{
 		"revertTo": revertTo, "syncWindow": syncer.syncWindow,
-	}).Debug("Reverting epoch data in cache due to pivot switch...")
+	}).Info("Reverting epoch data in cache due to pivot switch...")
 
 	return syncer.cache.Popn(revertTo)
 }
