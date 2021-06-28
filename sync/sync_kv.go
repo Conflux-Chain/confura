@@ -196,14 +196,22 @@ func (syncer *KVCacheSyncer) syncOnce() (bool, error) {
 	epochDataSlice := make([]*store.EpochData, 0, syncSize)
 	for i := uint32(0); i < syncSize; i++ {
 		epochNo := syncFrom + uint64(i)
+		eplogger := logger.WithField("epoch", epochNo)
 
 		data, err := store.QueryEpochData(syncer.cfx, epochNo)
+		// if epoch pivot switched during query, try to query it again since the possibility
+		// of pivot switch for the latest state epoch is high.
+		if errors.Cause(err) == store.ErrEpochPivotSwitched {
+			data, err = store.QueryEpochData(syncer.cfx, epochNo)
+			logrus.WithError(err).Info("Cache syncer querying epoch data retried")
+		}
+
 		if err != nil {
-			logger.WithError(err).WithField("epoch", epochNo).Error("Cache syncer failed to query epoch data")
+			eplogger.WithError(err).Error("Cache syncer failed to query epoch data")
 			return false, errors.WithMessagef(err, "failed to query epoch data for epoch %v", epochNo)
 		}
 
-		logrus.WithField("epoch", epochNo).Debug("Cache syncer succeeded to query epoch data")
+		eplogger.Debug("Cache syncer succeeded to query epoch data")
 		epochDataSlice = append(epochDataSlice, &data)
 	}
 

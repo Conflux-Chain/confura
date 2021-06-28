@@ -42,6 +42,7 @@ var (
 	// custom errors
 	ErrNotFound               = errors.New("not found")
 	ErrUnsupported            = errors.New("not supported")
+	ErrEpochPivotSwitched     = errors.New("epoch pivot switched")
 	ErrContinousEpochRequired = errors.New("continous epoch required")
 
 	// epoch data types

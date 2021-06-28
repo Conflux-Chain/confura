@@ -3,9 +3,14 @@ package store
 import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	sdkerr "github.com/Conflux-Chain/go-conflux-sdk/types/errors"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+)
+
+var (
+	emptyEpochData = EpochData{}
 )
 
 // EpochData wraps the blockchain data of an epoch.
@@ -22,27 +27,38 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 	defer updater.Update()
 
 	epoch := types.NewEpochNumberUint64(epochNumber)
-
 	blockHashes, err := cfx.GetBlocksByEpoch(epoch)
+
+	if len(blockHashes) == 0 { // invalid epoch data, must have at lease one block
+		err = errors.New("invalid epoch data (must have at least one block)")
+	}
+
 	if err != nil {
-		return EpochData{}, errors.WithMessagef(err, "Failed to get blocks by epoch %v", epochNumber)
+		return emptyEpochData, errors.WithMessagef(err, "failed to get blocks by epoch %v", epochNumber)
 	}
 
 	blocks := make([]*types.Block, 0, len(blockHashes))
-
 	for _, hash := range blockHashes {
 		block, err := cfx.GetBlockByHash(hash)
 		if err != nil {
-			return EpochData{}, errors.WithMessagef(err, "Failed to get block by hash %v", hash)
+			return emptyEpochData, errors.WithMessagef(err, "failed to get block by hash %v", hash)
 		}
 
 		blocks = append(blocks, block)
 	}
 
 	// Batch get epoch receipts
-	epochReceipts, err := cfx.GetEpochReceipts(*epoch)
+	pivotHash := blockHashes[len(blockHashes)-1]
+	epochReceipts, err := cfx.GetEpochReceiptsByPivotBlockHash(pivotHash)
 	if err != nil {
-		return EpochData{}, errors.WithMessagef(err, "Failed to get epoch receipts for epoch %v", epoch)
+		detected, errCode := sdkerr.DetectErrorCode(err)
+		// The error is a business error and pivot hash assumption failed, must be pivot switched
+		if sdkerr.IsBusinessError(err) && detected && (errCode == sdkerr.CodePivotAssumption || errCode == sdkerr.CodeBlockNotFound) {
+			logrus.WithError(err).WithField("epochNo", epochNumber).Debug("Failed to query epoch data due to pivot switch")
+			return emptyEpochData, errors.WithMessage(ErrEpochPivotSwitched, err.Error())
+		}
+
+		return emptyEpochData, err
 	}
 
 	receipts := make(map[types.Hash]*types.TransactionReceipt)
@@ -50,78 +66,50 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 
 	for i, block := range blocks {
 		for j, tx := range block.Transactions {
+			logger := logrus.WithFields(logrus.Fields{
+				"epoch": epochNumber,
+				"block": block.Hash.String(),
+				"tx":    tx.Hash.String(),
+			})
+
 			// skip unexecuted transaction, e.g.
 			// 1) already executed in previous block
 			// 2) never executed, e.g. nonce mismatch
 			if tx.Status == nil || tx.BlockHash == nil {
-				if logrus.IsLevelEnabled(logrus.DebugLevel) {
-					logrus.WithFields(logrus.Fields{
-						"epoch": epochNumber,
-						"block": block.Hash.String(),
-						"tx":    tx.Hash.String(),
-					}).Debug("Transaction not executed in block")
-				}
-
+				logger.Debug("Transaction not executed in block")
 				continue
 			}
 
-			// Find transaction receipts from above batch retrieved receipts
-			// We assume the order of batched retrieved receipts is the same with
-			// the fetched blocks & transactions. Even so, we still need to do some
-			// bound checking and fault tolerance to be robust.
+			// Find transaction receipts from above batch retrieved receipts.
+			// The order of batch retrieved receipts should be the same with the fetched blocks & transactions,
+			// Even so, we'd better also do some bound checking and fault tolerance to be robust.
 			if i >= len(epochReceipts) || j >= len(epochReceipts[i]) {
-				logrus.WithFields(logrus.Fields{
-					"epoch": epochNumber,
-					"block": block.Hash.String(),
-					"tx":    tx.Hash.String(),
-				}).Error("Batch retrieved receipts out of bound")
-
-				continue
+				logger.Error("Batch retrieved receipts out of bound")
+				return emptyEpochData, errors.New("batch retrieved receipts out of bound")
 			}
 
 			receipt := &epochReceipts[i][j]
-
 			if receipt == nil {
-				logrus.WithFields(logrus.Fields{
-					"epoch": epochNumber,
-					"block": block.Hash.String(),
-					"tx":    tx.Hash.String(),
-				}).Error("Transaction receipt not found")
-
-				continue
+				logger.Error("Batch retrieved receipt not found")
+				return emptyEpochData, errors.Errorf("batch retrieved receipt not found for tx %v", tx.Hash)
 			}
 
 			// Check receipt epoch number
 			if uint64(*receipt.EpochNumber) != epochNumber {
-				logrus.WithFields(logrus.Fields{
-					"epoch": epochNumber,
-					"block": block.Hash.String(),
-					"tx":    tx.Hash.String(),
-				}).Errorf("Receipt epoch number mismatch, value = %v", uint64(*receipt.EpochNumber))
-
-				continue
+				logger.Error("Batch retrieved receipt epoch number mismatch")
+				return emptyEpochData, errors.Errorf("batch retrieved receipt epoch number mismatch, value = %v", uint64(*receipt.EpochNumber))
 			}
 
 			// Check receipt block hash
 			if receipt.BlockHash.String() != block.Hash.String() {
-				logrus.WithFields(logrus.Fields{
-					"epoch": epochNumber,
-					"block": block.Hash.String(),
-					"tx":    tx.Hash.String(),
-				}).Errorf("Receipt block hash mismatch, value = %v", receipt.BlockHash.String())
-
-				continue
+				logger.Error("Batch retrieved receipt block hash mismatch")
+				return emptyEpochData, errors.Errorf("batch retrieved receipt block hash mismatch, value = %v", receipt.BlockHash)
 			}
 
 			// Check receipt transaction hash
 			if receipt.TransactionHash.String() != tx.Hash.String() {
-				logrus.WithFields(logrus.Fields{
-					"epoch": epochNumber,
-					"block": block.Hash.String(),
-					"tx":    tx.Hash.String(),
-				}).Errorf("Receipt transaction hash mismatch, value = %v", receipt.TransactionHash.String())
-
-				continue
+				logger.Error("Batched retrieved receipt transaction hash mismatch")
+				return emptyEpochData, errors.Errorf("batched retrieved receipt transaction hash mismatch, value = %v", receipt.TransactionHash)
 			}
 
 			// TODO enhance full node RPC to return receipts by block hash
