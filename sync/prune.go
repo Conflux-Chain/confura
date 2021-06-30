@@ -32,7 +32,7 @@ type PruneThresHold struct {
 // MustNewDBPruner creates an instance of Pruner to prune blockchain data in database
 func MustNewDBPruner(db store.Store) *Pruner {
 	var pc PruneConfig
-	if err := viper.Sub("prune.db").Unmarshal(&pc); err != nil {
+	if err := util.ViperSub(viper.GetViper(), "prune.db").Unmarshal(&pc); err != nil {
 		logrus.WithError(err).Fatal("DBPruner failed to load prune config")
 	}
 
@@ -42,7 +42,7 @@ func MustNewDBPruner(db store.Store) *Pruner {
 // MustNewKVCachePruner creates an instance of Pruner to prune blockchain data in kv cache
 func MustNewKVCachePruner(cache store.Store) *Pruner {
 	var pc PruneConfig
-	if err := viper.Sub("prune.cache").Unmarshal(&pc); err != nil {
+	if err := util.ViperSub(viper.GetViper(), "prune.cache").Unmarshal(&pc); err != nil {
 		logrus.WithError(err).Fatal("KVPruner failed to load prune config")
 	}
 

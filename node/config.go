@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/buraksezer/consistent"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -11,7 +12,7 @@ import (
 var cfg config // node config from viper
 
 func init() {
-	if err := viper.Sub("node").Unmarshal(&cfg); err != nil {
+	if err := util.ViperSub(viper.GetViper(), "node").Unmarshal(&cfg); err != nil {
 		logrus.WithError(err).Fatal("Failed to unmarshal node config from viper")
 	}
 
