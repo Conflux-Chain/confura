@@ -439,11 +439,11 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			return rs.updateEpochRangeMin(pipe, epochTo+1, edt)
 		})
 
-		if err != nil {
+		if err != nil { // Will retry if got redis.TxFailedErr or error logged by outside caller, debug level is enough here.
 			logrus.WithFields(logrus.Fields{
 				"epochFrom": epochFrom, "epochTo": epochTo,
 				"rmOption": option, "rmOpType": rmOpType,
-			}).WithError(err).Error("Failed to remove epoch data from reids store with pipeline unlink")
+			}).WithError(err).Debug("Failed to remove epoch data from reids store with pipeline unlink")
 		}
 
 		return err
