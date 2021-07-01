@@ -148,7 +148,7 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 		return errors.WithMessage(err, "failed to get global epoch range from redis")
 	}
 
-	watchKeys := make([]string, 0, len(dataSlice)+1)
+	watchKeys := make([]string, 0, len(dataSlice))
 	for _, data := range dataSlice {
 		if lastEpoch == citypes.EpochNumberNil {
 			lastEpoch = data.Number
@@ -164,7 +164,6 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 
 		watchKeys = append(watchKeys, getEpochBlocksCacheKey(data.Number))
 	}
-	watchKeys = append(watchKeys, getMetaCacheKey("epoch.ranges"))
 
 	return rs.execWithTx(func(tx *redis.Tx) error {
 		txOpHistory := store.EpochDataOpAffects{}
@@ -196,7 +195,7 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 		})
 
 		if err != nil {
-			logrus.WithField("lastEpoch", lastEpoch).WithError(err).Error("Failed to push epoch data to reids store with pipeline")
+			logrus.WithField("lastEpoch", lastEpoch).WithError(err).Debug("Failed to push epoch data to reids store with pipeline")
 		}
 
 		return err
@@ -340,12 +339,11 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 	defer updater.Update()
 
 	numEpochs := epochTo - epochFrom + 1
-	watchKeys := make([]string, 0, numEpochs+1)
+	watchKeys := make([]string, 0, numEpochs)
 
 	for i := epochFrom; i <= epochTo; i++ {
 		watchKeys = append(watchKeys, getEpochBlocksCacheKey(i))
 	}
-	watchKeys = append(watchKeys, getMetaCacheKey("epoch.ranges"))
 
 	removeOpHistory := store.EpochDataOpAffects{}
 
@@ -439,7 +437,7 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			return rs.updateEpochRangeMin(pipe, epochTo+1, edt)
 		})
 
-		if err != nil { // Will retry if got redis.TxFailedErr or error logged by outside caller, debug level is enough here.
+		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"epochFrom": epochFrom, "epochTo": epochTo,
 				"rmOption": option, "rmOpType": rmOpType,
