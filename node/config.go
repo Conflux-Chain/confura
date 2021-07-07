@@ -12,9 +12,17 @@ import (
 var cfg config // node config from viper
 
 func init() {
-	if err := util.ViperSub(viper.GetViper(), "node").Unmarshal(&cfg); err != nil {
+	nodeUrlsGetter := &util.ViperKeyGetter{
+		Key: "node.urls",
+		Getter: func(key string) interface{} {
+			return viper.GetViper().GetStringSlice(key)
+		},
+	}
+	if err := util.ViperSub(viper.GetViper(), "node", nodeUrlsGetter).Unmarshal(&cfg); err != nil {
 		logrus.WithError(err).Fatal("Failed to unmarshal node config from viper")
 	}
+
+	logrus.WithField("config", cfg).Info("Node manager configurations loaded.")
 
 	cfg.HashRing.Hasher = &hasher{}
 }
