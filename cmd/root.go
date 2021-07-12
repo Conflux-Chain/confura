@@ -139,7 +139,7 @@ func startRpcServer(db, cache store.Store) *util.RpcServer {
 	cfxHandler := rpc.NewCfxStoreHandler(cache, rpc.NewCfxStoreHandler(db, nil))
 
 	server := rpc.NewServer(router, cfxHandler)
-	go server.MustServe(viper.GetString("endpoint"))
+	go server.MustServe(viper.GetString("endpoint"), viper.GetString("wsEndpoint"))
 	return server
 }
 

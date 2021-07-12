@@ -1,5 +1,6 @@
 {
     "endpoint": ":22537",
+    "wsEndpoint": ":22535",
     "cfx": {
         "ws": "ws://test.confluxrpc.com/ws",
         "http": "http://test.confluxrpc.com",
