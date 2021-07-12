@@ -30,6 +30,7 @@ func init() {
 type config struct {
 	Endpoint string
 	URLs     []string
+	WSURLs   []string
 	HashRing consistent.Config
 	Monitor  monitorConfig
 	Router   routerConfig

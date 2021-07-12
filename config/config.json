@@ -89,6 +89,10 @@
             "http://test.confluxrpc.org/v2",
             "http://portal-test.confluxrpc.com"
         ],
+        "wsUrls": [
+            "ws://test.confluxrpc.com/ws",
+            "ws://test.confluxrpc.org/ws"
+        ],
         "hashRing": {
             "partitionCount": 15739,
             "replicationFactor": 51,

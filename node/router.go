@@ -16,6 +16,8 @@ import (
 type Router interface {
 	// Route returns the full node URL for specified key.
 	Route(key []byte) string
+	// WSRoute returns the websocket full node URL for specified key.
+	WSRoute(key []byte) string
 }
 
 // MustNewRouterFromViper creates an instance of Router based on viper.
@@ -76,7 +78,19 @@ func (r *chainedRouter) Route(key []byte) string {
 		}
 	}
 
-	logrus.Warn("No router handled the key")
+	logrus.Warn("No router handled the route key")
+
+	return ""
+}
+
+func (r *chainedRouter) WSRoute(key []byte) string {
+	for _, r := range r.routers {
+		if val := r.WSRoute(key); len(val) > 0 {
+			return val
+		}
+	}
+
+	logrus.Warn("No router handled the websocket route key")
 
 	return ""
 }
@@ -95,6 +109,18 @@ func NewRedisRouter(client *redis.Client) *RedisRouter {
 func (r *RedisRouter) Route(key []byte) string {
 	uintKey := xxhash.Sum64(key)
 	redisKey := redisRepartitionKey(uintKey)
+
+	return r.routeWithRedisKey(redisKey)
+}
+
+func (r *RedisRouter) WSRoute(key []byte) string {
+	uintKey := xxhash.Sum64(key)
+	redisKey := redisRepartitionKey(uintKey, "ws")
+
+	return r.routeWithRedisKey(redisKey)
+}
+
+func (r *RedisRouter) routeWithRedisKey(redisKey string) string {
 	node, err := r.client.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
 		return ""
@@ -129,6 +155,16 @@ func (r *NodeRpcRouter) Route(key []byte) string {
 	return result
 }
 
+func (r *NodeRpcRouter) WSRoute(key []byte) string {
+	var result string
+	if err := r.client.Call(&result, "node_wsRoute", hexutil.Bytes(key)); err != nil {
+		logrus.WithError(err).Error("Failed to route key for websocket from node RPC")
+		return ""
+	}
+
+	return result
+}
+
 type localNode string
 
 func (n localNode) String() string { return string(n) }
@@ -143,42 +179,66 @@ func (h hasher) Sum64(data []byte) uint64 {
 type LocalRouter struct {
 	nodes    map[string]localNode // name -> node
 	hashRing *consistent.Consistent
+
+	// used for websocket routing
+	wsNodes    map[string]localNode
+	wsHashRing *consistent.Consistent
 }
 
-func NewLocalRouter(urls []string) *LocalRouter {
-	nodes := make(map[string]localNode)
-	var members []consistent.Member
+func NewLocalRouter(urls, wsUrls []string) *LocalRouter {
+	batchNodes := make([]map[string]localNode, 2)
+	batchHashRings := make([]*consistent.Consistent, 2)
 
-	for _, url := range urls {
-		nodeName := url2NodeName(url)
-		if _, ok := nodes[nodeName]; !ok {
-			nodes[nodeName] = localNode(url)
-			members = append(members, localNode(url))
+	for i, urls := range [][]string{urls, wsUrls} {
+		nodes := make(map[string]localNode)
+		var members []consistent.Member
+
+		for _, url := range urls {
+			nodeName := url2NodeName(url)
+			if _, ok := nodes[nodeName]; !ok {
+				nodes[nodeName] = localNode(url)
+				members = append(members, localNode(url))
+			}
 		}
+
+		batchNodes[i] = nodes
+		batchHashRings[i] = consistent.New(members, cfg.HashRing)
 	}
 
 	return &LocalRouter{
-		nodes:    nodes,
-		hashRing: consistent.New(members, cfg.HashRing),
+		nodes:      batchNodes[0],
+		hashRing:   batchHashRings[0],
+		wsNodes:    batchNodes[1],
+		wsHashRing: batchHashRings[1],
 	}
 }
 
 func NewLocalRouterFromViper() *LocalRouter {
-	return NewLocalRouter(cfg.URLs)
+	return NewLocalRouter(cfg.URLs, cfg.WSURLs)
 }
 
 func (r *LocalRouter) Route(key []byte) string {
 	return r.hashRing.LocateKey(key).String()
 }
 
+func (r *LocalRouter) WSRoute(key []byte) string {
+	return r.wsHashRing.LocateKey(key).String()
+}
+
 func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
-	var urls []string
-	if err := client.Call(&urls, "node_list"); err != nil {
-		logrus.WithError(err).Error("Failed to get nodes from node RPC")
-		return nil, err
+	batchUrls := make([][]string, 2)
+
+	for i, method := range []string{"node_list", "node_wsList"} {
+		var urls []string
+		if err := client.Call(&urls, method); err != nil {
+			logrus.WithError(err).WithField("rpcMethod", method).Error("Failed to get nodes from node RPC")
+			return nil, err
+		}
+
+		batchUrls[i] = urls
 	}
 
-	router := NewLocalRouter(urls)
+	router := NewLocalRouter(batchUrls[0], batchUrls[1])
 
 	go router.update(client)
 
@@ -191,22 +251,30 @@ func (r *LocalRouter) update(client *rpc.Client) {
 
 	// could update nodes periodically all the time
 	for range ticker.C {
-		var urls []string
-		if err := client.Call(&urls, "node_list"); err != nil {
-			logrus.WithError(err).Debug("Failed to get nodes from node RPC periodically")
-		} else {
-			r.updateOnce(urls)
+		for i, method := range []string{"node_list", "node_wsList"} {
+			var urls []string
+			if err := client.Call(&urls, method); err != nil {
+				logrus.WithError(err).WithField("rpcMethod", method).Debug("Failed to get nodes from node RPC periodically")
+				continue
+			}
+
+			r.updateOnce(urls, i == 1)
 		}
 	}
 }
 
-func (r *LocalRouter) updateOnce(urls []string) {
+func (r *LocalRouter) updateOnce(urls []string, isWebsocket bool) {
+	fnNodes, hashRing := r.nodes, r.hashRing
+	if isWebsocket {
+		fnNodes, hashRing = r.wsNodes, r.wsHashRing
+	}
+
 	// detect new added
 	for _, v := range urls {
 		nodeName := url2NodeName(v)
-		if _, ok := r.nodes[nodeName]; !ok {
-			r.nodes[nodeName] = localNode(v)
-			r.hashRing.Add(localNode(v))
+		if _, ok := fnNodes[nodeName]; !ok {
+			fnNodes[nodeName] = localNode(v)
+			hashRing.Add(localNode(v))
 		}
 	}
 
@@ -217,15 +285,15 @@ func (r *LocalRouter) updateOnce(urls []string) {
 	}
 
 	var removed []string
-	for name := range r.nodes {
+	for name := range fnNodes {
 		if !nodes[name] {
 			removed = append(removed, name)
 		}
 	}
 
 	for _, v := range removed {
-		node := r.nodes[v]
-		delete(r.nodes, v)
-		r.hashRing.Remove(node.String())
+		node := fnNodes[v]
+		delete(fnNodes, v)
+		hashRing.Remove(node.String())
 	}
 }

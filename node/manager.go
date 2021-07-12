@@ -18,7 +18,7 @@ type Manager struct {
 	midEpoch        uint64
 }
 
-func NewMananger(resolver ...RepartitionResolver) *Manager {
+func NewMananger(urls []string, resolver ...RepartitionResolver) *Manager {
 	manager := Manager{
 		nodes:           make(map[string]*Node),
 		nodeName2Epochs: make(map[string]uint64),
@@ -32,7 +32,7 @@ func NewMananger(resolver ...RepartitionResolver) *Manager {
 
 	var members []consistent.Member
 
-	for _, url := range cfg.URLs {
+	for _, url := range urls {
 		nodeName := url2NodeName(url)
 		if _, ok := manager.nodes[nodeName]; !ok {
 			node := NewNode(nodeName, url, &manager)
@@ -50,6 +50,8 @@ func url2NodeName(url string) string {
 	nodeName := strings.ToLower(url)
 	nodeName = strings.TrimPrefix(nodeName, "http://")
 	nodeName = strings.TrimPrefix(nodeName, "https://")
+	nodeName = strings.TrimPrefix(nodeName, "ws://")
+	nodeName = strings.TrimPrefix(nodeName, "wss://")
 	nodeName = strings.TrimPrefix(nodeName, "/")
 	if idx := strings.Index(nodeName, ":"); idx != -1 {
 		nodeName = nodeName[:idx]

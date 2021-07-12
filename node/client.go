@@ -11,8 +11,9 @@ import (
 )
 
 type ClientProvider struct {
-	router  Router
-	clients util.ConcurrentMap
+	router    Router
+	clients   util.ConcurrentMap
+	wsClients util.ConcurrentMap // used for pubsub on connection to fullnode
 }
 
 func NewClientProvider(router Router) *ClientProvider {
@@ -22,24 +23,36 @@ func NewClientProvider(router Router) *ClientProvider {
 }
 
 func (p *ClientProvider) GetClientByIP(ctx context.Context) (sdk.ClientOperator, error) {
-	// http.Request.RemoteAddr in string type
-	remoteAddr := ctx.Value("remote").(string)
-	if idx := strings.Index(remoteAddr, ":"); idx != -1 {
-		remoteAddr = remoteAddr[:idx]
-	}
-	return p.GetClient(remoteAddr)
+	remoteAddr := remoteAddrFromContext(ctx)
+	return p.GetClient(remoteAddr, false)
 }
 
-func (p *ClientProvider) GetClient(key string) (sdk.ClientOperator, error) {
-	url := p.router.Route([]byte(key))
+func (p *ClientProvider) GetWSClientByIP(ctx context.Context) (sdk.ClientOperator, error) {
+	remoteAddr := remoteAddrFromContext(ctx)
+	return p.GetClient(remoteAddr, true)
+}
+
+func (p *ClientProvider) GetClient(key string, isWebsocket bool) (sdk.ClientOperator, error) {
+	var url string
+	var mapClients *util.ConcurrentMap
+
+	if isWebsocket {
+		url = p.router.WSRoute([]byte(key))
+		mapClients = &p.wsClients
+	} else {
+		url = p.router.Route([]byte(key))
+		mapClients = &p.clients
+	}
+
 	nodeName := url2NodeName(url)
 
 	logrus.WithFields(logrus.Fields{
 		"key":  key,
 		"node": nodeName,
+		"url":  url,
 	}).Trace("Route RPC requests")
 
-	client, loaded, err := p.clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+	client, loaded, err := mapClients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
 		// TODO improvements required
 		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
 		// 2. Different metrics for different full nodes.
@@ -63,4 +76,14 @@ func (p *ClientProvider) GetClient(key string) (sdk.ClientOperator, error) {
 	}
 
 	return client.(sdk.ClientOperator), nil
+}
+
+func remoteAddrFromContext(ctx context.Context) string {
+	// http.Request.RemoteAddr in string type
+	remoteAddr := ctx.Value("remote").(string)
+	if idx := strings.Index(remoteAddr, ":"); idx != -1 {
+		remoteAddr = remoteAddr[:idx]
+	}
+
+	return remoteAddr
 }
