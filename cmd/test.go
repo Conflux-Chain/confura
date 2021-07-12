@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"math"
 	"sync"
+	"time"
 
 	"github.com/conflux-chain/conflux-infura/test"
 	"github.com/sirupsen/logrus"
@@ -10,10 +12,8 @@ import (
 )
 
 var (
-	testFnRpcEndpoint     string // fullnode rpc endpoint for data test/validation
-	testInfuraRpcEndpoint string // infura rpc endpoint for data test/validation
-
-	testCmd = &cobra.Command{
+	validConf test.EVConfig // epoch data validation configuration
+	testCmd   = &cobra.Command{
 		Use:   "test",
 		Short: "Test/validate if infura data complies with fullnode",
 		Run:   startTest,
@@ -21,15 +21,20 @@ var (
 )
 
 func init() {
-	testCmd.Flags().StringVarP(&testFnRpcEndpoint, "fn-endpoint", "f", "", "fullnode rpc endpoint used as benchmark")
+	testCmd.Flags().StringVarP(&validConf.FullnodeRpcEndpoint, "fn-endpoint", "f", "", "fullnode rpc endpoint used as benchmark")
 	testCmd.MarkFlagRequired("fn-endpoint")
 
-	testCmd.Flags().StringVarP(&testInfuraRpcEndpoint, "infura-endpoint", "u", "", "infura rpc endpoint to be validated against")
+	testCmd.Flags().StringVarP(&validConf.InfuraRpcEndpoint, "infura-endpoint", "u", "", "infura rpc endpoint to be validated against")
 	testCmd.MarkFlagRequired("infura-endpoint")
+
+	testCmd.Flags().Uint64VarP(&validConf.EpochScanFrom, "start-epoch", "e", math.MaxUint64, "the epoch from where scan validation will start")
+	testCmd.Flags().DurationVarP(&validConf.ScanInterval, "scan-interval", "c", 1*time.Second, "the interval for each scan validation")
+	testCmd.Flags().DurationVarP(&validConf.SamplingInterval, "sampling-interval", "a", 10*time.Second, "the interval for each sampling validation")
+	testCmd.Flags().StringVarP(&validConf.SamplingEpochType, "sampling-epoch-type", "t", "lc", "the epoch type for sampling validation: lm(latest_mined)/ls(latest_state)/lc(latest_confirmed)")
 }
 
 func startTest(cmd *cobra.Command, args []string) {
-	if len(testFnRpcEndpoint) == 0 || len(testInfuraRpcEndpoint) == 0 {
+	if len(validConf.FullnodeRpcEndpoint) == 0 || len(validConf.InfuraRpcEndpoint) == 0 {
 		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for data test/validation")
 	}
 
@@ -39,10 +44,7 @@ func startTest(cmd *cobra.Command, args []string) {
 
 	logrus.Info("Starting epoch data validator...")
 
-	validator := test.MustNewEpochValidator(&test.EVConfig{
-		FullnodeRpcEndpoint: testFnRpcEndpoint,
-		InfuraRpcEndpoint:   testInfuraRpcEndpoint,
-	})
+	validator := test.MustNewEpochValidator(&validConf)
 	go validator.Run(ctx, wg)
 
 	gracefulShutdown(ctx, func() error {
