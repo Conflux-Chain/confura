@@ -29,7 +29,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 	epoch := types.NewEpochNumberUint64(epochNumber)
 	blockHashes, err := cfx.GetBlocksByEpoch(epoch)
 
-	if len(blockHashes) == 0 { // invalid epoch data, must have at lease one block
+	if err == nil && len(blockHashes) == 0 { // invalid epoch data, must have at lease one block
 		err = errors.New("invalid epoch data (must have at least one block)")
 	}
 

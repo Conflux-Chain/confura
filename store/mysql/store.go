@@ -513,8 +513,10 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (store.
 		for _, tx := range block.Transactions {
 			receipt := data.Receipts[tx.Hash]
 
-			// skip transactions that unexecuted in block
-			if receipt == nil {
+			// Skip transactions that unexecuted in block.
+			// !!! Still need to check BlockHash and Status in case more than one transactions
+			// of the same hash appeared in the same epoch.
+			if receipt == nil || tx.BlockHash == nil || tx.Status == nil {
 				continue
 			}
 

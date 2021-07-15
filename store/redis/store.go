@@ -288,8 +288,10 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 
 		for _, btx := range block.Transactions {
 			receipt := data.Receipts[btx.Hash]
-			// Skip transactions that unexecuted in block
-			if receipt == nil {
+			// Skip transactions that unexecuted in block.
+			// !!! Still need to check BlockHash and Status in case more than one transactions
+			// of the same hash appeared in the same epoch.
+			if receipt == nil || btx.BlockHash == nil || btx.Status == nil {
 				continue
 			}
 
