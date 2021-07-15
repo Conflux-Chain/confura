@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/conflux-chain/conflux-infura/alert"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -51,6 +52,9 @@ func initLogger() {
 	// Add alert hook for logrus fatal/warn/error level
 	hookLevels := []logrus.Level{logrus.FatalLevel, logrus.WarnLevel, logrus.ErrorLevel}
 	logrus.AddHook(alert.NewLogrusAlertHook(hookLevels))
+
+	// Customize logger here...
+	adaptGethLogger()
 }
 
 func initMetrics() {
@@ -59,4 +63,30 @@ func initMetrics() {
 	if metrics.Enabled {
 		logrus.Info("Metrics enabled")
 	}
+}
+
+// adaptGethLogger adapt geth logger (which is used by go sdk) to get along with logrus.
+func adaptGethLogger() {
+	formatter := log.TerminalFormat(false)
+	logrusLevelsMap := map[log.Lvl]logrus.Level{
+		log.LvlCrit:  logrus.FatalLevel,
+		log.LvlError: logrus.ErrorLevel,
+		log.LvlWarn:  logrus.WarnLevel,
+		log.LvlInfo:  logrus.InfoLevel,
+		log.LvlDebug: logrus.DebugLevel,
+		log.LvlTrace: logrus.TraceLevel,
+	}
+
+	log.Root().SetHandler(log.FuncHandler(func(r *log.Record) error {
+		logLvl, ok := logrusLevelsMap[r.Lvl]
+		if !ok {
+			return errors.New("unsupported log level")
+		}
+
+		if logLvl <= logrus.GetLevel() {
+			logrus.WithField("source", "GethLogger").Log(logLvl, string(formatter.Format(r)))
+		}
+
+		return nil
+	}))
 }
