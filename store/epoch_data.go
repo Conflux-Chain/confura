@@ -67,6 +67,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 	for i, block := range blocks {
 		for j, tx := range block.Transactions {
 			logger := logrus.WithFields(logrus.Fields{
+				"i": i, "j": j,
 				"epoch": epochNumber,
 				"block": block.Hash.String(),
 				"tx":    tx.Hash.String(),
@@ -84,7 +85,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 			// The order of batch retrieved receipts should be the same with the fetched blocks & transactions,
 			// Even so, we'd better also do some bound checking and fault tolerance to be robust.
 			if i >= len(epochReceipts) || j >= len(epochReceipts[i]) {
-				logger.Error("Batch retrieved receipts out of bound")
+				logger.WithField("epochReceipts", epochReceipts).Error("Batch retrieved receipts out of bound")
 				return emptyEpochData, errors.New("batch retrieved receipts out of bound")
 			}
 
