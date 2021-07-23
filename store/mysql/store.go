@@ -365,7 +365,7 @@ func (ms *mysqlStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error)
 }
 
 func (ms *mysqlStore) GetBlockByEpoch(epochNumber uint64) (*types.Block, error) {
-	// Cannot get tx from db in advance, since only executed txs saved in db
+	// TODO Cannot get tx from db in advance, since only executed txs saved in db
 	return nil, store.ErrUnsupported
 }
 

@@ -107,14 +107,14 @@ func (rs *redisStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error)
 }
 
 func (rs *redisStore) GetBlockByEpoch(epochNumber uint64) (*types.Block, error) {
-	// Cannot get tx from redis in advance, since only executed txs are saved in store
+	// TODO Cannot get tx from redis in advance, since only executed txs are saved in store
 	return nil, store.ErrUnsupported
 }
 
 func (rs *redisStore) GetBlockSummaryByEpoch(epochNumber uint64) (*types.BlockSummary, error) {
 	pivotBlock, err := loadEpochPivotBlock(rs.ctx, rs.rdb, epochNumber)
 	if err != nil {
-		logrus.WithField("epochNumber", epochNumber).WithError(err).Error("Failed to get pivot block hash")
+		logrus.WithField("epochNumber", epochNumber).WithError(err).Debug("Pivot block missed in cache")
 		return nil, err
 	}
 

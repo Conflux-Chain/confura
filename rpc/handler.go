@@ -5,6 +5,7 @@ import (
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 )
 
@@ -37,7 +38,7 @@ func (h *CfxStoreHandler) GetBlockByHash(ctx context.Context, blockHash types.Ha
 		return
 	}
 
-	if h.next != nil {
+	if !util.IsInterfaceValNil(h.next) {
 		return h.next.GetBlockByHash(ctx, blockHash, includeTxs)
 	}
 
@@ -53,14 +54,12 @@ func (h *CfxStoreHandler) GetBlockByEpochNumber(ctx context.Context, epoch *type
 
 	epochNo := epBigInt.Uint64()
 	if includeTxs {
-		if block, err = h.store.GetBlockByEpoch(epochNo); err == nil {
-			return
-		}
-	} else if block, err = h.store.GetBlockByEpoch(epochNo); err == nil {
-		return
+		block, err = h.store.GetBlockByEpoch(epochNo)
+	} else {
+		block, err = h.store.GetBlockSummaryByEpoch(epochNo)
 	}
 
-	if h.next != nil {
+	if err != nil && !util.IsInterfaceValNil(h.next) {
 		return h.next.GetBlockByEpochNumber(ctx, epoch, includeTxs)
 	}
 
@@ -77,7 +76,7 @@ func (h *CfxStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (
 		logrus.WithError(err).Error("cfxStoreHandler failed to get logs from store")
 	}
 
-	if h.next != nil {
+	if !util.IsInterfaceValNil(h.next) {
 		return h.next.GetLogs(ctx, filter)
 	}
 
@@ -89,7 +88,7 @@ func (h *CfxStoreHandler) GetTransactionByHash(ctx context.Context, txHash types
 		return
 	}
 
-	if h.next != nil {
+	if !util.IsInterfaceValNil(h.next) {
 		return h.next.GetTransactionByHash(ctx, txHash)
 	}
 
@@ -108,7 +107,7 @@ func (h *CfxStoreHandler) GetBlocksByEpoch(ctx context.Context, epoch *types.Epo
 		return
 	}
 
-	if h.next != nil {
+	if !util.IsInterfaceValNil(h.next) {
 		return h.next.GetBlocksByEpoch(ctx, epoch)
 	}
 
@@ -120,7 +119,7 @@ func (h *CfxStoreHandler) GetTransactionReceipt(ctx context.Context, txHash type
 		return
 	}
 
-	if h.next != nil {
+	if !util.IsInterfaceValNil(h.next) {
 		return h.next.GetTransactionReceipt(ctx, txHash)
 	}
 

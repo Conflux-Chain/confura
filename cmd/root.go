@@ -140,8 +140,8 @@ func startRpcServer(db, cache store.Store) *util.RpcServer {
 	// Add empty store tolerance
 	var cfxHandler *rpc.CfxStoreHandler
 	for _, s := range []store.Store{db, cache} {
-		if s != nil {
-			cfxHandler = rpc.NewCfxStoreHandler(db, cfxHandler)
+		if !util.IsInterfaceValNil(s) {
+			cfxHandler = rpc.NewCfxStoreHandler(s, cfxHandler)
 		}
 	}
 
