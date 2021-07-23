@@ -71,7 +71,7 @@ func adaptGethLogger() {
 	logrusLevelsMap := map[log.Lvl]logrus.Level{
 		log.LvlCrit:  logrus.FatalLevel,
 		log.LvlError: logrus.ErrorLevel,
-		log.LvlWarn:  logrus.WarnLevel,
+		log.LvlWarn:  logrus.InfoLevel,
 		log.LvlInfo:  logrus.InfoLevel,
 		log.LvlDebug: logrus.DebugLevel,
 		log.LvlTrace: logrus.TraceLevel,
@@ -84,7 +84,15 @@ func adaptGethLogger() {
 		}
 
 		if logLvl <= logrus.GetLevel() {
-			logrus.WithField("source", "GethLogger").Log(logLvl, string(formatter.Format(r)))
+			logStr := string(formatter.Format(r))
+			abbrStr := logStr
+
+			firstLineEnd := strings.IndexRune(logStr, '\n')
+			if firstLineEnd > 0 { // extract first line as abstract
+				abbrStr = logStr[:firstLineEnd]
+			}
+
+			logrus.WithField("gethWrappedLogs", logStr).Log(logLvl, abbrStr)
 		}
 
 		return nil
