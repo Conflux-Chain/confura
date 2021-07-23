@@ -136,7 +136,14 @@ func startRpcServer(db, cache store.Store) *util.RpcServer {
 	logrus.Info("Start to run public rpc server...")
 
 	router := node.MustNewRouterFromViper()
-	cfxHandler := rpc.NewCfxStoreHandler(cache, rpc.NewCfxStoreHandler(db, nil))
+
+	// Add empty store tolerance
+	var cfxHandler *rpc.CfxStoreHandler
+	for _, s := range []store.Store{db, cache} {
+		if s != nil {
+			cfxHandler = rpc.NewCfxStoreHandler(db, cfxHandler)
+		}
+	}
 
 	server := rpc.NewServer(router, cfxHandler)
 	go server.MustServe(viper.GetString("endpoint"), viper.GetString("wsEndpoint"))

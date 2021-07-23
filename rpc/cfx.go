@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
@@ -171,7 +172,7 @@ func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, ep
 func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (interface{}, error) {
 	logger := logrus.WithFields(logrus.Fields{"blockHash": blockHash, "includeTxs": includeTxs})
 
-	if api.handler != nil {
+	if !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlockByHash/store/hitratio", *isHit)
@@ -216,7 +217,7 @@ func (api *cfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockH
 func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch *types.Epoch, includeTxs bool) (interface{}, error) {
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch, "includeTxs": includeTxs})
 
-	if api.handler != nil {
+	if !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlockByEpochNumber/store/hitratio", *isHit)
@@ -292,14 +293,14 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
 	logger := logrus.WithField("filter", filter)
 
-	if err := api.validateLogFilter(&filter); err != nil {
-		logger.WithError(err).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
-		return emptyLogs, err
-	}
-
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to get available cfx client for cfx_getLogs rpc request")
+		return emptyLogs, err
+	}
+
+	if err := api.validateLogFilter(cfx, &filter); err != nil {
+		logger.WithError(err).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
 		return emptyLogs, err
 	}
 
@@ -307,7 +308,7 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	api.inputEpochMetric.update(filter.FromEpoch, "cfx_getLogs/from", cfx)
 	api.inputEpochMetric.update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 
-	if sfilter, ok := store.ParseLogFilter(&filter); ok && api.handler != nil {
+	if sfilter, ok := store.ParseLogFilter(&filter); ok && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getLogs/store/hitratio", *isHit)
@@ -336,15 +337,44 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	return cfx.GetLogs(filter)
 }
 
-func (api *cfxAPI) validateLogFilter(filter *types.LogFilter) error {
-	// TODO validate against non-number case, e.g. latest_confirmed
+func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) error {
+	// Uniform log filter with default epoch range if from or to epoch not provided.
+	// Also convert named epoch e.g. latest_confirmed to numbered epoch.
+	uniform := func(valPtr **types.Epoch, defaultVal *types.Epoch) error {
+		if *valPtr == nil { // set default if nil
+			*valPtr = defaultVal
+		}
+
+		if _, ok := (*valPtr).ToInt(); ok {
+			return nil
+		}
+
+		epochNum, err := cfx.GetEpochNumber(*valPtr)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get epoch number for named epoch")
+		}
+
+		*valPtr = types.NewEpochNumber(epochNum)
+		return nil
+	}
+
+	err := uniform(&(filter.FromEpoch), types.EpochEarliest)
+	if err == nil {
+		err = uniform(&(filter.ToEpoch), types.EpochLatestState)
+	}
+
+	if err != nil {
+		logrus.WithError(err).Error("Failed to uniform log filter")
+		return errors.WithMessage(err, "failed to uniform log filter")
+	}
+
 	if epochFrom, ok := filter.FromEpoch.ToInt(); ok {
 		if epochTo, ok := filter.ToEpoch.ToInt(); ok {
 			epochFrom := epochFrom.Uint64()
 			epochTo := epochTo.Uint64()
 
 			if epochFrom > epochTo {
-				return errors.New("invalid epoch range (from > to)")
+				return errors.New("invalid epoch range (from epoch larger than to epoch)")
 			}
 
 			if count := epochTo - epochFrom + 1; count > store.MaxLogEpochRange {
@@ -363,7 +393,7 @@ func (api *cfxAPI) validateLogFilter(filter *types.LogFilter) error {
 func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
 	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
 
-	if api.handler != nil {
+	if !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getTransactionByHash/store/hitratio", *isHit)
@@ -415,7 +445,7 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(ctx context.Context, account, 
 func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) ([]types.Hash, error) {
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch})
 
-	if api.handler != nil {
+	if !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlocksByEpoch/store/hitratio", *isHit)
@@ -457,7 +487,7 @@ func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch *types.Epo
 func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
 	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
 
-	if api.handler != nil {
+	if !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getTransactionReceipt/store/hitratio", *isHit)
