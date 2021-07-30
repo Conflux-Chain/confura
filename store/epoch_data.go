@@ -81,6 +81,14 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 				continue
 			}
 
+			// If epoch not executed yet, cfx_getEpochReceipts will always return null no matter what block hash passed in
+			// as assumptive pivot hash due to fullnode RPC implementation. While we have some executed transaction but
+			// unexecuted receipt here, it is definitely resulted by pivot switch.
+			if epochReceipts == nil {
+				logrus.WithField("epochReceipts", epochReceipts).Debug("Failed to match trasaction receipts due to pivot switch")
+				return emptyEpochData, ErrEpochPivotSwitched
+			}
+
 			// Find transaction receipts from above batch retrieved receipts.
 			// The order of batch retrieved receipts should be the same with the fetched blocks & transactions,
 			// Even so, we'd better also do some bound checking and fault tolerance to be robust.
