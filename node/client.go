@@ -44,7 +44,7 @@ func (p *ClientProvider) GetClient(key string, isWebsocket bool) (sdk.ClientOper
 		mapClients = &p.clients
 	}
 
-	nodeName := url2NodeName(url)
+	nodeName := util.Url2NodeName(url)
 
 	logrus.WithFields(logrus.Fields{
 		"key":  key,

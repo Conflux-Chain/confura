@@ -6,6 +6,7 @@ import (
 
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
@@ -194,7 +195,7 @@ func NewLocalRouter(urls, wsUrls []string) *LocalRouter {
 		var members []consistent.Member
 
 		for _, url := range urls {
-			nodeName := url2NodeName(url)
+			nodeName := util.Url2NodeName(url)
 			if _, ok := nodes[nodeName]; !ok {
 				nodes[nodeName] = localNode(url)
 				members = append(members, localNode(url))
@@ -271,7 +272,7 @@ func (r *LocalRouter) updateOnce(urls []string, isWebsocket bool) {
 
 	// detect new added
 	for _, v := range urls {
-		nodeName := url2NodeName(v)
+		nodeName := util.Url2NodeName(v)
 		if _, ok := fnNodes[nodeName]; !ok {
 			fnNodes[nodeName] = localNode(v)
 			hashRing.Add(localNode(v))
@@ -281,7 +282,7 @@ func (r *LocalRouter) updateOnce(urls []string, isWebsocket bool) {
 	// detect removed
 	nodes := make(map[string]bool)
 	for _, v := range urls {
-		nodes[url2NodeName(v)] = true
+		nodes[util.Url2NodeName(v)] = true
 	}
 
 	var removed []string
