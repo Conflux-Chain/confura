@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	redisCacheExpireDuration = time.Hour * 24 // default expiration duration is 1 day
+	redisCacheExpireDuration = time.Hour * 12 // default expiration duration is 12 hours
 )
 
 type redisStore struct {
@@ -118,7 +118,7 @@ func (rs *redisStore) GetBlockSummaryByEpoch(epochNumber uint64) (*types.BlockSu
 		return nil, err
 	}
 
-	return loadBlock(rs.ctx, rs.rdb, pivotBlock)
+	return loadBlockByHash(rs.ctx, rs.rdb, pivotBlock)
 }
 
 func (rs *redisStore) GetBlockByHash(blockHash types.Hash) (*types.Block, error) {
@@ -126,7 +126,15 @@ func (rs *redisStore) GetBlockByHash(blockHash types.Hash) (*types.Block, error)
 }
 
 func (rs *redisStore) GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error) {
-	return loadBlock(rs.ctx, rs.rdb, blockHash)
+	return loadBlockByHash(rs.ctx, rs.rdb, blockHash)
+}
+
+func (rs *redisStore) GetBlockByBlockNumber(blockNumber uint64) (*types.Block, error) {
+	return nil, store.ErrUnsupported
+}
+
+func (rs *redisStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*types.BlockSummary, error) {
+	return loadBlockByNumber(rs.ctx, rs.rdb, blockNumber)
 }
 
 func (rs *redisStore) Push(data *store.EpochData) error {
@@ -273,7 +281,15 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 	epochTxs := make([]interface{}, 0, len(data.Blocks)*2)
 
 	for _, block := range data.Blocks {
-		epochBlocks = append(epochBlocks, block.Hash.String())
+		blockHash := block.Hash.String()
+		epochBlocks = append(epochBlocks, blockHash)
+
+		// Cache store block number mapping to block hash
+		blockNo := block.BlockNumber.ToInt().Uint64()
+		blockNo2HashCacheKey := getBlockNumber2HashCacheKey(blockNo)
+		if err := rp.Set(rs.ctx, blockNo2HashCacheKey, blockHash, redisCacheExpireDuration).Err(); err != nil {
+			return opHistory, err
+		}
 
 		// Cache store block summary
 		blockSummary := util.GetSummaryOfBlock(block)

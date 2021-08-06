@@ -55,21 +55,23 @@ func loadTx(db *gorm.DB, txHash string) (*transaction, error) {
 }
 
 type block struct {
-	ID         uint64
-	Epoch      uint64 `gorm:"not null;index"`
-	HashId     uint64 `gorm:"not null;index"`
-	Hash       string `gorm:"size:66;not null"`
-	Pivot      bool   `gorm:"not null"`
-	RawData    []byte `gorm:"type:MEDIUMBLOB;not null"`
-	RawDataLen uint64 `gorm:"not null"`
+	ID          uint64
+	Epoch       uint64 `gorm:"not null;index"`
+	BlockNumber uint64 `gorm:"not null;index"`
+	HashId      uint64 `gorm:"not null;index"`
+	Hash        string `gorm:"size:66;not null"`
+	Pivot       bool   `gorm:"not null"`
+	RawData     []byte `gorm:"type:MEDIUMBLOB;not null"`
+	RawDataLen  uint64 `gorm:"not null"`
 }
 
 func newBlock(data *types.Block, pivot bool) *block {
 	block := &block{
-		Epoch:   data.EpochNumber.ToInt().Uint64(),
-		Hash:    data.Hash.String(),
-		Pivot:   pivot,
-		RawData: util.MustMarshalRLP(util.GetSummaryOfBlock(data)),
+		Epoch:       data.EpochNumber.ToInt().Uint64(),
+		BlockNumber: data.BlockNumber.ToInt().Uint64(),
+		Hash:        data.Hash.String(),
+		Pivot:       pivot,
+		RawData:     util.MustMarshalRLP(util.GetSummaryOfBlock(data)),
 	}
 
 	block.HashId = util.GetShortIdOfHash(block.Hash)

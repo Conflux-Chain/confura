@@ -59,21 +59,28 @@ func getTxCacheKey(txHash types.Hash) string {
 }
 
 // Transaction receipt data stored in redis formated as:
-// key: 	receipt:tx:{transaction_hash}
+// key: 	receipt:{transaction_hash}
 // value: 	RLP encoded types.TransactionReceipt raw bytes
 func getTxReceiptCacheKey(txHash types.Hash) string {
 	return RedisKey("receipt", txHash.String())
 }
 
 // Epoch to block hash collection stored in redis formated as:
-// key: 	blocks:epoch:{epoch_number}
+// key: 	epoch:{epoch_number}:blocks
 // value: 	List of ordered block hashes
 func getEpochBlocksCacheKey(epochNo uint64) string {
 	return RedisKey("epoch", StrUint64(epochNo), "blocks")
 }
 
+// Block number to block hash mapping stored in redis formated as:
+// key: 	block#:{block_number}
+// value: 	{block_hash}
+func getBlockNumber2HashCacheKey(blockNo uint64) string {
+	return RedisKey("block#", StrUint64(blockNo))
+}
+
 // Epoch to transaction hash collection stored in redis formated as:
-// key: 	txs:epoch:{epoch_number}
+// key: 	epoch:{epoch_number}:txs
 // value: 	List of transaction hashes
 // This can be used to handle epoch transactions indexed by epoch number like epoch data prunning
 func getEpochTxsCacheKey(epochNo uint64) string {
@@ -89,11 +96,23 @@ func getMetaCacheKey(keys ...string) string {
 }
 
 // Load block summary data by block hash from redis
-func loadBlock(ctx context.Context, rc redis.Cmdable, blockHash types.Hash) (*types.BlockSummary, error) {
+func loadBlockByHash(ctx context.Context, rc redis.Cmdable, blockHash types.Hash) (*types.BlockSummary, error) {
 	var rpcBlock types.BlockSummary
 	err := RedisRLPGet(ctx, rc, getBlockCacheKey(blockHash), &rpcBlock)
 
 	return &rpcBlock, err
+}
+
+// Load block summary data by block number from redis
+func loadBlockByNumber(ctx context.Context, rc redis.Cmdable, blockNo uint64) (*types.BlockSummary, error) {
+	num2HashCacheKey := getBlockNumber2HashCacheKey(blockNo)
+
+	blockHash, err := rc.Get(ctx, num2HashCacheKey).Result()
+	if err = ParseRedisNil(err); err == nil {
+		return loadBlockByHash(ctx, rc, types.Hash(blockHash))
+	}
+
+	return nil, err
 }
 
 // Load transaction data by transaction hash from redis

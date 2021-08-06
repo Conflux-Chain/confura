@@ -382,6 +382,14 @@ func (ms *mysqlStore) GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockS
 	return loadBlock(ms.db, "hash_id = ? AND hash = ?", util.GetShortIdOfHash(hash), hash)
 }
 
+func (ms *mysqlStore) GetBlockByBlockNumber(blockNumber uint64) (*types.Block, error) {
+	return nil, store.ErrUnsupported
+}
+
+func (ms *mysqlStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*types.BlockSummary, error) {
+	return loadBlock(ms.db, "block_number = ?", blockNumber)
+}
+
 func (ms *mysqlStore) Push(data *store.EpochData) error {
 	return ms.Pushn([]*store.EpochData{data})
 }

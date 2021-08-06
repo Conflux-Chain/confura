@@ -31,6 +31,8 @@ type Store interface {
 	GetBlockSummaryByEpoch(epochNumber uint64) (*types.BlockSummary, error)
 	GetBlockByHash(blockHash types.Hash) (*types.Block, error)
 	GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error)
+	GetBlockByBlockNumber(blockNumber uint64) (*types.Block, error)
+	GetBlockSummaryByBlockNumber(blockNumber uint64) (*types.BlockSummary, error)
 
 	// Push appends epoch data to the store
 	Push(data *EpochData) error

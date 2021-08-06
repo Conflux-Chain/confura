@@ -253,6 +253,42 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch *types.Epoch
 	return cfx.GetBlockSummaryByEpoch(epoch)
 }
 
+func (api *cfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (block interface{}, err error) {
+	logger := logrus.WithFields(logrus.Fields{"blockNumber": blockNumer, "includeTxs": includeTxs})
+
+	if !util.IsInterfaceValNil(api.handler) {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlockByBlockNumber/store/hitratio", *isHit)
+		}(&isStoreHit)
+
+		block, err := api.handler.GetBlockByBlockNumber(ctx, blockNumer, includeTxs)
+		if err == nil {
+			logger.Debug("Loading epoch data for cfx_getBlockByBlockNumber hit in the store")
+
+			isStoreHit = true
+			return block, err
+		}
+
+		logger.WithError(err).Debug("Loading epoch data for cfx_getBlockByBlockNumber hit missed from the store")
+	}
+
+	logger.Debug("Delegating cfx_getBlockByBlockNumber rpc request to fullnode")
+
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		logger.WithError(err).Debug("Failed to delegate cfx_getBlockByBlockNumber rpc request to fullnode")
+		return nil, err
+	}
+
+	if includeTxs {
+		metrics.GetOrRegisterGauge("rpc/cfx_getBlockByBlockNumber/details", nil).Inc(1)
+		return cfx.GetBlockByBlockNumber(blockNumer)
+	}
+
+	return cfx.GetBlockSummaryByBlockNumber(blockNumer)
+}
+
 func (api *cfxAPI) GetBestBlockHash(ctx context.Context) (types.Hash, error) {
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {

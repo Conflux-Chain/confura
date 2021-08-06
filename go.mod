@@ -3,7 +3,7 @@ module github.com/conflux-chain/conflux-infura
 go 1.15
 
 require (
-	github.com/Conflux-Chain/go-conflux-sdk v1.0.11-0.20210629023125-b20bbeba2d0b
+	github.com/Conflux-Chain/go-conflux-sdk v1.0.13
 	github.com/buraksezer/consistent v0.9.0
 	github.com/cespare/xxhash v1.1.0
 	github.com/ethereum/go-ethereum v1.9.25

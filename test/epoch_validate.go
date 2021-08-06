@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/multierr"
@@ -25,6 +27,8 @@ import (
 
 var (
 	validEpochFromNoFilePath = ".evno" // file path to read/write epoch number from where the validation will start
+
+	errResultNotMatched = errors.New("results not matched")
 )
 
 type epochValidationFunc func(epoch *types.Epoch) error
@@ -189,7 +193,7 @@ func (validator *EpochValidator) doSampling() error {
 		validator.validateEpochCombo,
 		validator.validateGetLogs,
 	}
-	if err := validator.validate(epochNo, epochVFuncs...); err != nil {
+	if err := validator.doRun(epochNo, epochVFuncs...); err != nil {
 		return errors.WithMessagef(err, "failed to validate epoch #%v", epochNo)
 	}
 
@@ -229,7 +233,7 @@ func (validator *EpochValidator) scanOnce() (bool, error) {
 		validator.validateEpochCombo,
 		validator.validateGetLogs,
 	}
-	if err := validator.validate(validator.conf.EpochScanFrom, epochVFuncs...); err != nil {
+	if err := validator.doRun(validator.conf.EpochScanFrom, epochVFuncs...); err != nil {
 		return false, errors.WithMessagef(err, "failed to validate epoch #%v", validator.conf.EpochScanFrom)
 	}
 
@@ -242,8 +246,8 @@ func (validator *EpochValidator) scanOnce() (bool, error) {
 	return false, nil
 }
 
-func (validator *EpochValidator) validate(epochNo uint64, vfuncs ...epochValidationFunc) error {
-	logrus.WithField("epochNo", epochNo).Debug("Epoch validator validating epoch...")
+func (validator *EpochValidator) doRun(epochNo uint64, vfuncs ...epochValidationFunc) error {
+	logrus.WithField("epochNo", epochNo).Debug("Epoch validator does run validating epoch...")
 
 	epoch := types.NewEpochNumberUint64(epochNo)
 	for _, f := range vfuncs {
@@ -255,7 +259,7 @@ func (validator *EpochValidator) validate(epochNo uint64, vfuncs ...epochValidat
 	return nil
 }
 
-// Validate epoch combo api suite eg., cfx_getTransactionByHash/cfx_getTransactionReceipt/cfx_getBlockByHash
+// Validate epoch combo api suite eg., cfx_getTransactionByHash/cfx_getTransactionReceipt/cfx_getBlockByHash/cfx_getBlockByBlockNumber
 func (validator *EpochValidator) validateEpochCombo(epoch *types.Epoch) error {
 	epBlockHashes, err := validator.cfx.GetBlocksByEpoch(epoch)
 	if err != nil {
@@ -264,9 +268,21 @@ func (validator *EpochValidator) validateEpochCombo(epoch *types.Epoch) error {
 
 	ri := util.RandUint64(uint64(len(epBlockHashes)))
 	bh := epBlockHashes[ri]
+	if _, err := validator.validateGetBlockSummaryByHash(bh); err != nil {
+		return err
+	}
 
 	block, err := validator.validateGetBlockByHash(bh)
 	if err != nil {
+		return err
+	}
+
+	blockNum := hexutil.Uint64(block.BlockNumber.ToInt().Uint64())
+	if _, err := validator.validateGetBlockSummaryByBlockNumber(blockNum); err != nil {
+		return err
+	}
+
+	if _, err := validator.validateGetBlockByBlockNumber(blockNum); err != nil {
 		return err
 	}
 
@@ -288,48 +304,81 @@ func (validator *EpochValidator) validateEpochCombo(epoch *types.Epoch) error {
 	return nil
 }
 
-// Validate cfx_getTransactionReceipt
-func (validator *EpochValidator) validateGetTransactionReceipt(txHash types.Hash) error {
+type matchInfo struct {
+	matched     bool   // if validation results matched
+	resJsonStr1 string // validation result from fullnode
+	resJsonStr2 string // validation result from infura
+}
+
+func (validator *EpochValidator) doValidate(fnCall, infuraCall func() (interface{}, error)) (*matchInfo, error) {
 	var wg sync.WaitGroup
-	var rcpt1, rcpt2 *types.TransactionReceipt
+	var res1, res2 interface{}
 	var err1, err2 error
 	var json1, json2 []byte
+	var mi *matchInfo
 
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
-		rcpt1, err1 = validator.cfx.GetTransactionReceipt(txHash)
-		err1 = errors.WithMessagef(err1, "failed to query transaction receipts from fullnode by hash %v", txHash)
-
+		res1, err1 = fnCall()
 		wg.Done()
 	}()
 
-	wg.Add(1)
 	go func() {
-		rcpt2, err2 = validator.infura.GetTransactionReceipt(txHash)
-		err2 = errors.WithMessagef(err2, "failed to query transaction receipts from infura by hash %v", txHash)
-
+		res2, err2 = infuraCall()
 		wg.Done()
 	}()
 
 	wg.Wait()
 
 	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+		return nil, err
 	}
 
-	json1, err1 = json.Marshal(rcpt1)
-	err1 = errors.WithMessagef(err1, "failed to marshal json for result of cfx_getTransactionReceipt for fullnode")
-
-	json2, err2 = json.Marshal(rcpt2)
-	err2 = errors.WithMessagef(err2, "failed to marshal json for result of cfx_getTransactionReceipt for infura")
+	json1, err1 = json.Marshal(res1)
+	json2, err2 = json.Marshal(res2)
 
 	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+		return nil, err
 	}
 
-	if string(json1) != string(json2) {
-		logrus.WithFields(logrus.Fields{"json1": string(json1), "json2": string(json2)}).Debug("Epoch validator result not match for cfx_getTransactionReceipt")
-		return errors.New("result not match for cfx_getTransactionReceipt")
+	mi = &matchInfo{
+		matched:     reflect.DeepEqual(json1, json2),
+		resJsonStr1: string(json1),
+		resJsonStr2: string(json2),
+	}
+
+	if !mi.matched {
+		return mi, errResultNotMatched
+	}
+
+	return mi, nil
+}
+
+// Validate cfx_getTransactionReceipt
+func (validator *EpochValidator) validateGetTransactionReceipt(txHash types.Hash) error {
+	var rcpt1, rcpt2 *types.TransactionReceipt
+	var err1, err2 error
+
+	fnCall := func() (interface{}, error) {
+		if rcpt1, err1 = validator.cfx.GetTransactionReceipt(txHash); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query transaction receipts from fullnode")
+		}
+		return rcpt1, err1
+	}
+
+	infuraCall := func() (interface{}, error) {
+		if rcpt2, err2 = validator.infura.GetTransactionReceipt(txHash); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query transaction receipts from infura")
+		}
+		return rcpt2, err2
+	}
+
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "txHash": txHash,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getTransactionReceipt")
+		return errors.WithMessagef(err, "failed to validate cfx_getTransactionReceipt by hash %v", txHash)
 	}
 
 	return nil
@@ -337,89 +386,149 @@ func (validator *EpochValidator) validateGetTransactionReceipt(txHash types.Hash
 
 // Validate cfx_getTransactionByHash
 func (validator *EpochValidator) validateGetTransactionByHash(txHash types.Hash) error {
-	var wg sync.WaitGroup
 	var tx1, tx2 *types.Transaction
 	var err1, err2 error
-	var json1, json2 []byte
 
-	wg.Add(1)
-	go func() {
-		tx1, err1 = validator.cfx.GetTransactionByHash(txHash)
-		err1 = errors.WithMessagef(err1, "failed to query transaction from fullnode by hash %v ", txHash)
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		tx2, err2 = validator.infura.GetTransactionByHash(txHash)
-		err2 = errors.WithMessagef(err2, "failed to query transaction from infura by hash %v", txHash)
-		wg.Done()
-	}()
-
-	wg.Wait()
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	fnCall := func() (interface{}, error) {
+		if tx1, err1 = validator.cfx.GetTransactionByHash(txHash); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query transaction from fullnode")
+		}
+		return tx1, err1
 	}
 
-	json1, err1 = json.Marshal(tx1)
-	err1 = errors.WithMessagef(err1, "failed to marshal json for result of cfx_getTransactionByHash for fullnode")
-
-	json2, err2 = json.Marshal(tx2)
-	err2 = errors.WithMessagef(err2, "failed to marshal json for result of cfx_getTransactionByHash for infura")
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	infuraCall := func() (interface{}, error) {
+		if tx2, err2 = validator.infura.GetTransactionByHash(txHash); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query transaction from infura")
+		}
+		return tx2, err2
 	}
 
-	if string(json1) != string(json2) {
-		logrus.WithFields(logrus.Fields{"json1": string(json1), "json2": string(json2)}).Debug("Epoch validator result not match for cfx_getTransactionByHash")
-		return errors.New("result not match for cfx_getTransactionByHash")
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "txHash": txHash,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getTransactionByHash")
+		return errors.WithMessagef(err, "failed to validate cfx_getTransactionByHash by hash %v", txHash)
 	}
 
 	return nil
 }
 
-// Validate cfx_getBlockByHash
+// Validate cfx_getBlockByHash (includeTxs = true)
 func (validator *EpochValidator) validateGetBlockByHash(blockHash types.Hash) (*types.Block, error) {
-	var wg sync.WaitGroup
 	var b1, b2 *types.Block
 	var err1, err2 error
-	var json1, json2 []byte
 
-	wg.Add(1)
-	go func() {
-		b1, err1 = validator.cfx.GetBlockByHash(blockHash)
-		err1 = errors.WithMessagef(err1, "failed to query block by hash %v for fullnode", blockHash)
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		b2, err2 = validator.infura.GetBlockByHash(blockHash)
-		err2 = errors.WithMessagef(err2, "failed to query epoch block by hash %v for infura", blockHash)
-		wg.Done()
-	}()
-
-	wg.Wait()
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return nil, err
+	fnCall := func() (interface{}, error) {
+		if b1, err1 = validator.cfx.GetBlockByHash(blockHash); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query block by hash from fullnode")
+		}
+		return b1, err1
 	}
 
-	json1, err1 = json.Marshal(b1)
-	err1 = errors.WithMessagef(err1, "failed to marshal json for result of cfx_getBlockByHash for fullnode")
-
-	json2, err2 = json.Marshal(b2)
-	err2 = errors.WithMessagef(err2, "failed to marshal json for result of cfx_getBlockByHash for infura")
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return nil, err
+	infuraCall := func() (interface{}, error) {
+		if b2, err2 = validator.infura.GetBlockByHash(blockHash); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query block by hash from infura")
+		}
+		return b2, err2
 	}
 
-	if string(json1) != string(json2) {
-		logrus.WithFields(logrus.Fields{"json1": string(json1), "json2": string(json2)}).Debug("Epoch validator result not match for cfx_getBlockByHash")
-		return nil, errors.New("result not match for cfx_getBlockByHash")
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "blockHash": blockHash,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getBlockByHash (includeTxs = true)")
+		return b1, errors.WithMessagef(err, "failed to validate cfx_getBlockByHash (includeTxs = true) by hash %v", blockHash)
+	}
+
+	return b1, nil
+}
+
+// Validate cfx_getBlockByHash (includeTxs = false)
+func (validator *EpochValidator) validateGetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error) {
+	var bs1, bs2 *types.BlockSummary
+	var err1, err2 error
+
+	fnCall := func() (interface{}, error) {
+		if bs1, err1 = validator.cfx.GetBlockSummaryByHash(blockHash); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query block summary by hash from fullnode")
+		}
+		return bs1, err1
+	}
+
+	infuraCall := func() (interface{}, error) {
+		if bs2, err2 = validator.infura.GetBlockSummaryByHash(blockHash); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query block summary by hash from infura")
+		}
+		return bs2, err2
+	}
+
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "blockHash": blockHash,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getBlockByHash (includeTxs = false)")
+		return bs1, errors.WithMessagef(err, "failed to validate cfx_getBlockByHash (includeTxs = false) by hash %v", blockHash)
+	}
+
+	return bs1, nil
+}
+
+// Validate cfx_getBlockByBlockNumber (includeTxs = true)
+func (validator *EpochValidator) validateGetBlockByBlockNumber(blockNumer hexutil.Uint64) (*types.Block, error) {
+	var b1, b2 *types.Block
+	var err1, err2 error
+
+	fnCall := func() (interface{}, error) {
+		if b1, err1 = validator.cfx.GetBlockByBlockNumber(blockNumer); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query block from fullnode")
+		}
+		return b1, err1
+	}
+
+	infuraCall := func() (interface{}, error) {
+		if b2, err2 = validator.infura.GetBlockByBlockNumber(blockNumer); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query block from infura")
+		}
+		return b2, err2
+	}
+
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "blockNumer": blockNumer,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getBlockByBlockNumber (includeTxs = true)")
+		return b1, errors.WithMessagef(err, "failed to validate cfx_getBlockByBlockNumber (includeTxs = true) by number %v", blockNumer)
+	}
+
+	return b1, nil
+}
+
+// Validate cfx_getBlockByBlockNumber (includeTxs = false)
+func (validator *EpochValidator) validateGetBlockSummaryByBlockNumber(blockNumer hexutil.Uint64) (*types.BlockSummary, error) {
+	var b1, b2 *types.BlockSummary
+	var err1, err2 error
+
+	fnCall := func() (interface{}, error) {
+		if b1, err1 = validator.cfx.GetBlockSummaryByBlockNumber(blockNumer); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query block summary from fullnode")
+		}
+		return b1, err1
+	}
+
+	infuraCall := func() (interface{}, error) {
+		if b2, err2 = validator.infura.GetBlockSummaryByBlockNumber(blockNumer); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query block summary from infura")
+		}
+		return b2, err2
+	}
+
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "blockNumer": blockNumer,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getBlockByBlockNumber (includeTxs = false)")
+		return b1, errors.WithMessagef(err, "failed to validate cfx_getBlockByBlockNumber (includeTxs = false) by number %v", blockNumer)
 	}
 
 	return b1, nil
@@ -427,134 +536,89 @@ func (validator *EpochValidator) validateGetBlockByHash(blockHash types.Hash) (*
 
 // Validate cfx_getBlocksByEpoch
 func (validator *EpochValidator) validateGetBlocksByEpoch(epoch *types.Epoch) error {
-	var wg sync.WaitGroup
 	var bhs1, bhs2 []types.Hash
 	var err1, err2 error
-	var json1, json2 []byte
 
-	wg.Add(1)
-	go func() {
-		bhs1, err1 = validator.cfx.GetBlocksByEpoch(epoch)
-		err1 = errors.WithMessage(err1, "failed to query epoch block hashes for fullnode")
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		bhs2, err2 = validator.infura.GetBlocksByEpoch(epoch)
-		err2 = errors.WithMessage(err2, "failed to query epoch block hashes for infura")
-		wg.Done()
-	}()
-
-	wg.Wait()
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	fnCall := func() (interface{}, error) {
+		if bhs1, err1 = validator.cfx.GetBlocksByEpoch(epoch); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query epoch block hashes from fullnode")
+		}
+		return bhs1, err1
 	}
 
-	json1, err1 = json.Marshal(bhs1)
-	err1 = errors.WithMessagef(err1, "failed to marshal json for result of cfx_getBlocksByEpoch for fullnode")
-
-	json2, err2 = json.Marshal(bhs2)
-	err2 = errors.WithMessagef(err2, "failed to marshal json for result of cfx_getBlocksByEpoch for infura")
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	infuraCall := func() (interface{}, error) {
+		if bhs2, err2 = validator.infura.GetBlocksByEpoch(epoch); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query epoch block hashes from infura")
+		}
+		return bhs2, err2
 	}
 
-	if string(json1) != string(json2) {
-		logrus.WithFields(logrus.Fields{"epoch": epoch, "json1": string(json1), "json2": string(json2)}).Debug("Epoch validator result not match for cfx_getBlocksByEpoch")
-		return errors.New("result not match for cfx_getBlocksByEpoch")
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "epoch": epoch,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getBlocksByEpoch")
+		return errors.WithMessagef(err, "failed to validate cfx_getBlocksByEpoch by epoch %v", epoch)
 	}
 
 	return nil
 }
 
-// Validate cfx_getBlockByEpochNumber (block)
+// Validate cfx_getBlockByEpochNumber (includeTxs = true)
 func (validator *EpochValidator) validateGetBlockByEpoch(epoch *types.Epoch) error {
-	var wg sync.WaitGroup
 	var b1, b2 *types.Block
 	var err1, err2 error
-	var json1, json2 []byte
 
-	wg.Add(1)
-	go func() {
-		b1, err1 = validator.cfx.GetBlockByEpoch(epoch)
-		err1 = errors.WithMessage(err1, "failed to query epoch block for fullnode")
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		b2, err2 = validator.infura.GetBlockByEpoch(epoch)
-		err2 = errors.WithMessage(err2, "failed to query epoch block for infura")
-		wg.Done()
-	}()
-
-	wg.Wait()
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	fnCall := func() (interface{}, error) {
+		if b1, err1 = validator.cfx.GetBlockByEpoch(epoch); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query epoch block from fullnode")
+		}
+		return b1, err1
 	}
 
-	json1, err1 = json.Marshal(b1)
-	err1 = errors.WithMessagef(err1, "failed to marshal json for (block) result of cfx_getBlockByEpochNumber for fullnode")
-
-	json2, err2 = json.Marshal(b2)
-	err2 = errors.WithMessagef(err2, "failed to marshal json for (block) result of cfx_getBlockByEpochNumber for infura")
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	infuraCall := func() (interface{}, error) {
+		if b2, err2 = validator.infura.GetBlockByEpoch(epoch); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query epoch block from infura")
+		}
+		return b2, err2
 	}
 
-	if string(json1) != string(json2) {
-		logrus.WithFields(logrus.Fields{"json1": string(json1), "json2": string(json2)}).Debug("Epoch validator (block) result not match for cfx_getBlockByEpochNumber")
-		return errors.New("(block) result not match for cfx_getBlockByEpochNumber")
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "epoch": epoch,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getBlockByEpochNumber (includeTxs = true) ")
+		return errors.WithMessagef(err, "failed to validate cfx_getBlockByEpochNumber (includeTxs = true) by epoch %v", epoch)
 	}
 
 	return nil
 }
 
-// Validate cfx_getBlockByEpochNumber (block summary)
+// Validate cfx_getBlockByEpochNumber (includeTxs = false)
 func (validator *EpochValidator) validateGetBlockSummaryByEpoch(epoch *types.Epoch) error {
-	var wg sync.WaitGroup
 	var bs1, bs2 *types.BlockSummary
 	var err1, err2 error
-	var json1, json2 []byte
 
-	wg.Add(1)
-	go func() {
-		bs1, err1 = validator.cfx.GetBlockSummaryByEpoch(epoch)
-		err1 = errors.WithMessage(err1, "failed to query epoch block summary for fullnode")
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		bs2, err2 = validator.infura.GetBlockSummaryByEpoch(epoch)
-		err2 = errors.WithMessage(err2, "failed to query epoch block summary for infura")
-		wg.Done()
-	}()
-
-	wg.Wait()
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	fnCall := func() (interface{}, error) {
+		if bs1, err1 = validator.cfx.GetBlockSummaryByEpoch(epoch); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query epoch block from fullnode")
+		}
+		return bs1, err1
 	}
 
-	json1, err1 = json.Marshal(bs1)
-	err1 = errors.WithMessagef(err1, "failed to marshal json for (block summary) result of cfx_getBlockByEpochNumber for fullnode")
-
-	json2, err2 = json.Marshal(bs2)
-	err2 = errors.WithMessagef(err2, "failed to marshal json for (block summary) result of cfx_getBlockByEpochNumber for infura")
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	infuraCall := func() (interface{}, error) {
+		if bs2, err2 = validator.infura.GetBlockSummaryByEpoch(epoch); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query epoch block from infura")
+		}
+		return bs2, err2
 	}
 
-	if string(json1) != string(json2) {
-		logrus.WithFields(logrus.Fields{"json1": string(json1), "json2": string(json2)}).Debug("Epoch validator (block summary) result not match for cfx_getBlockByEpochNumber")
-		return errors.New("(block summary) result not match for cfx_getBlockByEpochNumber")
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "epoch": epoch,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getBlockByEpochNumber (includeTxs = false) ")
+		return errors.WithMessagef(err, "failed to validate cfx_getBlockByEpochNumber (includeTxs = false) by epoch %v", epoch)
 	}
 
 	return nil
@@ -577,9 +641,9 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 		FromEpoch: types.NewEpochNumberUint64(epochNo - randomDiff),
 		ToEpoch:   types.NewEpochNumberUint64(epochNo),
 	}
+
 	if err := validator.doValidateGetLogs(filter); err != nil {
 		logger.WithField("filter", filter).WithError(err).Debug("Epoch validator failed to validate cfx_getLogs")
-
 		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
 	}
 
@@ -589,44 +653,29 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 }
 
 func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error {
-	var wg sync.WaitGroup
 	var logs1, logs2 []types.Log
 	var err1, err2 error
-	var json1, json2 []byte
 
-	wg.Add(1)
-	go func() {
-		logs1, err1 = validator.cfx.GetLogs(filter)
-		err1 = errors.WithMessagef(err1, "failed to call cfx_getLogs for fullnode")
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		logs2, err2 = validator.cfx.GetLogs(filter)
-		err2 = errors.WithMessagef(err2, "failed to call cfx_getLogs for infura")
-		wg.Done()
-	}()
-
-	wg.Wait()
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	fnCall := func() (interface{}, error) {
+		if logs1, err1 = validator.cfx.GetLogs(filter); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query logs from fullnode")
+		}
+		return logs1, err1
 	}
 
-	json1, err1 = json.Marshal(logs1)
-	err1 = errors.WithMessagef(err1, "failed to marshal json for result of cfx_getLogs for fullnode")
-
-	json2, err2 = json.Marshal(logs2)
-	err2 = errors.WithMessagef(err2, "failed to marshal json for result of cfx_getLogs for infura")
-
-	if err := multierr.Combine(err1, err2); err != nil {
-		return err
+	infuraCall := func() (interface{}, error) {
+		if logs2, err2 = validator.infura.GetLogs(filter); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query logs from infura")
+		}
+		return logs2, err2
 	}
 
-	if string(json1) != string(json2) {
-		logrus.WithFields(logrus.Fields{"json1": string(json1), "json2": string(json2)}).Debug("Epoch validator result not match for cfx_getLogs")
-		return errors.New("result not match for cfx_getLogs")
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "filter": filter,
+		}).WithError(err).Error("Epoch validator failed to validate cfx_getLogs")
+		return err
 	}
 
 	return nil
