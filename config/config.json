@@ -15,6 +15,12 @@
         "sub": {
             "buffer": 1000
         },
+        "kv": {
+            "query": {
+                "retriesOnPivotSwitch": 5,
+                "sleepOnPivotSwitch": "150ms"
+            }
+        },
         "maxEpochs": 10
     },
     "nearhead": {

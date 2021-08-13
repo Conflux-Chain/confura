@@ -33,6 +33,9 @@ type KVCacheSyncer struct {
 
 	subEpochCh   chan uint64 // receive the epoch from pub/sub to detect pivot chain switch or to update epoch sync window
 	checkPointCh chan bool   // checkpoint channel received to check epoch data
+
+	retriesOnPivotSwitch       int           // retry times to query epoch data on pivot switch
+	sleepIntervalOnPivotSwitch time.Duration // sleep interval per query retry on pivot switch
 }
 
 // NewKVCacheSyncer creates an instance of KVCacheSyncer to sync latest state epoch data.
@@ -49,6 +52,9 @@ func NewKVCacheSyncer(cfx sdk.ClientOperator, cache store.CacheStore) *KVCacheSy
 
 		subEpochCh:   make(chan uint64, viper.GetInt64("sync.sub.buffer")),
 		checkPointCh: make(chan bool, 2),
+
+		retriesOnPivotSwitch:       viper.GetInt("sync.kv.query.retriesOnPivotSwitch"),
+		sleepIntervalOnPivotSwitch: viper.GetDuration("sync.kv.query.sleepOnPivotSwitch"),
 	}
 
 	// Ensure epoch data not reverted
@@ -199,11 +205,13 @@ func (syncer *KVCacheSyncer) syncOnce() (bool, error) {
 		eplogger := logger.WithField("epoch", epochNo)
 
 		data, err := store.QueryEpochData(syncer.cfx, epochNo)
-		// if epoch pivot switched during query, try to query it again since the possibility
-		// of pivot switch for the latest state epoch is high.
-		if errors.Cause(err) == store.ErrEpochPivotSwitched {
+		// If epoch pivot switched during query, retry to query it several times since the possibility
+		// of pivot switch for the latest state epoch is very high.
+		// TODO retry times may be adjusted accordingly to the production running effect.
+		for i := 0; i < syncer.retriesOnPivotSwitch && errors.Is(err, store.ErrEpochPivotSwitched); i++ {
+			time.Sleep(syncer.sleepIntervalOnPivotSwitch) // would better sleep for a while to tolerate pivot switch of high frequency
 			data, err = store.QueryEpochData(syncer.cfx, epochNo)
-			logrus.WithError(err).Info("Cache syncer querying epoch data retried")
+			logrus.WithField("epoch", epochNo).WithError(err).Infof("Cache syncer querying epoch data retried %v time(s) due to pivot switch", i)
 		}
 
 		if err != nil {
