@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/conflux-chain/conflux-infura/store"
@@ -43,14 +44,18 @@ func NewConfigFromViper() (Config, bool) {
 }
 
 // MustOpenOrCreate creates an instance of store or exits on any erorr.
-func (config *Config) MustOpenOrCreate() store.Store {
+func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
 	newCreated := config.mustCreateDatabaseIfAbsent()
 
 	db := config.mustNewDB(config.Database)
 
 	if newCreated {
-		if err := db.Migrator().CreateTable(&transaction{}, &block{}, &log{}); err != nil {
+		if err := db.Migrator().CreateTable(&transaction{}, &block{}, &log{}, &epochStats{}); err != nil {
 			logrus.WithError(err).Fatal("Failed to create tables")
+		}
+
+		if err := initLogsPartitions(db); err != nil {
+			logrus.WithError(err).Fatal("Failed to init logs table partitions")
 		}
 	}
 
@@ -64,12 +69,12 @@ func (config *Config) MustOpenOrCreate() store.Store {
 
 	logrus.Info("MySQL database initialized")
 
-	return mustNewStore(db)
+	return mustNewStore(db, option)
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {
 	// refer to https://github.com/go-sql-driver/mysql#dsn-data-source-name
-	dsn := fmt.Sprintf("%v:%v@tcp(%v)/%v", config.Username, config.Password, config.Host, database)
+	dsn := fmt.Sprintf("%v:%v@tcp(%v)/%v?parseTime=true", config.Username, config.Password, config.Host, database)
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 
 	if logrus.GetLevel() == logrus.DebugLevel {
@@ -108,4 +113,21 @@ func (config *Config) mustCreateDatabaseIfAbsent() bool {
 	logrus.Info("Create database for the first time")
 
 	return true
+}
+
+func initLogsPartitions(db *gorm.DB) error {
+	sqlLines := make([]string, 0, 120)
+	sqlLines = append(sqlLines, "ALTER TABLE logs PARTITION BY RANGE (id)(")
+
+	for i := uint64(0); i < uint64(LogsTablePartitionsNum); i++ {
+		lineStr := fmt.Sprintf("PARTITION logs%v VALUES LESS THAN (%v),", i, (i+1)*LogsTablePartitionRangeSize)
+		sqlLines = append(sqlLines, lineStr)
+	}
+
+	sqlLines = append(sqlLines, "PARTITION logsow VALUES LESS THAN MAXVALUE);")
+
+	logsPartitionSql := strings.Join(sqlLines, "\n")
+	logrus.WithField("logsPartitionSql", logsPartitionSql).Debug("Init logs db table partitions")
+
+	return db.Exec(logsPartitionSql).Error
 }

@@ -1,14 +1,19 @@
 package mysql
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
+	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/spf13/viper"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type transaction struct {
@@ -230,4 +235,119 @@ func applyVariadicFilter(db *gorm.DB, column string, value store.VariadicValue) 
 	}
 
 	return db
+}
+
+// loadLogsTblPartitionNames retrieves all logs table partitions names sorted by partition oridinal position.
+func loadLogsTblPartitionNames(db *gorm.DB) ([]string, error) {
+	sqlStatement := `
+SELECT PARTITION_NAME AS partname FROM information_schema.partitions WHERE TABLE_SCHEMA='%v'
+	AND TABLE_NAME = 'logs' AND PARTITION_NAME IS NOT NULL ORDER BY PARTITION_ORDINAL_POSITION ASC;
+`
+	sqlStatement = fmt.Sprintf(sqlStatement, viper.GetString("store.mysql.database"))
+
+	// Load all logs table partition names
+	logsTblPartiNames := []string{}
+	if err := db.Raw(sqlStatement).Scan(&logsTblPartiNames).Error; err != nil {
+		return nil, err
+	}
+
+	return logsTblPartiNames, nil
+}
+
+// loadLogsTblPartitionEpochRanges loads epoch range for specific partition name.
+// The epoch number ranges will be used to find the right partition(s) to boost
+// the db query performance when conditioned with epoch.
+func loadLogsTblPartitionEpochRanges(db *gorm.DB, partiName string) (citypes.EpochRange, error) {
+	sqlStatement := fmt.Sprintf("SELECT MIN(epoch) as minEpoch, MAX(epoch) as maxEpoch FROM logs PARTITION (%v)", partiName)
+	row := db.Raw(sqlStatement).Row()
+	if err := row.Err(); err != nil {
+		return citypes.EpochRangeNil, err
+	}
+
+	var minEpoch, maxEpoch sql.NullInt64
+	if err := row.Scan(&minEpoch, &maxEpoch); err != nil {
+		return citypes.EpochRangeNil, err
+	}
+
+	if !minEpoch.Valid || !maxEpoch.Valid {
+		return citypes.EpochRangeNil, gorm.ErrRecordNotFound
+	}
+
+	return citypes.EpochRange{
+		EpochFrom: uint64(minEpoch.Int64), EpochTo: uint64(maxEpoch.Int64),
+	}, nil
+}
+
+// epoch statistics
+type epochStats struct {
+	ID uint32
+	// key name
+	Key string `gorm:"index:uidx_key_type,unique;size:66;not null"`
+	// stats type
+	Type epochStatsType `gorm:"index:uidx_key_type,unique;not null"`
+
+	// min epoch for epoch range or total epoch number
+	Epoch1 uint64
+	// max epoch for epoch range or reversed for other use
+	Epoch2 uint64
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName overrides the table name used by epochStats to `epoch_stats`
+func (epochStats) TableName() string {
+	return "epoch_stats"
+}
+
+func initOrUpdateEpochRangeStats(db *gorm.DB, dt store.EpochDataType, epochRange citypes.EpochRange) error {
+	estats := epochStats{
+		Key:    getEpochRangeStatsKey(dt),
+		Type:   epochStatsEpochRange,
+		Epoch1: epochRange.EpochFrom,
+		Epoch2: epochRange.EpochTo,
+	}
+
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}, {Name: "type"}},
+		DoUpdates: clause.AssignmentColumns([]string{"epoch1", "epoch2"}),
+	}).Create(&estats).Error
+}
+
+func initOrUpdateEpochTotalsStats(db *gorm.DB, dt store.EpochDataType, totals uint64) error {
+	estats := epochStats{
+		Key:    getEpochTotalStatsKey(dt),
+		Type:   epochStatsEpochTotal,
+		Epoch1: totals,
+	}
+
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}, {Name: "type"}},
+		DoUpdates: clause.AssignmentColumns([]string{"epoch1"}),
+	}).Create(&estats).Error
+}
+
+func initOrUpdateLogsPartitionEpochRangeStats(db *gorm.DB, partition string, epochRange citypes.EpochRange) error {
+	estats := epochStats{
+		Key:    partition,
+		Type:   epochStatsLogsPartEpochRange,
+		Epoch1: epochRange.EpochFrom,
+		Epoch2: epochRange.EpochTo,
+	}
+
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}, {Name: "type"}},
+		DoUpdates: clause.AssignmentColumns([]string{"epoch1", "epoch2"}),
+	}).Create(&estats).Error
+}
+
+func loadEpochStats(db *gorm.DB, est epochStatsType, keys ...string) ([]epochStats, error) {
+	var ess []epochStats
+	cond := map[string]interface{}{"type": est}
+	if len(keys) > 0 {
+		cond["key"] = keys
+	}
+
+	err := db.Where(cond).Find(&ess).Error
+	return ess, err
 }

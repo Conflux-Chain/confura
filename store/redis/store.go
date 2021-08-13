@@ -155,11 +155,13 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 	} else if err != nil {
 		return errors.WithMessage(err, "failed to get global epoch range from redis")
 	}
+	growFrom := lastEpoch + 1
 
 	watchKeys := make([]string, 0, len(dataSlice))
 	for _, data := range dataSlice {
 		if lastEpoch == citypes.EpochNumberNil {
 			lastEpoch = data.Number
+			growFrom = data.Number
 		} else {
 			lastEpoch++
 		}
@@ -174,7 +176,7 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 	}
 
 	return rs.execWithTx(func(tx *redis.Tx) error {
-		txOpHistory := store.EpochDataOpAffects{}
+		txOpHistory := store.EpochDataOpAffects{NumAlters: store.EpochDataOpNumAlters{}}
 
 		// Operation is commited only if the watched keys remain unchanged.
 		_, err = tx.TxPipelined(rs.ctx, func(pipe redis.Pipeliner) error {
@@ -190,12 +192,12 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 			logrus.WithField("opHistory", txOpHistory).Debug("Pushn db operation history")
 
 			// update epoch data count
-			if err := rs.updateEpochDataCount(pipe, txOpHistory); err != nil {
+			if err := rs.updateEpochDataCount(pipe, txOpHistory.NumAlters); err != nil {
 				return err
 			}
 
 			// update max of epoch range
-			if err := rs.updateEpochRangeMax(pipe, lastEpoch); err != nil {
+			if err := rs.updateEpochRangeMax(pipe, lastEpoch, growFrom); err != nil {
 				return err
 			}
 
@@ -273,8 +275,8 @@ func (rs *redisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKe
 	}
 }
 
-func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (store.EpochDataOpAffects, error) {
-	opHistory := store.EpochDataOpAffects{}
+func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (store.EpochDataOpNumAlters, error) {
+	opHistory := store.EpochDataOpNumAlters{}
 
 	// Epoch blocks & transactions hash collections
 	epochBlocks := make([]interface{}, 0, len(data.Blocks))
@@ -363,13 +365,13 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 		watchKeys = append(watchKeys, getEpochBlocksCacheKey(i))
 	}
 
-	removeOpHistory := store.EpochDataOpAffects{}
+	removeOpHistory := store.EpochDataOpAffects{NumAlters: store.EpochDataOpNumAlters{}}
 
 	return rs.execWithTx(func(tx *redis.Tx) error {
 		unlinkKeys := make([]string, 0, 100)
 
 		for i := epochFrom; i <= epochTo; i++ {
-			opHistory := store.EpochDataOpAffects{}
+			opHistory := store.EpochDataOpNumAlters{}
 
 			epochNo := i
 			if rmOpType == store.EpochOpPop { // pop from back to front
@@ -430,7 +432,7 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			}
 
 			// update epoch data count
-			if err := rs.updateEpochDataCount(pipe, removeOpHistory); err != nil {
+			if err := rs.updateEpochDataCount(pipe, removeOpHistory.NumAlters); err != nil {
 				return err
 			}
 
@@ -482,7 +484,7 @@ func (rs *redisStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil u
 	return rs.remove(epochFrom, epochUntil, rmOpt, dqOpt)
 }
 
-func (rs *redisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64) error {
+func (rs *redisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64, growFrom ...uint64) error {
 	cacheKey := getMetaCacheKey("epoch.ranges")
 	batchKVTo := make([]interface{}, 0, 4*2)
 	batchKFrom := make([]string, 0, 4)
@@ -504,9 +506,13 @@ func (rs *redisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64) er
 		return errors.WithMessage(err, "failed to update max of epoch range to cache store")
 	}
 
+	if len(growFrom) == 0 {
+		return nil
+	}
+
 	// Also update min of epoch range if field not set yet.
 	for _, fieldFrom := range batchKFrom {
-		if err := rp.HSetNX(rs.ctx, cacheKey, fieldFrom, epochNo).Err(); err != nil {
+		if err := rp.HSetNX(rs.ctx, cacheKey, fieldFrom, growFrom[0]).Err(); err != nil {
 			logrus.WithField("field", fieldFrom).WithError(err).Error("Failed to update min of epoch range to cache store")
 			return errors.WithMessage(err, "failed to update min of epoch range to cache store")
 		}
@@ -567,7 +573,7 @@ return true
 	return nil
 }
 
-func (rs *redisStore) updateEpochDataCount(rp redis.Pipeliner, opHistory store.EpochDataOpAffects) error {
+func (rs *redisStore) updateEpochDataCount(rp redis.Pipeliner, opHistory store.EpochDataOpNumAlters) error {
 	// Update epoch totals
 	for k, v := range opHistory {
 		if v == 0 {

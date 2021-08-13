@@ -14,13 +14,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"gorm.io/gorm"
-)
-
-const (
-	// Logs table partition range (by ID) size
-	logsTablePartitionRangeSize = uint64(20000000)
 )
 
 var (
@@ -32,190 +26,69 @@ var (
 	}
 )
 
+type StoreOption struct {
+	// Whether to calibrate epoch statistics by running MySQL OLAP if needed. This is necessary to
+	// preload epoch statistics before sync. It's not necessary for rpc service since this operation
+	// can be heavy and time consumming.
+	CalibrateEpochStats bool
+}
+
+type mysqlEpochDataOpAffects struct {
+	*store.EpochDataOpAffects
+	// Value set to update new epoch range for logs partition
+	logsPartEpochRangeRealSets map[string][2]*uint64 // partition name => new epoch range (no set if nil)
+	logsPartIndexSets          []uint64              // indexes of partitions to be updated
+}
+
+func newMysqlEpochDataOpAffects(sea *store.EpochDataOpAffects) *mysqlEpochDataOpAffects {
+	return &mysqlEpochDataOpAffects{
+		EpochDataOpAffects:         sea,
+		logsPartEpochRangeRealSets: make(map[string][2]*uint64),
+	}
+}
+
 type mysqlStore struct {
-	db       *gorm.DB
+	db *gorm.DB
+
 	minEpoch uint64 // minimum epoch number in database (historical data may be pruned)
 	maxEpoch uint64 // maximum epoch number in database
 
 	// Epoch range for block/transaction/log table in db
-	epochRanges map[store.EpochDataType]*atomic.Value
+	epochRanges map[store.EpochDataType]*citypes.EpochRange
 	// Total rows for block/transaction/log table in db
 	epochTotals map[store.EpochDataType]*uint64
 
-	// Epoch range configurations for logs table partitions. It will be loaded from
-	// database when store created.
-	// Also be reminded logs table partitions must be created manually, and partitioned
-	// by ID field with range size of 20,000,000 records.
-	logsTablePartitionEpochRanges map[string]*atomic.Value
+	maxUsedLogsTblPartIdx uint64 // the maximum used partition index for logs table
+	minUsedLogsTblPartIdx uint64 // the minimum used partition index for logs table
 }
 
-func mustNewStore(db *gorm.DB) *mysqlStore {
-	mysqlStore := mysqlStore{
-		db: db, minEpoch: math.MaxUint64, maxEpoch: math.MaxUint64,
-
-		epochRanges: make(map[store.EpochDataType]*atomic.Value),
+func mustNewStore(db *gorm.DB, option StoreOption) (ms *mysqlStore) {
+	ms = &mysqlStore{
+		db:          db,
+		minEpoch:    citypes.EpochNumberNil,
+		maxEpoch:    citypes.EpochNumberNil,
+		epochRanges: make(map[store.EpochDataType]*citypes.EpochRange),
 		epochTotals: make(map[store.EpochDataType]*uint64),
-
-		logsTablePartitionEpochRanges: make(map[string]*atomic.Value),
 	}
 
-	for _, t := range store.OpEpochDataTypes {
-		// Load epoch range
-		minEpoch, maxEpoch, err := mysqlStore.loadEpochRange(t)
-		if err != nil && !mysqlStore.IsRecordNotFound(err) {
-			logrus.WithError(err).Fatal("Failed to load epoch range")
-		} else if err == nil { // update global epoch range
-			mysqlStore.minEpoch = util.MinUint64(mysqlStore.minEpoch, minEpoch)
-
-			if mysqlStore.maxEpoch != math.MaxUint64 {
-				mysqlStore.maxEpoch = util.MaxUint64(mysqlStore.maxEpoch, maxEpoch)
-			} else { // initial setting
-				mysqlStore.maxEpoch = maxEpoch
-			}
+	if option.CalibrateEpochStats {
+		if err := ms.calibrateEpochStats(); err != nil {
+			logrus.WithError(err).Fatal("Failed to calibrate epoch statistics")
 		}
 
-		mysqlStore.epochRanges[t] = &atomic.Value{}
-		mysqlStore.epochRanges[t].Store(citypes.EpochRange{EpochFrom: minEpoch, EpochTo: maxEpoch})
-
-		// Load epoch total
-		total, err := mysqlStore.loadEpochTotal(t)
-		if err != nil {
-			logrus.WithError(err).Fatal("Failed to load epoch total")
-		}
-
-		mysqlStore.epochTotals[t] = &total
+		logrus.WithFields(logrus.Fields{
+			"globalEpochRange":         citypes.EpochRange{EpochFrom: ms.minEpoch, EpochTo: ms.maxEpoch},
+			"epochRanges":              ms.dumpEpochRanges(),
+			"epochTotals":              ms.dumpEpochTotals(),
+			"usedLogsTblPartitionIdxs": citypes.EpochRange{EpochFrom: ms.minUsedLogsTblPartIdx, EpochTo: ms.maxUsedLogsTblPartIdx},
+		}).Debug("New mysql store loaded with epoch stats")
 	}
 
-	// Load logs table partition information
-	if err := mysqlStore.loadLogsTablePartitionInfo(); err != nil {
-		logrus.WithError(err).Fatal("Failed to load logs table partition info")
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"globalEpochRange":       citypes.EpochRange{EpochFrom: mysqlStore.minEpoch, EpochTo: mysqlStore.maxEpoch},
-		"epochRanges":            mysqlStore.dumpEpochRanges(),
-		"epochTotals":            mysqlStore.dumpEpochTotals(),
-		"logsTablePartitionInfo": mysqlStore.dumpLogsTablePartitionInfo(),
-	}).Debug("New mysql store loaded")
-
-	return &mysqlStore
-}
-
-func (ms *mysqlStore) dumpLogsTablePartitionInfo() string {
-	strBuilder := &strings.Builder{}
-	strBuilder.Grow(len(ms.logsTablePartitionEpochRanges) * 30)
-
-	for p, er := range ms.logsTablePartitionEpochRanges {
-		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", p, er.Load().(citypes.EpochRange)))
-	}
-
-	return strBuilder.String()
-}
-
-func (ms *mysqlStore) dumpEpochRanges() string {
-	strBuilder := &strings.Builder{}
-	strBuilder.Grow(len(ms.epochRanges) * 30)
-
-	for t, er := range ms.epochRanges {
-		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], er.Load().(citypes.EpochRange)))
-	}
-
-	return strBuilder.String()
-}
-
-func (ms *mysqlStore) dumpEpochTotals() string {
-	strBuilder := &strings.Builder{}
-	strBuilder.Grow(len(ms.epochRanges) * 30)
-
-	for t, v := range ms.epochTotals {
-		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], *v))
-	}
-
-	return strBuilder.String()
+	return
 }
 
 func (ms *mysqlStore) IsRecordNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound) || err == store.ErrNotFound
-}
-
-// Load logs table partitioning information from database.
-// Specifically, it will retrieve all logs table partitions, and then the
-// epoch nunber ranges for each partition from the database.
-// The epoch number ranges will be used to find the right partition(s) to
-// boost the db query performance when conditioned with epoch
-func (ms *mysqlStore) loadLogsTablePartitionInfo() error {
-	sqlStatement := `SELECT PARTITION_NAME AS partiname FROM information_schema.partitions WHERE TABLE_SCHEMA='%v'
-AND TABLE_NAME = 'logs' AND PARTITION_NAME IS NOT NULL ORDER BY PARTITION_ORDINAL_POSITION ASC`
-	sqlStatement = fmt.Sprintf(sqlStatement, viper.GetString("store.mysql.database"))
-
-	// Load all logs table partition names
-	logsTblPartiNames := []string{}
-	if err := ms.db.Raw(sqlStatement).Scan(&logsTblPartiNames).Error; err != nil {
-		return err
-	}
-
-	// Load all logs table partition epoch number range
-	for _, partiName := range logsTblPartiNames {
-		sqlStatement := fmt.Sprintf("SELECT MIN(epoch) as minEpoch, MAX(epoch) as maxEpoch FROM logs PARTITION (%v)", partiName)
-
-		row := ms.db.Raw(sqlStatement).Row()
-		if err := row.Err(); err != nil {
-			return err
-		}
-
-		var minEpoch, maxEpoch sql.NullInt64
-		if err := row.Scan(&minEpoch, &maxEpoch); err != nil {
-			return err
-		}
-
-		// Table partition not used yet, skip all next.
-		if !minEpoch.Valid || !maxEpoch.Valid {
-			break
-		}
-
-		ms.logsTablePartitionEpochRanges[partiName] = &atomic.Value{}
-		ms.logsTablePartitionEpochRanges[partiName].Store(citypes.EpochRange{
-			EpochFrom: uint64(minEpoch.Int64), EpochTo: uint64(maxEpoch.Int64),
-		})
-	}
-
-	return nil
-}
-
-func (ms *mysqlStore) loadEpochRange(t store.EpochDataType) (uint64, uint64, error) {
-	sqlStatement := fmt.Sprintf("SELECT MIN(epoch) AS min_epoch, MAX(epoch) AS max_epoch FROM %v", EpochDataTypeTableMap[t])
-
-	row := ms.db.Raw(sqlStatement).Row()
-	if err := row.Err(); err != nil {
-		return 0, 0, err
-	}
-
-	var minEpoch sql.NullInt64
-	var maxEpoch sql.NullInt64
-
-	if err := row.Scan(&minEpoch, &maxEpoch); err != nil {
-		return 0, 0, err
-	}
-
-	if !minEpoch.Valid {
-		return math.MaxUint64, math.MaxUint64, gorm.ErrRecordNotFound
-	}
-
-	return uint64(minEpoch.Int64), uint64(maxEpoch.Int64), nil
-}
-
-func (ms *mysqlStore) loadEpochTotal(t store.EpochDataType) (uint64, error) {
-	sqlStatement := fmt.Sprintf("SELECT COUNT(*) AS total FROM %v", EpochDataTypeTableMap[t])
-
-	row := ms.db.Raw(sqlStatement).Row()
-	if err := row.Err(); err != nil {
-		return 0, err
-	}
-
-	var total uint64
-	err := row.Scan(&total)
-
-	return total, err
 }
 
 func (ms *mysqlStore) GetBlockEpochRange() (uint64, uint64, error) {
@@ -234,26 +107,6 @@ func (ms *mysqlStore) GetGlobalEpochRange() (uint64, uint64, error) {
 	return ms.getEpochRange(store.EpochDataNil)
 }
 
-func (ms *mysqlStore) getEpochRange(rt store.EpochDataType) (uint64, uint64, error) {
-	var minEpoch, maxEpoch uint64
-
-	if atmV, ok := ms.epochRanges[rt]; ok {
-		// Get local epoch range for block/tx/log
-		epochRange := atmV.Load().(citypes.EpochRange)
-		minEpoch, maxEpoch = epochRange.EpochFrom, epochRange.EpochTo
-	} else {
-		// Default return as global epoch range
-		minEpoch = atomic.LoadUint64(&ms.minEpoch)
-		maxEpoch = atomic.LoadUint64(&ms.maxEpoch)
-	}
-
-	if maxEpoch == math.MaxUint64 {
-		return 0, 0, gorm.ErrRecordNotFound
-	}
-
-	return minEpoch, maxEpoch, nil
-}
-
 func (ms *mysqlStore) GetNumBlocks() uint64 {
 	return atomic.LoadUint64(ms.epochTotals[store.EpochBlock])
 }
@@ -267,51 +120,30 @@ func (ms *mysqlStore) GetNumLogs() uint64 {
 }
 
 func (ms *mysqlStore) GetLogs(filter store.LogFilter) (logs []types.Log, err error) {
-	epochRange := ms.epochRanges[store.EpochLog].Load().(citypes.EpochRange)
-	minEpoch, maxEpoch := epochRange.EpochFrom, epochRange.EpochTo
+	// TODO add a cache layer for better performance if necessary
+	inDB, err := ms.checkLogsEpochRangeWithinStore(filter.EpochFrom, filter.EpochTo)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to check filter epoch range within store")
+	}
 
-	logrus.WithFields(logrus.Fields{
-		"epochRange":        epochRange,
-		"logFilterMinEpoch": filter.EpochFrom,
-		"logFilterMaxEpoch": filter.EpochTo,
-	}).Debug("RPC getLogs requested from client")
-
-	if filter.EpochFrom < minEpoch || filter.EpochTo > maxEpoch {
+	if !inDB {
 		return nil, gorm.ErrRecordNotFound
 	}
 
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
 	defer updater.Update()
 
-	// Calcuate logs table partitions to get logs within the filter epoch range
-	logsTblPartitions := ms.getLogsTablePartitionsForEpochRange(citypes.EpochRange{
-		EpochFrom: filter.EpochFrom, EpochTo: filter.EpochTo,
-	})
-
-	return loadLogs(ms.db, filter, logsTblPartitions)
-}
-
-// Find the right logs table partition(s) for the specified epoch range.
-// It will check all logs table paritions and return all the partitions of which
-// epoch range are overlapped with the specified one.
-func (ms *mysqlStore) getLogsTablePartitionsForEpochRange(epochRange citypes.EpochRange) []string {
-	logsTblPartitions := make([]string, 0, 1)
-
-	for partikey, atmV := range ms.logsTablePartitionEpochRanges {
-		partiEpochRange := atmV.Load().(citypes.EpochRange)
-
-		// Check if specified epoch range overlaps table partition epoch range
-		if partiEpochRange.EpochFrom <= epochRange.EpochTo && partiEpochRange.EpochTo >= epochRange.EpochFrom {
-			logsTblPartitions = append(logsTblPartitions, partikey)
-		}
+	// calcuate logs table partitions to get logs within the filter epoch range
+	logsTblPartitions, err := findLogsPartitionsEpochRangeWithinStoreTx(ms.db, filter.EpochFrom, filter.EpochTo)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get logs partitions for filter epoch range")
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"epochRange":        epochRange,
-		"logsTblPartitions": logsTblPartitions,
-	}).Debug("Logs table partitions for epoch range calculated")
+	if len(logsTblPartitions) == 0 { // must be empty if no logs table partition(s) found
+		return []types.Log{}, nil
+	}
 
-	return logsTblPartitions
+	return loadLogs(ms.db, filter, logsTblPartitions)
 }
 
 func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, error) {
@@ -401,115 +233,341 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 
 	// ensure continous epoch
 	lastEpoch := atomic.LoadUint64(&ms.maxEpoch)
+	pushFromEpoch := lastEpoch + 1
+	insertLogs := false // if need to insert logs
+
 	for _, data := range dataSlice {
 		lastEpoch++
 
 		if data.Number != lastEpoch {
 			return errors.WithMessagef(store.ErrContinousEpochRequired, "expected epoch #%v, but #%v got", lastEpoch, data.Number)
 		}
+
+		if insertLogs || len(data.Receipts) == 0 {
+			continue
+		}
+
+		for _, rcpt := range data.Receipts {
+			if len(rcpt.Logs) > 0 {
+				insertLogs = true
+				break
+			}
+		}
 	}
 
 	updater := metrics.NewTimerUpdaterByName("infura/duration/store/mysql/write")
 	defer updater.Update()
 
-	err := ms.execWithTx(func(dbTx *gorm.DB) (store.EpochDataOpAffects, error) {
-		txOpHistory := store.EpochDataOpAffects{}
+	opAffects := store.NewEpochDataOpAffects(store.EpochOpPush, pushFromEpoch, lastEpoch)
+	txOpAffects := newMysqlEpochDataOpAffects(opAffects)
+	insertLogsIDSpan := [2]uint64{citypes.EpochNumberNil, 0}
 
-		for _, data := range dataSlice {
-			if opHistory, err := ms.putOneWithTx(dbTx, data); err != nil {
-				return nil, err
-			} else {
-				// Merge operation history
-				for k, v := range opHistory {
-					txOpHistory[k] += v
-				}
+	err := ms.execWithTx(func(dbTx *gorm.DB) (*mysqlEpochDataOpAffects, error) {
+		insertBeforeLogsPartEpochRanges, err := map[string]citypes.EpochRange{}, error(nil)
+		if insertLogs { // get relative epoch ranges for logs table partitions before logs insert for late diff
+			insertBeforeLogsPartEpochRanges, err = ms.loadLikelyActionLogsPartEpochRangesTx(dbTx, store.EpochOpPush)
+			if err != nil {
+				return txOpAffects, errors.WithMessage(err, "failed to load logs partitions epoch ranges before push")
 			}
 		}
 
-		return txOpHistory, nil
+		for _, data := range dataSlice {
+			idSpan, opHistory, err := ms.putOneWithTx(dbTx, data)
+			if err != nil {
+				return nil, err
+			}
+
+			// merge operation history
+			txOpAffects.Merge(opHistory)
+
+			if insertLogs {
+				// update insert logs id span
+				insertLogsIDSpan[0] = util.MinUint64(insertLogsIDSpan[0], idSpan[0])
+				insertLogsIDSpan[1] = util.MaxUint64(insertLogsIDSpan[1], idSpan[1])
+			}
+		}
+
+		// recalculate epoch ranges of logs table partitions for inserted logs
+		if insertLogs && insertLogsIDSpan[0] <= insertLogsIDSpan[1] {
+			idxStart := getLogsPartitionIdxFromId(insertLogsIDSpan[0])
+			idxEnd := getLogsPartitionIdxFromId(insertLogsIDSpan[1])
+
+			for idx := idxStart; idx <= idxEnd; idx++ {
+				partition := getLogsPartitionNameByIdx(idx)
+				afterER, err := loadLogsTblPartitionEpochRanges(dbTx, partition)
+				if err != nil {
+					return txOpAffects, errors.WithMessage(err, "failed to load logs partitions epoch ranges after push")
+				}
+
+				beforeER, ok := insertBeforeLogsPartEpochRanges[partition]
+				if !ok {
+					logrus.WithField("partition", partition).Error("Unable to match epoch range for logs parition before push")
+					return txOpAffects, errors.Errorf("unable to match epoch ranges for logs partition %v before push", partition)
+				}
+
+				txOpAffects.logsPartEpochRangeRealSets[partition] = diffLogsPartitionEpochRangeForRealSet(beforeER, afterER)
+			}
+		}
+
+		return txOpAffects, nil
 	})
-
-	if err == nil {
-		// Update max epoch range
-		ms.updateMaxEpoch(lastEpoch)
-
-		// Update global min epoch range if necessary (only when initial loading)
-		if !atomic.CompareAndSwapUint64(&ms.minEpoch, math.MaxUint64, 0) {
-			return nil
-		}
-
-		// Update all local min epoch ranges
-		for _, t := range store.OpEpochDataTypes {
-			er := ms.epochRanges[t].Load().(citypes.EpochRange)
-			er.EpochFrom = 0
-			ms.epochRanges[t].Store(er)
-		}
-	}
 
 	return err
 }
 
-func (ms *mysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) (store.EpochDataOpAffects, error)) error {
+func (ms *mysqlStore) Pop() error {
+	maxEpoch := atomic.LoadUint64(&ms.maxEpoch)
+	return ms.Popn(maxEpoch)
+}
+
+// Popn pops multiple epoch data from database.
+func (ms *mysqlStore) Popn(epochUntil uint64) error {
+	// Genesis block will never be popped
+	epochUntil = util.MaxUint64(epochUntil, 1)
+
+	maxEpoch := atomic.LoadUint64(&ms.maxEpoch)
+	if epochUntil > maxEpoch {
+		return nil
+	}
+
+	opAffects := store.NewEpochDataOpAffects(store.EpochOpPop, epochUntil)
+	txOpAffects := newMysqlEpochDataOpAffects(opAffects)
+	err := ms.remove(epochUntil, maxEpoch, store.EpochRemoveAll, func() *mysqlEpochDataOpAffects {
+		return txOpAffects
+	})
+
+	return err
+}
+
+func (ms *mysqlStore) DequeueBlocks(epochUntil uint64) error {
+	return ms.dequeueEpochRangeData(store.EpochBlock, epochUntil)
+}
+
+func (ms *mysqlStore) DequeueTransactions(epochUntil uint64) error {
+	return ms.dequeueEpochRangeData(store.EpochTransaction, epochUntil)
+}
+
+func (ms *mysqlStore) DequeueLogs(epochUntil uint64) error {
+	return ms.dequeueEpochRangeData(store.EpochLog, epochUntil)
+}
+
+func (ms *mysqlStore) Close() error {
+	if mysqlDb, err := ms.db.DB(); err != nil {
+		return err
+	} else {
+		return mysqlDb.Close()
+	}
+}
+
+// calibrateEpochStats calibrates epoch statistics by running MySQL OLAP.
+func (ms *mysqlStore) calibrateEpochStats() error {
+	var count int64
+	if err := ms.db.Model(&epochStats{}).Count(&count).Error; err != nil {
+		return errors.WithMessage(err, "failed to count epoch stats table")
+	}
+
+	if count > 0 { // already calibrated with records in epoch_stats table
+		return ms.loadCalibratedEpochStats()
+	}
+
+	for _, t := range store.OpEpochDataTypes {
+		// load epoch range
+		minEpoch, maxEpoch, err := ms.loadEpochRange(t)
+
+		if err != nil && !ms.IsRecordNotFound(err) {
+			return errors.WithMessage(err, "failed to load epoch range")
+		}
+
+		er := citypes.EpochRange{EpochFrom: minEpoch, EpochTo: maxEpoch}
+		if err == nil { // update global epoch range
+			ms.minEpoch = util.MinUint64(ms.minEpoch, minEpoch)
+
+			if ms.maxEpoch != math.MaxUint64 {
+				ms.maxEpoch = util.MaxUint64(ms.maxEpoch, maxEpoch)
+			} else { // initial setting
+				ms.maxEpoch = maxEpoch
+			}
+		}
+		ms.epochRanges[t] = &er
+
+		// load epoch total
+		total, err := ms.loadEpochTotal(t)
+		if err != nil {
+			return errors.WithMessage(err, "failed to load epoch total")
+		}
+
+		ms.epochTotals[t] = &total
+	}
+
+	// store epoch statistics to epoch_stats table
+	dbTx := ms.db.Begin()
+	if dbTx.Error != nil {
+		return errors.WithMessage(dbTx.Error, "failed to begin db tx")
+	}
+
+	rollback := func(err error) error {
+		if rollbackErr := dbTx.Rollback().Error; rollbackErr != nil {
+			logrus.WithError(rollbackErr).Error("Failed to rollback db tx")
+		}
+
+		return errors.WithMessage(err, "failed to handle with db tx")
+	}
+
+	// store epoch ranges
+	er := citypes.EpochRange{EpochFrom: ms.minEpoch, EpochTo: ms.maxEpoch}
+	if err := initOrUpdateEpochRangeStats(dbTx, store.EpochDataNil, er); err != nil {
+		return rollback(errors.WithMessage(err, "failed to update global epoch range stats"))
+	}
+
+	for _, dt := range store.OpEpochDataTypes {
+		epr := ms.epochRanges[dt]
+		if err := initOrUpdateEpochRangeStats(dbTx, dt, *epr); err != nil {
+			return rollback(errors.WithMessage(err, "failed to update local epoch range stats"))
+		}
+
+		ept := ms.epochTotals[dt]
+		if err := initOrUpdateEpochTotalsStats(dbTx, dt, *ept); err != nil {
+			return rollback(errors.WithMessage(err, "failed to update epoch total stats"))
+		}
+	}
+
+	// also calculate epoch ranges of logs table partitions and save them to epoch_stats table
+	partitionNames, err := loadLogsTblPartitionNames(dbTx)
+	if err != nil {
+		return rollback(errors.WithMessage(err, "failed to get logs table partition names"))
+	}
+
+	var minUsedPart, maxUsedPart uint64
+	minUsedPart, maxUsedPart = math.MaxUint64, 0
+
+	for i, partName := range partitionNames {
+		partEpochRange, err := loadLogsTblPartitionEpochRanges(dbTx, partName)
+
+		if err != nil && !ms.IsRecordNotFound(err) {
+			return rollback(errors.WithMessagef(err, "failed to get epoch range for logs partition %v", partName))
+		} else if err == nil {
+			minUsedPart = util.MinUint64(minUsedPart, uint64(i))
+			maxUsedPart = util.MaxUint64(maxUsedPart, uint64(i))
+		}
+
+		if err := initOrUpdateLogsPartitionEpochRangeStats(dbTx, partName, partEpochRange); err != nil {
+			return rollback(errors.WithMessagef(err, "failed to write epoch range for logs partition %v to epoch stats", partName))
+		}
+	}
+
+	if minUsedPart != math.MaxUint64 {
+		atomic.StoreUint64(&ms.maxUsedLogsTblPartIdx, maxUsedPart)
+		atomic.StoreUint64(&ms.minUsedLogsTblPartIdx, minUsedPart)
+	}
+
+	if err := dbTx.Commit().Error; err != nil {
+		return errors.WithMessage(err, "failed to commit db tx")
+	}
+
+	return nil
+}
+
+func (ms *mysqlStore) loadCalibratedEpochStats() error {
+	// load epoch range statistics from epoch_stats table
+	erStats, err := loadEpochStats(ms.db, epochStatsEpochRange)
+	if err != nil {
+		return errors.WithMessage(err, "failed to load calibrated epoch range stats")
+	}
+
+	for _, stats := range erStats {
+		edt := getEpochDataTypeByEpochRangeStatsKey(stats.Key)
+		if edt == store.EpochDataNil {
+			atomic.StoreUint64(&ms.minEpoch, stats.Epoch1)
+			atomic.StoreUint64(&ms.maxEpoch, stats.Epoch2)
+			continue
+		}
+
+		ms.epochRanges[edt] = &citypes.EpochRange{
+			EpochFrom: stats.Epoch1, EpochTo: stats.Epoch2,
+		}
+	}
+
+	// load epoch total statistics from epoch_stats table
+	etStats, err := loadEpochStats(ms.db, epochStatsEpochTotal)
+	if err != nil {
+		return errors.WithMessage(err, "failed to load calibrated epoch total stats")
+	}
+
+	for _, stats := range etStats {
+		edt := getEpochDataTypeByEpochTotalStatsKey(stats.Key)
+		totalNum := stats.Epoch1
+		ms.epochTotals[edt] = &totalNum
+	}
+
+	// also calculate used logs table partition indexes
+	var logsPartStats []epochStats
+
+	mdb := ms.db.Where("`type` = ?", epochStatsLogsPartEpochRange)
+	mdb = mdb.Where("`key` LIKE ?", "logs%")
+	mdb = mdb.Where("`epoch1` <> ?", citypes.EpochNumberNil)
+	if err := mdb.Model(&epochStats{}).Select("key").Order("id ASC").Find(&logsPartStats).Error; err != nil {
+		return errors.WithMessage(err, "failed to load calibrated logs table partitions epoch range stats")
+	}
+
+	if len(logsPartStats) == 0 { // no used logs partitions at all
+		return nil
+	}
+
+	minUsedPart, err := getLogsPartitionIndexByName(logsPartStats[0].Key)
+	if err != nil {
+		return errors.WithMessagef(err, "failed to get min used index with logs partition %v", logsPartStats[0].Key)
+	}
+
+	maxUsedPart, err := getLogsPartitionIndexByName(logsPartStats[len(logsPartStats)-1].Key)
+	if err != nil {
+		return errors.WithMessagef(err, "failed to get max used index with logs partition %v", logsPartStats[len(logsPartStats)-1].Key)
+	}
+
+	atomic.StoreUint64(&ms.maxUsedLogsTblPartIdx, maxUsedPart)
+	atomic.StoreUint64(&ms.minUsedLogsTblPartIdx, minUsedPart)
+
+	return nil
+}
+
+func (ms *mysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) (*mysqlEpochDataOpAffects, error)) error {
 	dbTx := ms.db.Begin()
 	if dbTx.Error != nil {
 		return errors.WithMessage(dbTx.Error, "Failed to begin db tx")
 	}
 
-	opHistory, err := txConsumeFunc(dbTx)
-	if err != nil {
+	rollback := func(err error) error {
 		if rollbackErr := dbTx.Rollback().Error; rollbackErr != nil {
 			logrus.WithError(rollbackErr).Error("Failed to rollback db tx")
 		}
-
 		return errors.WithMessage(err, "Failed to handle with db tx")
+	}
+
+	opAffects, err := txConsumeFunc(dbTx)
+	if err != nil {
+		return rollback(err)
+	}
+
+	if ms.updateEpochStatsWithTx(dbTx, opAffects) != nil {
+		return rollback(errors.WithMessage(err, "Failed to update epoch stats"))
 	}
 
 	if err := dbTx.Commit().Error; err != nil {
 		return errors.WithMessage(err, "Failed to commit db tx")
 	}
 
-	// Update epoch totals
-	for k, v := range opHistory {
-		switch {
-		case v == 0:
-			continue
-		case v > 0: // increase
-			atomic.AddUint64(ms.epochTotals[k], uint64(v))
-		case v < 0: // decrease
-			absV := -v
-
-			for { // optimistic spin lock for thread safety
-				oldTotal := atomic.LoadUint64(ms.epochTotals[k])
-				newTotal := uint64(0)
-
-				if oldTotal < uint64(absV) {
-					logrus.Warn("DB store epoch totals decreased underflow")
-				} else {
-					newTotal = oldTotal - uint64(absV)
-				}
-
-				if atomic.CompareAndSwapUint64(ms.epochTotals[k], oldTotal, newTotal) {
-					break
-				}
-			}
-		}
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"opHistory":   opHistory,
-		"epochTotals": ms.dumpEpochTotals(),
-	}).Debug("Mysql store execWithTx after affect")
+	ms.updateEpochStats(opAffects)
 
 	return nil
 }
 
-func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (store.EpochDataOpAffects, error) {
-	opHistory := store.EpochDataOpAffects{}
-	pivotIndex := len(data.Blocks) - 1
+func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uint64, store.EpochDataOpNumAlters, error) {
+	opHistory := store.EpochDataOpNumAlters{}
+	insertLogIdSpan := [2]uint64{citypes.EpochNumberNil, 0}
 
+	pivotIndex := len(data.Blocks) - 1
 	for i, block := range data.Blocks {
 		if err := dbTx.Create(newBlock(block, i == pivotIndex)).Error; err != nil {
-			return opHistory, errors.WithMessagef(err, "Failed to write block #%v", block.Hash)
+			return insertLogIdSpan, opHistory, errors.WithMessagef(err, "Failed to write block #%v", block.Hash)
 		}
 
 		opHistory[store.EpochBlock]++
@@ -542,7 +600,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (store.
 		opHistory[store.EpochTransaction] += int64(len(trxs))
 
 		if err := dbTx.Create(trxs).Error; err != nil {
-			return opHistory, errors.WithMessagef(err, "Failed to batch write txs and receipts for block #%v", block.Hash)
+			return insertLogIdSpan, opHistory, errors.WithMessagef(err, "Failed to batch write txs and receipts for block #%v", block.Hash)
 		}
 
 		// Batch insert block transaction event logs
@@ -562,107 +620,41 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) (store.
 			rounds++
 		}
 
-		start := 0
-		for i := 1; i <= rounds; i++ {
+		for i, start := 1, 0; i <= rounds; i++ {
 			end := util.MinInt(i*maxInsertLogs, len(trxlogs))
 			if err := dbTx.Create(trxlogs[start:end]).Error; err != nil {
 				logrus.WithError(err).WithFields(logrus.Fields{
 					"start": start, "end": end, "blockHash": block.Hash,
 				}).Error("Failed to insert transaction event logs part to database")
 
-				return opHistory, errors.WithMessagef(err, "Failed to batch write event logs for block #%v", block.Hash)
+				return insertLogIdSpan, opHistory, errors.WithMessagef(err, "Failed to batch write event logs for block #%v", block.Hash)
 			}
 			start = end
 		}
 
-		// Collect table partitions to be updated with new epoch range
-		updatedPartitions := make(map[string]bool, 2)
-
-		for i := len(trxlogs) - 1; i >= 0; i-- {
-			partiKey := fmt.Sprintf("logs%v", trxlogs[i].ID/logsTablePartitionRangeSize)
-			if updatedPartitions[partiKey] {
-				break
-			}
-
-			if atmV, ok := ms.logsTablePartitionEpochRanges[partiKey]; ok {
-				epochRange := atmV.Load().(citypes.EpochRange)
-				epochRange.EpochTo = util.MaxUint64(data.Number, epochRange.EpochTo)
-				atmV.Store(epochRange)
-
-				logrus.WithField("epochRange", epochRange).Debugf("Update epoch range for logs table partition %v", partiKey)
-			} else {
-				atmV = &atomic.Value{}
-				epochRange := citypes.EpochRange{EpochFrom: data.Number, EpochTo: data.Number}
-
-				atmV.Store(epochRange)
-				ms.logsTablePartitionEpochRanges[partiKey] = atmV
-
-				logrus.WithField("epochRange", epochRange).Debugf("Add epoch range for logs table partition %v", partiKey)
-			}
-
-			updatedPartitions[partiKey] = true
-		}
-
-		logrus.WithField("logsTblPartitionEpochRanges", ms.dumpLogsTablePartitionInfo()).Debug("Logs table partition epoch ranges info updated")
+		// accumulate inserted logs id span
+		insertLogIdSpan[0] = util.MinUint64(trxlogs[0].ID, insertLogIdSpan[0])
+		insertLogIdSpan[1] = util.MaxUint64(trxlogs[len(trxlogs)-1].ID, insertLogIdSpan[1])
 	}
 
-	return opHistory, nil
+	return insertLogIdSpan, opHistory, nil
 }
 
-func (ms *mysqlStore) Pop() error {
-	maxEpoch := atomic.LoadUint64(&ms.maxEpoch)
-	// Genesis block will never be popped
-	if maxEpoch < 1 {
-		return nil
-	}
-
-	if err := ms.remove(maxEpoch, maxEpoch, store.EpochRemoveAll); err != nil {
-		return err
-	}
-
-	// Update max epoch
-	ms.updateMaxEpoch(maxEpoch - 1)
-	return nil
-}
-
-// Popn pops multiple epoch data from database.
-func (ms *mysqlStore) Popn(epochUntil uint64) error {
-	// Genesis block will never be popped
-	epochUntil = util.MaxUint64(epochUntil, 1)
-
-	maxEpoch := atomic.LoadUint64(&ms.maxEpoch)
-	if epochUntil > maxEpoch {
-		return nil
-	}
-
-	if err := ms.remove(epochUntil, maxEpoch, store.EpochRemoveAll); err != nil {
-		return err
-	}
-
-	// Update max epoch
-	ms.updateMaxEpoch(epochUntil - 1)
-	return nil
-}
-
-func (ms *mysqlStore) updateMaxEpoch(lastEpoch uint64) {
-	// Update global epoch range
-	atomic.StoreUint64(&ms.maxEpoch, lastEpoch)
-
-	// Update local epoch ranges
-	for _, t := range store.OpEpochDataTypes {
-		epochRange := ms.epochRanges[t].Load().(citypes.EpochRange)
-
-		epochRange.EpochTo = lastEpoch
-		ms.epochRanges[t].Store(epochRange)
-	}
-}
-
-func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemoveOption) error {
+func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemoveOption, newOpAffects func() *mysqlEpochDataOpAffects) error {
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/delete")
 	defer updater.Update()
 
-	err := ms.execWithTx(func(dbTx *gorm.DB) (store.EpochDataOpAffects, error) {
-		opHistory := store.EpochDataOpAffects{}
+	txOpAffects := newOpAffects()
+	err := ms.execWithTx(func(dbTx *gorm.DB) (*mysqlEpochDataOpAffects, error) {
+		deleteBeforeLogsPartEpochRanges, err := map[string]citypes.EpochRange{}, error(nil)
+		if option&store.EpochRemoveLog != 0 {
+			// get relative epoch ranges for logs table partitions before deletion for diff late
+			deleteBeforeLogsPartEpochRanges, err = ms.loadLikelyActionLogsPartEpochRangesTx(dbTx, txOpAffects.OpType)
+			if err != nil {
+				return txOpAffects, errors.WithMessage(err, "failed to load logs partitions epoch ranges before deletion")
+			}
+		}
+
 		// Batch delete for better performance
 		cond := fmt.Sprintf("epoch BETWEEN %v AND %v", epochFrom, epochTo)
 
@@ -670,88 +662,492 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 		if option&store.EpochRemoveBlock != 0 {
 			db := dbTx.Delete(block{}, cond)
 			if db.Error != nil {
-				return opHistory, db.Error
+				return txOpAffects, db.Error
 			}
 
-			opHistory[store.EpochBlock] -= db.RowsAffected
+			txOpAffects.NumAlters[store.EpochBlock] -= db.RowsAffected
 		}
 
 		// Remove txs
 		if option&store.EpochRemoveTransaction != 0 {
 			db := dbTx.Delete(transaction{}, cond)
 			if db.Error != nil {
-				return opHistory, db.Error
+				return txOpAffects, db.Error
 			}
 
-			opHistory[store.EpochTransaction] -= db.RowsAffected
+			txOpAffects.NumAlters[store.EpochTransaction] -= db.RowsAffected
 		}
 
 		// Remove logs
 		if option&store.EpochRemoveLog != 0 {
-			partitions := ms.getLogsTablePartitionsForEpochRange(citypes.EpochRange{EpochFrom: epochFrom, EpochTo: epochTo})
+			partitions, err := findLogsPartitionsEpochRangeWithinStoreTx(dbTx, epochFrom, epochTo)
+			if err != nil {
+				return txOpAffects, errors.WithMessage(err, "failed to find logs partitions for deletion")
+			}
+
 			if len(partitions) > 0 {
 				dbTx = dbTx.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
 			}
 
 			db := dbTx.Delete(log{}, cond)
 			if db.Error != nil {
-				return opHistory, db.Error
+				return txOpAffects, db.Error
 			}
 
-			opHistory[store.EpochLog] -= db.RowsAffected
+			txOpAffects.NumAlters[store.EpochLog] -= db.RowsAffected
+
+			for _, part := range partitions {
+				afterER, err := loadLogsTblPartitionEpochRanges(dbTx, part)
+				if err != nil {
+					return txOpAffects, errors.WithMessage(err, "failed to load logs partitions epoch ranges after deletion")
+				}
+
+				beforeER, ok := deleteBeforeLogsPartEpochRanges[part]
+				if !ok {
+					logrus.WithField("partition", part).Error("Unable to match epoch range for logs parition before deletion")
+					return txOpAffects, errors.Errorf("unable to match epoch ranges for logs partition %v before deletion", part)
+				}
+
+				txOpAffects.logsPartEpochRangeRealSets[part] = diffLogsPartitionEpochRangeForRealSet(beforeER, afterER)
+			}
 		}
 
-		return opHistory, nil
+		return txOpAffects, nil
 	})
 
 	return err
 }
 
-func (ms *mysqlStore) DequeueBlocks(epochUntil uint64) error {
-	return ms.dequeueEpochRangeData(store.EpochBlock, epochUntil)
-}
-
-func (ms *mysqlStore) DequeueTransactions(epochUntil uint64) error {
-	return ms.dequeueEpochRangeData(store.EpochTransaction, epochUntil)
-}
-
-func (ms *mysqlStore) DequeueLogs(epochUntil uint64) error {
-	return ms.dequeueEpochRangeData(store.EpochLog, epochUntil)
-}
-
-func (ms *mysqlStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil uint64) error {
+func (ms *mysqlStore) dequeueEpochRangeData(dt store.EpochDataType, epochUntil uint64) error {
 	// Genesis block will never be dequeued
 	epochUntil = util.MaxUint64(epochUntil, 1)
 
 	// Get local epoch range for block/tx/log
-	epochRange := ms.epochRanges[rt].Load().(citypes.EpochRange)
-	if epochUntil < epochRange.EpochFrom {
+	epochFrom := atomic.LoadUint64(&ms.epochRanges[dt].EpochFrom)
+	if epochUntil < epochFrom {
 		return nil
 	}
 
-	if err := ms.remove(epochRange.EpochFrom, epochUntil, store.EpochDataTypeRemoveOptionMap[rt]); err != nil {
-		return err
+	opAffects := store.NewEpochDataOpAffects(store.EpochDataTypeDequeueOptionMap[dt], epochUntil)
+	txOpAffects := newMysqlEpochDataOpAffects(opAffects)
+
+	err := ms.remove(epochFrom, epochUntil, store.EpochDataTypeRemoveOptionMap[dt], func() *mysqlEpochDataOpAffects {
+		return txOpAffects
+	})
+
+	return err
+}
+
+func (ms *mysqlStore) loadEpochRange(t store.EpochDataType) (uint64, uint64, error) {
+	sqlStatement := fmt.Sprintf("SELECT MIN(epoch) AS min_epoch, MAX(epoch) AS max_epoch FROM %v", EpochDataTypeTableMap[t])
+
+	row := ms.db.Raw(sqlStatement).Row()
+	if err := row.Err(); err != nil {
+		return 0, 0, err
 	}
 
+	var minEpoch sql.NullInt64
+	var maxEpoch sql.NullInt64
+
+	if err := row.Scan(&minEpoch, &maxEpoch); err != nil {
+		return 0, 0, err
+	}
+
+	if !minEpoch.Valid {
+		return math.MaxUint64, math.MaxUint64, gorm.ErrRecordNotFound
+	}
+
+	return uint64(minEpoch.Int64), uint64(maxEpoch.Int64), nil
+}
+
+func (ms *mysqlStore) loadEpochTotal(t store.EpochDataType) (uint64, error) {
+	sqlStatement := fmt.Sprintf("SELECT COUNT(*) AS total FROM %v", EpochDataTypeTableMap[t])
+
+	row := ms.db.Raw(sqlStatement).Row()
+	if err := row.Err(); err != nil {
+		return 0, err
+	}
+
+	var total uint64
+	err := row.Scan(&total)
+
+	return total, err
+}
+
+func (ms *mysqlStore) getEpochRange(dt store.EpochDataType) (uint64, uint64, error) {
+	validate := func(minEpoch uint64, maxEpoch uint64) (uint64, uint64, error) {
+		if minEpoch == math.MaxUint64 || maxEpoch == math.MaxUint64 {
+			return 0, 0, gorm.ErrRecordNotFound
+		}
+		return minEpoch, maxEpoch, nil
+	}
+
+	if dt == store.EpochDataNil { // return global epoch range
+		return validate(atomic.LoadUint64(&ms.minEpoch), atomic.LoadUint64(&ms.maxEpoch))
+	}
+
+	if er, ok := ms.epochRanges[dt]; ok { // get local epoch range for block/tx/log
+		return validate(atomic.LoadUint64(&er.EpochFrom), atomic.LoadUint64(&er.EpochTo))
+	}
+
+	return validate(citypes.EpochNumberNil, citypes.EpochNumberNil)
+}
+
+// Checks if specified epoch range of logs is within db store
+func (ms *mysqlStore) checkLogsEpochRangeWithinStore(epochFrom, epochTo uint64) (bool, error) {
+	var stats epochStats
+	cond := map[string]interface{}{
+		"type": epochStatsEpochRange, "key": getEpochRangeStatsKey(store.EpochLog),
+	}
+
+	mdb := ms.db.Where(cond).Where("`epoch1` <= ? AND `epoch2` >= ?", epochFrom, epochTo)
+	if err := mdb.Select("id").First(&stats).Error; err != nil {
+		return false, err
+	}
+
+	return stats.ID > 0, nil
+}
+
+// Find the right logs table partition(s) for the specified epoch range. It will check
+// logs table paritions and return all the partitions whose epoch range are overlapped
+// with the specified one.
+func findLogsPartitionsEpochRangeWithinStoreTx(dbTx *gorm.DB, epochFrom, epochTo uint64) (res []string, err error) {
+	mdb := dbTx.Where("`type` = ? AND `key` LIKE ?", epochStatsLogsPartEpochRange, "logs%")
+	mdb = mdb.Where("`epoch1` <= ? AND `epoch2` >= ?", epochTo, epochFrom)
+
+	err = mdb.Model(&epochStats{}).Select("key").Find(&res).Error
+	return
+}
+
+func (ms *mysqlStore) updateEpochStats(opAffects *mysqlEpochDataOpAffects) {
+	switch opAffects.OpType {
+	case store.EpochOpPush: //for push
+		ms.updateMaxEpoch(opAffects.PushUpToEpoch, opAffects.PushUpFromEpoch)
+	case store.EpochOpPop: // for pop
+		ms.updateMaxEpoch(opAffects.PopUntilEpoch - 1)
+	case store.EpochOpDequeueBlock: // for dequeue...
+		ms.updateMinEpoch(store.EpochBlock, opAffects.DequeueUntilEpoch+1)
+	case store.EpochOpDequeueTx:
+		ms.updateMinEpoch(store.EpochTransaction, opAffects.DequeueUntilEpoch+1)
+	case store.EpochOpDequeueLog:
+		ms.updateMinEpoch(store.EpochLog, opAffects.DequeueUntilEpoch+1)
+	}
+
+	// Update epoch totals
+	ms.updateEpochTotals(opAffects.NumAlters)
+
+	// update logs table partitions
+	ms.updateLogsTablePartitions(opAffects)
+}
+
+func (ms *mysqlStore) updateMinEpoch(dt store.EpochDataType, newMinEpoch uint64) {
 	// Update min epoch for local epoch range
-	epochRange.EpochFrom = epochUntil + 1
-	ms.epochRanges[rt].Store(epochRange)
+	atomic.StoreUint64(&ms.epochRanges[dt].EpochFrom, newMinEpoch)
 
 	// Update global epoch ranges
 	minEpoch := atomic.LoadUint64(&ms.minEpoch)
 	for _, t := range store.OpEpochDataTypes {
-		er := ms.epochRanges[t].Load().(citypes.EpochRange)
-		minEpoch = util.MinUint64(minEpoch, er.EpochFrom)
+		minEpoch = util.MinUint64(minEpoch, atomic.LoadUint64(&ms.epochRanges[t].EpochFrom))
 	}
 	atomic.StoreUint64(&ms.minEpoch, minEpoch)
+}
+
+func (ms *mysqlStore) updateMaxEpoch(newMaxEpoch uint64, growFrom ...uint64) {
+	// Update global epoch range
+	atomic.StoreUint64(&ms.maxEpoch, newMaxEpoch)
+
+	// Update local epoch ranges
+	for _, t := range store.OpEpochDataTypes {
+		atomic.StoreUint64(&ms.epochRanges[t].EpochTo, newMaxEpoch)
+	}
+
+	// Update global min epoch range if necessary (only when initial loading)
+	if len(growFrom) == 0 || !atomic.CompareAndSwapUint64(&ms.minEpoch, math.MaxUint64, growFrom[0]) {
+		return
+	}
+
+	// Update all local min epoch ranges
+	for _, t := range store.OpEpochDataTypes {
+		atomic.CompareAndSwapUint64(&ms.epochRanges[t].EpochFrom, math.MaxUint64, growFrom[0])
+	}
+}
+
+func (ms *mysqlStore) updateEpochTotals(opHistory store.EpochDataOpNumAlters) {
+	safeDecrement := func(k store.EpochDataType, v int64) {
+		for { // optimistic spin lock for concurrency safe
+			oldTotal, newTotal := atomic.LoadUint64(ms.epochTotals[k]), uint64(0)
+			absV := -v
+
+			if oldTotal < uint64(absV) {
+				logrus.Warn("DB store epoch totals decremented underflow")
+			} else {
+				newTotal = oldTotal - uint64(absV)
+			}
+
+			if atomic.CompareAndSwapUint64(ms.epochTotals[k], oldTotal, newTotal) {
+				break
+			}
+		}
+	}
+
+	// Update epoch totals
+	for k, v := range opHistory {
+		switch {
+		case v == 0:
+			continue
+		case v > 0: // increase
+			atomic.AddUint64(ms.epochTotals[k], uint64(v))
+		case v < 0: // decrease
+			safeDecrement(k, v)
+		}
+	}
+}
+
+func (ms *mysqlStore) updateLogsTablePartitions(opAffects *mysqlEpochDataOpAffects) {
+	if len(opAffects.logsPartIndexSets) == 0 {
+		return
+	}
+
+	switch opAffects.OpType {
+	case store.EpochOpPush:
+		maxUsed := atomic.LoadUint64(&ms.maxUsedLogsTblPartIdx)
+		for _, partIdx := range opAffects.logsPartIndexSets {
+			maxUsed = util.MaxUint64(maxUsed, partIdx)
+		}
+		atomic.StoreUint64(&ms.maxUsedLogsTblPartIdx, maxUsed)
+	case store.EpochOpPop:
+		maxUsed := atomic.LoadUint64(&ms.maxUsedLogsTblPartIdx)
+		for _, partIdx := range opAffects.logsPartIndexSets {
+			maxUsed = util.MinUint64(maxUsed, partIdx)
+		}
+		atomic.StoreUint64(&ms.maxUsedLogsTblPartIdx, maxUsed)
+	case store.EpochOpDequeueLog:
+		minUsed := atomic.LoadUint64(&ms.minUsedLogsTblPartIdx)
+		for _, partIdx := range opAffects.logsPartIndexSets {
+			minUsed = util.MaxUint64(minUsed, partIdx)
+		}
+		atomic.StoreUint64(&ms.minUsedLogsTblPartIdx, minUsed)
+	default:
+		return
+	}
+}
+
+func (ms *mysqlStore) updateEpochStatsWithTx(dbTx *gorm.DB, opAffects *mysqlEpochDataOpAffects) (err error) {
+	switch opAffects.OpType {
+	case store.EpochOpPush: //for push
+		err = ms.updateMaxEpochTx(dbTx, opAffects.PushUpToEpoch, opAffects.PushUpFromEpoch)
+	case store.EpochOpPop: // for pop
+		err = ms.updateMaxEpochTx(dbTx, opAffects.PopUntilEpoch-1)
+	case store.EpochOpDequeueBlock: // for dequeue...
+		err = ms.updateMinEpochTx(dbTx, store.EpochBlock, opAffects.DequeueUntilEpoch+1)
+	case store.EpochOpDequeueTx:
+		err = ms.updateMinEpochTx(dbTx, store.EpochTransaction, opAffects.DequeueUntilEpoch+1)
+	case store.EpochOpDequeueLog:
+		err = ms.updateMinEpochTx(dbTx, store.EpochLog, opAffects.DequeueUntilEpoch+1)
+	}
+
+	if err != nil {
+		logrus.WithError(err).Error("Failed to update epoch range statistics")
+		return err
+	}
+
+	if err = ms.updateEpochTotalsTx(dbTx, opAffects.NumAlters); err != nil {
+		logrus.WithError(err).Error("Failed to update epoch total statistics")
+		return err
+	}
+
+	if err = ms.updateLogsTablePartitionsTx(dbTx, opAffects); err != nil {
+		logrus.WithError(err).Error("Failed to update epoch range of logs table partitions statistics")
+		return err
+	}
 
 	return nil
 }
 
-func (ms *mysqlStore) Close() error {
-	if mysqlDb, err := ms.db.DB(); err != nil {
+func (ms *mysqlStore) updateMaxEpochTx(dbTx *gorm.DB, newMaxEpoch uint64, growFrom ...uint64) error {
+	logrus.WithFields(logrus.Fields{
+		"newMaxEpoch": newMaxEpoch, "growFrom": growFrom,
+	}).Debug("Update max of epoch range in db store")
+
+	keys := []string{getEpochRangeStatsKey(store.EpochDataNil)}
+	for _, t := range store.OpEpochDataTypes {
+		keys = append(keys, getEpochRangeStatsKey(t))
+	}
+
+	cond := map[string]interface{}{
+		"type": epochStatsEpochRange, "key": keys,
+	}
+	updates := map[string]interface{}{"epoch2": newMaxEpoch}
+
+	if err := dbTx.Model(epochStats{}).Where(cond).Updates(updates).Error; err != nil {
 		return err
-	} else {
-		return mysqlDb.Close()
+	}
+
+	// Update min epoch range if necessary (only when initial loading)
+	if len(growFrom) == 0 || atomic.LoadUint64(&ms.minEpoch) != math.MaxUint64 {
+		return nil
+	}
+
+	cond["epoch1"] = citypes.EpochNumberNil
+	updates = map[string]interface{}{"epoch1": growFrom[0]}
+
+	return dbTx.Model(epochStats{}).Where(cond).Updates(updates).Error
+}
+
+func (ms *mysqlStore) updateMinEpochTx(dbTx *gorm.DB, dt store.EpochDataType, newMinEpoch uint64) error {
+	logrus.WithField("newMinEpoch", newMinEpoch).Debug("Update max of epoch range in db store")
+
+	keys := []string{getEpochRangeStatsKey(dt)}
+	if atomic.LoadUint64(&ms.minEpoch) > newMinEpoch {
+		keys = append(keys, getEpochRangeStatsKey(store.EpochDataNil))
+	}
+
+	cond := map[string]interface{}{
+		"type": epochStatsEpochRange,
+		"key":  keys,
+	}
+	updates := map[string]interface{}{
+		"epoch1": newMinEpoch,
+	}
+	return dbTx.Model(epochStats{}).Where(cond).Updates(updates).Error
+}
+
+func (ms *mysqlStore) updateEpochTotalsTx(dbTx *gorm.DB, opHistory store.EpochDataOpNumAlters) (err error) {
+	for t, cnt := range opHistory {
+		cond := map[string]interface{}{
+			"type": epochStatsEpochTotal, "key": getEpochTotalStatsKey(t),
+		}
+
+		switch {
+		case cnt == 0:
+			continue
+		case cnt > 0: // increase
+			err = dbTx.Model(epochStats{}).Where(cond).UpdateColumn("epoch1", gorm.Expr("epoch1 + ?", cnt)).Error
+		case cnt < 0: // decrease
+			err = dbTx.Model(epochStats{}).Where(cond).UpdateColumn("epoch1", gorm.Expr("GREATEST(0, CAST(epoch1 AS SIGNED) - ?)", -cnt)).Error
+		}
+
+		if err != nil {
+			break
+		}
+	}
+
+	return
+}
+
+func (ms *mysqlStore) updateLogsTablePartitionsTx(dbTx *gorm.DB, opAffects *mysqlEpochDataOpAffects) (err error) {
+	if len(opAffects.logsPartEpochRangeRealSets) == 0 {
+		return nil
+	}
+
+	for partName, erSet := range opAffects.logsPartEpochRangeRealSets {
+		if erSet[0] == nil && erSet[1] == nil {
+			continue
+		}
+
+		idx, err := getLogsPartitionIndexByName(partName)
+		if err != nil {
+			logrus.WithField("partition", partName).WithError(err).Error("Failed to parse logs partition index from name")
+			return err
+		}
+		opAffects.logsPartIndexSets = append(opAffects.logsPartIndexSets, idx)
+
+		cond := map[string]interface{}{"type": epochStatsLogsPartEpochRange, "key": partName}
+		updates := map[string]interface{}{}
+
+		if erSet[0] != nil {
+			updates["epoch1"] = *(erSet[0])
+		}
+
+		if erSet[1] != nil {
+			updates["epoch2"] = *(erSet[1])
+		}
+
+		if err := dbTx.Model(epochStats{}).Where(cond).Updates(updates).Error; err != nil {
+			logrus.WithFields(logrus.Fields{
+				"cond": cond, "updates": updates,
+			}).WithError(err).Error("Failed to update new epoch range for logs paritition")
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (ms *mysqlStore) dumpEpochRanges() string {
+	strBuilder := &strings.Builder{}
+	strBuilder.Grow(len(ms.epochRanges) * 30)
+
+	for t, er := range ms.epochRanges {
+		minEpoch, maxEpoch := atomic.LoadUint64(&er.EpochFrom), atomic.LoadUint64(&er.EpochTo)
+		strBuilder.WriteString(fmt.Sprintf("%v:[%v,%v]; ", EpochDataTypeTableMap[t], minEpoch, maxEpoch))
+	}
+
+	return strBuilder.String()
+}
+
+func (ms *mysqlStore) dumpEpochTotals() string {
+	strBuilder := &strings.Builder{}
+	strBuilder.Grow(len(ms.epochRanges) * 30)
+
+	for t, v := range ms.epochTotals {
+		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], *v))
+	}
+
+	return strBuilder.String()
+}
+
+// Load epoch ranges of possibly active logs partitions to be operated on.
+func (ms *mysqlStore) loadLikelyActionLogsPartEpochRangesTx(dbTx *gorm.DB, opType store.EpochOpType) (map[string]citypes.EpochRange, error) {
+	minUsedPart := atomic.LoadUint64(&ms.minUsedLogsTblPartIdx)
+	maxUsedPart := atomic.LoadUint64(&ms.maxUsedLogsTblPartIdx)
+
+	partIdxs := make([]uint64, 0, 2)
+	partLogsEpochRanges := map[string]citypes.EpochRange{}
+
+	switch opType {
+	case store.EpochOpPush: // push might grow logs data to a bigger partition
+		partIdxs = append(partIdxs, maxUsedPart, maxUsedPart+1)
+	case store.EpochOpPop: // pop might shrink logs data to a smaller parition
+		if maxUsedPart > 0 {
+			partIdxs = append(partIdxs, maxUsedPart-1)
+		}
+		partIdxs = append(partIdxs, maxUsedPart)
+	case store.EpochOpDequeueLog: // dequeue might shrink logs data from a bigger partition
+		partIdxs = append(partIdxs, minUsedPart, minUsedPart+1)
+	default:
+		return partLogsEpochRanges, errors.Errorf("invalid epoch op type %v", opType)
+	}
+
+	for _, pidx := range partIdxs {
+		if pidx > LogsTablePartitionsNum { // overflow
+			logrus.WithField("partitionIndex", pidx).Warn("Logs table partitions index out of bound")
+			break
+		}
+
+		partName := getLogsPartitionNameByIdx(pidx)
+		er, err := loadLogsTblPartitionEpochRanges(dbTx, partName)
+		if err != nil && !ms.IsRecordNotFound(err) {
+			return partLogsEpochRanges, err
+		}
+
+		partLogsEpochRanges[partName] = er
+	}
+
+	return partLogsEpochRanges, nil
+}
+
+func diffLogsPartitionEpochRangeForRealSet(beforeER, afterER citypes.EpochRange) [2]*uint64 {
+	diff := func(before, after uint64) *uint64 {
+		if before == after { // no change
+			return nil
+		}
+		return &after
+	}
+
+	return [2]*uint64{
+		diff(beforeER.EpochFrom, afterER.EpochFrom),
+		diff(beforeER.EpochTo, afterER.EpochTo),
 	}
 }

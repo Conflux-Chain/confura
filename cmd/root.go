@@ -54,7 +54,7 @@ func start(cmd *cobra.Command, args []string) {
 	// Initialize database
 	var db store.Store
 	if config, ok := mysql.NewConfigFromViper(); ok {
-		db = config.MustOpenOrCreate()
+		db = config.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: syncServerEnabled})
 		defer db.Close()
 	}
 
