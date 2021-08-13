@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -25,12 +26,13 @@ const (
 	delegateStatusOK
 
 	// default pubsub channel buffer size
-	pubsubChannelBuffer = 1000
+	pubsubChannelBufferSize = 1000
 
 	// pre-defined delegate context name
 	nhCtxName      = "new_heads"           // for newHeads subscription
 	lmEpochCtxName = "latest_mined_epochs" // for latest minted epoch subscription
 	lsEpochCtxName = "latest_state_epochs" // for latest state epoch subscription
+	logsCtxName    = "logs"                // for logs subscription
 )
 
 var (
@@ -43,18 +45,21 @@ var (
 	delegateClients util.ConcurrentMap // node name => *delegateClient
 )
 
+type delegateSubFilter func(item interface{}) bool // result filter for delegate subscription
+
 // delegateSubscription is a subscription established through the delegateClient's Subscribe methods.
 type delegateSubscription struct {
 	dCtx     *delegateContext
-	subId    rpc.ID        // rpc subscription ID
-	etype    reflect.Type  // channel type
-	channel  reflect.Value // channel to send result to
-	quitOnce sync.Once     // ensures quit is closed once
-	quit     chan struct{} // quit is closed when the subscription exits
-	err      chan error    // channel to send/receive delegate error
+	subId    rpc.ID              // rpc subscription ID
+	etype    reflect.Type        // channel type
+	channel  reflect.Value       // channel to send result to
+	quitOnce sync.Once           // ensures quit is closed once
+	quit     chan struct{}       // quit is closed when the subscription exits
+	err      chan error          // channel to send/receive delegate error
+	filters  []delegateSubFilter // blacklist filter chain
 }
 
-func newDelegateSubscription(dCtx *delegateContext, subId rpc.ID, channel interface{}) *delegateSubscription {
+func newDelegateSubscription(dCtx *delegateContext, subId rpc.ID, channel interface{}, filters ...delegateSubFilter) *delegateSubscription {
 	// check type of channel first
 	chanVal := reflect.ValueOf(channel)
 	if chanVal.Kind() != reflect.Chan || chanVal.Type().ChanDir()&reflect.SendDir == 0 || chanVal.IsNil() {
@@ -68,10 +73,19 @@ func newDelegateSubscription(dCtx *delegateContext, subId rpc.ID, channel interf
 		channel: chanVal,
 		quit:    make(chan struct{}),
 		err:     make(chan error, 1),
+		filters: filters,
 	}
 }
 
 func (sub *delegateSubscription) deliver(result interface{}) bool {
+	// filter result before deliver
+	for _, blacklist := range sub.filters {
+		if blacklist(result) {
+			logrus.WithField("result", fmt.Sprintf("%#v", result)).Debug("Blacklisted to deliver from delegate subscription")
+			return false
+		}
+	}
+
 	cases := []reflect.SelectCase{
 		{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(sub.quit)},
 		{Dir: reflect.SelectSend, Chan: sub.channel, Send: reflect.ValueOf(result)},
@@ -139,11 +153,11 @@ func (dctx *delegateContext) setStatus(status delegateStatus) {
 	atomic.StoreUint32((*uint32)(&dctx.status), uint32(delegateStatusOK))
 }
 
-func (dctx *delegateContext) registerDelegateSub(subId rpc.ID, channel interface{}) *delegateSubscription {
+func (dctx *delegateContext) registerDelegateSub(subId rpc.ID, channel interface{}, filters ...delegateSubFilter) *delegateSubscription {
 	dctx.lock.Lock()
 	defer dctx.lock.Unlock()
 
-	delegateSub := newDelegateSubscription(dctx, subId, channel)
+	delegateSub := newDelegateSubscription(dctx, subId, channel, filters...)
 	dctx.delegateSubs.Store(subId, delegateSub)
 
 	return delegateSub
@@ -235,7 +249,7 @@ func (client *delegateClient) delegateSubscribeNewHeads(subId rpc.ID, channel ch
 
 func (client *delegateClient) proxySubscribeNewHeads(dctx *delegateContext) {
 	subFunc := func() (*rpc.ClientSubscription, chan types.BlockHeader, error) {
-		nhCh := make(chan types.BlockHeader, pubsubChannelBuffer)
+		nhCh := make(chan types.BlockHeader, pubsubChannelBufferSize)
 		sub, err := client.SubscribeNewHeads(nhCh)
 		return sub, nhCh, err
 	}
@@ -283,7 +297,7 @@ func (client *delegateClient) delegateSubscribeEpochs(subId rpc.ID, channel chan
 
 func (client *delegateClient) proxySubscribeEpochs(dctx *delegateContext) {
 	subFunc := func() (*rpc.ClientSubscription, chan types.WebsocketEpochResponse, error) {
-		epochCh := make(chan types.WebsocketEpochResponse, pubsubChannelBuffer)
+		epochCh := make(chan types.WebsocketEpochResponse, pubsubChannelBufferSize)
 		sub, err := client.SubscribeEpochs(epochCh, *dctx.epoch)
 		return sub, epochCh, err
 	}
@@ -305,11 +319,98 @@ func (client *delegateClient) proxySubscribeEpochs(dctx *delegateContext) {
 
 				dctx.setStatus(delegateStatusErr)
 				dctx.cancel(err)
-			case h := <-epochCh: // notify all delegated subscriptions
-				dctx.notify(&h)
+			case e := <-epochCh: // notify all delegated subscriptions
+				dctx.notify(&e)
 			}
 		}
 	}
+}
+
+func (client *delegateClient) delegateSubscribeLogs(subId rpc.ID, channel chan *types.SubscriptionLog, filter types.LogFilter) (*delegateSubscription, error) {
+	dCtx := client.getDelegateCtx(logsCtxName)
+	if dCtx.getStatus() == delegateStatusErr {
+		return nil, errDelegateNotReady
+	}
+
+	delegateSub := dCtx.registerDelegateSub(subId, channel, func(item interface{}) bool {
+		log, ok := item.(*types.SubscriptionLog)
+		return !ok || !matchPubSubLogFilter(log, &filter)
+	})
+	dCtx.run(client.proxySubscribeLogs)
+
+	return delegateSub, nil
+}
+
+func (client *delegateClient) proxySubscribeLogs(dctx *delegateContext) {
+	subFunc := func() (*rpc.ClientSubscription, chan types.SubscriptionLog, error) {
+		logsCh := make(chan types.SubscriptionLog, pubsubChannelBufferSize)
+		sub, err := client.SubscribeLogs(logsCh, types.LogFilter{})
+		return sub, logsCh, err
+	}
+
+	for {
+		csub, logsCh, err := subFunc()
+		if err != nil {
+			logrus.WithError(err).Error("Failed to do logs proxy subscription")
+			time.Sleep(time.Second)
+			continue
+		}
+
+		dctx.setStatus(delegateStatusOK)
+		for dctx.getStatus() == delegateStatusOK {
+			select {
+			case err = <-csub.Err(): // FIXME bug with go sdk which will hang for a few minutes even the internet is cut off
+				logrus.WithError(err).Error("Cfx logs delegate subscription error")
+				csub.Unsubscribe()
+
+				dctx.setStatus(delegateStatusErr)
+				dctx.cancel(err)
+			case l := <-logsCh: // notify all delegated subscriptions
+				dctx.notify(&l)
+			}
+		}
+	}
+}
+
+func matchPubSubLogFilter(log *types.SubscriptionLog, filter *types.LogFilter) bool {
+	if (len(filter.Address) == 0 && len(filter.Topics) == 0) || log.IsRevertLog() {
+		return true
+	}
+
+	return matchLogFilterAddr(log, filter) && matchLogFilterTopic(log, filter)
+}
+
+func matchLogFilterTopic(log *types.SubscriptionLog, filter *types.LogFilter) bool {
+	find := func(t types.Hash, topics []types.Hash) bool {
+		for _, topic := range topics {
+			if t == topic {
+				return true
+			}
+		}
+		return false
+	}
+
+	for i, topics := range filter.Topics {
+		if len(topics) == 0 {
+			continue
+		}
+
+		if len(log.Topics) < i || !find(log.Topics[i], topics) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func matchLogFilterAddr(log *types.SubscriptionLog, filter *types.LogFilter) bool {
+	for _, addr := range filter.Address {
+		if log.Address.Equals(&addr) {
+			return true
+		}
+	}
+
+	return len(filter.Address) == 0
 }
 
 // rpcClientFromContext returns the rpc client value stored in ctx, if any.

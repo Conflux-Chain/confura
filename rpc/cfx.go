@@ -658,7 +658,7 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 	rpcSub := psCtx.notifier.CreateSubscription()
 
-	headersCh := make(chan *types.BlockHeader, pubsubChannelBuffer)
+	headersCh := make(chan *types.BlockHeader, pubsubChannelBufferSize)
 	dClient := getOrNewDelegateClient(psCtx.cfx)
 
 	dSub, err := dClient.delegateSubscribeNewHeads(rpcSub.ID, headersCh)
@@ -720,7 +720,7 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 
 	rpcSub := psCtx.notifier.CreateSubscription()
 
-	epochsCh := make(chan *types.WebsocketEpochResponse, pubsubChannelBuffer)
+	epochsCh := make(chan *types.WebsocketEpochResponse, pubsubChannelBufferSize)
 	dClient := getOrNewDelegateClient(psCtx.cfx)
 
 	dSub, err := dClient.delegateSubscribeEpochs(rpcSub.ID, epochsCh, *subEpoch)
@@ -737,7 +737,7 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 		for {
 			select {
 			case epoch := <-epochsCh:
-				logger.WithField("epoch", epochsCh).Debugf("Received new epoch from pubsub delegate (%v)", subEpoch)
+				logger.WithField("epoch", epoch).Debugf("Received new epoch from pubsub delegate (%v)", subEpoch)
 				psCtx.notifier.Notify(rpcSub.ID, epoch)
 
 			case err = <-dSub.err: // delegate subscription error
@@ -751,6 +751,60 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 
 			case <-psCtx.notifier.Closed():
 				logger.Debugf("Epochs pubsub connection closed (%v)", subEpoch)
+				return
+			}
+		}
+	}()
+
+	return rpcSub, nil
+}
+
+// Logs creates a subscription that fires for all new log that match the given filter criteria.
+func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subscription, error) {
+	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
+	if !supported {
+		logrus.WithError(err).Error("Logs pubsub notification unsupported")
+		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
+	}
+
+	if err != nil {
+		logrus.WithError(err).Error("Logs pubsub context error")
+		return &rpc.Subscription{}, errSubscriptionProxyError
+	}
+
+	rpcSub := psCtx.notifier.CreateSubscription()
+
+	logsCh := make(chan *types.SubscriptionLog, pubsubChannelBufferSize)
+	dClient := getOrNewDelegateClient(psCtx.cfx)
+
+	dSub, err := dClient.delegateSubscribeLogs(rpcSub.ID, logsCh, filter)
+	if err != nil {
+		logrus.WithField("filter", filter).WithError(err).Error("Failed to delegate pubsub logs subscription")
+		return &rpc.Subscription{}, errSubscriptionProxyError
+	}
+
+	logger := logrus.WithField("rpcSubID", rpcSub.ID)
+
+	go func() {
+		defer dSub.unsubscribe()
+
+		for {
+			select {
+			case log := <-logsCh:
+				logger.WithField("log", log).Debug("Received new log from pubsub delegate")
+				psCtx.notifier.Notify(rpcSub.ID, log)
+
+			case err = <-dSub.err: // delegate subscription error
+				logger.WithError(err).Debug("Received error from logs pubsub delegate")
+				psCtx.rpcClient.Close()
+				return
+
+			case err = <-rpcSub.Err():
+				logger.WithError(err).Debugf("Logs pubsub subscription error")
+				return
+
+			case <-psCtx.notifier.Closed():
+				logger.Debugf("Logs pubsub connection closed")
 				return
 			}
 		}
