@@ -62,9 +62,10 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 	}
 
 	receipts := make(map[types.Hash]*types.TransactionReceipt)
-	var logIndex uint64
 
 	for i, block := range blocks {
+		var logIndex uint64 // block log index
+
 		for j, tx := range block.Transactions {
 			logger := logrus.WithFields(logrus.Fields{
 				"i": i, "j": j,
