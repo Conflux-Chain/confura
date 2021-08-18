@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/conflux-chain/conflux-infura/config"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc"
 	"github.com/conflux-chain/conflux-infura/store"
@@ -22,6 +23,7 @@ import (
 )
 
 var (
+	flagVersion       bool // print version and exit
 	nodeServerEnabled bool // node management service
 	rpcServerEnabled  bool // Conflux public RPC service
 	syncServerEnabled bool // data sync/prune service
@@ -34,6 +36,8 @@ var (
 )
 
 func init() {
+	rootCmd.Flags().BoolVarP(&flagVersion, "version", "v", false, "If true, print version and exit")
+
 	rootCmd.Flags().BoolVar(&nodeServerEnabled, "nm", false, "whether to start node management service")
 	rootCmd.Flags().BoolVar(&rpcServerEnabled, "rpc", false, "whether to start Conflux public RPC service")
 	rootCmd.Flags().BoolVar(&syncServerEnabled, "sync", false, "whether to start data sync/prune service")
@@ -42,6 +46,11 @@ func init() {
 }
 
 func start(cmd *cobra.Command, args []string) {
+	if flagVersion {
+		config.DumpVersionInfo()
+		return
+	}
+
 	if !nodeServerEnabled && !rpcServerEnabled && !syncServerEnabled {
 		logrus.Fatal("No services started")
 		return

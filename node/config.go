@@ -22,7 +22,7 @@ func init() {
 		logrus.WithError(err).Fatal("Failed to unmarshal node config from viper")
 	}
 
-	logrus.WithField("config", cfg).Info("Node manager configurations loaded.")
+	logrus.WithField("config", cfg).Debug("Node manager configurations loaded.")
 
 	cfg.HashRing.Hasher = &hasher{}
 }

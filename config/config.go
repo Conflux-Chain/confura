@@ -61,7 +61,7 @@ func initMetrics() {
 	// must initialized before any metrics created to avoid noop metrics created
 	metrics.Enabled = viper.GetBool("metrics.enabled")
 	if metrics.Enabled {
-		logrus.Info("Metrics enabled")
+		logrus.Debug("Metrics enabled")
 	}
 }
 
