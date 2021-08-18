@@ -395,7 +395,7 @@ func matchLogFilterTopic(log *types.SubscriptionLog, filter *types.LogFilter) bo
 			continue
 		}
 
-		if len(log.Topics) < i || !find(log.Topics[i], topics) {
+		if len(log.Topics) <= i || !find(log.Topics[i], topics) {
 			return false
 		}
 	}
