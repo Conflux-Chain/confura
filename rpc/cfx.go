@@ -2,6 +2,8 @@ package rpc
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
@@ -171,6 +173,10 @@ func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, ep
 }
 
 func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (interface{}, error) {
+	if err := validateHashParameter(blockHash.String()); err != nil {
+		return nil, err
+	}
+
 	logger := logrus.WithFields(logrus.Fields{"blockHash": blockHash, "includeTxs": includeTxs})
 
 	if !util.IsInterfaceValNil(api.handler) {
@@ -426,6 +432,10 @@ func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFi
 }
 
 func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
+	if err := validateHashParameter(txHash.String()); err != nil {
+		return nil, err
+	}
+
 	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
 
 	if !util.IsInterfaceValNil(api.handler) {
@@ -519,6 +529,10 @@ func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch *types.Epo
 }
 
 func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
+	if err := validateHashParameter(txHash.String()); err != nil {
+		return nil, err
+	}
+
 	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
 
 	if !util.IsInterfaceValNil(api.handler) {
@@ -837,4 +851,17 @@ func (api *cfxAPI) pubsubCtxFromContext(ctx context.Context) (psCtx *pubsubConte
 
 	psCtx = &pubsubContext{notifier, rpcClient, cfx}
 	return
+}
+
+func validateHashParameter(hashStr string) error {
+	if len(hashStr) == 0 || !strings.HasPrefix(hashStr, "0x") {
+		return invalidParamsError("0x prefix is missing")
+	}
+
+	if !util.IsValidHashStr(hashStr) {
+		reason := fmt.Sprintf("invalid length %v, expected a 0x-prefixed hex string with length of 64", len(hashStr)-2)
+		return invalidParamsError(reason)
+	}
+
+	return nil
 }
