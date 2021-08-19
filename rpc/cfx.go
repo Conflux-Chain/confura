@@ -190,13 +190,13 @@ func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, inc
 		logger.WithError(err).Debug("Loading epoch data for cfx_getBlockByHash hit missed from the store")
 	}
 
-	logger.Debug("Delegating cfx_getBlockByHash rpc request to fullnode")
-
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to delegate cfx_getBlockByHash rpc request to fullnode")
 		return nil, err
 	}
+
+	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getBlockByHash rpc request to fullnode")
 
 	if includeTxs {
 		metrics.GetOrRegisterGauge("rpc/cfx_getBlockByHash/details", nil).Inc(1)
@@ -235,14 +235,13 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch *types.Epoch
 		logger.WithError(err).Debug("Loading epoch data for cfx_getBlockByEpochNumber hit missed from the store")
 	}
 
-	logger.Debug("Delegating cfx_getBlockByEpochNumber rpc request to fullnode")
-
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to delegate cfx_getBlockByEpochNumber rpc request to fullnode")
 		return nil, err
 	}
 
+	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getBlockByEpochNumber rpc request to fullnode")
 	api.inputEpochMetric.update(epoch, "cfx_getBlockByEpochNumber", cfx)
 
 	if includeTxs {
@@ -273,8 +272,6 @@ func (api *cfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil
 		logger.WithError(err).Debug("Loading epoch data for cfx_getBlockByBlockNumber hit missed from the store")
 	}
 
-	logger.Debug("Delegating cfx_getBlockByBlockNumber rpc request to fullnode")
-
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to delegate cfx_getBlockByBlockNumber rpc request to fullnode")
@@ -286,6 +283,7 @@ func (api *cfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil
 		return cfx.GetBlockByBlockNumber(blockNumer)
 	}
 
+	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getBlockByBlockNumber rpc request to fullnode")
 	return cfx.GetBlockSummaryByBlockNumber(blockNumer)
 }
 
@@ -366,7 +364,7 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		logger.WithError(err).Debug("Loading epoch data for cfx_getLogs hit missed from the store")
 	}
 
-	logger.Debug("Delegating cfx_getLogs rpc request to fullnode")
+	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getLogs rpc request to fullnode")
 
 	// for any error, delegate request to full node, including:
 	// 1. database level error
@@ -447,8 +445,6 @@ func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) 
 		logger.WithError(err).Debug("Loading epoch data for cfx_getTransactionByHash hit missed from the store")
 	}
 
-	logger.Debug("Delegating cfx_getTransactionByHash rpc request to fullnode")
-
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to delegate cfx_getTransactionByHash rpc request to fullnode")
@@ -456,6 +452,7 @@ func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) 
 		return nil, err
 	}
 
+	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getTransactionByHash rpc request to fullnode")
 	return cfx.GetTransactionByHash(txHash)
 }
 
@@ -499,15 +496,15 @@ func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) ([]
 		logger.WithError(err).Debug("Loading epoch data for cfx_getBlocksByEpoch hit missed from the store")
 	}
 
-	logger.Debug("Delegating cfx_getBlocksByEpoch rpc request to fullnode")
-
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to delegate cfx_getBlocksByEpoch rpc request to fullnode")
 		return emptyHashes, err
 	}
 
+	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getBlocksByEpoch rpc request to fullnode")
 	api.inputEpochMetric.update(epoch, "cfx_getBlocksByEpoch", cfx)
+
 	return cfx.GetBlocksByEpoch(epoch)
 }
 
@@ -543,14 +540,13 @@ func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash)
 		logger.WithError(err).Debug("Loading epoch data for cfx_getTransactionReceipt hit missed from the store")
 	}
 
-	logger.Debug("Delegating cfx_getTransactionReceipt rpc request to fullnode")
-
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to delegate cfx_getTransactionReceipt rpc request to fullnode")
 		return nil, err
 	}
 
+	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getTransactionReceipt rpc request to fullnode")
 	return cfx.GetTransactionReceipt(txHash)
 }
 
