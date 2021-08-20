@@ -303,14 +303,24 @@ func (validator *EpochValidator) validateEpochCombo(epoch *types.Epoch) error {
 		return nil
 	}
 
-	ri = util.RandUint64(uint64(len(block.Transactions)))
-	tx := block.Transactions[ri]
+	// find some executed transaction for validation testing
+	var ptx *types.Transaction
+	for _, tx := range block.Transactions {
+		if tx.BlockHash != nil && tx.Status != nil { // executed transaction only
+			ptx = &tx
+			break
+		}
+	}
 
-	if err := validator.validateGetTransactionByHash(tx.Hash); err != nil {
+	if ptx == nil {
+		return nil
+	}
+
+	if err := validator.validateGetTransactionByHash(ptx.Hash); err != nil {
 		return err
 	}
 
-	if err := validator.validateGetTransactionReceipt(tx.Hash); err != nil {
+	if err := validator.validateGetTransactionReceipt(ptx.Hash); err != nil {
 		return err
 	}
 
