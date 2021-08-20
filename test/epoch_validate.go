@@ -25,6 +25,11 @@ import (
 	"go.uber.org/multierr"
 )
 
+const (
+	samplingValidationRetries       = 2                      // number of retries on sampling validation failed
+	samplingValidationSleepDuration = time.Millisecond * 300 // sleeping duration before each retry
+)
+
 var (
 	validEpochFromNoFilePath = ".evno" // file path to read/write epoch number from where the validation will start
 
@@ -140,9 +145,11 @@ func (validator *EpochValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 			logrus.Info("Epoch validator shutdown ok")
 			return
 		case <-samplingTicker.C:
-			if err := validator.doSampling(); err != nil {
-				logger.WithError(err).Warn("Epoch validator failed to do samping for epoch validation")
-			}
+			go func() { // randomly pick some nearhead epoch for validation test
+				if err := validator.doSampling(); err != nil {
+					logger.WithError(err).Error("Epoch validator failed to do samping for epoch validation")
+				}
+			}()
 		case <-scanTicker.C:
 			if err := validator.doScanning(scanTicker); err != nil {
 				scanValidFailures++
@@ -193,11 +200,17 @@ func (validator *EpochValidator) doSampling() error {
 		validator.validateEpochCombo,
 		validator.validateGetLogs,
 	}
-	if err := validator.doRun(epochNo, epochVFuncs...); err != nil {
-		return errors.WithMessagef(err, "failed to validate epoch #%v", epochNo)
+
+	err = validator.doRun(epochNo, epochVFuncs...)
+	// Since nearhead epoch re-orgs are of high possibility due to pivot switch,
+	// we'd better do some retrying before determining the final validation result.
+	for i := 0; i < samplingValidationRetries && errors.Is(err, errResultNotMatched); i++ {
+		time.Sleep(samplingValidationSleepDuration)
+		err = validator.doRun(epochNo, epochVFuncs...)
+		logrus.WithField("epoch", epochNo).WithError(err).Infof("Epoch validator sampling validation retried %v time(s)", i+1)
 	}
 
-	return nil
+	return errors.WithMessagef(err, "failed to validate epoch #%v", epochNo)
 }
 
 func (validator *EpochValidator) doScanning(ticker *time.Ticker) error {

@@ -209,9 +209,9 @@ func (syncer *KVCacheSyncer) syncOnce() (bool, error) {
 		// of pivot switch for the latest state epoch is very high.
 		// TODO retry times may be adjusted accordingly to the production running effect.
 		for i := 0; i < syncer.retriesOnPivotSwitch && errors.Is(err, store.ErrEpochPivotSwitched); i++ {
-			time.Sleep(syncer.sleepIntervalOnPivotSwitch) // would better sleep for a while to tolerate pivot switch of high frequency
+			time.Sleep(syncer.sleepIntervalOnPivotSwitch) // better sleep for a while to tolerate pivot switch of high frequency
 			data, err = store.QueryEpochData(syncer.cfx, epochNo)
-			logrus.WithField("epoch", epochNo).WithError(err).Infof("Cache syncer querying epoch data retried %v time(s) due to pivot switch", i)
+			logrus.WithField("epoch", epochNo).WithError(err).Infof("Cache syncer querying epoch data retried %v time(s) due to pivot switch", i+1)
 		}
 
 		if err != nil {
