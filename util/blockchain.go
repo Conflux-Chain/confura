@@ -4,7 +4,9 @@ import (
 	"regexp"
 	"strconv"
 
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -55,4 +57,22 @@ func StripLogExtraFieldsForRPC(logs []types.Log) {
 		log.TransactionHash, log.TransactionIndex = nil, nil
 		log.LogIndex, log.TransactionLogIndex = nil, nil
 	}
+}
+
+// ConvertToNumberedEpoch converts named epoch to numbered epoch if necessary
+func ConvertToNumberedEpoch(cfx sdk.ClientOperator, epoch *types.Epoch) (*types.Epoch, error) {
+	if epoch == nil {
+		return nil, errors.New("named epoch must be provided")
+	}
+
+	if _, ok := epoch.ToInt(); ok { // already a numbered epoch
+		return epoch, nil
+	}
+
+	epochNum, err := cfx.GetEpochNumber(epoch)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "failed to get epoch number for named epoch %v", epoch)
+	}
+
+	return types.NewEpochNumber(epochNum), nil
 }

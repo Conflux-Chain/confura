@@ -1,49 +1,94 @@
 package store
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	citypes "github.com/conflux-chain/conflux-infura/types"
+	"github.com/conflux-chain/conflux-infura/util"
 )
 
+type LogFilterType int
+
 const (
-	MaxLogEpochRange uint64 = 1000
-	MaxLogLimit      uint64 = math.MaxUint16 // do not limit in early phase
+	// Log filter constants
+	MaxLogBlockHashesSize int    = 128
+	MaxLogEpochRange      uint64 = 1000
+	MaxLogBlockRange      uint64 = 1000
+	MaxLogLimit           uint64 = math.MaxUint16 // do not limit in early phase
+
+	// Log filter types
+	LogFilterTypeBlockHashes LogFilterType = 1 << iota // 0001
+	LogFilterTypeEpochRange                            // 0010
+	LogFilterTypeBlockRange                            // 0100
 )
 
 // LogFilter is used to filter logs when query in any store.
 type LogFilter struct {
-	EpochFrom uint64
-	EpochTo   uint64
-	Contracts VariadicValue
-	Blocks    VariadicValue
-	Topics    []VariadicValue // event hash and indexed data 1, 2, 3
-	Limit     uint64
+	Type         LogFilterType
+	EpochRange   *citypes.EpochRange
+	BlockRange   *citypes.EpochRange
+	Contracts    VariadicValue
+	BlockHashIds VariadicValue
+	BlockHashes  VariadicValue
+	Topics       []VariadicValue // event hash and indexed data 1, 2, 3
+	Limit        uint64
 }
 
 // ParseLogFilter creates an instance of LogFilter with specified RPC log filter.
 func ParseLogFilter(filter *types.LogFilter) (LogFilter, bool) {
-	epochFrom, ok := filter.FromEpoch.ToInt()
-	if !ok {
-		return LogFilter{}, false
+	switch {
+	case filter.FromEpoch != nil && filter.ToEpoch != nil:
+		for _, epoch := range [2]*types.Epoch{filter.FromEpoch, filter.ToEpoch} {
+			if _, ok := epoch.ToInt(); !ok {
+				return LogFilter{}, false
+			}
+		}
+		return NewLogFilter(LogFilterTypeEpochRange, filter), true
+	case filter.FromBlock != nil && filter.ToBlock != nil:
+		return NewLogFilter(LogFilterTypeBlockRange, filter), true
+	case len(filter.BlockHashes) > 0:
+		return NewLogFilter(LogFilterTypeBlockHashes, filter), true
 	}
 
-	epochTo, ok := filter.ToEpoch.ToInt()
-	if !ok {
-		return LogFilter{}, false
-	}
-
-	return NewLogFilter(epochFrom.Uint64(), epochTo.Uint64(), filter), true
+	return LogFilter{}, false
 }
 
 // NewLogFilter creates an instance of LogFilter with specified RPC log filter.
-func NewLogFilter(epochNumFrom, epochNumTo uint64, filter *types.LogFilter) LogFilter {
+func NewLogFilter(filterType LogFilterType, filter *types.LogFilter) LogFilter {
 	result := LogFilter{
-		EpochFrom: epochNumFrom,
-		EpochTo:   epochNumTo,
+		Type:      filterType,
 		Contracts: newVariadicValueByAddress(filter.Address),
-		Blocks:    newVariadicValueByHashes(filter.BlockHashes),
 		Limit:     MaxLogLimit,
+	}
+
+	switch filterType {
+	case LogFilterTypeEpochRange:
+		fromEpoch, ok1 := filter.FromEpoch.ToInt()
+		toEpoch, ok2 := filter.ToEpoch.ToInt()
+
+		if ok1 && ok2 {
+			result.EpochRange = &citypes.EpochRange{
+				EpochFrom: fromEpoch.Uint64(),
+				EpochTo:   toEpoch.Uint64(),
+			}
+		}
+	case LogFilterTypeBlockRange:
+
+		result.BlockRange = &citypes.EpochRange{
+			EpochFrom: filter.FromBlock.ToInt().Uint64(),
+			EpochTo:   filter.ToBlock.ToInt().Uint64(),
+		}
+	case LogFilterTypeBlockHashes:
+		result.BlockHashes = newVariadicValueByHashes(filter.BlockHashes)
+
+		blockHashIds := make([]string, 0, len(filter.BlockHashes))
+		for _, bh := range filter.BlockHashes {
+			hashId := util.GetShortIdOfHash(bh.String())
+			blockHashIds = append(blockHashIds, fmt.Sprintf("%v", hashId))
+		}
+		result.BlockHashIds = NewVariadicValue(blockHashIds...)
 	}
 
 	// init topics filter

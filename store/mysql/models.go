@@ -102,6 +102,8 @@ func loadBlock(db *gorm.DB, whereClause string, args ...interface{}) (*types.Blo
 type log struct {
 	ID              uint64
 	Epoch           uint64 `gorm:"not null;index"`
+	BlockNumber     uint64 `gorm:"not null;index"`
+	BlockHashId     uint64 `gorm:"not null;index"`
 	BlockHash       string `gorm:"size:66;not null"`
 	ContractAddress string `gorm:"size:64;not null"`
 	Topic0          string `gorm:"size:66;not null"`
@@ -116,9 +118,10 @@ type log struct {
 	LogIndex        uint64 `gorm:"not null"`
 }
 
-func newLog(data *types.Log) *log {
+func newLog(blockNumber uint64, data *types.Log) *log {
 	log := &log{
 		Epoch:           data.EpochNumber.ToInt().Uint64(),
+		BlockNumber:     blockNumber,
 		BlockHash:       data.BlockHash.String(),
 		ContractAddress: data.Address.MustGetBase32Address(),
 		Data:            []byte(data.Data),
@@ -129,6 +132,7 @@ func newLog(data *types.Log) *log {
 		LogIndex:        data.LogIndex.ToInt().Uint64(),
 	}
 
+	log.BlockHashId = util.GetShortIdOfHash(log.BlockHash)
 	log.DataLen = uint64(len(log.Data))
 
 	numTopics := len(data.Topics)
@@ -181,9 +185,17 @@ func (log *log) toRPCLog() types.Log {
 }
 
 func loadLogs(db *gorm.DB, filter store.LogFilter, partitions []string) ([]types.Log, error) {
-	db = db.Where("epoch BETWEEN ? AND ?", filter.EpochFrom, filter.EpochTo)
+	switch filter.Type {
+	case store.LogFilterTypeBlockHashes:
+		db = applyVariadicFilter(db, "block_hash_id", filter.BlockHashIds)
+		db = applyVariadicFilter(db, "block_hash", filter.BlockHashes)
+	case store.LogFilterTypeBlockRange:
+		db = db.Where("block_number BETWEEN ? AND ?", filter.BlockRange.EpochFrom, filter.BlockRange.EpochTo)
+	case store.LogFilterTypeEpochRange:
+		db = db.Where("epoch BETWEEN ? AND ?", filter.EpochRange.EpochFrom, filter.EpochRange.EpochTo)
+	}
+
 	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
-	db = applyVariadicFilter(db, "block_hash", filter.Blocks)
 
 	numTopics := len(filter.Topics)
 

@@ -120,8 +120,16 @@ func (ms *mysqlStore) GetNumLogs() uint64 {
 }
 
 func (ms *mysqlStore) GetLogs(filter store.LogFilter) (logs []types.Log, err error) {
+	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
+	defer updater.Update()
+
+	// only with filter type of epoch range can we get the logs table partition(s) for the moment
+	if filter.Type != store.LogFilterTypeEpochRange {
+		return loadLogs(ms.db, filter, nil)
+	}
+
 	// TODO add a cache layer for better performance if necessary
-	inDB, err := ms.checkLogsEpochRangeWithinStore(filter.EpochFrom, filter.EpochTo)
+	inDB, err := ms.checkLogsEpochRangeWithinStore(filter.EpochRange.EpochFrom, filter.EpochRange.EpochTo)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to check filter epoch range within store")
 	}
@@ -130,11 +138,8 @@ func (ms *mysqlStore) GetLogs(filter store.LogFilter) (logs []types.Log, err err
 		return nil, gorm.ErrRecordNotFound
 	}
 
-	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
-	defer updater.Update()
-
 	// calcuate logs table partitions to get logs within the filter epoch range
-	logsTblPartitions, err := findLogsPartitionsEpochRangeWithinStoreTx(ms.db, filter.EpochFrom, filter.EpochTo)
+	logsTblPartitions, err := findLogsPartitionsEpochRangeWithinStoreTx(ms.db, filter.EpochRange.EpochFrom, filter.EpochRange.EpochTo)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to get logs partitions for filter epoch range")
 	}
@@ -588,7 +593,8 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 
 			trxs = append(trxs, newTx(&tx, receipt))
 			for _, log := range receipt.Logs {
-				trxlogs = append(trxlogs, newLog(&log))
+				blockNum := block.BlockNumber.ToInt().Uint64()
+				trxlogs = append(trxlogs, newLog(blockNum, &log))
 			}
 		}
 
