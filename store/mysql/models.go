@@ -219,18 +219,19 @@ func loadLogs(db *gorm.DB, filter store.LogFilter, partitions []string) ([]types
 		db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
 	}
 
+	// IMPORTANT: full node returns the last N logs.
+	// To limit the number of records fetched for better performance,  we'd better retrieve
+	// the logs in reverse order first, and then reverse them for the final order.
+	db = db.Order("id DESC").Limit(int(filter.Limit))
+
 	var logs []log
 	if err := db.Find(&logs).Error; err != nil {
 		return nil, err
 	}
 
-	// IMPORTANT: full node return the last N logs
-	if len := uint64(len(logs)); len > filter.Limit {
-		logs = logs[len-filter.Limit:]
-	}
-
-	var result []types.Log
-	for _, l := range logs {
+	result := make([]types.Log, 0, len(logs))
+	for i := len(logs) - 1; i >= 0; i-- { // reverse the order for the final
+		l := logs[i]
 		result = append(result, l.toRPCLog())
 	}
 

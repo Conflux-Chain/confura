@@ -2,7 +2,6 @@ package store
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	citypes "github.com/conflux-chain/conflux-infura/types"
@@ -16,7 +15,7 @@ const (
 	MaxLogBlockHashesSize int    = 128
 	MaxLogEpochRange      uint64 = 1000
 	MaxLogBlockRange      uint64 = 1000
-	MaxLogLimit           uint64 = math.MaxUint16 // do not limit in early phase
+	MaxLogLimit           uint64 = 5000 // TODO adjust max log limit accordingly
 
 	// Log filter types
 	LogFilterTypeBlockHashes LogFilterType = 1 << iota // 0001
