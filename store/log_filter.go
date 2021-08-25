@@ -32,6 +32,7 @@ type LogFilter struct {
 	BlockHashIds VariadicValue
 	BlockHashes  VariadicValue
 	Topics       []VariadicValue // event hash and indexed data 1, 2, 3
+	OffSet       uint64
 	Limit        uint64
 }
 
@@ -59,6 +60,7 @@ func NewLogFilter(filterType LogFilterType, filter *types.LogFilter) LogFilter {
 	result := LogFilter{
 		Type:      filterType,
 		Contracts: newVariadicValueByAddress(filter.Address),
+		OffSet:    0,
 		Limit:     MaxLogLimit,
 	}
 
@@ -98,6 +100,11 @@ func NewLogFilter(filterType LogFilterType, filter *types.LogFilter) LogFilter {
 	// remove empty topic filter at tail
 	for len(result.Topics) > 0 && result.Topics[len(result.Topics)-1].IsNull() {
 		result.Topics = result.Topics[:len(result.Topics)-1]
+	}
+
+	// init offset filter
+	if filter.Offset != nil {
+		result.OffSet = uint64(*filter.Offset)
 	}
 
 	// init limit filter
