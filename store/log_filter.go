@@ -2,10 +2,15 @@ package store
 
 import (
 	"fmt"
+	"math"
 
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 type LogFilterType int
@@ -25,6 +30,7 @@ const (
 
 // LogFilter is used to filter logs when query in any store.
 type LogFilter struct {
+	cfx          sdk.ClientOperator // used to query epoch range
 	Type         LogFilterType
 	EpochRange   *citypes.EpochRange
 	BlockRange   *citypes.EpochRange
@@ -37,7 +43,7 @@ type LogFilter struct {
 }
 
 // ParseLogFilter creates an instance of LogFilter with specified RPC log filter.
-func ParseLogFilter(filter *types.LogFilter) (LogFilter, bool) {
+func ParseLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) (LogFilter, bool) {
 	switch {
 	case filter.FromEpoch != nil && filter.ToEpoch != nil:
 		for _, epoch := range [2]*types.Epoch{filter.FromEpoch, filter.ToEpoch} {
@@ -45,23 +51,24 @@ func ParseLogFilter(filter *types.LogFilter) (LogFilter, bool) {
 				return LogFilter{}, false
 			}
 		}
-		return NewLogFilter(LogFilterTypeEpochRange, filter), true
+		return NewLogFilter(LogFilterTypeEpochRange, cfx, filter), true
 	case filter.FromBlock != nil && filter.ToBlock != nil:
-		return NewLogFilter(LogFilterTypeBlockRange, filter), true
+		return NewLogFilter(LogFilterTypeBlockRange, cfx, filter), true
 	case len(filter.BlockHashes) > 0:
-		return NewLogFilter(LogFilterTypeBlockHashes, filter), true
+		return NewLogFilter(LogFilterTypeBlockHashes, cfx, filter), true
 	}
 
 	return LogFilter{}, false
 }
 
 // NewLogFilter creates an instance of LogFilter with specified RPC log filter.
-func NewLogFilter(filterType LogFilterType, filter *types.LogFilter) LogFilter {
+func NewLogFilter(filterType LogFilterType, cfx sdk.ClientOperator, filter *types.LogFilter) LogFilter {
 	result := LogFilter{
 		Type:      filterType,
 		Contracts: newVariadicValueByAddress(filter.Address),
 		OffSet:    0,
 		Limit:     MaxLogLimit,
+		cfx:       cfx,
 	}
 
 	switch filterType {
@@ -76,7 +83,6 @@ func NewLogFilter(filterType LogFilterType, filter *types.LogFilter) LogFilter {
 			}
 		}
 	case LogFilterTypeBlockRange:
-
 		result.BlockRange = &citypes.EpochRange{
 			EpochFrom: filter.FromBlock.ToInt().Uint64(),
 			EpochTo:   filter.ToBlock.ToInt().Uint64(),
@@ -113,6 +119,77 @@ func NewLogFilter(filterType LogFilterType, filter *types.LogFilter) LogFilter {
 	}
 
 	return result
+}
+
+// FetchEpochRangeByBlockHashes fetchs epoch range from fullnode by blockhashes but excluding the provided hashes.
+func (filter *LogFilter) FetchEpochRangeByBlockHashes(excludeHashes ...string) (citypes.EpochRange, error) {
+	res := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0} // default return an invalid epoch range
+
+	fblockHashes := filter.BlockHashes.toSlice()
+	diffBlockHashes := util.DiffStrSlices(fblockHashes, excludeHashes)
+
+	if len(diffBlockHashes) == 0 {
+		return res, nil
+	}
+
+	batchBlockHashes := util.ConvertToHashSlice(diffBlockHashes)
+	blockSummarys, err := filter.cfx.BatchGetBlockSummarys(batchBlockHashes)
+	if err != nil {
+		logrus.WithError(err).WithField("blockhashes", diffBlockHashes).Error("Failed to batch get blocksummarys by diff blockhashes")
+		return res, errors.WithMessage(err, "failed to batch get block summarys by diff blockhashes")
+	}
+
+	for _, bs := range blockSummarys {
+		epochNo := bs.EpochNumber.ToInt().Uint64()
+		res.EpochFrom = util.MinUint64(res.EpochFrom, epochNo)
+		res.EpochTo = util.MaxUint64(res.EpochTo, epochNo)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"blockSummarys": blockSummarys, "filterBlockHashes": fblockHashes,
+		"excludeHashes": excludeHashes, "epochRange": res,
+	}).Debug("Fetched epoch range from fullnode by log filter")
+
+	return res, nil
+}
+
+// FetchEpochRangeByBlockHashes fetchs epoch range from fullnode by from and to block number.
+func (filter *LogFilter) FetchEpochRangeByBlockNumber() (citypes.EpochRange, error) {
+	res := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0}
+
+	if filter.BlockRange == nil {
+		return res, nil
+	}
+
+	blockNumbers := make([]hexutil.Uint64, 0, 2)
+	blockNumbers = append(blockNumbers, hexutil.Uint64(filter.BlockRange.EpochFrom))
+	if filter.BlockRange.EpochFrom != filter.BlockRange.EpochTo {
+		blockNumbers = append(blockNumbers, hexutil.Uint64(filter.BlockRange.EpochTo))
+	}
+
+	blockSummarys, err := filter.cfx.BatchGetBlockSummarysByNumber(blockNumbers)
+	if len(blockSummarys) < len(blockNumbers) {
+		err = errors.Errorf("missing block summary(s) returned, expect count %v got %v", len(blockNumbers), len(blockSummarys))
+	}
+
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"blockNumbers": blockNumbers, "blockSummarys": blockSummarys,
+		}).Error("Failed to batch get block summarys by from/to block number")
+		return res, errors.WithMessage(err, "failed to batch get block summarys by from && to block number")
+	}
+
+	for _, bs := range blockSummarys {
+		epochNo := bs.EpochNumber.ToInt().Uint64()
+		res.EpochFrom = util.MinUint64(res.EpochFrom, epochNo)
+		res.EpochTo = util.MaxUint64(res.EpochTo, epochNo)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"blockSummarys": blockSummarys, "blockNumbers": blockNumbers, "epochRange": res,
+	}).Debug("Fetched epoch range from fullnode by log filter")
+
+	return res, nil
 }
 
 // VariadicValue represents an union value, including null, single value or multiple values.
@@ -192,6 +269,23 @@ func newVariadicValueByAddress(addresses []types.Address) VariadicValue {
 	}
 
 	return VariadicValue{count, "", values}
+}
+
+func (vv *VariadicValue) toSlice() []string {
+	if vv.count == 1 {
+		return []string{vv.single}
+	}
+
+	result := make([]string, 0, vv.count)
+	for k := range vv.multiple {
+		result = append(result, k)
+	}
+
+	return result
+}
+
+func (vv *VariadicValue) Count() int {
+	return vv.count
 }
 
 func (vv *VariadicValue) IsNull() bool {

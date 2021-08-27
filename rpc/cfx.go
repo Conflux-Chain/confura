@@ -349,7 +349,7 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	api.inputEpochMetric.update(filter.FromEpoch, "cfx_getLogs/from", cfx)
 	api.inputEpochMetric.update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 
-	if sfilter, ok := store.ParseLogFilter(&filter); ok && !util.IsInterfaceValNil(api.handler) {
+	if sfilter, ok := store.ParseLogFilter(cfx, &filter); ok && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getLogs/store/hitratio", *isHit)

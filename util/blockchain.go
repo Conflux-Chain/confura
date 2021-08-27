@@ -76,3 +76,14 @@ func ConvertToNumberedEpoch(cfx sdk.ClientOperator, epoch *types.Epoch) (*types.
 
 	return types.NewEpochNumber(epochNum), nil
 }
+
+// ConvertToHashSlice convert string slice to hash slice
+func ConvertToHashSlice(ss []string) []types.Hash {
+	res := make([]types.Hash, 0, len(ss))
+
+	for i := 0; i < len(ss); i++ {
+		res = append(res, types.Hash(ss[i]))
+	}
+
+	return res
+}

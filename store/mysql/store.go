@@ -119,27 +119,88 @@ func (ms *mysqlStore) GetNumLogs() uint64 {
 	return atomic.LoadUint64(ms.epochTotals[store.EpochLog])
 }
 
-func (ms *mysqlStore) GetLogs(filter store.LogFilter) (logs []types.Log, err error) {
+// TODO Cacheing nearhead epoch logs in memory or redis to improve performance
+func (ms *mysqlStore) GetLogs(filter store.LogFilter) ([]types.Log, error) {
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
 	defer updater.Update()
 
-	// only with filter type of epoch range can we get the logs table partition(s) for the moment
-	if filter.Type != store.LogFilterTypeEpochRange {
-		return loadLogs(ms.db, filter, nil)
+	// epoch range calculated from log filter, which can be used to help locate the logs table partitions
+	epochRange := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0}
+
+	switch filter.Type {
+	case store.LogFilterTypeBlockHashes:
+		blockParts, err := ms.getLogsRelBlockInfoWithinStore(&filter)
+		if err != nil {
+			logrus.WithField("filter", filter).WithError(err).Error("Failed to calculate epoch range for log filter of type block hashes")
+			return nil, err
+		}
+
+		foundHashes := make([]string, 0, len(blockParts))
+		for i := 0; i < len(blockParts); i++ {
+			foundHashes = append(foundHashes, blockParts[i].Hash)
+
+			// update epoch range from store
+			epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, blockParts[i].Epoch)
+			epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, blockParts[i].Epoch)
+		}
+
+		if len(foundHashes) == filter.BlockHashes.Count() { // already have all block hashes in store
+			break
+		}
+
+		fer, err := filter.FetchEpochRangeByBlockHashes(foundHashes...) // fetch epoch range from fullnode
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to fetch epoch range from fullnode for log filter of type block hashes")
+		}
+
+		// update epoch range from fullnode
+		epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, fer.EpochFrom)
+		epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, fer.EpochTo)
+
+	case store.LogFilterTypeBlockRange:
+		blockParts, err := ms.getLogsRelBlockInfoWithinStore(&filter)
+		if err != nil {
+			logrus.WithField("filter", filter).WithError(err).Error("Failed to calculate epoch range for log filter of type block range")
+			return nil, err
+		}
+
+		for i := 0; i < len(blockParts); i++ {
+			// update epoch range from store
+			epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, blockParts[i].Epoch)
+			epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, blockParts[i].Epoch)
+		}
+
+		if len(blockParts) == len(filter.BlockRange.ToSlice()) { // already have all block numbers in store
+			break
+		}
+
+		fer, err := filter.FetchEpochRangeByBlockNumber() // fetch epoch range from fullnode
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to fetch epoch range from fullnode for log filter of type block range")
+		}
+
+		// update epoch range from fullnode
+		epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, fer.EpochFrom)
+		epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, fer.EpochTo)
+
+	default:
+		if filter.EpochRange != nil { // default use epoch range of log filter
+			epochRange = *filter.EpochRange
+		}
 	}
 
+	if err := citypes.ValidateEpochRange(&epochRange); err != nil {
+		return nil, errors.WithMessage(err, "failed to calculate a valid epoch range for logs partitions")
+	}
+
+	// Check if epoch ranges of the log filter are within the store.
 	// TODO add a cache layer for better performance if necessary
-	inDB, err := ms.checkLogsEpochRangeWithinStore(filter.EpochRange.EpochFrom, filter.EpochRange.EpochTo)
-	if err != nil {
+	if _, err := ms.checkLogsEpochRangeWithinStore(epochRange.EpochFrom, epochRange.EpochTo); err != nil {
 		return nil, errors.WithMessage(err, "failed to check filter epoch range within store")
 	}
 
-	if !inDB {
-		return nil, gorm.ErrRecordNotFound
-	}
-
 	// calcuate logs table partitions to get logs within the filter epoch range
-	logsTblPartitions, err := findLogsPartitionsEpochRangeWithinStoreTx(ms.db, filter.EpochRange.EpochFrom, filter.EpochRange.EpochTo)
+	logsTblPartitions, err := findLogsPartitionsEpochRangeWithinStoreTx(ms.db, epochRange.EpochFrom, epochRange.EpochTo)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to get logs partitions for filter epoch range")
 	}
@@ -797,6 +858,40 @@ func (ms *mysqlStore) getEpochRange(dt store.EpochDataType) (uint64, uint64, err
 	}
 
 	return validate(citypes.EpochNumberNil, citypes.EpochNumberNil)
+}
+
+// logsRelBlockPart logs relative data part of block model, it can be used to calcuate the epoch range for log filters
+// of type block number range or block hashes.
+type logsRelBlockPart struct {
+	Epoch       uint64
+	Hash        string // for block hash
+	BlockNumber string // for block number
+}
+
+func (ms *mysqlStore) getLogsRelBlockInfoWithinStore(filter *store.LogFilter) ([]logsRelBlockPart, error) {
+	var res []logsRelBlockPart
+	db := ms.db.Model(&block{})
+
+	switch filter.Type {
+	case store.LogFilterTypeBlockHashes:
+		db = applyVariadicFilter(db, "hash_id", filter.BlockHashIds)
+		db = applyVariadicFilter(db, "hash", filter.BlockHashes)
+
+		if err := db.Select("hash", "epoch").Find(&res).Error; err != nil {
+			err = errors.WithMessage(err, "failed to get logs relative block info by hash")
+			return res, err
+		}
+	case store.LogFilterTypeBlockRange:
+		blockNums := filter.BlockRange.ToSlice()
+		db.Where("block_number IN (?)", blockNums)
+
+		if err := db.Select("block_number", "epoch").Find(&res).Error; err != nil {
+			err = errors.WithMessage(err, "failed to get logs relative block info by number")
+			return res, err
+		}
+	}
+
+	return res, nil
 }
 
 // Checks if specified epoch range of logs is within db store
