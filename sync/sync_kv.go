@@ -138,7 +138,7 @@ func (syncer *KVCacheSyncer) handleNewEpoch(newEpoch uint64) {
 		logger.Debug("Cache syncer pivot switch detected")
 
 		if err := syncer.pivotSwitchRevert(newEpoch); err == nil {
-			syncer.syncWindow.expandFrom(newEpoch)
+			syncer.syncWindow.reset(newEpoch, newEpoch) // reset sync window to start from the revert point again
 		} else {
 			logger.WithError(err).Error("Failed to remove epoch data in cache due to pivot switch")
 		}
