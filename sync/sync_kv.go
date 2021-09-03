@@ -18,6 +18,8 @@ import (
 const (
 	// The threshold gap between the latest epoch and some epoch after which the epochs are regarded as decayed.
 	decayedEpochGapThreshold = 100000
+	// The maximum continuous queries that get empty epoch data. It can be used to prevent endless empty query loop.
+	maxContEmptyEpochQueries = 100
 )
 
 // KVCacheSyncer is used to sync blockchain data into kv cache against the latest state epoch.
@@ -28,14 +30,12 @@ type KVCacheSyncer struct {
 	syncIntervalNormal  time.Duration // interval to sync epoch data in normal status
 	syncIntervalCatchUp time.Duration // interval to sync epoch data in catching up mode
 
-	maxSyncEpochs uint64       // maximum number of epochs to sync once
-	syncWindow    *epochWindow // epoch sync window on which the sync polling depends
+	maxSyncEpochs          uint64       // maximum number of epochs to sync once
+	syncWindow             *epochWindow // epoch sync window on which the sync polling depends
+	continuousEmptyQueries uint32       // continuous empty epoch queries
 
 	subEpochCh   chan uint64 // receive the epoch from pub/sub to detect pivot chain switch or to update epoch sync window
 	checkPointCh chan bool   // checkpoint channel received to check epoch data
-
-	retriesOnPivotSwitch       int           // retry times to query epoch data on pivot switch
-	sleepIntervalOnPivotSwitch time.Duration // sleep interval per query retry on pivot switch
 }
 
 // NewKVCacheSyncer creates an instance of KVCacheSyncer to sync latest state epoch data.
@@ -52,9 +52,6 @@ func NewKVCacheSyncer(cfx sdk.ClientOperator, cache store.CacheStore) *KVCacheSy
 
 		subEpochCh:   make(chan uint64, viper.GetInt64("sync.sub.buffer")),
 		checkPointCh: make(chan bool, 2),
-
-		retriesOnPivotSwitch:       viper.GetInt("sync.kv.query.retriesOnPivotSwitch"),
-		sleepIntervalOnPivotSwitch: viper.GetDuration("sync.kv.query.sleepOnPivotSwitch"),
 	}
 
 	// Ensure epoch data not reverted
@@ -193,25 +190,23 @@ func (syncer *KVCacheSyncer) syncOnce() (bool, error) {
 
 	syncFrom, syncSize := syncer.syncWindow.peekShrinkFrom(uint32(syncer.maxSyncEpochs))
 
-	logger = logger.WithFields(logrus.Fields{"syncFrom": syncFrom, "syncSize": syncSize})
-	logger.Debug("Cache syncer starting to sync epoch(s)...")
-
 	syncSizeGauge := gometrics.GetOrRegisterGauge("infura/cache/sync/size/stated", nil)
 	syncSizeGauge.Update(int64(syncSize))
+
+	logger = logger.WithFields(logrus.Fields{"syncFrom": syncFrom, "syncSize": syncSize})
+	logger.Debug("Cache syncer starting to sync epoch(s)...")
 
 	epochDataSlice := make([]*store.EpochData, 0, syncSize)
 	for i := uint32(0); i < syncSize; i++ {
 		epochNo := syncFrom + uint64(i)
 		eplogger := logger.WithField("epoch", epochNo)
 
+		// If epoch pivot switched, stop the querying right now since it's pointless to query epoch data
+		// that will be reverted late.
 		data, err := store.QueryEpochData(syncer.cfx, epochNo)
-		// If epoch pivot switched during query, retry to query it several times since the possibility
-		// of pivot switch for the latest state epoch is very high.
-		// TODO retry times may be adjusted accordingly to the production running effect.
-		for i := 0; i < syncer.retriesOnPivotSwitch && errors.Is(err, store.ErrEpochPivotSwitched); i++ {
-			time.Sleep(syncer.sleepIntervalOnPivotSwitch) // better sleep for a while to tolerate pivot switch of high frequency
-			data, err = store.QueryEpochData(syncer.cfx, epochNo)
-			logrus.WithField("epoch", epochNo).WithError(err).Infof("Cache syncer querying epoch data retried %v time(s) due to pivot switch", i+1)
+		if errors.Is(err, store.ErrEpochPivotSwitched) {
+			eplogger.WithError(err).Info("Cache syncer failed to query epoch data due to pivot switch")
+			break
 		}
 
 		if err != nil {
@@ -223,13 +218,29 @@ func (syncer *KVCacheSyncer) syncOnce() (bool, error) {
 		epochDataSlice = append(epochDataSlice, &data)
 	}
 
+	if len(epochDataSlice) == 0 { // empty epoch data query
+		syncer.continuousEmptyQueries++
+
+		if syncer.continuousEmptyQueries >= maxContEmptyEpochQueries { // in case of endless empty query loop
+			logger.WithFields(logrus.Fields{
+				"continuousEmptyQueries": syncer.continuousEmptyQueries,
+			}).Warn("Too many continuous empty epoch queries")
+		}
+
+		return false, nil
+	}
+
 	if err := syncer.cache.Pushn(epochDataSlice); err != nil {
 		logger.WithError(err).Error("Cache syncer failed to write epoch data to cache store")
 		return false, errors.WithMessage(err, "failed to write epoch data to cache store")
 	}
 
-	syncFrom, syncSize = syncer.syncWindow.shrinkFrom(uint32(syncer.maxSyncEpochs))
-	logrus.WithFields(logrus.Fields{"syncFrom": syncFrom, "syncSize": syncSize}).Trace("Cache syncer succeeded to sync epoch data range")
+	syncer.continuousEmptyQueries = 0 // reset continuous empty queries
+	syncFrom, syncSize = syncer.syncWindow.shrinkFrom(uint32(len(epochDataSlice)))
+
+	logger.WithFields(logrus.Fields{
+		"syncFrom": syncFrom, "finalSyncSize": syncSize,
+	}).Debug("Cache syncer succeeded to sync epoch data range")
 
 	return syncer.syncWindow.isEmpty(), nil
 }
