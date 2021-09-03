@@ -31,6 +31,8 @@ const (
 )
 
 var (
+	maxLogsLimit = hexutil.Uint64(100) // max logs limit to fetch from fullnode && infura
+
 	validEpochFromNoFilePath = ".evno" // file path to read/write epoch number from where the validation will start
 
 	errResultNotMatched = errors.New("results not matched")
@@ -656,17 +658,64 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	if epochNo < randomDiff {
 		randomDiff = 0
 	}
+	fromEpochNo := epochNo - randomDiff
 
-	logger := logrus.WithFields(logrus.Fields{"epochNo": epochNo, "randomDiff": randomDiff})
+	logger := logrus.WithFields(logrus.Fields{
+		"epochNo": epochNo, "randomDiff": randomDiff, "fromEpochNo": fromEpochNo,
+	})
 
 	// filter: epoch range
-	filter := types.LogFilter{
-		FromEpoch: types.NewEpochNumberUint64(epochNo - randomDiff),
-		ToEpoch:   types.NewEpochNumberUint64(epochNo),
+	fromEpoch := types.NewEpochNumberUint64(fromEpochNo)
+	filterByEpoch := types.LogFilter{
+		FromEpoch: fromEpoch, ToEpoch: epoch, Limit: &maxLogsLimit,
 	}
 
-	if err := validator.doValidateGetLogs(filter); err != nil {
-		logger.WithField("filter", filter).WithError(err).Debug("Epoch validator failed to validate cfx_getLogs")
+	if err := validator.doValidateGetLogs(filterByEpoch); err != nil {
+		logger.WithField("filterByEpoch", filterByEpoch).WithError(err).Error("Epoch validator failed to validate cfx_getLogs")
+		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
+	}
+
+	// filter: blockhashes
+	var fromBlockHashes, toBlockHashes []types.Hash
+	fromBlockHashes, err := validator.cfx.GetBlocksByEpoch(fromEpoch)
+	if err == nil && randomDiff != 0 {
+		toBlockHashes, err = validator.cfx.GetBlocksByEpoch(epoch)
+	}
+
+	if err != nil {
+		logger.WithError(err).Error("Epoch validator failed to query epoch block hashes for validating cfx_getLogs")
+		return errors.WithMessage(err, "failed to query epoch block hashes for validating cfx_getLogs")
+	}
+
+	filterByBlockHashes := types.LogFilter{
+		BlockHashes: append(toBlockHashes, fromBlockHashes...),
+		Limit:       &maxLogsLimit,
+	}
+	if err := validator.doValidateGetLogs(filterByBlockHashes); err != nil {
+		logger.WithField("filterByBlockHashes", filterByBlockHashes).WithError(err).Error("Epoch validator failed to validate cfx_getLogs")
+		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
+	}
+
+	// filter: blocknumbers
+	var fromBlock, toBlock *types.BlockSummary
+	fromBlock, err = validator.cfx.GetBlockSummaryByEpoch(fromEpoch)
+	if err == nil {
+		toBlock = fromBlock
+		if randomDiff != 0 {
+			toBlock, err = validator.cfx.GetBlockSummaryByEpoch(epoch)
+		}
+	}
+
+	if err != nil {
+		logger.WithError(err).Error("Epoch validator failed to query epoch pivot block for validating cfx_getLogs")
+		return errors.WithMessage(err, "failed to query epoch pivot block for validating cfx_getLogs")
+	}
+
+	filterByBlockNumbers := types.LogFilter{
+		FromBlock: fromBlock.BlockNumber, ToBlock: toBlock.BlockNumber, Limit: &maxLogsLimit,
+	}
+	if err := validator.doValidateGetLogs(filterByBlockNumbers); err != nil {
+		logger.WithField("filterByBlockNumbers", filterByBlockNumbers).WithError(err).Error("Epoch validator failed to validate cfx_getLogs")
 		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
 	}
 
