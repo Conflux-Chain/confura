@@ -15,7 +15,7 @@ var (
 	validConf test.EVConfig // epoch data validation configuration
 	testCmd   = &cobra.Command{
 		Use:   "test",
-		Short: "Test/validate if infura data complies with fullnode",
+		Short: "Test/validate if infura epoch data complies with fullnode",
 		Run:   startTest,
 	}
 )
@@ -35,7 +35,7 @@ func init() {
 
 func startTest(cmd *cobra.Command, args []string) {
 	if len(validConf.FullnodeRpcEndpoint) == 0 || len(validConf.InfuraRpcEndpoint) == 0 {
-		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for data test/validation")
+		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for epoch data test/validation")
 	}
 
 	// Context to control child go routines

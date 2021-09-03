@@ -43,6 +43,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&syncServerEnabled, "sync", false, "whether to start data sync/prune service")
 
 	rootCmd.AddCommand(testCmd)
+	rootCmd.AddCommand(wsTestCmd)
 }
 
 func start(cmd *cobra.Command, args []string) {
