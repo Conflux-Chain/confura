@@ -57,7 +57,12 @@ func MustNewPubSubValidator(conf *PSVConfig) *PubSubValidator {
 func (validator *PubSubValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 	logrus.WithField("conf", validator.conf).Info("Pubsub validator running to validate epoch data...")
 
+	// newHeads pubsub validation
 	validator.validatePubSubNewHeads()
+
+	// epochs pubsub validation
+	validator.validatePubSubEpochs(types.EpochLatestState)
+	validator.validatePubSubEpochs(types.EpochLatestMined)
 }
 
 func (validator *PubSubValidator) Destroy() {
@@ -151,6 +156,96 @@ func (validator *PubSubValidator) pubSubNewHeadsWithContext(psvCtx *pubsubValida
 	}
 }
 
+func (validator *PubSubValidator) validatePubSubEpochs(subEpochType *types.Epoch) {
+	var fnCh, infuraCh chan *types.WebsocketEpochResponse
+	var fnCtx, infuraCtx *pubsubValidationContext
+
+	fnPubSub := func() *pubsubValidationContext { // fullnode epochs pubsub
+		fnCh = make(chan *types.WebsocketEpochResponse, pubsubValidationChBufferSize)
+		fnCtx = newPubSubValidationContext(validator.cfx, fnCh)
+		go validator.pubSubEpochsWithContext(fnCtx, subEpochType)
+
+		return fnCtx
+	}
+
+	infuraPubSub := func() *pubsubValidationContext { // infura epochs pubsub
+		infuraCh = make(chan *types.WebsocketEpochResponse, pubsubValidationChBufferSize)
+		infuraCtx = newPubSubValidationContext(validator.infura, infuraCh)
+		go validator.pubSubEpochsWithContext(infuraCtx, subEpochType)
+
+		return infuraCtx
+	}
+
+	validator.doValidate(fnPubSub, infuraPubSub, func(calibrate, validate, reset func() error) {
+		logger := logrus.WithField("epoch", subEpochType)
+		for {
+			var valErr error // validation error
+
+			if err := calibrate(); err != nil {
+				logger.WithError(err).Error("Pubsub validator failed to calibrate epochs pubsub")
+			}
+
+			select {
+			case fnh := <-fnCh:
+				fnCtx.rBuf.Enqueue(fnh)
+				valErr = validate()
+			case inh := <-infuraCh:
+				infuraCtx.rBuf.Enqueue(inh)
+				valErr = validate()
+			case err := <-fnCtx.errCh:
+				logger.WithError(err).Error("Pubsub validator epochs pubsub error of fullnode")
+				reset()
+			case err := <-infuraCtx.errCh:
+				logger.WithError(err).Error("Pubsub validator epochs pubsub error of infura")
+				reset()
+			}
+
+			if valErr != nil {
+				logger.WithError(valErr).Error("Pubsub validator failed to validate epochs pubsub")
+			}
+		}
+	})
+}
+
+func (validator *PubSubValidator) pubSubEpochsWithContext(psvCtx *pubsubValidationContext, subEpochType *types.Epoch) {
+	logger := logrus.WithFields(
+		logrus.Fields{
+			"nodeUrl": psvCtx.cfx.GetNodeURL(), "subEpochType": subEpochType,
+		},
+	)
+
+	subFunc := func() (*rpc.ClientSubscription, chan types.WebsocketEpochResponse, error) {
+		epochCh := make(chan types.WebsocketEpochResponse, pubsubValidationChBufferSize)
+		sub, err := psvCtx.cfx.SubscribeEpochs(epochCh, *subEpochType)
+		return sub, epochCh, err
+	}
+
+	for {
+		csub, epochCh, err := subFunc()
+		if err != nil {
+			logger.WithError(err).Error("Pubsub validator failed to do epochs pubsub subscription")
+			time.Sleep(time.Second * 2)
+			continue
+		}
+
+		psvCtx.setStatus(true)
+
+		for psvCtx.getStatus() {
+			select {
+			case err = <-csub.Err():
+				logger.WithError(err).Error("Pubsub validator epochs pubsub subscription error")
+				csub.Unsubscribe()
+
+				if psvCtx.setStatus(false) {
+					psvCtx.errCh <- err
+				}
+			case h := <-epochCh: // epoch received from pubsub
+				psvCtx.notify(&h)
+			}
+		}
+	}
+}
+
 type pubsubFunc func() *pubsubValidationContext
 type watchFunc func(calibrate, validate, reset func() error)
 
@@ -215,7 +310,7 @@ func (validator *PubSubValidator) resetWithContext(fnCtx, infuraCtx *pubsubValid
 func (validator *PubSubValidator) validateWithContext(fnCtx, infuraCtx *pubsubValidationContext) error {
 	fnBufSize, infuraBufSize := fnCtx.rBuf.ContentSize(), infuraCtx.rBuf.ContentSize()
 	logger := logrus.WithFields(logrus.Fields{
-		"fnBufSize": fnBufSize, "infuraBufSize": infuraBufSize,
+		"fnBufSize": fnBufSize, "infuraBufSize": infuraBufSize, "ctxChType": fnCtx.etype,
 	})
 
 	if fnBufSize == 0 || infuraBufSize == 0 {
@@ -271,7 +366,7 @@ func (validator *PubSubValidator) doCalibrate(fnCtx, infuraCtx *pubsubValidation
 		"fnStartPos": i, "infuraStartPos": j, "commonLength": l,
 	}).Debug("Pubsub validator found first common subarray joint points")
 
-	if l >= minSubSize { // trim common elements from ring buffer
+	if l >= minSubSize { // left trim elements until first non-common element from ring buffer
 		for i += l; i > 0; i-- {
 			fnCtx.rBuf.Dequeue()
 		}
