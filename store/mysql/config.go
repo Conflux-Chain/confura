@@ -2,6 +2,8 @@ package mysql
 
 import (
 	"fmt"
+	stdLog "log"
+	"os"
 	"strings"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
+	gormLogger "gorm.io/gorm/logger"
 )
 
 // Config represents the mysql configurations to open a database instance.
@@ -73,13 +76,32 @@ func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {
+	logrusLogLevel := logrus.GetLevel()
+	gLogLevel := gormLogger.Warn
+
+	switch { // map log level of logrus to that of gorm
+	case logrusLogLevel <= logrus.ErrorLevel:
+		gLogLevel = gormLogger.Error
+	case logrusLogLevel >= logrus.DebugLevel:
+		gLogLevel = gormLogger.Info // gorm info log level is kind of too verbose
+	}
+
+	// create gorm logger by customizing the default logger
+	gLogger := gormLogger.New(
+		stdLog.New(os.Stdout, "\r\n", stdLog.LstdFlags), // io writer
+		gormLogger.Config{
+			SlowThreshold:             time.Millisecond * 200, // slow SQL threshold (200ms)
+			LogLevel:                  gLogLevel,              // log level
+			IgnoreRecordNotFoundError: true,                   // never logging on ErrRecordNotFound error, otherwise logs may grow exploded
+			Colorful:                  true,                   // use colorful print
+		},
+	)
+
 	// refer to https://github.com/go-sql-driver/mysql#dsn-data-source-name
 	dsn := fmt.Sprintf("%v:%v@tcp(%v)/%v?parseTime=true", config.Username, config.Password, config.Host, database)
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
-
-	if logrus.GetLevel() == logrus.DebugLevel {
-		db = db.Debug()
-	}
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		Logger: gLogger,
+	})
 
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to open mysql")
