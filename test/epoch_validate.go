@@ -711,9 +711,16 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 		return errors.WithMessage(err, "failed to query epoch pivot block for validating cfx_getLogs")
 	}
 
+	// TODO: Bug with fullnode which doesn't accept genesis block number (0) for log filter
+	// of type block number, hacky code here to skip validation to avoid unnecessary error.
+	if fromBlock.BlockNumber.ToInt().Uint64() == 0 || toBlock.BlockNumber.ToInt().Uint64() == 0 {
+		return nil
+	}
+
 	filterByBlockNumbers := types.LogFilter{
 		FromBlock: fromBlock.BlockNumber, ToBlock: toBlock.BlockNumber, Limit: &maxLogsLimit,
 	}
+
 	if err := validator.doValidateGetLogs(filterByBlockNumbers); err != nil {
 		logger.WithField("filterByBlockNumbers", filterByBlockNumbers).WithError(err).Error("Epoch validator failed to validate cfx_getLogs")
 		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
