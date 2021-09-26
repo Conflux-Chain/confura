@@ -5,6 +5,8 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	sdkerr "github.com/Conflux-Chain/go-conflux-sdk/types/errors"
 	"github.com/conflux-chain/conflux-infura/metrics"
+	citypes "github.com/conflux-chain/conflux-infura/types"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -37,28 +39,57 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 		return emptyEpochData, errors.WithMessagef(err, "failed to get blocks by epoch %v", epochNumber)
 	}
 
+	logger := logrus.WithField("epochNo", epochNumber)
+
+	pivotHash := blockHashes[len(blockHashes)-1]
 	blocks := make([]*types.Block, 0, len(blockHashes))
+
+	checkPivotSwitched := func(err error) bool {
+		detected, errCode := sdkerr.DetectErrorCode(err)
+
+		// The error is detected as a business error and pivot hash assumption failed, must be pivot switched
+		if detected && (errCode == sdkerr.CodePivotAssumption || errCode == sdkerr.CodeBlockNotFound) {
+			return true
+		}
+
+		return false
+	}
+
 	for _, hash := range blockHashes {
-		block, err := cfx.GetBlockByHash(hash)
+		block, err := cfx.GetBlockByHashWithPivotAssumption(hash, pivotHash, hexutil.Uint64(epochNumber))
+		pscheck := checkPivotSwitched(err)
+
+		blockEpochNo := citypes.EpochNumberNil
+		if block.EpochNumber != nil {
+			blockEpochNo = block.EpochNumber.ToInt().Uint64()
+		}
+
+		if pscheck || (err == nil && blockEpochNo != epochNumber) {
+			logger.WithFields(logrus.Fields{
+				"blockHash": hash, "pivotHash": pivotHash, "blockEpochNo": blockEpochNo,
+			}).WithError(err).Info("Failed to get block by hash with pivot assumption (regarded as pivot switch)")
+
+			err = ErrEpochPivotSwitched
+		}
+
 		if err != nil {
 			return emptyEpochData, errors.WithMessagef(err, "failed to get block by hash %v", hash)
 		}
 
-		blocks = append(blocks, block)
+		blocks = append(blocks, &block)
 	}
 
 	// Batch get epoch receipts
-	pivotHash := blockHashes[len(blockHashes)-1]
 	epochReceipts, err := cfx.GetEpochReceiptsByPivotBlockHash(pivotHash)
-	if err != nil {
-		detected, errCode := sdkerr.DetectErrorCode(err)
-		// The error is a business error and pivot hash assumption failed, must be pivot switched
-		if sdkerr.IsBusinessError(err) && detected && (errCode == sdkerr.CodePivotAssumption || errCode == sdkerr.CodeBlockNotFound) {
-			logrus.WithError(err).WithField("epochNo", epochNumber).Debug("Failed to query epoch data due to pivot switch")
-			return emptyEpochData, errors.WithMessage(ErrEpochPivotSwitched, err.Error())
-		}
+	if checkPivotSwitched(err) {
+		l := logger.WithField("pivotHash", pivotHash).WithError(err)
+		l.Info("Failed to get epoch receipts with pivot assumption (regarded as pivot switch)")
 
-		return emptyEpochData, err
+		err = ErrEpochPivotSwitched
+	}
+
+	if err != nil {
+		return emptyEpochData, errors.WithMessagef(err, "failed to get epoch receipts by pivot hash %v", pivotHash)
 	}
 
 	receipts := make(map[types.Hash]*types.TransactionReceipt)
