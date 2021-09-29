@@ -42,6 +42,15 @@ func (win *epochWindow) expandTo(epochNo uint64) {
 	}
 }
 
+// Update epochTo of the epoch window to specified number no matter expansion or shrink.
+func (win *epochWindow) updateTo(epochTo uint64) {
+	if win.isSet() {
+		win.epochTo = epochTo
+	} else {
+		win.reset(epochTo, epochTo)
+	}
+}
+
 // Peek if pivot switch will happen if new epoch appended to expand.
 func (win *epochWindow) peekWillPivotSwitch(epochNo uint64) bool {
 	if win.isSet() && win.epochFrom > epochNo {

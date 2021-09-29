@@ -142,6 +142,11 @@ func checkIfEpochIsReverted(cfx sdk.ClientOperator, s store.Store, epochNo uint6
 		return false, errors.WithMessagef(err, "failed to get pivot block for epoch %v from blockchain", epochNo)
 	}
 
+	// Check if block epoch number matched or not
+	if sBlock.EpochNumber == nil || sBlock.EpochNumber.ToInt().Uint64() != epochNo {
+		return true, nil
+	}
+
 	// Compare block hash to see if the epoch is reverted
 	return sBlock.BlockHeader.Hash != epBlock.BlockHeader.Hash, nil
 }

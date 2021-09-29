@@ -123,11 +123,13 @@ func (syncer *KVCacheSyncer) pivotSwitchRevert(revertTo uint64) error {
 
 // Handle new epoch received to detect pivot switch or update epoch sync window
 func (syncer *KVCacheSyncer) handleNewEpoch(newEpoch uint64) {
-	logger := logrus.WithFields(logrus.Fields{"newEpoch": newEpoch, "syncWindow": syncer.syncWindow})
+	logger := logrus.WithFields(logrus.Fields{
+		"newEpoch": newEpoch, "beforeSyncWindow": *(syncer.syncWindow),
+	})
 
 	if logrus.IsLevelEnabled(logrus.DebugLevel) {
 		logger.Debug("Cache syncer handling new epoch received...")
-		defer logger.Debug("Cache syncer new received epoch handled")
+		defer logger.WithField("syncWindow", syncer.syncWindow).Debug("Cache syncer new received epoch handled")
 	}
 
 	// Peek if pivot switch will happen with the new epoch received
@@ -156,8 +158,8 @@ func (syncer *KVCacheSyncer) handleNewEpoch(newEpoch uint64) {
 		return
 	}
 
-	// Expand the sync window to the new epoch received
-	syncer.syncWindow.expandTo(newEpoch)
+	// Update upper bound of the sync window to the new epoch received
+	syncer.syncWindow.updateTo(newEpoch)
 }
 
 // Ticker to catch up or sync epoch data
