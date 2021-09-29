@@ -3,12 +3,14 @@ package sync
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
+	citypes "github.com/conflux-chain/conflux-infura/types"
 	gometrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -34,8 +36,9 @@ type KVCacheSyncer struct {
 	syncWindow             *epochWindow // epoch sync window on which the sync polling depends
 	continuousEmptyQueries uint32       // continuous empty epoch queries
 
-	subEpochCh   chan uint64 // receive the epoch from pub/sub to detect pivot chain switch or to update epoch sync window
-	checkPointCh chan bool   // checkpoint channel received to check epoch data
+	lastSubEpochNo uint64      // last received epoch number from subscription, which is used for pubsub validation
+	subEpochCh     chan uint64 // receive the epoch from pub/sub to detect pivot chain switch or to update epoch sync window
+	checkPointCh   chan bool   // checkpoint channel received to check epoch data
 }
 
 // NewKVCacheSyncer creates an instance of KVCacheSyncer to sync latest state epoch data.
@@ -50,8 +53,9 @@ func NewKVCacheSyncer(cfx sdk.ClientOperator, cache store.CacheStore) *KVCacheSy
 		maxSyncEpochs: viper.GetUint64("sync.maxEpochs"),
 		syncWindow:    newEpochWindow(decayedEpochGapThreshold),
 
-		subEpochCh:   make(chan uint64, viper.GetInt64("sync.sub.buffer")),
-		checkPointCh: make(chan bool, 2),
+		lastSubEpochNo: citypes.EpochNumberNil,
+		subEpochCh:     make(chan uint64, viper.GetInt64("sync.sub.buffer")),
+		checkPointCh:   make(chan bool, 2),
 	}
 
 	// Ensure epoch data not reverted
@@ -247,16 +251,59 @@ func (syncer *KVCacheSyncer) syncOnce() (bool, error) {
 	return syncer.syncWindow.isEmpty(), nil
 }
 
+// Validate new received epoch from pubsub to check if it's continous to the last received
+// subscription epoch number or pivot switched.
+func (syncer *KVCacheSyncer) validateNewReceivedEpoch(newEpoch uint64) error {
+	addrPtr := &(syncer.lastSubEpochNo)
+	lastSubEpochNo := atomic.LoadUint64(addrPtr)
+
+	logger := logrus.WithFields(logrus.Fields{
+		"newEpoch": newEpoch, "lastSubEpochNo": lastSubEpochNo,
+	})
+
+	switch {
+	case lastSubEpochNo == citypes.EpochNumberNil: // initial state
+		logger.Debug("Cache syncer initially set last sub epoch number for validation")
+
+		atomic.StoreUint64(addrPtr, newEpoch)
+		return nil
+	case lastSubEpochNo >= newEpoch: // pivot switch
+		logger.Info("Cache syncer validated pubsub new epoch pivot switched")
+
+		atomic.StoreUint64(addrPtr, newEpoch)
+		return nil
+	case lastSubEpochNo+1 == newEpoch: // continuous
+		logger.Debug("Cache syncer validated pubsub new epoch continuous")
+
+		atomic.StoreUint64(addrPtr, newEpoch)
+		return nil
+	default: // bad incontinuous epoch
+		err := errors.New("epoch not continuous")
+		logger.WithError(err).Error("Cache syncer failed to validate new epoch from pubsub")
+
+		return err
+	}
+}
+
 // implement the EpochSubscriber interface.
 func (syncer *KVCacheSyncer) onEpochReceived(epoch types.WebsocketEpochResponse) {
 	epochNo := epoch.EpochNumber.ToInt().Uint64()
 
 	logrus.WithField("epoch", epochNo).Debug("Cache syncer onEpochReceived new epoch received")
+
+	if err := syncer.validateNewReceivedEpoch(epochNo); err != nil {
+		// Failed to validate new epoch received from pubsub. This is serious because it might incur
+		// data consistency problem.
+		// TODO: Should we panic and exit for this?
+		logrus.WithError(err).Error("!!! Cache syncer failed to validate new received epoch from pubsub")
+	}
+
 	syncer.subEpochCh <- epochNo
 }
 
 func (syncer *KVCacheSyncer) onEpochSubStart() {
 	logrus.Debug("Cache syncer onEpochSubStart event received")
 
+	atomic.StoreUint64(&(syncer.lastSubEpochNo), citypes.EpochNumberNil) // reset lastSubEpochNo
 	syncer.checkPointCh <- true
 }
