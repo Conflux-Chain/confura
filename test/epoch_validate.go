@@ -17,8 +17,11 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+
+	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
+
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -711,14 +714,19 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 		return errors.WithMessage(err, "failed to query epoch pivot block for validating cfx_getLogs")
 	}
 
+	fromBlockNo := fromBlock.BlockNumber.ToInt().Uint64()
+	toBlockNo := toBlock.BlockNumber.ToInt().Uint64()
+
 	// TODO: Bug with fullnode which doesn't accept genesis block number (0) for log filter
 	// of type block number, hacky code here to skip validation to avoid unnecessary error.
-	if fromBlock.BlockNumber.ToInt().Uint64() == 0 || toBlock.BlockNumber.ToInt().Uint64() == 0 {
+	if fromBlockNo == 0 || toBlockNo == 0 {
 		return nil
 	}
 
+	// ensure test block number range within bound
+	toBlockNo = util.MinUint64(toBlockNo, fromBlockNo+store.MaxLogBlockRange-1)
 	filterByBlockNumbers := types.LogFilter{
-		FromBlock: fromBlock.BlockNumber, ToBlock: toBlock.BlockNumber, Limit: &maxLogsLimit,
+		FromBlock: fromBlock.BlockNumber, ToBlock: types.NewBigInt(toBlockNo), Limit: &maxLogsLimit,
 	}
 
 	if err := validator.doValidateGetLogs(filterByBlockNumbers); err != nil {
