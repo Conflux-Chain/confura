@@ -155,8 +155,13 @@ func startRpcServer(db, cache store.Store) *util.RpcServer {
 		}
 	}
 
-	server := rpc.NewServer(router, cfxHandler)
-	go server.MustServe(viper.GetString("endpoint"), viper.GetString("wsEndpoint"))
+	exposedModules := viper.GetStringSlice("rpc.exposedModules")
+	server := rpc.MustNewServer(router, cfxHandler, exposedModules)
+
+	httpEndpoint := viper.GetString("rpc.endpoint")
+	wsEndpoint := viper.GetString("rpc.wsEndpoint")
+	go server.MustServe(httpEndpoint, wsEndpoint)
+
 	return server
 }
 

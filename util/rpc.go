@@ -25,12 +25,16 @@ type RpcServer struct {
 // MustNewRpcServer creates an instance of RpcServer with specified RPC services.
 func MustNewRpcServer(name string, rpcs map[string]interface{}) *RpcServer {
 	handler := rpc.NewServer()
+	servedApis := make([]string, 0, len(rpcs))
 
 	for namespace, impl := range rpcs {
 		if err := handler.RegisterName(namespace, impl); err != nil {
 			logrus.WithError(err).WithField("namespace", namespace).Fatal("Failed to register rpc service")
 		}
+		servedApis = append(servedApis, namespace)
 	}
+
+	logrus.WithField("APIs", servedApis).Info("RPC server APIs registered")
 
 	return &RpcServer{
 		name: name,
