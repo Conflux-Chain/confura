@@ -6,6 +6,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -44,13 +45,23 @@ func (p *ClientProvider) GetClient(key string, isWebsocket bool) (sdk.ClientOper
 		mapClients = &p.clients
 	}
 
+	logger := logrus.WithFields(logrus.Fields{
+		"key": key, "isWebsocket": isWebsocket,
+	})
+
+	if len(url) == 0 {
+		err := errors.New("no full node routed from the router")
+		logger.WithError(err).Error("Failed to get full node client from provider")
+
+		return nil, err
+	}
+
 	nodeName := util.Url2NodeName(url)
 
-	logrus.WithFields(logrus.Fields{
-		"key":  key,
-		"node": nodeName,
-		"url":  url,
-	}).Trace("Route RPC requests")
+	logger = logger.WithFields(logrus.Fields{
+		"node": nodeName, "url": url,
+	})
+	logger.Trace("Route RPC requests")
 
 	client, loaded, err := mapClients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
 		// TODO improvements required
@@ -64,15 +75,14 @@ func (p *ClientProvider) GetClient(key string, isWebsocket bool) (sdk.ClientOper
 	})
 
 	if err != nil {
-		logrus.WithError(err).WithField("url", url).Error("Failed to connect to full node")
+		err := errors.WithMessage(err, "bad full node connection")
+		logger.WithError(err).Error("Failed to get full node client from provider")
+
 		return nil, err
 	}
 
 	if !loaded {
-		logrus.WithFields(logrus.Fields{
-			"node": nodeName,
-			"url":  url,
-		}).Info("Succeeded to connect to full node")
+		logger.Info("Succeeded to connect to full node")
 	}
 
 	return client.(sdk.ClientOperator), nil

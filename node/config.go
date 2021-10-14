@@ -55,6 +55,12 @@ type recoverConfig struct {
 }
 
 type routerConfig struct {
-	RedisURL   string
-	NodeRPCURL string
+	RedisURL        string
+	NodeRPCURL      string
+	ChainedFailover chainedFailoverConfig
+}
+
+type chainedFailoverConfig struct {
+	URL   string
+	WSURL string
 }

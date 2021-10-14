@@ -60,16 +60,17 @@ func MustNewRouterFromViper() Router {
 		routers = append(routers, NewLocalRouterFromViper())
 	}
 
-	return NewChainedRouter(routers...)
+	return NewChainedRouter(cfg.Router.ChainedFailover, routers...)
 }
 
 // chainedRouter routes RPC requests in chained responsibility pattern.
 type chainedRouter struct {
-	routers []Router
+	failover chainedFailoverConfig
+	routers  []Router
 }
 
-func NewChainedRouter(routers ...Router) Router {
-	return &chainedRouter{routers}
+func NewChainedRouter(failover chainedFailoverConfig, routers ...Router) Router {
+	return &chainedRouter{failover: failover, routers: routers}
 }
 
 func (r *chainedRouter) Route(key []byte) string {
@@ -79,9 +80,12 @@ func (r *chainedRouter) Route(key []byte) string {
 		}
 	}
 
-	logrus.Warn("No router handled the route key")
+	l := logrus.WithFields(logrus.Fields{
+		"failover": r.failover.URL, "key": string(key),
+	})
+	l.Warn("No router handled the route key, failover to chained default")
 
-	return ""
+	return r.failover.URL
 }
 
 func (r *chainedRouter) WSRoute(key []byte) string {
@@ -91,9 +95,12 @@ func (r *chainedRouter) WSRoute(key []byte) string {
 		}
 	}
 
-	logrus.Warn("No router handled the websocket route key")
+	l := logrus.WithFields(logrus.Fields{
+		"failover": r.failover.WSURL, "key": string(key),
+	})
+	l.Warn("No router handled the websocket route key, failover to chained default")
 
-	return ""
+	return r.failover.WSURL
 }
 
 // RedisRouter routes RPC requests via redis.
@@ -219,11 +226,17 @@ func NewLocalRouterFromViper() *LocalRouter {
 }
 
 func (r *LocalRouter) Route(key []byte) string {
-	return r.hashRing.LocateKey(key).String()
+	if member := r.hashRing.LocateKey(key); member != nil {
+		return member.String()
+	}
+	return ""
 }
 
 func (r *LocalRouter) WSRoute(key []byte) string {
-	return r.wsHashRing.LocateKey(key).String()
+	if member := r.wsHashRing.LocateKey(key); member != nil {
+		return member.String()
+	}
+	return ""
 }
 
 func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {

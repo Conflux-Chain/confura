@@ -117,7 +117,12 @@ func (m *Manager) Distribute(key []byte) *Node {
 		return m.nodes[name]
 	}
 
-	node := m.hashRing.LocateKey(key).(*Node)
+	member := m.hashRing.LocateKey(key)
+	if member == nil { // in case of empty consistent member
+		return nil
+	}
+
+	node := member.(*Node)
 	m.resolver.Put(k, node.Name())
 
 	return node
@@ -125,5 +130,9 @@ func (m *Manager) Distribute(key []byte) *Node {
 
 // Route implements the Router interface.
 func (m *Manager) Route(key []byte) string {
-	return m.Distribute(key).GetNodeURL()
+	if n := m.Distribute(key); n != nil {
+		return n.GetNodeURL()
+	}
+
+	return ""
 }
