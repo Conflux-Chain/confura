@@ -221,7 +221,7 @@ func (api *cfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockH
 	return cfx.GetBlockByHashWithPivotAssumption(blockHash, pivotHash, epoch)
 }
 
-func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch *types.Epoch, includeTxs bool) (interface{}, error) {
+func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (interface{}, error) {
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch, "includeTxs": includeTxs})
 
 	if !util.IsInterfaceValNil(api.handler) {
@@ -230,7 +230,7 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch *types.Epoch
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlockByEpochNumber/store/hitratio", *isHit)
 		}(&isStoreHit)
 
-		block, err := api.handler.GetBlockByEpochNumber(ctx, epoch, includeTxs)
+		block, err := api.handler.GetBlockByEpochNumber(ctx, &epoch, includeTxs)
 		if err == nil {
 			logger.Debug("Loading epoch data for cfx_getBlockByEpochNumber hit in the store")
 
@@ -248,14 +248,14 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch *types.Epoch
 	}
 
 	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getBlockByEpochNumber rpc request to fullnode")
-	api.inputEpochMetric.update(epoch, "cfx_getBlockByEpochNumber", cfx)
+	api.inputEpochMetric.update(&epoch, "cfx_getBlockByEpochNumber", cfx)
 
 	if includeTxs {
 		metrics.GetOrRegisterGauge("rpc/cfx_getBlockByEpochNumber/details", nil).Inc(1)
-		return cfx.GetBlockByEpoch(epoch)
+		return cfx.GetBlockByEpoch(&epoch)
 	}
 
-	return cfx.GetBlockSummaryByEpoch(epoch)
+	return cfx.GetBlockSummaryByEpoch(&epoch)
 }
 
 func (api *cfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (block interface{}, err error) {
@@ -517,7 +517,7 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(ctx context.Context, account, 
 	return cfx.CheckBalanceAgainstTransaction(account, contract, gas, price, storage, toSlice(epoch)...)
 }
 
-func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) ([]types.Hash, error) {
+func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch})
 
 	if !util.IsInterfaceValNil(api.handler) {
@@ -526,7 +526,7 @@ func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) ([]
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlocksByEpoch/store/hitratio", *isHit)
 		}(&isStoreHit)
 
-		blockHashes, err := api.handler.GetBlocksByEpoch(ctx, epoch)
+		blockHashes, err := api.handler.GetBlocksByEpoch(ctx, &epoch)
 		if err == nil {
 			logger.Debug("Loading epoch data for cfx_getBlocksByEpoch hit in the store")
 
@@ -544,19 +544,19 @@ func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) ([]
 	}
 
 	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getBlocksByEpoch rpc request to fullnode")
-	api.inputEpochMetric.update(epoch, "cfx_getBlocksByEpoch", cfx)
+	api.inputEpochMetric.update(&epoch, "cfx_getBlocksByEpoch", cfx)
 
-	return cfx.GetBlocksByEpoch(epoch)
+	return cfx.GetBlocksByEpoch(&epoch)
 }
 
-func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch *types.Epoch) ([]types.Hash, error) {
+func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return emptyHashes, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getSkippedBlocksByEpoch", cfx)
-	return cfx.GetSkippedBlocksByEpoch(epoch)
+	api.inputEpochMetric.update(&epoch, "cfx_getSkippedBlocksByEpoch", cfx)
+	return cfx.GetSkippedBlocksByEpoch(&epoch)
 }
 
 func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
