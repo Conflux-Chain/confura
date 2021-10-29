@@ -219,6 +219,11 @@ func loadLogs(db *gorm.DB, filter store.LogFilter, partitions []string) ([]types
 		db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
 	}
 
+	// Unfortunately MySQL (v5.7 as we know) will select primary as default index,
+	// which will incur performance problem as table rows grow up.
+	// Here order by epoch descendingly to force index on epoch to improve query performance.
+	db = db.Order("epoch DESC")
+
 	// IMPORTANT: full node returns the last N logs.
 	// To limit the number of records fetched for better performance,  we'd better retrieve
 	// the logs in reverse order first, and then reverse them for the final order.
