@@ -765,7 +765,7 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 
 			for _, part := range partitions {
 				afterER, err := loadLogsTblPartitionEpochRanges(dbTx, part)
-				if err != nil {
+				if err != nil && !ms.IsRecordNotFound(err) {
 					return txOpAffects, errors.WithMessage(err, "failed to load logs partitions epoch ranges after deletion")
 				}
 
