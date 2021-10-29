@@ -185,14 +185,19 @@ func (log *log) toRPCLog() types.Log {
 }
 
 func loadLogs(db *gorm.DB, filter store.LogFilter, partitions []string) ([]types.Log, error) {
+	// Unfortunately MySQL (v5.7 as we know) will select primary as default index,
+	// which will incur performance problem as table rows grow up.
+	// Here order by specified field descendingly to force index to improve query performance.
 	switch filter.Type {
 	case store.LogFilterTypeBlockHashes:
 		db = applyVariadicFilter(db, "block_hash_id", filter.BlockHashIds)
 		db = applyVariadicFilter(db, "block_hash", filter.BlockHashes)
 	case store.LogFilterTypeBlockRange:
 		db = db.Where("block_number BETWEEN ? AND ?", filter.BlockRange.EpochFrom, filter.BlockRange.EpochTo)
+		db = db.Order("block_number DESC")
 	case store.LogFilterTypeEpochRange:
 		db = db.Where("epoch BETWEEN ? AND ?", filter.EpochRange.EpochFrom, filter.EpochRange.EpochTo)
+		db = db.Order("epoch DESC")
 	}
 
 	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
@@ -218,11 +223,6 @@ func loadLogs(db *gorm.DB, filter store.LogFilter, partitions []string) ([]types
 	if len(partitions) > 0 {
 		db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
 	}
-
-	// Unfortunately MySQL (v5.7 as we know) will select primary as default index,
-	// which will incur performance problem as table rows grow up.
-	// Here order by epoch descendingly to force index on epoch to improve query performance.
-	db = db.Order("epoch DESC")
 
 	// IMPORTANT: full node returns the last N logs.
 	// To limit the number of records fetched for better performance,  we'd better retrieve
