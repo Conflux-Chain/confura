@@ -187,11 +187,16 @@ func (log *log) toRPCLog() types.Log {
 func loadLogs(db *gorm.DB, filter store.LogFilter, partitions []string) ([]types.Log, error) {
 	// Unfortunately MySQL (v5.7 as we know) will select primary as default index,
 	// which will incur performance problem as table rows grow up.
-	// Here order by specified field descendingly to force index to improve query performance.
+	// Here we order by specified field descendingly to force use some MySQL index to
+	// improve query performance.
+	var prefind func()
 	switch filter.Type {
 	case store.LogFilterTypeBlockHashes:
 		db = applyVariadicFilter(db, "block_hash_id", filter.BlockHashIds)
 		db = applyVariadicFilter(db, "block_hash", filter.BlockHashes)
+		prefind = func() {
+			db = db.Order("block_hash_id DESC")
+		}
 	case store.LogFilterTypeBlockRange:
 		db = db.Where("block_number BETWEEN ? AND ?", filter.BlockRange.EpochFrom, filter.BlockRange.EpochTo)
 		db = db.Order("block_number DESC")
@@ -228,6 +233,9 @@ func loadLogs(db *gorm.DB, filter store.LogFilter, partitions []string) ([]types
 	// To limit the number of records fetched for better performance,  we'd better retrieve
 	// the logs in reverse order first, and then reverse them for the final order.
 	db = db.Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit))
+	if prefind != nil {
+		prefind()
+	}
 
 	var logs []log
 	if err := db.Find(&logs).Error; err != nil {
