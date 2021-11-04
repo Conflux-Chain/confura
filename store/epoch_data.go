@@ -6,18 +6,34 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	sdkerr "github.com/Conflux-Chain/go-conflux-sdk/types/errors"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 var (
-	emptyEpochData = EpochData{} // flyweight instance for empty EpochData
+	// flyweight instance for empty EpochData
+	emptyEpochData = EpochData{}
+
+	// blacklisted contract address set
+	blacklistedAddressSet = map[string]struct{}{}
 
 	errBlockValidationFailed = errors.New("epoch block validation failed")
 )
+
+func init() {
+	// Load blacklisted contract address.
+	blAddrs := viper.GetStringSlice("sync.addrBlacklist")
+	if len(blAddrs) > 0 { // setup blacklisted address set
+		for _, addr := range blAddrs {
+			blacklistedAddressSet[strings.ToLower(addr)] = struct{}{}
+		}
+	}
+}
 
 // EpochData wraps the blockchain data of an epoch.
 type EpochData struct {
@@ -171,7 +187,9 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 				log.LogIndex = types.NewBigInt(logIndex)
 				log.TransactionLogIndex = types.NewBigInt(txLogIndex)
 
-				logs = append(logs, log)
+				if !isAddressBlacklisted(&log.Address) { // skip blacklisted address
+					logs = append(logs, log)
+				}
 
 				txLogIndex++
 				logIndex++
@@ -183,6 +201,19 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 	}
 
 	return EpochData{epochNumber, blocks, receipts}, nil
+}
+
+// Check if address blacklisted or not
+func isAddressBlacklisted(addr *cfxaddress.Address) bool {
+	if len(blacklistedAddressSet) == 0 {
+		return false
+	}
+
+	addrStr := addr.MustGetBase32Address()
+	addrStr = strings.ToLower(addrStr)
+
+	_, exists := blacklistedAddressSet[addrStr]
+	return exists
 }
 
 // Check if epoch pivot switched from query or validation error.
