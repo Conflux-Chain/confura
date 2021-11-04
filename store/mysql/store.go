@@ -14,6 +14,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )
 
@@ -24,7 +25,16 @@ var (
 		store.EpochTransaction: "txs",
 		store.EpochLog:         "logs",
 	}
+
+	// Min number of epochs to be left pruned, which is used to check if an epoch pruned
+	// or not against some epoch range.
+	minNumEpochsLeftToBePruned uint64
 )
+
+func init() {
+	maxPruneEpochs := viper.GetInt("prune.db.maxEpochs") * 2
+	minNumEpochsLeftToBePruned = util.MaxUint64(uint64(maxPruneEpochs), 10)
+}
 
 type StoreOption struct {
 	// Whether to calibrate epoch statistics by running MySQL OLAP if needed. This is necessary to
@@ -901,12 +911,21 @@ func (ms *mysqlStore) checkLogsEpochRangeWithinStore(epochFrom, epochTo uint64) 
 		"type": epochStatsEpochRange, "key": getEpochRangeStatsKey(store.EpochLog),
 	}
 
-	mdb := ms.db.Where(cond).Where("`epoch1` <= ? AND `epoch2` >= ?", epochFrom, epochTo)
-	if err := mdb.Select("id").First(&stats).Error; err != nil {
+	mdb := ms.db.Where(cond).Select("id", "epoch1", "epoch2")
+	if err := mdb.First(&stats).Error; err != nil {
 		return false, err
 	}
 
-	return stats.ID > 0, nil
+	// Check if epoch logs already pruned or not.
+	if stats.Epoch1 > (epochFrom + minNumEpochsLeftToBePruned) {
+		return false, store.ErrAlreadyPruned
+	}
+
+	if stats.Epoch1 <= epochFrom && stats.Epoch2 >= epochTo {
+		return true, nil
+	}
+
+	return false, store.ErrNotFound
 }
 
 // Find the right logs table partition(s) for the specified epoch range. It will check
@@ -1096,7 +1115,7 @@ func (ms *mysqlStore) updateMaxEpochTx(dbTx *gorm.DB, newMaxEpoch uint64, growFr
 }
 
 func (ms *mysqlStore) updateMinEpochTx(dbTx *gorm.DB, dt store.EpochDataType, newMinEpoch uint64) error {
-	logrus.WithField("newMinEpoch", newMinEpoch).Debug("Update max of epoch range in db store")
+	logrus.WithField("newMinEpoch", newMinEpoch).Debug("Update min of epoch range in db store")
 
 	keys := []string{getEpochRangeStatsKey(dt)}
 	if atomic.LoadUint64(&ms.minEpoch) > newMinEpoch {

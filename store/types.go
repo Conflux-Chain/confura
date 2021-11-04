@@ -44,6 +44,7 @@ var (
 	ErrUnsupported            = errors.New("not supported")
 	ErrEpochPivotSwitched     = errors.New("epoch pivot switched")
 	ErrContinousEpochRequired = errors.New("continous epoch required")
+	ErrAlreadyPruned          = errors.New("data already pruned")
 
 	// operationable epoch data types
 	OpEpochDataTypes = []EpochDataType{

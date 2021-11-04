@@ -73,7 +73,11 @@ func (h *CfxStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (
 		return logs, nil
 	}
 
-	if !h.store.IsRecordNotFound(err) && !errors.Is(err, store.ErrUnsupported) { // must be something wrong with the store
+	switch {
+	case h.store.IsRecordNotFound(err):
+	case errors.Is(err, store.ErrUnsupported):
+	case errors.Is(err, store.ErrAlreadyPruned):
+	default: // must be something wrong with the store
 		logrus.WithError(err).Error("cfxStoreHandler failed to get logs from store")
 	}
 

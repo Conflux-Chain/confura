@@ -349,7 +349,8 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	api.inputEpochMetric.update(filter.FromEpoch, "cfx_getLogs/from", cfx)
 	api.inputEpochMetric.update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 
-	if sfilter, ok := store.ParseLogFilter(cfx, &filter); ok && !util.IsInterfaceValNil(api.handler) {
+	sfilter, ok := store.ParseLogFilter(cfx, &filter)
+	if ok && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getLogs/store/hitratio", *isHit)
@@ -368,6 +369,13 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		}
 
 		logger.WithError(err).Debug("Loading epoch data for cfx_getLogs hit missed from the store")
+
+		// Logs already pruned from database? If so, we'd rather not delegate this request to
+		// the fullnode, as it might crush our fullnode.
+		if errors.Is(err, store.ErrAlreadyPruned) {
+			logger.Info("Epoch log data already pruned for cfx_getLogs to return")
+			return emptyLogs, errors.New("failed to get stale epoch logs (data too old)")
+		}
 	}
 
 	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getLogs rpc request to fullnode")
