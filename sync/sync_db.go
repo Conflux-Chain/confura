@@ -16,6 +16,10 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	viperDbSyncEpochFromKey = "sync.db.epochFrom"
+)
+
 // DatabaseSyncer is used to sync blockchain data into database
 // against the latest confirmed epoch.
 type DatabaseSyncer struct {
@@ -85,9 +89,15 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 // Load last sync epoch from databse to continue synchronization
 func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 	_, maxEpoch, err := syncer.db.GetGlobalEpochRange()
-	if err == nil {
+	switch {
+	case err == nil:
 		syncer.epochFrom = maxEpoch + 1
-	} else if !syncer.db.IsRecordNotFound(err) {
+	case syncer.db.IsRecordNotFound(err):
+		// Load db sync start epoch config on initial loading if necessary.
+		if viper.IsSet(viperDbSyncEpochFromKey) {
+			syncer.epochFrom = viper.GetUint64(viperDbSyncEpochFromKey)
+		}
+	default:
 		logrus.WithError(err).Fatal("Failed to read block epoch range from database")
 	}
 }

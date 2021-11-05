@@ -307,16 +307,23 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		return nil
 	}
 
-	// ensure continous epoch
 	lastEpoch := atomic.LoadUint64(&ms.maxEpoch)
 	pushFromEpoch := lastEpoch + 1
 	insertLogs := false // if need to insert logs
 
 	for _, data := range dataSlice {
-		lastEpoch++
+		if lastEpoch == citypes.EpochNumberNil { // initial loading?
+			lastEpoch = data.Number
+			pushFromEpoch = data.Number
+		} else {
+			lastEpoch++
+		}
 
-		if data.Number != lastEpoch {
-			return errors.WithMessagef(store.ErrContinousEpochRequired, "expected epoch #%v, but #%v got", lastEpoch, data.Number)
+		if data.Number != lastEpoch { // ensure continous epoch
+			return errors.WithMessagef(
+				store.ErrContinousEpochRequired,
+				"expected epoch #%v, but #%v got", lastEpoch, data.Number,
+			)
 		}
 
 		if insertLogs || len(data.Receipts) == 0 {
