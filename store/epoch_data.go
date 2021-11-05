@@ -187,7 +187,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 				log.LogIndex = types.NewBigInt(logIndex)
 				log.TransactionLogIndex = types.NewBigInt(txLogIndex)
 
-				if !isAddressBlacklisted(&log.Address) { // skip blacklisted address
+				if !IsAddressBlacklisted(&log.Address) { // skip blacklisted address
 					logs = append(logs, log)
 				}
 
@@ -204,7 +204,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 }
 
 // Check if address blacklisted or not
-func isAddressBlacklisted(addr *cfxaddress.Address) bool {
+func IsAddressBlacklisted(addr *cfxaddress.Address) bool {
 	if len(blacklistedAddressSet) == 0 {
 		return false
 	}

@@ -29,12 +29,24 @@ import (
 )
 
 const (
-	samplingValidationRetries       = 2                      // number of retries on sampling validation failed
-	samplingValidationSleepDuration = time.Millisecond * 300 // sleeping duration before each retry
+	// number of retries on sampling validation failed
+	samplingValidationRetries = 2
+	// sleeping duration before each retry
+	samplingValidationSleepDuration = time.Millisecond * 300
+	// random epoch diff to latest epoch for sampling validation
+	samplingRandomEpochDiff = 100
+
+	// Random epoch diff for getting logs, better keep this span small,
+	// otherwise fullnode maybe exhausted by low performance "cfx_getLogs" call.
+	randomGetLogsEpochDiff = 20
+	// max number of block hashes for log filter
+	maxNumOfLogFilterBlockHashes = 5
+	// max number of block numbers for log filter, ensure less than store.MaxLogBlockRange
+	maxNumOfLogFilterBlockNumbers = 10
 )
 
 var (
-	maxLogsLimit = hexutil.Uint64(100) // max logs limit to fetch from fullnode && infura
+	maxLogsLimit = hexutil.Uint64(50) // max logs limit to fetch from fullnode && infura
 
 	validEpochFromNoFilePath = ".evno" // file path to read/write epoch number from where the validation will start
 
@@ -186,7 +198,7 @@ func (validator *EpochValidator) doSampling() error {
 	// Shuffle epoch number by reduction of random number less than 100
 	latestEpochNo := epoch.ToInt().Uint64()
 
-	randomDiff := util.RandUint64(100)
+	randomDiff := util.RandUint64(samplingRandomEpochDiff)
 	if latestEpochNo < randomDiff {
 		randomDiff = 0
 	}
@@ -657,7 +669,7 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	epochBigInt, _ := epoch.ToInt()
 	epochNo := epochBigInt.Uint64()
 
-	randomDiff := util.RandUint64(200) // better keep this span small, otherwise fullnode maybe exhausted by low performance "cfx_getLogs" call.
+	randomDiff := util.RandUint64(randomGetLogsEpochDiff)
 	if epochNo < randomDiff {
 		randomDiff = 0
 	}
@@ -690,10 +702,16 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 		return errors.WithMessage(err, "failed to query epoch block hashes for validating cfx_getLogs")
 	}
 
+	toBlockHashes = append(toBlockHashes, fromBlockHashes...)
+	if len(toBlockHashes) > maxNumOfLogFilterBlockHashes {
+		toBlockHashes = toBlockHashes[:maxNumOfLogFilterBlockHashes]
+	}
+
 	filterByBlockHashes := types.LogFilter{
-		BlockHashes: append(toBlockHashes, fromBlockHashes...),
+		BlockHashes: toBlockHashes,
 		Limit:       &maxLogsLimit,
 	}
+
 	if err := validator.doValidateGetLogs(filterByBlockHashes); err != nil {
 		logger.WithField("filterByBlockHashes", filterByBlockHashes).WithError(err).Error("Epoch validator failed to validate cfx_getLogs")
 		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
@@ -724,13 +742,17 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	}
 
 	// ensure test block number range within bound
-	toBlockNo = util.MinUint64(toBlockNo, fromBlockNo+store.MaxLogBlockRange-1)
+	toBlockNo = util.MinUint64(toBlockNo, fromBlockNo+maxNumOfLogFilterBlockNumbers-1)
 	filterByBlockNumbers := types.LogFilter{
-		FromBlock: fromBlock.BlockNumber, ToBlock: types.NewBigInt(toBlockNo), Limit: &maxLogsLimit,
+		FromBlock: fromBlock.BlockNumber,
+		ToBlock:   types.NewBigInt(toBlockNo),
+		Limit:     &maxLogsLimit,
 	}
 
 	if err := validator.doValidateGetLogs(filterByBlockNumbers); err != nil {
-		logger.WithField("filterByBlockNumbers", filterByBlockNumbers).WithError(err).Error("Epoch validator failed to validate cfx_getLogs")
+		l := logger.WithField("filterByBlockNumbers", filterByBlockNumbers).WithError(err)
+		l.Error("Epoch validator failed to validate cfx_getLogs")
+
 		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
 	}
 
@@ -745,9 +767,17 @@ func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error
 
 	fnCall := func() (interface{}, error) {
 		if logs1, err1 = validator.cfx.GetLogs(filter); err1 != nil {
-			err1 = errors.WithMessage(err1, "failed to query logs from fullnode")
+			return logs1, errors.WithMessage(err1, "failed to query logs from fullnode")
 		}
-		return logs1, err1
+
+		filteredLogs := make([]types.Log, 0, len(logs1))
+		for _, log := range logs1 { // filter blacklisted address
+			if !store.IsAddressBlacklisted(&log.Address) {
+				filteredLogs = append(filteredLogs, log)
+			}
+		}
+
+		return filteredLogs, nil
 	}
 
 	infuraCall := func() (interface{}, error) {
