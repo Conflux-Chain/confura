@@ -43,7 +43,7 @@ func MustNewCacheStore() *redisStore {
 }
 
 func (rs *redisStore) IsRecordNotFound(err error) bool {
-	return err == redis.Nil || err == store.ErrNotFound
+	return errors.Is(err, redis.Nil) || errors.Is(err, store.ErrNotFound)
 }
 
 func (rs *redisStore) GetBlockEpochRange() (uint64, uint64, error) {

@@ -98,7 +98,7 @@ func mustNewStore(db *gorm.DB, option StoreOption) (ms *mysqlStore) {
 }
 
 func (ms *mysqlStore) IsRecordNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound) || err == store.ErrNotFound
+	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, store.ErrNotFound)
 }
 
 func (ms *mysqlStore) GetBlockEpochRange() (uint64, uint64, error) {
