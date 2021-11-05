@@ -294,8 +294,9 @@ func (syncer *KVCacheSyncer) onEpochReceived(epoch types.WebsocketEpochResponse)
 	if err := syncer.validateNewReceivedEpoch(epochNo); err != nil {
 		// Failed to validate new epoch received from pubsub. This is serious because it might incur
 		// data consistency problem.
-		// TODO: Should we panic and exit for this?
-		logrus.WithError(err).Error("!!! Cache syncer failed to validate new received epoch from pubsub")
+		logrus.WithError(err).Fatal(
+			"!!! Cache syncer failed to validate new received epoch from pubsub",
+		)
 	}
 
 	syncer.subEpochCh <- epochNo
