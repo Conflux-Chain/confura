@@ -102,16 +102,21 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 		blocks = append(blocks, &block)
 	}
 
-	// Batch get epoch receipts.
-	epochReceipts, err := cfx.GetEpochReceiptsByPivotBlockHash(pivotHash)
-	if checkPivotSwitchWithError(err) {
-		logger.WithError(err).Info("Failed to get epoch receipts with pivot assumption (regarded as pivot switch)")
+	var epochReceipts [][]types.TransactionReceipt
+	useBatch := viper.GetBool("sync.useBatch")
 
-		err = ErrEpochPivotSwitched
-	}
+	if useBatch {
+		// Batch get epoch receipts.
+		epochReceipts, err = cfx.GetEpochReceiptsByPivotBlockHash(pivotHash)
+		if checkPivotSwitchWithError(err) {
+			logger.WithError(err).Info("Failed to get epoch receipts with pivot assumption (regarded as pivot switch)")
 
-	if err != nil {
-		return emptyEpochData, errors.WithMessagef(err, "failed to get epoch receipts by pivot %v", pivotHash)
+			err = ErrEpochPivotSwitched
+		}
+
+		if err != nil {
+			return emptyEpochData, errors.WithMessagef(err, "failed to get epoch receipts by pivot %v", pivotHash)
+		}
 	}
 
 	receipts := make(map[types.Hash]*types.TransactionReceipt)
@@ -135,26 +140,34 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 				continue
 			}
 
-			// If epoch not executed yet, cfx_getEpochReceipts will always return null no matter what block hash passed in
-			// as assumptive pivot hash due to fullnode RPC implementation. While we have some executed transaction but
-			// unexecuted receipt here, it is definitely resulted by pivot switch.
-			if epochReceipts == nil {
-				logger.Info("Failed to match tx receipts due to epoch receipts nil (regarded as pivot switch)")
-				return emptyEpochData, errors.WithMessage(ErrEpochPivotSwitched, "batch retrieved epoch receipts nil")
-			}
+			var receipt *types.TransactionReceipt
+			if useBatch {
+				// If epoch not executed yet, cfx_getEpochReceipts will always return null no matter what block hash passed in
+				// as assumptive pivot hash due to fullnode RPC implementation. While we have some executed transaction but
+				// unexecuted receipt here, it is definitely resulted by pivot switch.
+				if epochReceipts == nil {
+					logger.Info("Failed to match tx receipts due to epoch receipts nil (regarded as pivot switch)")
+					return emptyEpochData, errors.WithMessage(ErrEpochPivotSwitched, "batch retrieved epoch receipts nil")
+				}
 
-			// Find transaction receipts from above batch retrieved receipts.
-			// The order of batch retrieved receipts should be the same with the fetched blocks & transactions,
-			// Even so, we'd better also do some bound checking and fault tolerance to be robust.
-			if i >= len(epochReceipts) || j >= len(epochReceipts[i]) {
-				logger.WithField("epochReceipts", epochReceipts).Error("Batch retrieved receipts out of bound")
-				return emptyEpochData, errors.New("batch retrieved receipts out of bound")
-			}
+				// Find transaction receipts from above batch retrieved receipts.
+				// The order of batch retrieved receipts should be the same with the fetched blocks & transactions,
+				// Even so, we'd better also do some bound checking and fault tolerance to be robust.
+				if i >= len(epochReceipts) || j >= len(epochReceipts[i]) {
+					logger.WithField("epochReceipts", epochReceipts).Error("Batch retrieved receipts out of bound")
+					return emptyEpochData, errors.New("batch retrieved receipts out of bound")
+				}
 
-			receipt := &epochReceipts[i][j]
-			if receipt == nil {
-				logger.Error("Batch retrieved receipt not found")
-				return emptyEpochData, errors.Errorf("batch retrieved receipt not found for tx %v", tx.Hash)
+				receipt = &epochReceipts[i][j]
+				if receipt == nil {
+					logger.Error("Batch retrieved receipt not found")
+					return emptyEpochData, errors.Errorf("batch retrieved receipt not found for tx %v", tx.Hash)
+				}
+			} else {
+				receipt, err = cfx.GetTransactionReceipt(tx.Hash)
+				if err != nil {
+					return EpochData{}, errors.WithMessagef(err, "Failed to get receipt by tx hash %v", tx.Hash)
+				}
 			}
 
 			// Check receipt epoch number
