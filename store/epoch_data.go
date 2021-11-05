@@ -166,7 +166,13 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 			} else {
 				receipt, err = cfx.GetTransactionReceipt(tx.Hash)
 				if err != nil {
-					return EpochData{}, errors.WithMessagef(err, "Failed to get receipt by tx hash %v", tx.Hash)
+					return emptyEpochData, errors.WithMessagef(err, "Failed to get receipt by tx hash %v", tx.Hash)
+				}
+
+				// While we have some executed transaction but unexecuted receipt here, it is definitely resulted by pivot switch.
+				if receipt == nil {
+					logger.Info("Failed to get tx receipt due to receipt nil (regarded as pivot switch)")
+					return emptyEpochData, errors.WithMessage(ErrEpochPivotSwitched, "retrieved tx receipt nil")
 				}
 			}
 
