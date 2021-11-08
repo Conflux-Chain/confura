@@ -762,31 +762,25 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 }
 
 func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error {
-	var logs1, logs2 []types.Log
-	var err1, err2 error
-
-	fnCall := func() (interface{}, error) {
-		if logs1, err1 = validator.cfx.GetLogs(filter); err1 != nil {
-			return logs1, errors.WithMessage(err1, "failed to query logs from fullnode")
-		}
-
-		filteredLogs := make([]types.Log, 0, len(logs1))
-		for _, log := range logs1 { // filter blacklisted address
-			if !store.IsAddressBlacklisted(&log.Address) {
-				filteredLogs = append(filteredLogs, log)
+	genCall := func(client sdk.ClientOperator) func() (interface{}, error) {
+		return func() (interface{}, error) {
+			logs, err := client.GetLogs(filter)
+			if err != nil {
+				return logs, errors.WithMessage(err, "failed to query logs from fullnode")
 			}
-		}
 
-		return filteredLogs, nil
+			filteredLogs := make([]types.Log, 0, len(logs))
+			for _, log := range logs { // filter blacklisted address
+				if !store.IsAddressBlacklisted(&log.Address) {
+					filteredLogs = append(filteredLogs, log)
+				}
+			}
+
+			return filteredLogs, nil
+		}
 	}
 
-	infuraCall := func() (interface{}, error) {
-		if logs2, err2 = validator.infura.GetLogs(filter); err2 != nil {
-			err2 = errors.WithMessage(err2, "failed to query logs from infura")
-		}
-		return logs2, err2
-	}
-
+	fnCall, infuraCall := genCall(validator.cfx), genCall(validator.infura)
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
