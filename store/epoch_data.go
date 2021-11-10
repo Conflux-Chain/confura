@@ -169,7 +169,8 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 					return emptyEpochData, errors.WithMessagef(err, "Failed to get receipt by tx hash %v", tx.Hash)
 				}
 
-				// While we have some executed transaction but unexecuted receipt here, it is definitely resulted by pivot switch.
+				// While we have some executed transaction but unexecuted receipt here, it is definitely
+				// resulted by pivot switch.
 				if receipt == nil {
 					logger.Info("Failed to get tx receipt due to receipt nil (regarded as pivot switch)")
 					return emptyEpochData, errors.WithMessage(ErrEpochPivotSwitched, "retrieved tx receipt nil")
@@ -179,20 +180,38 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 			// Check receipt epoch number
 			rcptEpochNumber := uint64(*receipt.EpochNumber)
 			if rcptEpochNumber != epochNumber {
-				logger.WithField("rcptEpochNumber", rcptEpochNumber).Error("Batch retrieved receipt epoch number mismatch")
-				return emptyEpochData, errors.Errorf("batch retrieved receipt epoch number mismatch, value = %v", uint64(*receipt.EpochNumber))
+				logger.WithField("rcptEpochNumber", rcptEpochNumber).Error(
+					"Retrieved receipt epoch number mismatch",
+				)
+				return emptyEpochData, errors.WithMessagef(
+					ErrEpochPivotSwitched,
+					"retrieved receipt epoch number mismatch, value = %v",
+					uint64(*receipt.EpochNumber),
+				)
 			}
 
 			// Check receipt block hash
 			if receipt.BlockHash.String() != block.Hash.String() {
-				logger.WithField("rcptBlockHash", receipt.BlockHash).Error("Batch retrieved receipt block hash mismatch")
-				return emptyEpochData, errors.Errorf("batch retrieved receipt block hash mismatch, value = %v", receipt.BlockHash)
+				logger.WithField("rcptBlockHash", receipt.BlockHash).Error(
+					"Retrieved receipt block hash mismatch",
+				)
+				return emptyEpochData, errors.WithMessagef(
+					ErrEpochPivotSwitched,
+					"retrieved receipt block hash mismatch, value = %v",
+					receipt.BlockHash,
+				)
 			}
 
 			// Check receipt transaction hash
 			if receipt.TransactionHash.String() != tx.Hash.String() {
-				logger.WithField("rcptTxHash", receipt.TransactionHash).Error("Batched retrieved receipt transaction hash mismatch")
-				return emptyEpochData, errors.Errorf("batched retrieved receipt transaction hash mismatch, value = %v", receipt.TransactionHash)
+				logger.WithField("rcptTxHash", receipt.TransactionHash).Error(
+					"Retrieved receipt transaction hash mismatch",
+				)
+				return emptyEpochData, errors.WithMessagef(
+					ErrEpochPivotSwitched,
+					"retrieved receipt transaction hash mismatch, value = %v",
+					receipt.TransactionHash,
+				)
 			}
 
 			// TODO enhance full node RPC to return receipts by block hash
