@@ -604,6 +604,14 @@ delegation:
 	return cfx.GetTransactionReceipt(txHash)
 }
 
+func (api *cfxAPI) GetEpochReceipts(ctx context.Context, epoch types.Epoch) (
+	receipts [][]types.TransactionReceipt, err error,
+) {
+	// TODO: GetEpochReceipts rpc method is not supported yet, since it's too heavy
+	// without pagination && limit support from fullnode.
+	return nil, store.ErrUnsupported
+}
+
 func (api *cfxAPI) GetAccount(ctx context.Context, address types.Address, epoch *types.Epoch) (types.AccountInfo, error) {
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
@@ -688,6 +696,18 @@ func (api *cfxAPI) GetAccountPendingInfo(ctx context.Context, address types.Addr
 	}
 
 	return cfx.GetAccountPendingInfo(address)
+}
+
+func (api *cfxAPI) GetAccountPendingTransactions(
+	ctx context.Context, address types.Address, startNonce *hexutil.Big, limit *hexutil.Uint64,
+) (*types.AccountPendingTransactions, error) {
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	acctPendingTxs, err := cfx.GetAccountPendingTransactions(address, startNonce, limit)
+	return &acctPendingTxs, err
 }
 
 // PubSub notification

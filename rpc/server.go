@@ -65,6 +65,11 @@ func apis(router infuraNode.Router, handler cfxHandler) []API {
 			Service:   newCfxAPI(clientProvider, handler),
 			Public:    true,
 		}, {
+			Namespace: "txpool",
+			Version:   "1.0",
+			Service:   &txPoolAPI{clientProvider},
+			Public:    true,
+		}, {
 			Namespace: "trace",
 			Version:   "1.0",
 			Service:   newTraceAPI(clientProvider),
