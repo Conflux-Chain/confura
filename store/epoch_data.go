@@ -22,7 +22,8 @@ var (
 	// blacklisted contract address set
 	blacklistedAddressSet = map[string]struct{}{}
 
-	errBlockValidationFailed = errors.New("epoch block validation failed")
+	errBlockValidationFailed      = errors.New("epoch block validation failed")
+	errTxsReceiptValidationFailed = errors.New("transaction receipt validation failed")
 )
 
 func init() {
@@ -67,30 +68,20 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 		"epochNo": epochNumber, "pivotHash": pivotHash,
 	})
 
-	validateBlock := func(block *types.Block) error { // epoch block validator
-		if block.EpochNumber == nil {
-			return errors.WithMessage(errBlockValidationFailed, "epoch number is nil")
-		}
-
-		bEpochNumber := block.EpochNumber.ToInt().Uint64()
-		if bEpochNumber != epochNumber {
-			errMsg := fmt.Sprintf("epoch number mismatched, expect %v got %v", epochNumber, bEpochNumber)
-			return errors.WithMessage(errBlockValidationFailed, errMsg)
-		}
-
-		return nil
-	}
-
 	// Fetch epoch block summary one by one.
 	for _, hash := range blockHashes {
 		block, err := cfx.GetBlockByHashWithPivotAssumption(hash, pivotHash, hexutil.Uint64(epochNumber))
 		if err == nil { // validate block first if no error
-			err = validateBlock(&block)
+			err = validateBlock(&block, epochNumber)
 		}
 
 		if checkPivotSwitchWithError(err) { // check pivot switch
-			l := logger.WithFields(logrus.Fields{"blockHash": hash, "blockHeader": &(block.BlockHeader)}).WithError(err)
-			l.Info("Failed to get block by hash with pivot assumption (regarded as pivot switch)")
+			l := logger.WithFields(
+				logrus.Fields{"blockHash": hash, "blockHeader": &(block.BlockHeader)},
+			)
+			l.WithError(err).Info(
+				"Failed to get block by hash with pivot assumption (regarded as pivot switch)",
+			)
 
 			err = ErrEpochPivotSwitched
 		}
@@ -109,13 +100,17 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 		// Batch get epoch receipts.
 		epochReceipts, err = cfx.GetEpochReceiptsByPivotBlockHash(pivotHash)
 		if checkPivotSwitchWithError(err) {
-			logger.WithError(err).Info("Failed to get epoch receipts with pivot assumption (regarded as pivot switch)")
+			logger.WithError(err).Info(
+				"Failed to get epoch receipts with pivot assumption (regarded as pivot switch)",
+			)
 
 			err = ErrEpochPivotSwitched
 		}
 
 		if err != nil {
-			return emptyEpochData, errors.WithMessagef(err, "failed to get epoch receipts by pivot %v", pivotHash)
+			return emptyEpochData, errors.WithMessagef(
+				err, "failed to get epoch receipts by pivot %v", pivotHash,
+			)
 		}
 	}
 
@@ -177,40 +172,13 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 				}
 			}
 
-			// Check receipt epoch number
-			rcptEpochNumber := uint64(*receipt.EpochNumber)
-			if rcptEpochNumber != epochNumber {
-				logger.WithField("rcptEpochNumber", rcptEpochNumber).Error(
-					"Retrieved receipt epoch number mismatch",
+			if err := validateTxsReceipt(receipt, epochNumber, block, &tx); err != nil {
+				logger.WithError(err).Info(
+					"Failed to get transaction receipt (regarded as pivot switch)",
 				)
-				return emptyEpochData, errors.WithMessagef(
-					ErrEpochPivotSwitched,
-					"retrieved receipt epoch number mismatch, value = %v",
-					uint64(*receipt.EpochNumber),
-				)
-			}
 
-			// Check receipt block hash
-			if receipt.BlockHash.String() != block.Hash.String() {
-				logger.WithField("rcptBlockHash", receipt.BlockHash).Error(
-					"Retrieved receipt block hash mismatch",
-				)
-				return emptyEpochData, errors.WithMessagef(
-					ErrEpochPivotSwitched,
-					"retrieved receipt block hash mismatch, value = %v",
-					receipt.BlockHash,
-				)
-			}
-
-			// Check receipt transaction hash
-			if receipt.TransactionHash.String() != tx.Hash.String() {
-				logger.WithField("rcptTxHash", receipt.TransactionHash).Error(
-					"Retrieved receipt transaction hash mismatch",
-				)
-				return emptyEpochData, errors.WithMessagef(
-					ErrEpochPivotSwitched,
-					"retrieved receipt transaction hash mismatch, value = %v",
-					receipt.TransactionHash,
+				return emptyEpochData, errors.WithMessage(
+					ErrEpochPivotSwitched, err.Error(),
 				)
 			}
 
@@ -252,6 +220,54 @@ func IsAddressBlacklisted(addr *cfxaddress.Address) bool {
 
 	_, exists := blacklistedAddressSet[addrStr]
 	return exists
+}
+
+func validateBlock(block *types.Block, epochNumber uint64) error {
+	if block.EpochNumber == nil {
+		return errors.WithMessage(errBlockValidationFailed, "epoch number is nil")
+	}
+
+	bEpochNumber := block.EpochNumber.ToInt().Uint64()
+	if bEpochNumber != epochNumber {
+		errMsg := fmt.Sprintf(
+			"epoch number mismatched, expect %v got %v", epochNumber, bEpochNumber,
+		)
+		return errors.WithMessage(errBlockValidationFailed, errMsg)
+	}
+
+	return nil
+}
+
+func validateTxsReceipt(
+	receipt *types.TransactionReceipt, epochNumber uint64,
+	block *types.Block, tx *types.Transaction,
+) error {
+	// Check receipt epoch number
+	rcptEpochNumber := uint64(*receipt.EpochNumber)
+	if rcptEpochNumber != epochNumber {
+		errMsg := fmt.Sprintf(
+			"epoch number mismatched, expect %v got %v", epochNumber, rcptEpochNumber,
+		)
+		return errors.WithMessage(errTxsReceiptValidationFailed, errMsg)
+	}
+
+	// Check receipt block hash
+	if receipt.BlockHash != block.Hash {
+		errMsg := fmt.Sprintf(
+			"block hash mismatched, expect %v got %v", block.Hash, receipt.BlockHash,
+		)
+		return errors.WithMessage(errTxsReceiptValidationFailed, errMsg)
+	}
+
+	// Check receipt transaction hash
+	if receipt.TransactionHash != tx.Hash {
+		errMsg := fmt.Sprintf(
+			"txs hash mismatched, expect %v got %v", tx.Hash, receipt.TransactionHash,
+		)
+		return errors.WithMessage(errTxsReceiptValidationFailed, errMsg)
+	}
+
+	return nil
 }
 
 // Check if epoch pivot switched from query or validation error.
