@@ -50,7 +50,8 @@ var (
 
 	validEpochFromNoFilePath = ".evno" // file path to read/write epoch number from where the validation will start
 
-	errResultNotMatched = errors.New("results not matched")
+	errResultNotMatched  = errors.New("results not matched")
+	errValidationSkipped = errors.New("validation skipped")
 )
 
 type epochValidationFunc func(epoch *types.Epoch) error
@@ -289,7 +290,8 @@ func (validator *EpochValidator) doRun(epochNo uint64, vfuncs ...epochValidation
 	return nil
 }
 
-// Validate epoch combo api suite eg., cfx_getTransactionByHash/cfx_getTransactionReceipt/cfx_getBlockByHash/cfx_getBlockByBlockNumber
+// Validate epoch combo api suite eg., cfx_getTransactionByHash, cfx_getTransactionReceipt,
+// cfx_getBlockByHash and cfx_getBlockByBlockNumber.
 func (validator *EpochValidator) validateEpochCombo(epoch *types.Epoch) error {
 	epBlockHashes, err := validator.cfx.GetBlocksByEpoch(epoch)
 	if err != nil {
@@ -396,22 +398,29 @@ func (validator *EpochValidator) doValidate(fnCall, infuraCall func() (interface
 
 // Validate cfx_getTransactionReceipt
 func (validator *EpochValidator) validateGetTransactionReceipt(txHash types.Hash) error {
-	var rcpt1, rcpt2 *types.TransactionReceipt
-	var err1, err2 error
+	genCall := func(src string, cfx sdk.ClientOperator) func() (interface{}, error) {
+		return func() (interface{}, error) {
+			rcpt, err := validator.cfx.GetTransactionReceipt(txHash)
+			if err != nil {
+				return rcpt, errors.WithMessagef(
+					err, "failed to query transaction receipts from %v", src,
+				)
+			}
 
-	fnCall := func() (interface{}, error) {
-		if rcpt1, err1 = validator.cfx.GetTransactionReceipt(txHash); err1 != nil {
-			err1 = errors.WithMessage(err1, "failed to query transaction receipts from fullnode")
+			filteredLogs := make([]types.Log, 0, len(rcpt.Logs))
+			for _, log := range rcpt.Logs {
+				if !store.IsAddressBlacklisted(&log.Address) {
+					filteredLogs = append(filteredLogs, log)
+				}
+			}
+
+			rcpt.Logs = filteredLogs
+			return rcpt, nil
 		}
-		return rcpt1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
-		if rcpt2, err2 = validator.infura.GetTransactionReceipt(txHash); err2 != nil {
-			err2 = errors.WithMessage(err2, "failed to query transaction receipts from infura")
-		}
-		return rcpt2, err2
-	}
+	fnCall := genCall("fullnode", validator.cfx)
+	infuraCall := genCall("infura", validator.infura)
 
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
@@ -762,27 +771,37 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 }
 
 func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error {
-	genCall := func(client sdk.ClientOperator) func() (interface{}, error) {
+	genCall := func(src string, client sdk.ClientOperator) func() (interface{}, error) {
 		return func() (interface{}, error) {
 			logs, err := client.GetLogs(filter)
 			if err != nil {
-				return logs, errors.WithMessage(err, "failed to query logs from fullnode")
+				return logs, errors.WithMessagef(err, "failed to query logs from %v", src)
 			}
 
-			filteredLogs := make([]types.Log, 0, len(logs))
-			for _, log := range logs { // filter blacklisted address
-				if !store.IsAddressBlacklisted(&log.Address) {
-					filteredLogs = append(filteredLogs, log)
+			for _, log := range logs {
+				// skip validation due to log of blacklisted address found
+				if store.IsAddressBlacklisted(&log.Address) {
+					logrus.WithFields(logrus.Fields{
+						"source":        src,
+						"filter":        filter,
+						"blackListAddr": log.Address.String(),
+					}).Debug(
+						"Epoch validator skipped cfx_getLogs validation due to blacklisted address found",
+					)
+
+					return logs, errValidationSkipped
 				}
 			}
 
-			return filteredLogs, nil
+			return logs, nil
 		}
 	}
 
-	fnCall, infuraCall := genCall(validator.cfx), genCall(validator.infura)
+	fnCall := genCall("fullnode", validator.cfx)
+	infuraCall := genCall("infura", validator.infura)
+
 	mi, err := validator.doValidate(fnCall, infuraCall)
-	if err != nil {
+	if err != nil && !isValidationSkippedErr(err) {
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "filter": filter,
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getLogs")
@@ -811,4 +830,15 @@ func (validator *EpochValidator) Destroy() {
 
 	// Save scaning cursor
 	validator.saveScanCursor()
+}
+
+func isValidationSkippedErr(err error) bool {
+	errs := multierr.Errors(err)
+	for _, e := range errs {
+		if errors.Is(e, errValidationSkipped) {
+			return true
+		}
+	}
+
+	return false
 }
