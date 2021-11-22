@@ -70,6 +70,11 @@ func apis(router infuraNode.Router, handler cfxHandler) []API {
 			Service:   &txPoolAPI{clientProvider},
 			Public:    true,
 		}, {
+			Namespace: "pos",
+			Version:   "1.0",
+			Service:   newPosAPI(clientProvider),
+			Public:    true,
+		}, {
 			Namespace: "trace",
 			Version:   "1.0",
 			Service:   newTraceAPI(clientProvider),
