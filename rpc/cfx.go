@@ -710,6 +710,22 @@ func (api *cfxAPI) GetAccountPendingTransactions(
 	return &acctPendingTxs, err
 }
 
+func (api *cfxAPI) GetPoSEconomics(ctx context.Context, epoch ...*types.Epoch) (*types.PoSEconomics, error) {
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: remove this type assertion once Golang SDK interface method added.
+	cfxc, ok := cfx.(*sdk.Client)
+	if !ok {
+		return nil, store.ErrUnsupported
+	}
+
+	posEconomics, err := cfxc.GetPoSEconomics(epoch...)
+	return &posEconomics, err
+}
+
 // PubSub notification
 
 // NewHeads send a notification each time a new header (block) is appended to the chain.
