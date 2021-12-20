@@ -53,7 +53,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
 	db := config.mustNewDB(config.Database)
 
 	if newCreated {
-		if err := db.Migrator().CreateTable(&transaction{}, &block{}, &log{}, &epochStats{}); err != nil {
+		if err := db.Migrator().CreateTable(&transaction{}, &block{}, &log{}, &epochStats{}, &conf{}); err != nil {
 			logrus.WithError(err).Fatal("Failed to create tables")
 		}
 

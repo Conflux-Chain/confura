@@ -377,3 +377,16 @@ func loadEpochStats(db *gorm.DB, est epochStatsType, keys ...string) ([]epochSta
 	err := db.Where(cond).Find(&ess).Error
 	return ess, err
 }
+
+// conf configuration tables
+type conf struct {
+	ID        uint32
+	Name      string `gorm:"unique;size:128;not null"` // config name
+	Value     string `gorm:"size:256;not null"`        // config value
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (conf) TableName() string {
+	return "configs"
+}

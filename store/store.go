@@ -51,6 +51,11 @@ type Store interface {
 	// DequeueLogs removes epoch logs from the store like dequeuing a queue,
 	// which is deleting data from the oldest epoch to some new epoch
 	DequeueLogs(epochUntil uint64) error
+
+	// LoadConfig load configurations with specified names
+	LoadConfig(confNames ...string) (map[string]interface{}, error)
+	// StoreConfig stores configuration name to value pair
+	StoreConfig(confName string, confVal interface{}) error
 }
 
 type CacheStore interface {

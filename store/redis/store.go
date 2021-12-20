@@ -256,6 +256,29 @@ func (rs *redisStore) Flush() error {
 	return rs.rdb.FlushDBAsync(rs.ctx).Err()
 }
 
+func (rs *redisStore) LoadConfig(confNames ...string) (map[string]interface{}, error) {
+	iSlice, err := rs.rdb.HMGet(rs.ctx, "conf", confNames...).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	res := make(map[string]interface{}, len(iSlice))
+	for i, v := range iSlice {
+		sv, ok := v.(string)
+		if !ok { // field not found
+			continue
+		}
+
+		res[confNames[i]] = sv
+	}
+
+	return res, nil
+}
+
+func (rs *redisStore) StoreConfig(confName string, confVal interface{}) error {
+	return rs.rdb.HSet(rs.ctx, "conf", confName, confVal).Err()
+}
+
 func (rs *redisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKeys ...string) error {
 	for {
 		err := rs.rdb.Watch(rs.ctx, func(tx *redis.Tx) error {

@@ -22,8 +22,10 @@ type API struct {
 // Argument exposedModules is a list of API modules to expose via the RPC interface.
 // If the module list is empty, all RPC API endpoints designated public will be
 // exposed.
-func MustNewServer(router infuraNode.Router, handler cfxHandler, exposedModules []string) *util.RpcServer {
-	allApis := apis(router, handler) // retrieve all available RPC apis
+func MustNewServer(
+	router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler, exposedModules []string,
+) *util.RpcServer {
+	allApis := apis(router, handler, gashandler) // retrieve all available RPC apis
 	servedApis := make(map[string]interface{}, len(allApis))
 
 	for _, api := range allApis {
@@ -55,7 +57,7 @@ func MustNewServer(router infuraNode.Router, handler cfxHandler, exposedModules 
 }
 
 // apis returns the collection of built-in RPC APIs.
-func apis(router infuraNode.Router, handler cfxHandler) []API {
+func apis(router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler) []API {
 	clientProvider := infuraNode.NewClientProvider(router)
 
 	return []API{
@@ -83,6 +85,11 @@ func apis(router infuraNode.Router, handler cfxHandler) []API {
 			Namespace: "metrics",
 			Version:   "1.0",
 			Service:   &metricsAPI{},
+			Public:    false,
+		}, {
+			Namespace: "gasstation",
+			Version:   "1.0",
+			Service:   newGasStationAPI(gashandler),
 			Public:    false,
 		},
 	}

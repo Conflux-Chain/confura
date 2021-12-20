@@ -16,6 +16,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -440,6 +441,30 @@ func (ms *mysqlStore) Close() error {
 	} else {
 		return mysqlDb.Close()
 	}
+}
+
+func (ms *mysqlStore) LoadConfig(confNames ...string) (map[string]interface{}, error) {
+	var confs []conf
+
+	if err := ms.db.Where("name IN ?", confNames).Find(&confs).Error; err != nil {
+		return nil, err
+	}
+
+	res := make(map[string]interface{}, len(confs))
+	for _, c := range confs {
+		res[c.Name] = c.Value
+	}
+
+	return res, nil
+}
+
+func (ms *mysqlStore) StoreConfig(confName string, confVal interface{}) error {
+	return ms.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "name"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{"value": confVal}),
+	}).Create(&conf{
+		Name: confName, Value: confVal.(string),
+	}).Error
 }
 
 // calibrateEpochStats calibrates epoch statistics by running MySQL OLAP.

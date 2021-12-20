@@ -1,6 +1,6 @@
 {
     "rpc": {
-        "exposedModules": ["cfx", "txpool", "pos", "trace", "metrics"],
+        "exposedModules": ["cfx", "txpool", "pos", "trace", "metrics", "gasstation"],
         "endpoint": ":22537",
         "wsEndpoint": ":22535"
     },
