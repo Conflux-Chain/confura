@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"math/big"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
@@ -153,6 +154,18 @@ const ( // gas station price configs
 	ConfGasStationPriceAverage = "gasstation_price_average"
 )
 
+var (
+	defaultGasStationPriceFastest = big.NewInt(1_000_000_000) // (1G)
+	defaultGasStationPriceFast    = big.NewInt(100_000_000)   // (100M)
+	defaultGasStationPriceAverage = big.NewInt(10_000_000)    // (10M)
+	defaultGasStationPriceSafeLow = big.NewInt(1_000_000)     // (1M)
+
+	maxGasStationPriceFastest = big.NewInt(100_000_000_000) // (100G)
+	maxGasStationPriceFast    = big.NewInt(10_000_000_000)  // (10G)
+	maxGasStationPriceAverage = big.NewInt(1_000_000_000)   // (1G)
+	maxGasStationPriceSafeLow = big.NewInt(100_000_000)     // (100M)
+)
+
 // GasStationHandler gas station handler for gas price estimation etc.,
 type GasStationHandler struct {
 	db, cache store.Store
@@ -163,11 +176,18 @@ func NewGasStationHandler(db, cache store.Store) *GasStationHandler {
 }
 
 func (handler *GasStationHandler) GetPrice() (*itypes.GasStationPrice, error) {
-	gasStationPriceConfs := []string{
+	gasStationPriceConfs := []string{ // order is important !!!
 		ConfGasStationPriceFast,
 		ConfGasStationPriceFastest,
 		ConfGasStationPriceSafeLow,
 		ConfGasStationPriceAverage,
+	}
+
+	maxGasStationPrices := []*big.Int{ // order is important !!!
+		maxGasStationPriceFast,
+		maxGasStationPriceFastest,
+		maxGasStationPriceSafeLow,
+		maxGasStationPriceAverage,
 	}
 
 	var gasPriceConf map[string]interface{}
@@ -190,7 +210,8 @@ func (handler *GasStationHandler) GetPrice() (*itypes.GasStationPrice, error) {
 		gasPriceConf, err = handler.db.LoadConfig(gasStationPriceConfs...)
 		if err != nil {
 			logrus.WithError(err).Error("Failed to get gasstation price config from db")
-			return nil, err
+
+			goto defaultR
 		}
 
 		logrus.WithField("gasPriceConf", gasPriceConf).Debug("Gasstation price loaded from db")
@@ -198,11 +219,11 @@ func (handler *GasStationHandler) GetPrice() (*itypes.GasStationPrice, error) {
 		if useCache { // update cache
 			for confName, confVal := range gasPriceConf {
 				if err := handler.cache.StoreConfig(confName, confVal); err != nil {
-					logrus.WithError(err).Error("Failed to update gasstation price config in cache")
+					logrus.WithError(err).Error("Failed to update gas station price config in cache")
 				} else {
 					logrus.WithFields(logrus.Fields{
 						"confName": confName, "confVal": confVal,
-					}).Debug("Update gasstation price config in cache")
+					}).Debug("Update gas station price config in cache")
 				}
 			}
 		}
@@ -211,36 +232,52 @@ func (handler *GasStationHandler) GetPrice() (*itypes.GasStationPrice, error) {
 	if len(gasPriceConf) == len(gasStationPriceConfs) {
 		var gsp itypes.GasStationPrice
 
-		var bigV1 hexutil.Big
-		fastGasPrice := gasPriceConf[ConfGasStationPriceFast].(string)
-		if err := bigV1.UnmarshalText([]byte(fastGasPrice)); err != nil {
-			return nil, err
+		setPtrs := []**hexutil.Big{ // order is important !!!
+			&gsp.Fast, &gsp.Fastest, &gsp.SafeLow, &gsp.Average,
 		}
-		gsp.Fast = &bigV1
 
-		var bigV2 hexutil.Big
-		fastestGasPrice := gasPriceConf[ConfGasStationPriceFastest].(string)
-		if err := bigV2.UnmarshalText([]byte(fastestGasPrice)); err != nil {
-			return nil, err
-		}
-		gsp.Fastest = &bigV2
+		for i, gpc := range gasStationPriceConfs {
+			var bigV hexutil.Big
 
-		var bigV3 hexutil.Big
-		safeLowGasPrice := gasPriceConf[ConfGasStationPriceSafeLow].(string)
-		if err := bigV3.UnmarshalText([]byte(safeLowGasPrice)); err != nil {
-			return nil, err
-		}
-		gsp.SafeLow = &bigV3
+			gasPriceHex, ok := gasPriceConf[gpc].(string)
+			if !ok {
+				logrus.WithFields(logrus.Fields{
+					"gasPriceConfig": gpc, "gasPriceConf": gasPriceConf,
+				}).Error("Invalid gas statation gas price config")
 
-		var bigV4 hexutil.Big
-		averageGasPrice := gasPriceConf[ConfGasStationPriceAverage].(string)
-		if err := bigV4.UnmarshalText([]byte(averageGasPrice)); err != nil {
-			return nil, err
+				goto defaultR
+			}
+
+			if err := bigV.UnmarshalText([]byte(gasPriceHex)); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"gasPriceConfig": gpc, "gasPriceHex": gasPriceHex,
+				}).Error("Failed to unmarshal gas price from hex string")
+
+				goto defaultR
+			}
+
+			if maxGasStationPrices[i].Cmp((*big.Int)(&bigV)) < 0 {
+				logrus.WithFields(logrus.Fields{
+					"gasPriceConfig": gpc, "bigV": bigV.ToInt(),
+				}).Warn("Configured gas statation price overflows max limit, pls double check")
+
+				*setPtrs[i] = (*hexutil.Big)(maxGasStationPrices[i])
+			} else {
+				*setPtrs[i] = &bigV
+			}
 		}
-		gsp.Average = &bigV4
 
 		return &gsp, nil
 	}
 
-	return nil, store.ErrUnsupported
+defaultR:
+	logrus.Debug("Gas station uses default as final gas price")
+
+	// use default gas price
+	return &itypes.GasStationPrice{
+		Fast:    (*hexutil.Big)(defaultGasStationPriceFast),
+		Fastest: (*hexutil.Big)(defaultGasStationPriceFastest),
+		SafeLow: (*hexutil.Big)(defaultGasStationPriceSafeLow),
+		Average: (*hexutil.Big)(defaultGasStationPriceAverage),
+	}, nil
 }
