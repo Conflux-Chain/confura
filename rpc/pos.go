@@ -41,7 +41,7 @@ func (api *posAPI) GetAccount(
 		return nil, err
 	}
 
-	account, err := cfx.Pos().GetAccount(address, convertHexUint64Slice(view)...)
+	account, err := cfx.Pos().GetAccount(address, view...)
 	return &account, err
 }
 
@@ -53,7 +53,7 @@ func (api *posAPI) GetCommittee(
 		return emptyPosCommitteState, err
 	}
 
-	committeeSate, err := cfx.Pos().GetCommittee(convertHexUint64Slice(view)...)
+	committeeSate, err := cfx.Pos().GetCommittee(view...)
 	return &committeeSate, err
 }
 
@@ -89,8 +89,7 @@ func (api *posAPI) GetTransactionByNumber(
 		return nil, err
 	}
 
-	// TODO: go sdk bugfix (issue #123)
-	posTx, err := cfx.Pos().GetTransactionByNumber(uint64(txNumber))
+	posTx, err := cfx.Pos().GetTransactionByNumber(txNumber)
 	return posTx, err
 }
 
@@ -102,17 +101,6 @@ func (api *posAPI) GetRewardsByEpoch(
 		return nil, err
 	}
 
-	// TODO: go sdk bugfix (issue #123)
-	epochRewards, err := cfx.Pos().GetRewardsByEpoch(uint64(epochNumber))
+	epochRewards, err := cfx.Pos().GetRewardsByEpoch(epochNumber)
 	return &epochRewards, err
-}
-
-// TODO: Remove this method once issue (#123) gets resolved.
-func convertHexUint64Slice(sHexUint64 []hexutil.Uint64) []uint64 {
-	scUint64 := []uint64{}
-	for _, v := range sHexUint64 {
-		scUint64 = append(scUint64, uint64(v))
-	}
-
-	return scUint64
 }
