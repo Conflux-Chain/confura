@@ -127,5 +127,15 @@
                 "wsUrl": ""
             }
         }
+    },
+    "relay":{
+        "concurrency": 1,
+        "retry": 3,
+        "retryInterval": "1s",
+        "requestTimeout": "3s",
+        "nodeUrls": [
+            "http://test.confluxrpc.com",
+            "http://portal-test.confluxrpc.com"
+        ]
     }
 }

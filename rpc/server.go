@@ -2,6 +2,7 @@ package rpc
 
 import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
+	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 )
@@ -23,9 +24,9 @@ type API struct {
 // If the module list is empty, all RPC API endpoints designated public will be
 // exposed.
 func MustNewServer(
-	router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler, exposedModules []string,
+	router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler, exposedModules []string, relayer *relay.TxnRelayer,
 ) *util.RpcServer {
-	allApis := apis(router, handler, gashandler) // retrieve all available RPC apis
+	allApis := apis(router, handler, gashandler, relayer) // retrieve all available RPC apis
 	servedApis := make(map[string]interface{}, len(allApis))
 
 	for _, api := range allApis {
@@ -57,14 +58,14 @@ func MustNewServer(
 }
 
 // apis returns the collection of built-in RPC APIs.
-func apis(router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler) []API {
+func apis(router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler, relayer *relay.TxnRelayer) []API {
 	clientProvider := infuraNode.NewClientProvider(router)
 
 	return []API{
 		{
 			Namespace: "cfx",
 			Version:   "1.0",
-			Service:   newCfxAPI(clientProvider, handler),
+			Service:   newCfxAPI(clientProvider, handler, relayer),
 			Public:    true,
 		}, {
 			Namespace: "txpool",

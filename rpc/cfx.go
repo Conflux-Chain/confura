@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
+	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -35,12 +36,16 @@ type cfxAPI struct {
 	provider         *node.ClientProvider
 	inputEpochMetric inputEpochMetric
 	handler          cfxHandler
+	relayer          *relay.TxnRelayer
 }
 
-func newCfxAPI(provider *node.ClientProvider, handler cfxHandler) *cfxAPI {
+func newCfxAPI(
+	provider *node.ClientProvider, handler cfxHandler, relayer *relay.TxnRelayer,
+) *cfxAPI {
 	return &cfxAPI{
 		provider: provider,
 		handler:  handler,
+		relayer:  relayer,
 	}
 }
 
@@ -318,7 +323,15 @@ func (api *cfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Byte
 		return "", err
 	}
 
-	return cfx.SendRawTransaction(signedTx)
+	txHash, err := cfx.SendRawTransaction(signedTx)
+	if err == nil {
+		// relay transaction broadcasting asynchronously
+		if !api.relayer.AsyncRelay(signedTx) {
+			logrus.Warn("Transaction relay pool is full")
+		}
+	}
+
+	return txHash, err
 }
 
 func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *types.Epoch) (hexutil.Bytes, error) {

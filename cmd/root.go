@@ -11,6 +11,7 @@ import (
 
 	"github.com/conflux-chain/conflux-infura/config"
 	"github.com/conflux-chain/conflux-infura/node"
+	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/rpc"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
@@ -156,9 +157,10 @@ func startRpcServer(db, cache store.Store) *util.RpcServer {
 	}
 
 	gasHandler := rpc.NewGasStationHandler(db, cache)
-
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
-	server := rpc.MustNewServer(router, cfxHandler, gasHandler, exposedModules)
+	txRelayer := relay.MustNewTxnRelayerFromViper()
+
+	server := rpc.MustNewServer(router, cfxHandler, gasHandler, exposedModules, txRelayer)
 
 	httpEndpoint := viper.GetString("rpc.endpoint")
 	wsEndpoint := viper.GetString("rpc.wsEndpoint")
