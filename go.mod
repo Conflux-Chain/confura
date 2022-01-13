@@ -20,7 +20,8 @@ require (
 	github.com/zealws/golang-ring v0.0.0-20210116075443-7c86fdb43134
 	go.uber.org/multierr v1.1.0
 	gorm.io/driver/mysql v1.0.5
-	gorm.io/gorm v1.21.15
+	gorm.io/gorm v1.22.2
+	gorm.io/hints v1.1.0
 )
 
 // replace github.com/Conflux-Chain/go-conflux-sdk => ../go-conflux-sdk

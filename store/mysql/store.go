@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/hints"
 )
 
 var (
@@ -244,6 +245,53 @@ func (ms *mysqlStore) GetReceipt(txHash types.Hash) (*types.TransactionReceipt, 
 	var receipt types.TransactionReceipt
 	util.MustUnmarshalRLP(tx.ReceiptRawData, &receipt)
 
+	// If unknown number of event logs (for back compatibility) or no event logs
+	// exists inside transaction receipts, just skip retrieving && assembling
+	// event logs for it.
+	if tx.NumReceiptLogs <= 0 {
+		return &receipt, nil
+	}
+
+	partitions, err := findLogsPartitionsEpochRangeWithinStoreTx(ms.db, tx.Epoch, tx.Epoch)
+	if err != nil {
+		err = errors.WithMessage(err, "failed to get partitions for receipt logs assembling")
+		return nil, err
+	}
+
+	if len(partitions) == 0 { // no partitions found?
+		return nil, errors.New("no partitions found for receipt logs assembling")
+	}
+
+	// TODO: add benchmark to see if adding transaction hash short ID as index in logs table
+	// would bring better performance.
+	blockHashId := util.GetShortIdOfHash(string(receipt.BlockHash))
+	db := ms.db.Where(
+		"epoch = ? AND block_hash_id = ? AND tx_hash = ?", tx.Epoch, blockHashId, tx.Hash,
+	)
+	db = db.Clauses(hints.UseIndex("idx_logs_block_hash_id"))
+	db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
+
+	var logs []log
+
+	if err := db.Find(&logs).Error; err != nil {
+		err = errors.WithMessage(err, "failed to get data for receipt logs assembling")
+		return nil, err
+	}
+
+	if len(logs) != tx.NumReceiptLogs { // validate number of assembled receipt logs
+		err := errors.Errorf(
+			"num of assembled receipt logs mismatched, expect %v got %v",
+			tx.NumReceiptLogs, len(logs),
+		)
+		return nil, err
+	}
+
+	rpcLogs := make([]types.Log, 0, len(logs))
+	for i := 0; i < len(logs); i++ {
+		rpcLogs = append(rpcLogs, logs[i].toRPCLog())
+	}
+
+	receipt.Logs = rpcLogs
 	return &receipt, nil
 }
 

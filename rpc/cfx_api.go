@@ -617,14 +617,6 @@ delegation:
 	return cfx.GetTransactionReceipt(txHash)
 }
 
-func (api *cfxAPI) GetEpochReceipts(ctx context.Context, epoch types.Epoch) (
-	receipts [][]types.TransactionReceipt, err error,
-) {
-	// TODO: GetEpochReceipts rpc method is not supported yet, since it's too heavy
-	// without pagination && limit support from fullnode.
-	return nil, store.ErrUnsupported
-}
-
 func (api *cfxAPI) GetAccount(ctx context.Context, address types.Address, epoch *types.Epoch) (types.AccountInfo, error) {
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {

@@ -25,6 +25,7 @@ type transaction struct {
 	TxRawDataLen      uint64 `gorm:"not null"`
 	ReceiptRawData    []byte `gorm:"type:MEDIUMBLOB"`
 	ReceiptRawDataLen uint64 `gorm:"not null"`
+	NumReceiptLogs    int    `gorm:"default:-1"`
 }
 
 func (transaction) TableName() string {
@@ -32,16 +33,27 @@ func (transaction) TableName() string {
 }
 
 func newTx(tx *types.Transaction, receipt *types.TransactionReceipt) *transaction {
+	rcptPtr := receipt
+
+	// Receipt logs are not persisted into db store to save storage space, since
+	// they can be retrieved and assembled from event logs.
+	if len(receipt.Logs) > 0 {
+		rcptCopy := *receipt
+		rcptCopy.Logs = []types.Log{}
+		rcptPtr = &rcptCopy
+	}
+
 	result := &transaction{
 		Epoch:          uint64(*receipt.EpochNumber),
 		Hash:           tx.Hash.String(),
 		TxRawData:      util.MustMarshalRLP(tx),
-		ReceiptRawData: util.MustMarshalRLP(receipt),
+		ReceiptRawData: util.MustMarshalRLP(rcptPtr),
 	}
 
 	result.HashId = util.GetShortIdOfHash(result.Hash)
 	result.TxRawDataLen = uint64(len(result.TxRawData))
 	result.ReceiptRawDataLen = uint64(len(result.ReceiptRawData))
+	result.NumReceiptLogs = len(receipt.Logs)
 
 	return result
 }
