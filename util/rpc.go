@@ -34,7 +34,10 @@ func MustNewRpcServer(name string, rpcs map[string]interface{}) *RpcServer {
 		servedApis = append(servedApis, namespace)
 	}
 
-	logrus.WithField("APIs", servedApis).Info("RPC server APIs registered")
+	logrus.WithFields(logrus.Fields{
+		"APIs": servedApis,
+		"name": name,
+	}).Info("RPC server APIs registered")
 
 	return &RpcServer{
 		name: name,
@@ -65,7 +68,10 @@ func (s *RpcServer) MustServe(endpoints ...string) {
 			logrus.WithError(err).WithField("endpoint", endpoints[i]).Fatal("Failed to listen to endpoint")
 		}
 
-		logrus.WithField("endpoint", endpoints[i]).Info("JSON RPC server started")
+		logrus.WithFields(logrus.Fields{
+			"endpoint": endpoints[i],
+			"name":     s.name,
+		}).Info("JSON RPC server started")
 
 		go servers[i].Serve(listener)
 	}

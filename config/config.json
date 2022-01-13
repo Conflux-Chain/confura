@@ -1,12 +1,16 @@
 {
     "rpc": {
-        "exposedModules": ["cfx", "txpool", "pos", "trace", "metrics", "gasstation"],
+        "exposedModules": [],
         "endpoint": ":22537",
         "wsEndpoint": ":22535"
     },
     "ethrpc": {
-        "exposedModules": ["eth"],
+        "exposedModules": [],
         "endpoint": ":22539"
+    },
+    "cfxBridge": {
+        "exposedModules": [],
+        "endpoint": ":32537"
     },
     "cfx": {
         "ws": "ws://test.confluxrpc.com/ws",

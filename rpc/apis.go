@@ -3,6 +3,7 @@ package rpc
 import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
+	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/pkg/errors"
 )
 
@@ -103,4 +104,21 @@ func evmSpaceApis(router infuraNode.Router) []API {
 			Public:    true,
 		},
 	}
+}
+
+// nativeSpaceBridgeApis adapts EVM space RPCs to native space RPCs.
+func nativeSpaceBridgeApis(nodeURL string) ([]API, error) {
+	cfxApi, err := cfxbridge.NewCfxAPI(nodeURL)
+	if err != nil {
+		return nil, err
+	}
+
+	return []API{
+		{
+			Namespace: "cfx",
+			Version:   "1.0",
+			Service:   cfxApi,
+			Public:    true,
+		},
+	}, nil
 }

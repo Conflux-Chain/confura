@@ -10,6 +10,8 @@ import (
 const (
 	nativeSpaceRpcServerName = "native_space_rpc"
 	evmSpaceRpcServerName    = "evm_space_rpc"
+
+	nativeSpaceBridgeRpcServerName = "native_space_bridge_rpc"
 )
 
 // MustNewNativeSpaceServer new native space RPC server by specifying router, handler
@@ -48,4 +50,18 @@ func MustNewEvmSpaceServer(router infuraNode.Router, exposedModules []string) *u
 	}
 
 	return util.MustNewRpcServer(evmSpaceRpcServerName, exposedApis)
+}
+
+func MustNewNativeSpaceBridgeServer(nodeURL string, exposedModules []string) *util.RpcServer {
+	allApis, err := nativeSpaceBridgeApis(nodeURL)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server")
+	}
+
+	exposedApis, err := filterExposedApis(allApis, exposedModules)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server with bad exposed modules")
+	}
+
+	return util.MustNewRpcServer(nativeSpaceBridgeRpcServerName, exposedApis)
 }
