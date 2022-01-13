@@ -34,7 +34,7 @@ var (
 
 type cfxAPI struct {
 	provider         *node.ClientProvider
-	inputEpochMetric inputEpochMetric
+	inputEpochMetric cimetrics.InputEpochMetric
 	handler          cfxHandler
 	relayer          *relay.TxnRelayer
 }
@@ -72,7 +72,7 @@ func (api *cfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexuti
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_epochNumber", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_epochNumber", cfx)
 	return cfx.GetEpochNumber(toSlice(epoch)...)
 }
 
@@ -82,7 +82,7 @@ func (api *cfxAPI) GetBalance(ctx context.Context, address types.Address, epoch 
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getBalance", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getBalance", cfx)
 	return cfx.GetBalance(address, toSlice(epoch)...)
 }
 
@@ -92,7 +92,7 @@ func (api *cfxAPI) GetAdmin(ctx context.Context, contract types.Address, epoch *
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getAdmin", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getAdmin", cfx)
 	return cfx.GetAdmin(contract, toSlice(epoch)...)
 }
 
@@ -102,7 +102,7 @@ func (api *cfxAPI) GetSponsorInfo(ctx context.Context, contract types.Address, e
 		return emptySponsorInfo, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getSponsorInfo", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getSponsorInfo", cfx)
 	return cfx.GetSponsorInfo(contract, toSlice(epoch)...)
 }
 
@@ -112,7 +112,7 @@ func (api *cfxAPI) GetStakingBalance(ctx context.Context, address types.Address,
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getStakingBalance", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getStakingBalance", cfx)
 	return cfx.GetStakingBalance(address, toSlice(epoch)...)
 }
 
@@ -122,7 +122,7 @@ func (api *cfxAPI) GetDepositList(ctx context.Context, address types.Address, ep
 		return emptyDepositInfos, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getDepositList", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getDepositList", cfx)
 	return cfx.GetDepositList(address, toSlice(epoch)...)
 }
 
@@ -132,7 +132,7 @@ func (api *cfxAPI) GetVoteList(ctx context.Context, address types.Address, epoch
 		return emptyVoteStakeInfos, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getVoteList", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getVoteList", cfx)
 	return cfx.GetVoteList(address, toSlice(epoch)...)
 }
 
@@ -142,7 +142,7 @@ func (api *cfxAPI) GetCollateralForStorage(ctx context.Context, address types.Ad
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getCollateralForStorage", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getCollateralForStorage", cfx)
 	return cfx.GetCollateralForStorage(address, toSlice(epoch)...)
 }
 
@@ -152,7 +152,7 @@ func (api *cfxAPI) GetCode(ctx context.Context, contract types.Address, epoch *t
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getCode", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getCode", cfx)
 	return cfx.GetCode(contract, toSlice(epoch)...)
 }
 
@@ -162,7 +162,7 @@ func (api *cfxAPI) GetStorageAt(ctx context.Context, address types.Address, posi
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getStorageAt", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getStorageAt", cfx)
 	return cfx.GetStorageAt(address, position, toSlice(epoch)...)
 }
 
@@ -172,7 +172,7 @@ func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, ep
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getStorageRoot", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getStorageRoot", cfx)
 	return cfx.GetStorageRoot(address, toSlice(epoch)...)
 }
 
@@ -253,7 +253,7 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch,
 	}
 
 	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getBlockByEpochNumber rpc request to fullnode")
-	api.inputEpochMetric.update(&epoch, "cfx_getBlockByEpochNumber", cfx)
+	api.inputEpochMetric.Update(&epoch, "cfx_getBlockByEpochNumber", cfx)
 
 	if includeTxs {
 		metrics.GetOrRegisterGauge("rpc/cfx_getBlockByEpochNumber/details", nil).Inc(1)
@@ -313,7 +313,7 @@ func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoc
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getNextNonce", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getNextNonce", cfx)
 	return cfx.GetNextNonce(address, toSlice(epoch)...)
 }
 
@@ -340,7 +340,7 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_call", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_call", cfx)
 	return cfx.Call(request, epoch)
 }
 
@@ -359,8 +359,8 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	}
 
 	// TODO optimize cfx_getLogs metrics with asynchronization to minimize side effect for rpc request
-	api.inputEpochMetric.update(filter.FromEpoch, "cfx_getLogs/from", cfx)
-	api.inputEpochMetric.update(filter.ToEpoch, "cfx_getLogs/to", cfx)
+	api.inputEpochMetric.Update(filter.FromEpoch, "cfx_getLogs/from", cfx)
+	api.inputEpochMetric.Update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 
 	sfilter, ok := store.ParseLogFilter(cfx, &filter)
 	if ok && !util.IsInterfaceValNil(api.handler) {
@@ -524,7 +524,7 @@ func (api *cfxAPI) EstimateGasAndCollateral(ctx context.Context, request types.C
 		return types.Estimate{}, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_estimateGasAndCollateral", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_estimateGasAndCollateral", cfx)
 	return cfx.EstimateGasAndCollateral(request, toSlice(epoch)...)
 }
 
@@ -534,7 +534,7 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(ctx context.Context, account, 
 		return types.CheckBalanceAgainstTransactionResponse{}, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_checkBalanceAgainstTransaction", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_checkBalanceAgainstTransaction", cfx)
 	return cfx.CheckBalanceAgainstTransaction(account, contract, gas, price, storage, toSlice(epoch)...)
 }
 
@@ -565,7 +565,7 @@ func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]t
 	}
 
 	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getBlocksByEpoch rpc request to fullnode")
-	api.inputEpochMetric.update(&epoch, "cfx_getBlocksByEpoch", cfx)
+	api.inputEpochMetric.Update(&epoch, "cfx_getBlocksByEpoch", cfx)
 
 	return cfx.GetBlocksByEpoch(&epoch)
 }
@@ -576,7 +576,7 @@ func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch types.Epoc
 		return emptyHashes, err
 	}
 
-	api.inputEpochMetric.update(&epoch, "cfx_getSkippedBlocksByEpoch", cfx)
+	api.inputEpochMetric.Update(&epoch, "cfx_getSkippedBlocksByEpoch", cfx)
 	return cfx.GetSkippedBlocksByEpoch(&epoch)
 }
 
@@ -631,7 +631,7 @@ func (api *cfxAPI) GetAccount(ctx context.Context, address types.Address, epoch 
 		return types.AccountInfo{}, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getAccount", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getAccount", cfx)
 	return cfx.GetAccountInfo(address, toSlice(epoch)...)
 }
 
@@ -641,7 +641,7 @@ func (api *cfxAPI) GetInterestRate(ctx context.Context, epoch *types.Epoch) (*he
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getInterestRate", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getInterestRate", cfx)
 	return cfx.GetInterestRate(epoch)
 }
 
@@ -651,7 +651,7 @@ func (api *cfxAPI) GetAccumulateInterestRate(ctx context.Context, epoch *types.E
 		return nil, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getAccumulateInterestRate", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getAccumulateInterestRate", cfx)
 	return cfx.GetAccumulateInterestRate(toSlice(epoch)...)
 }
 
@@ -679,7 +679,7 @@ func (api *cfxAPI) GetBlockRewardInfo(ctx context.Context, epoch types.Epoch) ([
 		return emptyRewards, err
 	}
 
-	api.inputEpochMetric.update(&epoch, "cfx_getBlockRewardInfo", cfx)
+	api.inputEpochMetric.Update(&epoch, "cfx_getBlockRewardInfo", cfx)
 	return cfx.GetBlockRewardInfo(epoch)
 }
 
@@ -698,7 +698,7 @@ func (api *cfxAPI) GetSupplyInfo(ctx context.Context, epoch *types.Epoch) (types
 		return types.TokenSupplyInfo{}, err
 	}
 
-	api.inputEpochMetric.update(epoch, "cfx_getSupplyInfo", cfx)
+	api.inputEpochMetric.Update(epoch, "cfx_getSupplyInfo", cfx)
 	return cfx.GetSupplyInfo(toSlice(epoch)...)
 }
 

@@ -1,4 +1,4 @@
-package rpc
+package metrics
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	infuraMetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/metrics"
 )
@@ -19,28 +18,13 @@ var defaultEpochs = map[string]bool{
 	types.EpochLatestMined.String():      true,
 }
 
-// inputEpochMetric is used to add metrics for input epoch parameter.
-type inputEpochMetric struct {
+// InputEpochMetric is used to add metrics for input epoch parameter.
+type InputEpochMetric struct {
 	cache util.ConcurrentMap // method -> epoch -> metric name
 	gaps  util.ConcurrentMap // method -> histogram
 }
 
-func (metric *inputEpochMetric) getMetricName(method string, epoch string) string {
-	val, _ := metric.cache.LoadOrStoreFn(method, func(k interface{}) interface{} {
-		// need to return pointer type for noCopy
-		return &util.ConcurrentMap{}
-	})
-
-	epoch2MetricNames := val.(*util.ConcurrentMap)
-
-	val, _ = epoch2MetricNames.LoadOrStoreFn(epoch, func(k interface{}) interface{} {
-		return fmt.Sprintf("rpc/input/epoch/%v/%v", method, epoch)
-	})
-
-	return val.(string)
-}
-
-func (metric *inputEpochMetric) update(epoch *types.Epoch, method string, cfx sdk.ClientOperator) {
+func (metric *InputEpochMetric) Update(epoch *types.Epoch, method string, cfx sdk.ClientOperator) {
 	if epoch == nil {
 		name := metric.getMetricName(method, "default")
 		metrics.GetOrRegisterGauge(name, nil).Inc(1)
@@ -64,9 +48,24 @@ func (metric *inputEpochMetric) update(epoch *types.Epoch, method string, cfx sd
 	}
 }
 
-func (metric *inputEpochMetric) getGapMetric(method string) metrics.Histogram {
+func (metric *InputEpochMetric) getMetricName(method string, epoch string) string {
+	val, _ := metric.cache.LoadOrStoreFn(method, func(k interface{}) interface{} {
+		// need to return pointer type for noCopy
+		return &util.ConcurrentMap{}
+	})
+
+	epoch2MetricNames := val.(*util.ConcurrentMap)
+
+	val, _ = epoch2MetricNames.LoadOrStoreFn(epoch, func(k interface{}) interface{} {
+		return fmt.Sprintf("rpc/input/epoch/%v/%v", method, epoch)
+	})
+
+	return val.(string)
+}
+
+func (metric *InputEpochMetric) getGapMetric(method string) metrics.Histogram {
 	val, _ := metric.gaps.LoadOrStoreFn(method, func(k interface{}) interface{} {
-		return infuraMetrics.GetOrRegisterHistogram(nil, "rpc/input/epoch/gap/%v", method)
+		return GetOrRegisterHistogram(nil, "rpc/input/epoch/gap/%v", method)
 	})
 
 	return val.(metrics.Histogram)

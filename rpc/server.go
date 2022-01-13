@@ -8,90 +8,44 @@ import (
 )
 
 const (
-	infuraRpcServerName = "infura_rpcsrv"
+	nativeSpaceRpcServerName = "native_space_rpc"
+	evmSpaceRpcServerName    = "evm_space_rpc"
 )
 
-// API describes the set of methods offered over the RPC interface
-type API struct {
-	Namespace string      // namespace under which the rpc methods of Service are exposed
-	Version   string      // api version for DApp's
-	Service   interface{} // receiver instance which holds the methods
-	Public    bool        // indication if the methods must be considered safe for public use
-}
-
-// MustNewServer new RPC server by specifying router, handler and exposed modules.
-// Argument exposedModules is a list of API modules to expose via the RPC interface.
-// If the module list is empty, all RPC API endpoints designated public will be
-// exposed.
-func MustNewServer(
-	router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler, exposedModules []string, relayer *relay.TxnRelayer,
+// MustNewNativeSpaceServer new native space RPC server by specifying router, handler
+// and exposed modules.  Argument exposedModules is a list of API modules to expose
+// via the RPC interface. If the module list is empty, all RPC API endpoints designated
+// public will be exposed.
+func MustNewNativeSpaceServer(
+	router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler,
+	exposedModules []string, relayer *relay.TxnRelayer,
 ) *util.RpcServer {
-	allApis := apis(router, handler, gashandler, relayer) // retrieve all available RPC apis
-	servedApis := make(map[string]interface{}, len(allApis))
+	// retrieve all available native space rpc apis
+	allApis := nativeSpaceApis(router, handler, gashandler, relayer)
 
-	for _, api := range allApis {
-		if len(exposedModules) == 0 { // empty module list, use all public RPC APIs
-			if api.Public {
-				servedApis[api.Namespace] = api.Service
-			}
-
-			continue
-		}
-
-		servedApis[api.Namespace] = api.Service
+	exposedApis, err := filterExposedApis(allApis, exposedModules)
+	if err != nil {
+		logrus.WithError(err).Fatal(
+			"Failed to new native space RPC server with bad exposed modules",
+		)
 	}
 
-	if len(exposedModules) == 0 {
-		return util.MustNewRpcServer(infuraRpcServerName, servedApis)
-	}
-
-	filteredApis := make(map[string]interface{}, len(exposedModules))
-	for _, m := range exposedModules {
-		if svc, ok := servedApis[m]; ok {
-			filteredApis[m] = svc
-		} else {
-			logrus.WithField("module", m).Fatal("Failed to new RPC server with unknown exposed module")
-		}
-	}
-
-	return util.MustNewRpcServer(infuraRpcServerName, filteredApis)
+	return util.MustNewRpcServer(nativeSpaceRpcServerName, exposedApis)
 }
 
-// apis returns the collection of built-in RPC APIs.
-func apis(router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler, relayer *relay.TxnRelayer) []API {
-	clientProvider := infuraNode.NewClientProvider(router)
+// MustNewNativeSpaceServer new EVM space RPC server by specifying router, and exposed modules.
+// `exposedModules` is a list of API modules to expose via the RPC interface. If the module
+// list is empty, all RPC API endpoints designated public will be exposed.
+func MustNewEvmSpaceServer(router infuraNode.Router, exposedModules []string) *util.RpcServer {
+	// retrieve all available EVM space rpc apis
+	allApis := evmSpaceApis(router)
 
-	return []API{
-		{
-			Namespace: "cfx",
-			Version:   "1.0",
-			Service:   newCfxAPI(clientProvider, handler, relayer),
-			Public:    true,
-		}, {
-			Namespace: "txpool",
-			Version:   "1.0",
-			Service:   &txPoolAPI{clientProvider},
-			Public:    true,
-		}, {
-			Namespace: "pos",
-			Version:   "1.0",
-			Service:   newPosAPI(clientProvider),
-			Public:    true,
-		}, {
-			Namespace: "trace",
-			Version:   "1.0",
-			Service:   newTraceAPI(clientProvider),
-			Public:    false,
-		}, {
-			Namespace: "metrics",
-			Version:   "1.0",
-			Service:   &metricsAPI{},
-			Public:    false,
-		}, {
-			Namespace: "gasstation",
-			Version:   "1.0",
-			Service:   newGasStationAPI(gashandler),
-			Public:    false,
-		},
+	exposedApis, err := filterExposedApis(allApis, exposedModules)
+	if err != nil {
+		logrus.WithError(err).Fatal(
+			"Failed to new EVM space RPC server with bad exposed modules",
+		)
 	}
+
+	return util.MustNewRpcServer(evmSpaceRpcServerName, exposedApis)
 }

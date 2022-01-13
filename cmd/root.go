@@ -120,8 +120,13 @@ func start(cmd *cobra.Command, args []string) {
 	var rpcServers []*util.RpcServer
 
 	if rpcServerEnabled {
-		server := startRpcServer(db, cache)
-		rpcServers = append(rpcServers, server)
+		router := node.MustNewRouterFromViper()
+
+		nsServer := startNativeSpaceRpcServer(router, db, cache)
+		rpcServers = append(rpcServers, nsServer)
+
+		evmServer := startEvmSpaceRpcServer(router)
+		rpcServers = append(rpcServers, evmServer)
 	}
 
 	if nodeServerEnabled {
@@ -142,11 +147,22 @@ func start(cmd *cobra.Command, args []string) {
 	}, wg, cancel)
 }
 
-func startRpcServer(db, cache store.Store) *util.RpcServer {
+func startEvmSpaceRpcServer(router node.Router) *util.RpcServer {
 	// Start RPC server
-	logrus.Info("Start to run public rpc server...")
+	logrus.Info("Start to run EVM space rpc server...")
 
-	router := node.MustNewRouterFromViper()
+	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
+	server := rpc.MustNewEvmSpaceServer(router, exposedModules)
+
+	httpEndpoint := viper.GetString("ethrpc.endpoint")
+	go server.MustServe(httpEndpoint)
+
+	return server
+}
+
+func startNativeSpaceRpcServer(router node.Router, db, cache store.Store) *util.RpcServer {
+	// Start RPC server
+	logrus.Info("Start to run native space rpc server...")
 
 	// Add empty store tolerance
 	var cfxHandler *rpc.CfxStoreHandler
@@ -160,7 +176,9 @@ func startRpcServer(db, cache store.Store) *util.RpcServer {
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
 	txRelayer := relay.MustNewTxnRelayerFromViper()
 
-	server := rpc.MustNewServer(router, cfxHandler, gasHandler, exposedModules, txRelayer)
+	server := rpc.MustNewNativeSpaceServer(
+		router, cfxHandler, gasHandler, exposedModules, txRelayer,
+	)
 
 	httpEndpoint := viper.GetString("rpc.endpoint")
 	wsEndpoint := viper.GetString("rpc.wsEndpoint")
