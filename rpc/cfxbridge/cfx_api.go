@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/client"
+	ethTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 )
 
@@ -227,10 +228,35 @@ func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	return api.convertReceipt(receipt), nil
 }
 
-func (api *CfxAPI) GetEpochReceipts(ctx context.Context, epoch types.Epoch) (receipts [][]types.TransactionReceipt, err error) {
+func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) (receipts [][]*types.TransactionReceipt, err error) {
 	// TODO wait for eth space to support parity_getBlockReceipts
-	// TODO epoch supports both number and pivot block hash
-	return nil, nil
+	var block *ethTypes.Block
+
+	if num, ok := bnh.Number(); ok {
+		block, err = api.eth.BlockByNumber(num, false)
+	} else if hash, ok := bnh.Hash(); ok {
+		block, err = api.eth.BlockByHash(hash, false)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if block == nil {
+		return nil, nil
+	}
+
+	var result []*types.TransactionReceipt
+	for i := range block.Transactions {
+		receipt, err := api.eth.TransactionReceipt(block.Transactions[i].Hash)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, api.convertReceipt(receipt))
+	}
+
+	return [][]*types.TransactionReceipt{result}, nil
 }
 
 func (api *CfxAPI) GetAccount(ctx context.Context, address EthAddress, bn *EthBlockNumber) (types.AccountInfo, error) {

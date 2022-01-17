@@ -57,6 +57,66 @@ func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// EthBlockNumberOrHash accepts hex number, hash and epoch tag latest_state, other values are invalid, e.g. latest_confirmed.
+type EthBlockNumberOrHash struct {
+	number rpc.BlockNumber
+	hash   *common.Hash
+}
+
+func (ebnh *EthBlockNumberOrHash) Number() (rpc.BlockNumber, bool) {
+	if ebnh.hash == nil {
+		return ebnh.number, true
+	}
+
+	return 0, false
+}
+
+func (ebnh *EthBlockNumberOrHash) Hash() (common.Hash, bool) {
+	if ebnh.hash == nil {
+		return common.Hash{}, false
+	}
+
+	return *ebnh.hash, true
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (ebnh *EthBlockNumberOrHash) UnmarshalJSON(data []byte) error {
+	// Unmarshal as an epoch
+	var epoch *types.Epoch
+	if err := epoch.UnmarshalJSON(data); err != nil {
+		return err
+	}
+
+	// Supports hex number
+	if num, ok := epoch.ToInt(); ok {
+		ebnh.number = rpc.BlockNumber(num.Int64())
+		return nil
+	}
+
+	// Supports particular tags (latest_state and earliest) and hash
+	switch {
+	case types.EpochEarliest.Equals(epoch):
+		ebnh.number = rpc.EarliestBlockNumber
+	case types.EpochLatestState.Equals(epoch):
+		ebnh.number = rpc.LatestBlockNumber
+	case len(epoch.String()) == 66:
+		blockHash := common.HexToHash(epoch.String())
+		ebnh.hash = &blockHash
+	default:
+		return ErrEpochUnsupported
+	}
+
+	return nil
+}
+
+func (ebnh *EthBlockNumberOrHash) MarshalText() ([]byte, error) {
+	if ebnh.hash == nil {
+		return ebnh.number.MarshalText()
+	}
+
+	return ebnh.hash.MarshalText()
+}
+
 // EthAddress accepts both hex40 and base32 format addresses.
 type EthAddress struct {
 	value common.Address
