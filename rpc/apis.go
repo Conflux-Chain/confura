@@ -102,6 +102,16 @@ func evmSpaceApis(router infuraNode.Router) []API {
 			Version:   "1.0",
 			Service:   newEthAPI(clientProvider),
 			Public:    true,
+		}, {
+			Namespace: "web3",
+			Version:   "1.0",
+			Service:   newWeb3API(clientProvider),
+			Public:    true,
+		}, {
+			Namespace: "net",
+			Version:   "1.0",
+			Service:   newNetAPI(clientProvider),
+			Public:    true,
 		},
 	}
 }

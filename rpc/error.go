@@ -14,6 +14,8 @@ var (
 		"(2) a block number range through `fromBlock` and `toBlock`",
 		"(3) a set of block hashes through `blockHashes`",
 	)
+
+	errRpcNotSupported = errors.New("rpc not supported")
 )
 
 func errExceedLogFilterBlockHashLimit(size int) error {
