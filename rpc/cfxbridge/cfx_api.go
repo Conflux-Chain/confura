@@ -157,6 +157,10 @@ func (api *CfxAPI) GetBestBlockHash(ctx context.Context) (common.Hash, error) {
 		return common.Hash{}, err
 	}
 
+	if block == nil {
+		return common.Hash{}, nil
+	}
+
 	return *block.Hash, nil
 }
 
@@ -214,6 +218,10 @@ func (api *CfxAPI) GetBlocksByEpoch(ctx context.Context, bn EthBlockNumber) ([]c
 	block, err := api.eth.BlockByNumber(bn.Value(), false)
 	if err != nil {
 		return nil, err
+	}
+
+	if block == nil {
+		return []common.Hash{}, nil
 	}
 
 	return []common.Hash{*block.Hash}, nil
