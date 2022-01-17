@@ -250,8 +250,8 @@ func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHas
 		return nil, err
 	}
 
-	if block == nil {
-		return nil, nil
+	if block == nil || len(block.Transactions) == 0 {
+		return [][]*types.TransactionReceipt{}, nil
 	}
 
 	var result []*types.TransactionReceipt
