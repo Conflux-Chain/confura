@@ -37,7 +37,7 @@ func (ebn *EthBlockNumber) Value() rpc.BlockNumber {
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 	// Unmarshal as an epoch
-	var epoch *types.Epoch
+	var epoch types.Epoch
 	if err := epoch.UnmarshalJSON(data); err != nil {
 		return err
 	}
@@ -45,9 +45,9 @@ func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 	// Supports hex, latest_state and earliest
 	if num, ok := epoch.ToInt(); ok {
 		ebn.value = rpc.BlockNumber(num.Int64())
-	} else if types.EpochLatestState.Equals(epoch) {
+	} else if types.EpochLatestState.Equals(&epoch) {
 		ebn.value = rpc.LatestBlockNumber
-	} else if types.EpochEarliest.Equals(epoch) {
+	} else if types.EpochEarliest.Equals(&epoch) {
 		ebn.value = rpc.EarliestBlockNumber
 	} else {
 		// Other values are all invalid
@@ -82,7 +82,7 @@ func (ebnh *EthBlockNumberOrHash) Hash() (common.Hash, bool) {
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (ebnh *EthBlockNumberOrHash) UnmarshalJSON(data []byte) error {
 	// Unmarshal as an epoch
-	var epoch *types.Epoch
+	var epoch types.Epoch
 	if err := epoch.UnmarshalJSON(data); err != nil {
 		return err
 	}
@@ -95,9 +95,9 @@ func (ebnh *EthBlockNumberOrHash) UnmarshalJSON(data []byte) error {
 
 	// Supports particular tags (latest_state and earliest) and hash
 	switch {
-	case types.EpochEarliest.Equals(epoch):
+	case types.EpochEarliest.Equals(&epoch):
 		ebnh.number = rpc.EarliestBlockNumber
-	case types.EpochLatestState.Equals(epoch):
+	case types.EpochLatestState.Equals(&epoch):
 		ebnh.number = rpc.LatestBlockNumber
 	case len(epoch.String()) == 66:
 		blockHash := common.HexToHash(epoch.String())
