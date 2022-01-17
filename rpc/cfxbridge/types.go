@@ -7,14 +7,31 @@ import (
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/rpc"
+	ethTypes "github.com/openweb3/web3go/types"
 )
 
 // EthBlockNumber accepts number and epoch tag latest_state, other values are invalid, e.g. latest_confirmed.
 type EthBlockNumber struct {
-	value *big.Int
+	value rpc.BlockNumber
+}
+
+func (ebn *EthBlockNumber) ValueOrNil() *rpc.BlockNumber {
+	if ebn == nil {
+		return nil
+	}
+
+	return &ebn.value
+}
+
+func (ebn *EthBlockNumber) Value() rpc.BlockNumber {
+	if ebn == nil {
+		return rpc.LatestBlockNumber
+	}
+
+	return ebn.value
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
@@ -25,24 +42,32 @@ func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	// Treat epoch number as block number
+	// Supports hex, latest_state and earliest
 	if num, ok := epoch.ToInt(); ok {
-		ebn.value = num
-		return nil
+		ebn.value = rpc.BlockNumber(num.Int64())
+	} else if types.EpochLatestState.Equals(epoch) {
+		ebn.value = rpc.LatestBlockNumber
+	} else if types.EpochEarliest.Equals(epoch) {
+		ebn.value = rpc.EarliestBlockNumber
+	} else {
+		// Other values are all invalid
+		return ErrEpochUnsupported
 	}
 
-	// For latest_state epoch, use nil as block number according to ethclient
-	if epoch.Equals(types.EpochLatestState) {
-		return nil
-	}
-
-	// Other values are all invalid
-	return ErrEpochUnsupported
+	return nil
 }
 
 // EthAddress accepts both hex40 and base32 format addresses.
 type EthAddress struct {
 	value common.Address
+}
+
+func (ea *EthAddress) ValueOrNil() *common.Address {
+	if ea == nil {
+		return nil
+	}
+
+	return &ea.value
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
@@ -72,41 +97,30 @@ func (ea *EthAddress) UnmarshalJSON(data []byte) error {
 }
 
 // EthCallRequest is compatible with CFX CallRequest and accepts hex40 format address.
-// Note, Nonce and StorageLimit fields are simply ignored.
+// Note, StorageLimit field is simply ignored.
 type EthCallRequest struct {
 	From     *EthAddress
 	To       *EthAddress
 	GasPrice *hexutil.Big
-	Gas      *hexutil.Big
+	Gas      *hexutil.Uint64
 	Value    *hexutil.Big
+	Nonce    *hexutil.Uint64
 	Data     *string
 }
 
-func (req *EthCallRequest) ToCallMsg() ethereum.CallMsg {
-	var msg ethereum.CallMsg
+func (req *EthCallRequest) ToCallMsg() ethTypes.TransactionArgs {
+	var msg ethTypes.TransactionArgs
 
-	if req.From != nil {
-		msg.From = req.From.value
-	}
-
-	if req.To != nil {
-		msg.To = &req.To.value
-	}
-
-	if req.GasPrice != nil {
-		msg.GasPrice = req.GasPrice.ToInt()
-	}
-
-	if req.Gas != nil {
-		msg.Gas = req.Gas.ToInt().Uint64()
-	}
-
-	if req.Value != nil {
-		msg.Value = req.Value.ToInt()
-	}
+	msg.From = req.From.ValueOrNil()
+	msg.To = req.To.ValueOrNil()
+	msg.GasPrice = req.GasPrice
+	msg.Gas = req.Gas
+	msg.Value = req.Value
+	msg.Nonce = req.Nonce
 
 	if req.Data != nil {
-		msg.Data = hexutil.MustDecode(*req.Data)
+		data := hexutil.Bytes(hexutil.MustDecode(*req.Data))
+		msg.Data = &data
 	}
 
 	return msg
@@ -117,20 +131,20 @@ func (req *EthCallRequest) ToCallMsg() ethereum.CallMsg {
 type EthLogFilter struct {
 	FromEpoch   *EthBlockNumber
 	ToEpoch     *EthBlockNumber
-	BlockHashes *common.Hash
+	BlockHashes *common.Hash // eth space only accept a single block hash as filter
 	Address     []EthAddress
 	Topics      [][]common.Hash
 }
 
-func (filter *EthLogFilter) ToFilterQuery() (*ethereum.FilterQuery, error) {
-	var query ethereum.FilterQuery
+func (filter *EthLogFilter) ToFilterQuery() ethTypes.EthRpcLogFilter {
+	var query ethTypes.EthRpcLogFilter
 
 	if filter.FromEpoch != nil {
-		query.FromBlock = filter.FromEpoch.value
+		query.FromBlock = big.NewInt(filter.FromEpoch.value.Int64())
 	}
 
 	if filter.ToEpoch != nil {
-		query.ToBlock = filter.ToEpoch.value
+		query.ToBlock = big.NewInt(filter.ToEpoch.value.Int64())
 	}
 
 	query.BlockHash = filter.BlockHashes
@@ -141,5 +155,5 @@ func (filter *EthLogFilter) ToFilterQuery() (*ethereum.FilterQuery, error) {
 
 	query.Topics = filter.Topics
 
-	return &query, nil
+	return query
 }

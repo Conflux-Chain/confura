@@ -2,6 +2,7 @@ package cfxbridge
 
 import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
 )
 
@@ -17,4 +18,15 @@ var (
 
 var (
 	HexBig0 = types.NewBigInt(0)
+)
+
+var (
+	emptyDepositList = []types.DepositInfo{}
+	emptyVoteList    = []types.VoteStakeInfo{}
+
+	emptyLogsBloom = ethTypes.Bloom{}
+)
+
+var (
+	defaultReceiptErrMsg = "transaction reverted"
 )
