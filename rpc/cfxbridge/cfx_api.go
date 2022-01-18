@@ -181,9 +181,9 @@ func (api *CfxAPI) GetLogs(ctx context.Context, filter EthLogFilter) ([]types.Lo
 		return nil, err
 	}
 
-	var result []types.Log
+	result := make([]types.Log, len(logs))
 	for i := range logs {
-		result = append(result, *api.convertLog(&logs[i]))
+		result[i] = *api.convertLog(&logs[i])
 	}
 
 	return result, nil
