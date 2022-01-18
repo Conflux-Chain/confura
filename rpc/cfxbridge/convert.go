@@ -37,6 +37,11 @@ func (api *CfxAPI) convertTx(tx *ethTypes.Transaction) *types.Transaction {
 		return nil
 	}
 
+	chainId := tx.ChainID
+	if chainId == nil {
+		chainId = api.chainIdBig
+	}
+
 	// TODO missed fields: ContractCreated, Status
 	return &types.Transaction{
 		Hash:             types.Hash(tx.Hash.Hex()),
@@ -52,7 +57,7 @@ func (api *CfxAPI) convertTx(tx *ethTypes.Transaction) *types.Transaction {
 		Data:             hexutil.Encode(tx.Input),
 		StorageLimit:     HexBig0,
 		EpochHeight:      HexBig0,
-		ChainID:          tx.ChainID,
+		ChainID:          chainId,
 		Status:           nil,
 		V:                tx.V,
 		R:                tx.R,
@@ -70,9 +75,9 @@ func (api *CfxAPI) convertBlockHeader(block *ethTypes.Block) *types.BlockHeader 
 		referees[i] = types.Hash(block.Uncles[i].Hex())
 	}
 
-	custom := make([][]byte, 1)
-	if len(block.ExtraData) > 0 {
-		custom[0] = block.ExtraData
+	extraData := block.ExtraData
+	if extraData == nil {
+		extraData = []byte{}
 	}
 
 	return &types.BlockHeader{
@@ -96,7 +101,7 @@ func (api *CfxAPI) convertBlockHeader(block *ethTypes.Block) *types.BlockHeader 
 		Adaptive:              false,
 		Nonce:                 types.NewBigInt(block.Nonce.Uint64()),
 		Size:                  types.NewBigInt(uint64(block.Size)),
-		Custom:                custom,
+		Custom:                [][]byte{extraData},
 	}
 }
 

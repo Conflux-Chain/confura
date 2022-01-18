@@ -16,9 +16,10 @@ import (
 )
 
 type CfxAPI struct {
-	eth       *client.RpcEthClient
-	cfx       *sdk.Client
-	networkId uint32
+	eth        *client.RpcEthClient
+	cfx        *sdk.Client
+	networkId  uint32
+	chainIdBig *hexutil.Big
 }
 
 func NewCfxAPI(nodeURL string) (*CfxAPI, error) {
@@ -32,12 +33,17 @@ func NewCfxAPI(nodeURL string) (*CfxAPI, error) {
 		return nil, errors.WithMessage(err, "Failed to connect to cfx space")
 	}
 
-	networkId, err := cfx.GetNetworkID()
+	status, err := cfx.GetStatus()
 	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to get network ID of full node")
+		return nil, errors.WithMessage(err, "Failed to get status of full node")
 	}
 
-	return &CfxAPI{eth.Eth, cfx, networkId}, nil
+	return &CfxAPI{
+		eth:        eth.Eth,
+		cfx:        cfx,
+		networkId:  uint32(status.NetworkID),
+		chainIdBig: types.NewBigInt(uint64(status.ChainID)),
+	}, nil
 }
 
 func (api *CfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
