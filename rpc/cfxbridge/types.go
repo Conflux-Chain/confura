@@ -2,7 +2,6 @@ package cfxbridge
 
 import (
 	"encoding/json"
-	"math/big"
 	"strings"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -168,15 +167,15 @@ type EthCallRequest struct {
 	Data     *string
 }
 
-func (req *EthCallRequest) ToCallMsg() ethTypes.TransactionArgs {
-	var msg ethTypes.TransactionArgs
-
-	msg.From = req.From.ValueOrNil()
-	msg.To = req.To.ValueOrNil()
-	msg.GasPrice = req.GasPrice
-	msg.Gas = req.Gas
-	msg.Value = req.Value
-	msg.Nonce = req.Nonce
+func (req *EthCallRequest) ToCallMsg() ethTypes.CallRequest {
+	msg := ethTypes.CallRequest{
+		From:     req.From.ValueOrNil(),
+		To:       req.To.ValueOrNil(),
+		GasPrice: req.GasPrice,
+		Gas:      req.Gas,
+		Value:    req.Value,
+		Nonce:    req.Nonce,
+	}
 
 	if req.Data != nil {
 		data := hexutil.Bytes(hexutil.MustDecode(*req.Data))
@@ -196,24 +195,17 @@ type EthLogFilter struct {
 	Topics      [][]common.Hash
 }
 
-func (filter *EthLogFilter) ToFilterQuery() ethTypes.EthRpcLogFilter {
-	var query ethTypes.EthRpcLogFilter
-
-	if filter.FromEpoch != nil {
-		query.FromBlock = big.NewInt(filter.FromEpoch.value.Int64())
+func (filter *EthLogFilter) ToFilterQuery() ethTypes.FilterQuery {
+	query := ethTypes.FilterQuery{
+		BlockHash: filter.BlockHashes,
+		FromBlock: filter.FromEpoch.ValueOrNil(),
+		ToBlock:   filter.ToEpoch.ValueOrNil(),
+		Topics:    filter.Topics,
 	}
-
-	if filter.ToEpoch != nil {
-		query.ToBlock = big.NewInt(filter.ToEpoch.value.Int64())
-	}
-
-	query.BlockHash = filter.BlockHashes
 
 	for i := range filter.Address {
 		query.Addresses = append(query.Addresses, filter.Address[i].value)
 	}
-
-	query.Topics = filter.Topics
 
 	return query
 }

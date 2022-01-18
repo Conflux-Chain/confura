@@ -37,8 +37,7 @@ func (api *CfxAPI) convertTx(tx *ethTypes.Transaction) *types.Transaction {
 		return nil
 	}
 
-	// TODO ethclient missed some fields, wait for web3go from SDK team.
-	// Including: ContractCreated, Status
+	// TODO missed fields: ContractCreated, Status
 	return &types.Transaction{
 		Hash:             types.Hash(tx.Hash.Hex()),
 		Nonce:            types.NewBigInt(uint64(tx.Nonce)),
@@ -76,16 +75,11 @@ func (api *CfxAPI) convertBlockHeader(block *ethTypes.Block) *types.BlockHeader 
 		custom[0] = block.ExtraData
 	}
 
-	if block.LogsBloom == nil {
-		block.LogsBloom = &emptyLogsBloom
-	}
-
-	// TODO eth space missed some fields, including: Nonce
 	return &types.BlockHeader{
 		Hash:                  types.Hash(block.Hash.Hex()),
 		ParentHash:            types.Hash(block.ParentHash.Hex()),
 		Height:                block.Number,
-		Miner:                 api.convertAddress(block.Author),
+		Miner:                 api.convertAddress(block.Miner),
 		DeferredStateRoot:     types.Hash(block.StateRoot.Hex()),
 		DeferredReceiptsRoot:  types.Hash(block.ReceiptsRoot.Hex()),
 		DeferredLogsBloomHash: types.Hash(hexutil.Encode(block.LogsBloom.Bytes())),
@@ -93,15 +87,15 @@ func (api *CfxAPI) convertBlockHeader(block *ethTypes.Block) *types.BlockHeader 
 		TransactionsRoot:      types.Hash(block.TransactionsRoot.Hex()),
 		EpochNumber:           block.Number,
 		BlockNumber:           block.Number,
-		GasLimit:              block.GasLimit,
-		GasUsed:               block.GasUsed,
-		Timestamp:             block.Timestamp,
+		GasLimit:              types.NewBigInt(uint64(block.GasLimit)),
+		GasUsed:               types.NewBigInt(uint64(block.GasUsed)),
+		Timestamp:             types.NewBigInt(uint64(block.Timestamp)),
 		Difficulty:            block.Difficulty,
 		PowQuality:            HexBig0,
 		RefereeHashes:         referees,
 		Adaptive:              false,
-		Nonce:                 HexBig0,
-		Size:                  block.Size,
+		Nonce:                 types.NewBigInt(block.Nonce.Uint64()),
+		Size:                  types.NewBigInt(uint64(block.Size)),
 		Custom:                custom,
 	}
 }
@@ -111,9 +105,9 @@ func (api *CfxAPI) convertBlock(block *ethTypes.Block) *types.Block {
 		return nil
 	}
 
-	txs := make([]types.Transaction, len(block.Transactions))
-	for i := range block.Transactions {
-		txs[i] = *api.convertTx(&block.Transactions[i])
+	txs := make([]types.Transaction, len(block.Transactions.Transactions))
+	for i := range block.Transactions.Transactions {
+		txs[i] = *api.convertTx(&block.Transactions.Transactions[i])
 	}
 
 	return &types.Block{
@@ -127,9 +121,9 @@ func (api *CfxAPI) convertBlockSummary(block *ethTypes.Block) *types.BlockSummar
 		return nil
 	}
 
-	txs := make([]types.Hash, len(block.Transactions))
-	for i := range block.Transactions {
-		txs[i] = types.Hash(block.Transactions[i].Hash.Hex())
+	txs := make([]types.Hash, len(block.Transactions.Hashes))
+	for i := range block.Transactions.Hashes {
+		txs[i] = types.Hash(block.Transactions.Hashes[i].Hex())
 	}
 
 	return &types.BlockSummary{
@@ -153,11 +147,11 @@ func (api *CfxAPI) convertLog(log *ethTypes.Log) *types.Log {
 		Topics:              topics,
 		Data:                log.Data,
 		BlockHash:           api.convertHashNullable(&log.BlockHash),
-		EpochNumber:         types.NewBigInt(log.BlockNumber),
+		EpochNumber:         types.NewBigInt(uint64(log.BlockNumber)),
 		TransactionHash:     api.convertHashNullable(&log.TxHash),
 		TransactionIndex:    types.NewBigInt(uint64(log.TxIndex)), // tx index in block
 		LogIndex:            types.NewBigInt(uint64(log.Index)),   // log index in block
-		TransactionLogIndex: HexBig0,                              // log index in tx, not supported in eth space
+		TransactionLogIndex: log.TransactionLogIndex,              // log index in tx
 	}
 }
 
@@ -168,32 +162,38 @@ func (api *CfxAPI) convertReceipt(receipt *ethTypes.Receipt) *types.TransactionR
 
 	logs := make([]types.Log, len(receipt.Logs))
 	for i := range receipt.Logs {
-		logs[i] = *api.convertLog(&receipt.Logs[i])
+		logs[i] = *api.convertLog(receipt.Logs[i])
+	}
+
+	var stateRoot types.Hash
+	if receipt.Root == nil || len(*receipt.Root) == 0 {
+		stateRoot = types.Hash(common.Hash{}.Hex())
+	} else {
+		stateRoot = types.Hash(receipt.Root.String())
 	}
 
 	// StatusCode should always be available
 	var outcomeStatus hexutil.Uint64
 	var errMsg *string
-	if *receipt.StatusCode == hexutil.Uint64(gethTypes.ReceiptStatusFailed) {
+	if *receipt.Status == hexutil.Uint(gethTypes.ReceiptStatusFailed) {
 		outcomeStatus = 1
 		errMsg = &defaultReceiptErrMsg
 	}
 
-	// TODO ethclient missed some fields, wait for web3go from SDK team.
-	// Including: GasFee (price * gasCharged?), TxExecErrorMsg
+	// TODO missed fields: GasFee (price * gasCharged?), TxExecErrorMsg
 	return &types.TransactionReceipt{
 		TransactionHash:         types.Hash(receipt.TransactionHash.Hex()),
-		Index:                   hexutil.Uint64(receipt.TransactionIndex.ToInt().Uint64()),
+		Index:                   receipt.TransactionIndex,
 		BlockHash:               types.Hash(receipt.BlockHash.Hex()),
-		EpochNumber:             types.NewUint64(receipt.BlockNumber.ToInt().Uint64()),
-		From:                    api.convertAddress(*receipt.From), // From should always be available
+		EpochNumber:             &receipt.BlockNumber,
+		From:                    api.convertAddress(receipt.From),
 		To:                      api.convertAddressNullable(receipt.To),
-		GasUsed:                 receipt.GasUsed,
+		GasUsed:                 types.NewBigInt(uint64(receipt.GasUsed)),
 		GasFee:                  HexBig0,
 		ContractCreated:         api.convertAddressNullable(receipt.ContractAddress),
 		Logs:                    logs,
 		LogsBloom:               types.Bloom(hexutil.Encode(receipt.LogsBloom.Bytes())),
-		StateRoot:               *api.convertHashNullable(receipt.StateRoot), // StateRoot should always be available
+		StateRoot:               stateRoot,
 		OutcomeStatus:           outcomeStatus,
 		TxExecErrorMsg:          errMsg,
 		GasCoveredBySponsor:     false,

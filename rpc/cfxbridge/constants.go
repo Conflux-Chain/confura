@@ -2,7 +2,6 @@ package cfxbridge
 
 import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
 )
 
@@ -23,8 +22,6 @@ var (
 var (
 	emptyDepositList = []types.DepositInfo{}
 	emptyVoteList    = []types.VoteStakeInfo{}
-
-	emptyLogsBloom   = ethTypes.Bloom{}
 	emptyReceiptList = []*types.TransactionReceipt{}
 )
 

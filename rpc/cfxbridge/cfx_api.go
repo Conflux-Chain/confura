@@ -151,8 +151,7 @@ func (api *CfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil
 }
 
 func (api *CfxAPI) GetBestBlockHash(ctx context.Context) (common.Hash, error) {
-	// TODO do not return tx body when web3go supported
-	block, err := api.eth.BlockByNumber(rpc.LatestBlockNumber, true)
+	block, err := api.eth.BlockByNumber(rpc.LatestBlockNumber, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -161,7 +160,7 @@ func (api *CfxAPI) GetBestBlockHash(ctx context.Context) (common.Hash, error) {
 		return common.Hash{}, nil
 	}
 
-	return *block.Hash, nil
+	return block.Hash, nil
 }
 
 func (api *CfxAPI) GetNextNonce(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
@@ -215,8 +214,7 @@ func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCall
 }
 
 func (api *CfxAPI) GetBlocksByEpoch(ctx context.Context, bn EthBlockNumber) ([]common.Hash, error) {
-	// TODO do not return tx body when web3go supported
-	block, err := api.eth.BlockByNumber(bn.Value(), true)
+	block, err := api.eth.BlockByNumber(bn.Value(), false)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +223,7 @@ func (api *CfxAPI) GetBlocksByEpoch(ctx context.Context, bn EthBlockNumber) ([]c
 		return []common.Hash{}, nil
 	}
 
-	return []common.Hash{*block.Hash}, nil
+	return []common.Hash{block.Hash}, nil
 }
 
 func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*types.TransactionReceipt, error) {
@@ -241,24 +239,23 @@ func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHas
 	// TODO wait for eth space to support parity_getBlockReceipts
 	var block *ethTypes.Block
 
-	// TODO do not return tx body when web3go supported
 	if num, ok := bnh.Number(); ok {
-		block, err = api.eth.BlockByNumber(num, true)
+		block, err = api.eth.BlockByNumber(num, false)
 	} else if hash, ok := bnh.Hash(); ok {
-		block, err = api.eth.BlockByHash(hash, true)
+		block, err = api.eth.BlockByHash(hash, false)
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	if block == nil || len(block.Transactions) == 0 {
+	if block == nil || len(block.Transactions.Hashes) == 0 {
 		return [][]*types.TransactionReceipt{emptyReceiptList}, nil
 	}
 
 	var result []*types.TransactionReceipt
-	for i := range block.Transactions {
-		receipt, err := api.eth.TransactionReceipt(block.Transactions[i].Hash)
+	for i := range block.Transactions.Hashes {
+		receipt, err := api.eth.TransactionReceipt(block.Transactions.Hashes[i])
 		if err != nil {
 			return nil, err
 		}
@@ -314,8 +311,7 @@ func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
 		return types.Status{}, err
 	}
 
-	// TODO do not return tx body when web3go supported
-	block, err := api.eth.BlockByNumber(rpc.LatestBlockNumber, true)
+	block, err := api.eth.BlockByNumber(rpc.LatestBlockNumber, false)
 	if err != nil {
 		return types.Status{}, err
 	}
