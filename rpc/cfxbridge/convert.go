@@ -66,14 +66,14 @@ func (api *CfxAPI) convertBlockHeader(block *ethTypes.Block) *types.BlockHeader 
 		return nil
 	}
 
-	var referees []types.Hash
+	referees := make([]types.Hash, len(block.Uncles))
 	for i := range block.Uncles {
-		referees = append(referees, types.Hash(block.Uncles[i].Hex()))
+		referees[i] = types.Hash(block.Uncles[i].Hex())
 	}
 
-	var custom [][]byte
+	custom := make([][]byte, 1)
 	if len(block.ExtraData) > 0 {
-		custom = append(custom, block.ExtraData)
+		custom[0] = block.ExtraData
 	}
 
 	if block.LogsBloom == nil {
@@ -111,9 +111,9 @@ func (api *CfxAPI) convertBlock(block *ethTypes.Block) *types.Block {
 		return nil
 	}
 
-	var txs []types.Transaction
+	txs := make([]types.Transaction, len(block.Transactions))
 	for i := range block.Transactions {
-		txs = append(txs, *api.convertTx(&block.Transactions[i]))
+		txs[i] = *api.convertTx(&block.Transactions[i])
 	}
 
 	return &types.Block{
@@ -127,9 +127,9 @@ func (api *CfxAPI) convertBlockSummary(block *ethTypes.Block) *types.BlockSummar
 		return nil
 	}
 
-	var txs []types.Hash
+	txs := make([]types.Hash, len(block.Transactions))
 	for i := range block.Transactions {
-		txs = append(txs, types.Hash(block.Transactions[i].Hash.Hex()))
+		txs[i] = types.Hash(block.Transactions[i].Hash.Hex())
 	}
 
 	return &types.BlockSummary{
@@ -143,9 +143,9 @@ func (api *CfxAPI) convertLog(log *ethTypes.Log) *types.Log {
 		return nil
 	}
 
-	var topics []types.Hash
+	topics := make([]types.Hash, len(log.Topics))
 	for i := range log.Topics {
-		topics = append(topics, types.Hash(log.Topics[i].Hex()))
+		topics[i] = types.Hash(log.Topics[i].Hex())
 	}
 
 	return &types.Log{
@@ -166,9 +166,9 @@ func (api *CfxAPI) convertReceipt(receipt *ethTypes.Receipt) *types.TransactionR
 		return nil
 	}
 
-	var logs []types.Log
+	logs := make([]types.Log, len(receipt.Logs))
 	for i := range receipt.Logs {
-		logs = append(logs, *api.convertLog(&receipt.Logs[i]))
+		logs[i] = *api.convertLog(&receipt.Logs[i])
 	}
 
 	// StatusCode should always be available
