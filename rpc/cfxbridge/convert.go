@@ -23,12 +23,12 @@ func (api *CfxAPI) convertAddressNullable(value *common.Address) *types.Address 
 		return nil
 	}
 
-	address, _ := cfxaddress.NewFromCommon(*value, api.networkId)
+	address, _ := cfxaddress.NewFromCommon(*value, api.ethNetworkId)
 	return &address
 }
 
 func (api *CfxAPI) convertAddress(value common.Address) types.Address {
-	address, _ := cfxaddress.NewFromCommon(value, api.networkId)
+	address, _ := cfxaddress.NewFromCommon(value, api.ethNetworkId)
 	return address
 }
 
@@ -55,7 +55,7 @@ func (api *CfxAPI) convertTx(tx *ethTypes.Transaction, receipt *ethTypes.Receipt
 
 	chainId := tx.ChainID
 	if chainId == nil {
-		chainId = api.chainIdBig
+		chainId = api.ethChainIdBig
 	}
 
 	var contractCreated *cfxaddress.Address
