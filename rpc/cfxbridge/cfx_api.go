@@ -68,7 +68,13 @@ func (api *CfxAPI) GetAdmin(ctx context.Context, contract EthAddress, bn *EthBlo
 }
 
 func (api *CfxAPI) GetSponsorInfo(ctx context.Context, contract EthAddress, bn *EthBlockNumber) (types.SponsorInfo, error) {
-	return types.SponsorInfo{}, nil
+	return types.SponsorInfo{
+		SponsorForGas:               api.convertAddress(common.Address{}),
+		SponsorForCollateral:        api.convertAddress(common.Address{}),
+		SponsorGasBound:             HexBig0,
+		SponsorBalanceForGas:        HexBig0,
+		SponsorBalanceForCollateral: HexBig0,
+	}, nil
 }
 
 func (api *CfxAPI) GetStakingBalance(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
