@@ -5,8 +5,8 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	gethTypes "github.com/ethereum/go-ethereum/core/types"
 	ethTypes "github.com/openweb3/web3go/types"
+	"github.com/sirupsen/logrus"
 )
 
 func (api *CfxAPI) convertHashNullable(value *common.Hash) *types.Hash {
@@ -32,7 +32,23 @@ func (api *CfxAPI) convertAddress(value common.Address) types.Address {
 	return address
 }
 
-func (api *CfxAPI) convertTx(tx *ethTypes.Transaction) *types.Transaction {
+func (api *CfxAPI) convertTxStatus(value *hexutil.Uint) *hexutil.Uint64 {
+	if value == nil {
+		return nil
+	}
+
+	var status hexutil.Uint64
+
+	if *value == 0 {
+		status = 1
+	} else if *value != 1 {
+		logrus.WithField("ethTxStatus", *value).Error("Unexpected tx status from eth space")
+	}
+
+	return &status
+}
+
+func (api *CfxAPI) convertTx(tx *ethTypes.Transaction, receipt *ethTypes.Receipt) *types.Transaction {
 	if tx == nil {
 		return nil
 	}
@@ -42,7 +58,13 @@ func (api *CfxAPI) convertTx(tx *ethTypes.Transaction) *types.Transaction {
 		chainId = api.chainIdBig
 	}
 
-	// TODO missed fields: ContractCreated, Status
+	var contractCreated *cfxaddress.Address
+	var status *hexutil.Uint64
+	if receipt != nil {
+		contractCreated = api.convertAddressNullable(receipt.ContractAddress)
+		status = api.convertTxStatus(receipt.Status)
+	}
+
 	return &types.Transaction{
 		Hash:             types.Hash(tx.Hash.Hex()),
 		Nonce:            types.NewBigInt(uint64(tx.Nonce)),
@@ -53,12 +75,12 @@ func (api *CfxAPI) convertTx(tx *ethTypes.Transaction) *types.Transaction {
 		Value:            tx.Value,
 		GasPrice:         tx.GasPrice,
 		Gas:              types.NewBigInt(uint64(tx.Gas)),
-		ContractCreated:  nil,
+		ContractCreated:  contractCreated,
 		Data:             hexutil.Encode(tx.Input),
 		StorageLimit:     HexBig0,
 		EpochHeight:      HexBig0,
 		ChainID:          chainId,
-		Status:           nil,
+		Status:           status,
 		V:                tx.V,
 		R:                tx.R,
 		S:                tx.S,
@@ -114,7 +136,7 @@ func (api *CfxAPI) convertBlock(block *ethTypes.Block) *types.Block {
 
 	txs := make([]types.Transaction, len(blockTxs))
 	for i := range blockTxs {
-		txs[i] = *api.convertTx(&blockTxs[i])
+		txs[i] = *api.convertTx(&blockTxs[i], nil)
 	}
 
 	return &types.Block{
@@ -181,11 +203,8 @@ func (api *CfxAPI) convertReceipt(receipt *ethTypes.Receipt) *types.TransactionR
 		stateRoot = types.Hash(receipt.Root.String())
 	}
 
-	// StatusCode should always be available
-	var outcomeStatus hexutil.Uint64
 	var errMsg *string
-	if *receipt.Status == hexutil.Uint(gethTypes.ReceiptStatusFailed) {
-		outcomeStatus = 1
+	if *receipt.Status == 0 {
 		errMsg = &defaultReceiptErrMsg
 	}
 
@@ -203,7 +222,7 @@ func (api *CfxAPI) convertReceipt(receipt *ethTypes.Receipt) *types.TransactionR
 		Logs:                    logs,
 		LogsBloom:               types.Bloom(hexutil.Encode(receipt.LogsBloom.Bytes())),
 		StateRoot:               stateRoot,
-		OutcomeStatus:           outcomeStatus,
+		OutcomeStatus:           *api.convertTxStatus(receipt.Status), // receipt status should be always available
 		TxExecErrorMsg:          errMsg,
 		GasCoveredBySponsor:     false,
 		StorageCoveredBySponsor: false,

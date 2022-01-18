@@ -201,7 +201,14 @@ func (api *CfxAPI) GetTransactionByHash(ctx context.Context, txHash common.Hash)
 		return nil, err
 	}
 
-	return api.convertTx(tx), nil
+	var receipt *ethTypes.Receipt
+	if tx.BlockHash != nil {
+		if receipt, err = api.eth.TransactionReceipt(txHash); err != nil {
+			return nil, err
+		}
+	}
+
+	return api.convertTx(tx, receipt), nil
 }
 
 func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCallRequest, bn *EthBlockNumber) (types.Estimate, error) {
