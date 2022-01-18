@@ -24,7 +24,8 @@ var (
 	emptyDepositList = []types.DepositInfo{}
 	emptyVoteList    = []types.VoteStakeInfo{}
 
-	emptyLogsBloom = ethTypes.Bloom{}
+	emptyLogsBloom   = ethTypes.Bloom{}
+	emptyReceiptList = []*types.TransactionReceipt{}
 )
 
 var (

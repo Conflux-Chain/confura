@@ -2,7 +2,6 @@ package cfxbridge
 
 import (
 	"context"
-	"math/big"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -45,13 +44,13 @@ func (api *CfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 	return api.eth.GasPrice()
 }
 
-func (api *CfxAPI) EpochNumber(ctx context.Context, bn *EthBlockNumber) (*hexutil.Big, error) {
-	if num := int64(bn.Value()); num >= 0 {
-		return types.NewBigIntByRaw(big.NewInt(num)), nil
+func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexutil.Big, error) {
+	// By default, return lastest_state for eth space.
+	if epoch == nil {
+		epoch = types.EpochLatestState
 	}
 
-	// -1 means latest
-	return api.eth.BlockNumber()
+	return api.cfx.GetEpochNumber(epoch)
 }
 
 func (api *CfxAPI) GetBalance(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
@@ -251,7 +250,7 @@ func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHas
 	}
 
 	if block == nil || len(block.Transactions) == 0 {
-		return [][]*types.TransactionReceipt{}, nil
+		return [][]*types.TransactionReceipt{emptyReceiptList}, nil
 	}
 
 	var result []*types.TransactionReceipt
