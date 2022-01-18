@@ -20,9 +20,10 @@ var (
 )
 
 var (
-	emptyDepositList = []types.DepositInfo{}
-	emptyVoteList    = []types.VoteStakeInfo{}
-	emptyReceiptList = []*types.TransactionReceipt{}
+	emptyDepositList       = []types.DepositInfo{}
+	emptyVoteList          = []types.VoteStakeInfo{}
+	emptyReceiptList       = []*types.TransactionReceipt{}
+	emptyStorageChangeList = []types.StorageChange{}
 )
 
 var (

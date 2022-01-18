@@ -203,6 +203,6 @@ func (api *CfxAPI) convertReceipt(receipt *ethTypes.Receipt) *types.TransactionR
 		GasCoveredBySponsor:     false,
 		StorageCoveredBySponsor: false,
 		StorageCollateralized:   0,
-		StorageReleased:         nil,
+		StorageReleased:         emptyStorageChangeList,
 	}
 }
