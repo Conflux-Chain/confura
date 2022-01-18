@@ -129,6 +129,11 @@ func nativeSpaceBridgeApis(nodeURL string) ([]API, error) {
 			Version:   "1.0",
 			Service:   cfxApi,
 			Public:    true,
+		}, {
+			Namespace: "trace",
+			Version:   "1.0",
+			Service:   cfxbridge.NewTraceAPI(),
+			Public:    true, // TODO false by default
 		},
 	}, nil
 }
