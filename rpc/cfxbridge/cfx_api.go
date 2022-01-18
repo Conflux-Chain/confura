@@ -249,13 +249,13 @@ func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHas
 		return nil, err
 	}
 
-	if block == nil || len(block.Transactions.Hashes) == 0 {
+	if block == nil || len(block.Transactions.Hashes()) == 0 {
 		return [][]*types.TransactionReceipt{emptyReceiptList}, nil
 	}
 
 	var result []*types.TransactionReceipt
-	for i := range block.Transactions.Hashes {
-		receipt, err := api.eth.TransactionReceipt(block.Transactions.Hashes[i])
+	for i := range block.Transactions.Hashes() {
+		receipt, err := api.eth.TransactionReceipt(block.Transactions.Hashes()[i])
 		if err != nil {
 			return nil, err
 		}

@@ -105,9 +105,11 @@ func (api *CfxAPI) convertBlock(block *ethTypes.Block) *types.Block {
 		return nil
 	}
 
-	txs := make([]types.Transaction, len(block.Transactions.Transactions))
-	for i := range block.Transactions.Transactions {
-		txs[i] = *api.convertTx(&block.Transactions.Transactions[i])
+	blockTxs := block.Transactions.Transactions()
+
+	txs := make([]types.Transaction, len(blockTxs))
+	for i := range blockTxs {
+		txs[i] = *api.convertTx(&blockTxs[i])
 	}
 
 	return &types.Block{
@@ -121,9 +123,11 @@ func (api *CfxAPI) convertBlockSummary(block *ethTypes.Block) *types.BlockSummar
 		return nil
 	}
 
-	txs := make([]types.Hash, len(block.Transactions.Hashes))
-	for i := range block.Transactions.Hashes {
-		txs[i] = types.Hash(block.Transactions.Hashes[i].Hex())
+	blockTxs := block.Transactions.Hashes()
+
+	txs := make([]types.Hash, len(blockTxs))
+	for i := range blockTxs {
+		txs[i] = types.Hash(blockTxs[i].Hex())
 	}
 
 	return &types.BlockSummary{
