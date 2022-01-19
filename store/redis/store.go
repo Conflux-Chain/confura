@@ -233,7 +233,13 @@ func (rs *redisStore) Popn(epochUntil uint64) error {
 		return nil
 	}
 
-	return rs.remove(epochUntil, maxEpoch, store.EpochRemoveAll, store.EpochOpPop)
+	err = rs.remove(epochUntil, maxEpoch, store.EpochRemoveAll, store.EpochOpPop)
+
+	logrus.WithFields(logrus.Fields{
+		"epochUntil": epochUntil, "stackMaxEpoch": maxEpoch,
+	}).WithError(err).Info("Epoch data popped out from redis store")
+
+	return err
 }
 
 func (rs *redisStore) DequeueBlocks(epochUntil uint64) error {

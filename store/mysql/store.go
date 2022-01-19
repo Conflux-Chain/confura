@@ -468,6 +468,11 @@ func (ms *mysqlStore) Popn(epochUntil uint64) error {
 		return txOpAffects
 	})
 
+	logrus.WithFields(logrus.Fields{
+		"epochUntil": epochUntil, "stackMaxEpoch": maxEpoch,
+		"epochOpAffects": txOpAffects.EpochDataOpAffects,
+	}).WithError(err).Info("Epoch data popped out from MySQL store")
+
 	return err
 }
 

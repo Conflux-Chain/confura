@@ -43,6 +43,40 @@ type EpochData struct {
 	Receipts map[types.Hash]*types.TransactionReceipt
 }
 
+func (epoch *EpochData) GetPivotBlock() *types.Block {
+	return epoch.Blocks[len(epoch.Blocks)-1]
+}
+
+// IsContinuousTo checks if this epoch is continuous to the previous epoch.
+func (epoch *EpochData) IsContinuousTo(prev *EpochData) (continuous bool, desc string) {
+	lastPivot := prev.GetPivotBlock()
+	nextPivot := epoch.GetPivotBlock()
+
+	if lastPivot.EpochNumber == nil || nextPivot.EpochNumber == nil {
+		desc = "epoch number nil"
+		return
+	}
+
+	if lastPivot.Hash != nextPivot.ParentHash {
+		desc = fmt.Sprintf(
+			"parent hash not matched, expect %v got %v", lastPivot.Hash, nextPivot.ParentHash,
+		)
+		return
+	}
+
+	lastEpochNo := lastPivot.EpochNumber.ToInt().Uint64()
+	nextEpochNo := nextPivot.EpochNumber.ToInt().Uint64()
+	if lastEpochNo+1 != nextEpochNo {
+		desc = fmt.Sprintf(
+			"epoch number not continuous, expect %v got %v", lastEpochNo+1, nextEpochNo,
+		)
+		return
+	}
+
+	continuous = true
+	return
+}
+
 // QueryEpochData queries blockchain data for the specified epoch number.
 // TODO better to use batch API to return all if performance is low in case of high TPS.
 func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, error) {
@@ -72,7 +106,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 	for _, hash := range blockHashes {
 		block, err := cfx.GetBlockByHashWithPivotAssumption(hash, pivotHash, hexutil.Uint64(epochNumber))
 		if err == nil { // validate block first if no error
-			err = validateBlock(&block, epochNumber)
+			err = validateBlock(&block, epochNumber, hash)
 		}
 
 		if checkPivotSwitchWithError(err) { // check pivot switch
@@ -222,7 +256,7 @@ func IsAddressBlacklisted(addr *cfxaddress.Address) bool {
 	return exists
 }
 
-func validateBlock(block *types.Block, epochNumber uint64) error {
+func validateBlock(block *types.Block, epochNumber uint64, hash types.Hash) error {
 	if block.EpochNumber == nil {
 		return errors.WithMessage(errBlockValidationFailed, "epoch number is nil")
 	}
@@ -233,6 +267,10 @@ func validateBlock(block *types.Block, epochNumber uint64) error {
 			"epoch number mismatched, expect %v got %v", epochNumber, bEpochNumber,
 		)
 		return errors.WithMessage(errBlockValidationFailed, errMsg)
+	}
+
+	if block.Hash != hash {
+		return errors.WithMessage(errBlockValidationFailed, "block hash not matched")
 	}
 
 	return nil

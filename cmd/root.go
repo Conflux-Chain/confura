@@ -91,7 +91,7 @@ func start(cmd *cobra.Command, args []string) {
 
 		// Start to sync data
 		logrus.Info("Starting to sync epoch data into db...")
-		syncer := cisync.NewDatabaseSyncer(syncCfx, db)
+		syncer := cisync.MustNewDatabaseSyncer(syncCfx, db)
 		go syncer.Sync(ctx, wg)
 
 		logrus.Info("Starting to sync epoch data into cache...")
