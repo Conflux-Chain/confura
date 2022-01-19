@@ -19,7 +19,10 @@ import (
 )
 
 const (
+	// viper key for custom db sync point
 	viperDbSyncEpochFromKey = "sync.db.epochFrom"
+	// default capacity setting for pivot info window
+	dbSyncEpochPivotWinCapacity = 500
 )
 
 // DatabaseSyncer is used to sync blockchain data into database
@@ -43,6 +46,8 @@ type DatabaseSyncer struct {
 	pivotSwitchEpochCh chan uint64
 	// checkpoint channel received to check sync data
 	checkPointCh chan bool
+	// window to cache epoch pivot info
+	epochPivotWin *epochPivotWindow
 }
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
@@ -57,6 +62,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSync
 		lastSubEpochNo:      citypes.EpochNumberNil,
 		pivotSwitchEpochCh:  make(chan uint64, viper.GetInt64("sync.sub.buffer")),
 		checkPointCh:        make(chan bool, 2),
+		epochPivotWin:       newEpochPivotWindow(dbSyncEpochPivotWinCapacity),
 	}
 
 	// Ensure epoch data validity in database
@@ -82,17 +88,27 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	ticker := time.NewTicker(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
 
+	checkpoint := func() {
+		if err := syncer.doCheckPoint(); err != nil {
+			logrus.WithError(err).Error("Db syncer failed to do checkpoint")
+
+			if len(syncer.checkPointCh) == 0 { // rethrow checkpoint task
+				syncer.checkPointCh <- true
+			}
+		}
+	}
+
 	for {
 		select {
 		case <-syncer.checkPointCh: // with highest priority
-			syncer.mustDoCheckPoint()
+			checkpoint()
 		default:
 			select {
 			case <-ctx.Done():
 				logrus.Info("DB syncer shutdown ok")
 				return
 			case <-syncer.checkPointCh:
-				syncer.mustDoCheckPoint()
+				checkpoint()
 			case <-ticker.C:
 				if err := syncer.doTicker(ticker); err != nil {
 					logrus.WithError(err).
@@ -164,7 +180,7 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 			"epochRange": citypes.EpochRange{EpochFrom: syncer.epochFrom, EpochTo: maxEpochTo},
 		})
 
-		if syncer.epochFrom == maxEpochTo+1 { // regarded as catched up even through may be pivot switched
+		if syncer.epochFrom == maxEpochTo+1 { // regarded as catched up even through maybe pivot switched
 			logger.Debug("Db syncer skipped due to already catched up")
 			return true, nil
 		}
@@ -198,25 +214,30 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 
 		data, err := store.QueryEpochData(syncer.cfx, epochNo)
 		if err == nil {
-			if i == 0 { // the first epoch must be continuous to the latest epoch in db
+			if i == 0 { // the first epoch must be continuous to the latest epoch in db store
 				latestPivotHash, err := syncer.getStoreLatestPivotHash()
 				if err != nil {
 					eplogger.WithError(err).Error(
 						"Db syncer failed to get latest pivot hash from db for parent hash check",
 					)
-					return false, errors.WithMessage(err, "failed to get latest pivot hash from db")
+					return false, errors.WithMessage(err, "failed to get latest pivot hash")
 				}
 
 				if len(latestPivotHash) > 0 && data.GetPivotBlock().ParentHash != latestPivotHash {
+					eplogger.WithFields(logrus.Fields{
+						"latestStoreEpoch": syncer.epochFrom - 1,
+						"latestPivotHash":  latestPivotHash,
+					}).Info("Db syncer popping latest epoch from db store due to parent hash mismatched")
+
 					if err := syncer.pivotSwitchRevert(syncer.epochFrom - 1); err != nil {
 						eplogger.WithError(err).Error(
 							"Db syncer failed to revert latest epoch in db due to parent hash mismatched",
 						)
-					}
 
-					eplogger.WithField("latestStorePivotHash", latestPivotHash).Info(
-						"Db syncer popped latest epoch from db due to parent hash mismatched with sync epoch",
-					)
+						return false, errors.WithMessage(
+							err, "failed to pop epoch from db store due to parent hash mismatched",
+						)
+					}
 
 					return false, nil
 				}
@@ -258,6 +279,18 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 
 	syncer.epochFrom += uint64(len(epochDataSlice))
 
+	for _, epdata := range epochDataSlice { // cache epoch pivot info for late use
+		err := syncer.epochPivotWin.push(epdata.GetPivotBlock())
+		if err != nil {
+			logger.WithField("pivotBlockEpoch", epdata.Number).WithError(err).Info(
+				"Db syncer failed to push pivot block into epoch cache window",
+			)
+
+			syncer.epochPivotWin.reset()
+			break
+		}
+	}
+
 	logger.WithFields(logrus.Fields{
 		"newSyncFrom":   syncer.epochFrom,
 		"finalSyncSize": len(epochDataSlice),
@@ -266,25 +299,33 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 	return false, nil
 }
 
-func (syncer *DatabaseSyncer) mustDoCheckPoint() {
+func (syncer *DatabaseSyncer) doCheckPoint() error {
 	logger := logrus.WithFields(logrus.Fields{
 		"epochFrom":      syncer.epochFrom,
 		"lastSubEpochNo": atomic.LoadUint64(&syncer.lastSubEpochNo),
 	})
 
+	logger.Info("Db syncer ensuring epoch data validity on pubsub checkpoint")
+
 	if err := ensureStoreEpochDataOk(syncer.cfx, syncer.db); err != nil {
-		logger.WithError(err).Fatal(
+		logger.WithError(err).Info(
 			"Db syncer failed to ensure epoch data validity on checkpoint",
 		)
+
+		return errors.WithMessage(err, "failed to ensure data validity")
 	}
 
 	if _, err := syncer.loadLastSyncEpoch(); err != nil {
-		logger.WithError(err).Fatal(
+		logger.WithError(err).Info(
 			"Db syncer failed to reload last sync point on checkpoint",
 		)
+
+		return errors.WithMessage(err, "failed to reload last sync point")
 	}
 
-	logger.Info("Db syncer ensuring epoch data validity on pubsub checkpoint")
+	syncer.epochPivotWin.reset() // reset epoch pivot info window to clear cache
+
+	return nil
 }
 
 func (syncer *DatabaseSyncer) doTicker(ticker *time.Ticker) error {
@@ -336,6 +377,8 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
 		return nil
 	}
 
+	logger.Info("Db syncer reverting epoch data due to pivot chain switch")
+
 	// remove epoch data from database due to pivot switch
 	if err := syncer.db.Popn(revertTo); err != nil {
 		logger.WithError(err).Error(
@@ -345,10 +388,11 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
 		return errors.WithMessage(err, "failed to pop epoch data from db")
 	}
 
+	// remove pivot data of reverted epoch from cache window
+	syncer.epochPivotWin.popn(revertTo)
 	// update syncer start epoch
 	syncer.epochFrom = revertTo
 
-	logger.Info("Db syncer reverted epoch data due to pivot chain switch")
 	return nil
 }
 
@@ -384,25 +428,31 @@ func (syncer *DatabaseSyncer) detectPivotSwitchFromPubsub(epoch *types.Websocket
 
 		atomic.StoreUint64(addrPtr, newEpoch)
 	default: // bad incontinuous epoch
-		return errors.Errorf("epoch not continuous, expect %v got %v", lastSubEpochNo+1, newEpoch)
+		return errors.Errorf("bad incontinuous epoch, expect %v got %v", lastSubEpochNo+1, newEpoch)
 	}
 
 	return nil
 }
 
 func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
-	// TODO: cache in-memory for better performance.
 	latestEpochNo := syncer.epochFrom - 1
-	lastestStorePivotBlock, err := syncer.db.GetBlockSummaryByEpoch(latestEpochNo)
 
-	if err != nil && !syncer.db.IsRecordNotFound(err) {
-		err = errors.WithMessagef(err, "failed to get block by epoch %v from db", latestEpochNo)
-		return types.Hash(""), err
+	// load from in-memory cache first
+	if pivotHash, ok := syncer.epochPivotWin.getPivotHash(latestEpochNo); ok {
+		return pivotHash, nil
 	}
 
+	// load from db store if cache missed
+	pivotBlock, err := syncer.db.GetBlockSummaryByEpoch(latestEpochNo)
 	if err == nil {
-		return lastestStorePivotBlock.Hash, nil
+		return pivotBlock.Hash, nil
 	}
 
-	return types.Hash(""), nil
+	if syncer.db.IsRecordNotFound(err) {
+		return types.Hash(""), nil
+	}
+
+	return types.Hash(""), errors.WithMessagef(
+		err, "failed to get block by epoch %v", latestEpochNo,
+	)
 }
