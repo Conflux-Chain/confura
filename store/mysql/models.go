@@ -101,7 +101,7 @@ func loadBlock(db *gorm.DB, whereClause string, args ...interface{}) (*types.Blo
 	var blk block
 
 	db = db.Where(whereClause, args...).First(&blk)
-	if err := db.Scan(&blk).Error; err != nil {
+	if err := db.Error; err != nil {
 		return nil, err
 	}
 

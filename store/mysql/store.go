@@ -471,7 +471,7 @@ func (ms *mysqlStore) Popn(epochUntil uint64) error {
 	logrus.WithFields(logrus.Fields{
 		"epochUntil": epochUntil, "stackMaxEpoch": maxEpoch,
 		"epochOpAffects": txOpAffects.EpochDataOpAffects,
-	}).WithError(err).Info("Epoch data popped out from MySQL store")
+	}).WithError(err).Info("Epoch data popped out from db store")
 
 	return err
 }
@@ -847,6 +847,7 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 				return txOpAffects, errors.WithMessage(err, "failed to find logs partitions for deletion")
 			}
 
+			// TODO: refactor this due to there is no need to delete logs any more if no partitions found for it.
 			if len(partitions) > 0 {
 				dbTx = dbTx.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
 			}
