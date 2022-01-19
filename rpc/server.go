@@ -52,8 +52,8 @@ func MustNewEvmSpaceServer(router infuraNode.Router, exposedModules []string) *u
 	return util.MustNewRpcServer(evmSpaceRpcServerName, exposedApis)
 }
 
-func MustNewNativeSpaceBridgeServer(nodeURL string, exposedModules []string) *util.RpcServer {
-	allApis, err := nativeSpaceBridgeApis(nodeURL)
+func MustNewNativeSpaceBridgeServer(ethNodeURL, cfxNodeURL string, exposedModules []string) *util.RpcServer {
+	allApis, err := nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server")
 	}

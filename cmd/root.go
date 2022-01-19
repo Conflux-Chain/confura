@@ -128,9 +128,7 @@ func start(cmd *cobra.Command, args []string) {
 		evmServer := startEvmSpaceRpcServer(router)
 		rpcServers = append(rpcServers, evmServer)
 
-		// TODO configure cluster for CFX bridge?
-		cfxBridgeNode := viper.GetString("cfx.http")
-		cfxBridgeServer := startNativeSpaceBridgeRpcServer(cfxBridgeNode)
+		cfxBridgeServer := startNativeSpaceBridgeRpcServer()
 		rpcServers = append(rpcServers, cfxBridgeServer)
 	}
 
@@ -165,12 +163,15 @@ func startEvmSpaceRpcServer(router node.Router) *util.RpcServer {
 	return server
 }
 
-func startNativeSpaceBridgeRpcServer(nodeURL string) *util.RpcServer {
+func startNativeSpaceBridgeRpcServer() *util.RpcServer {
 	// Start RPC server
 	logrus.Info("Start to run native space bridge rpc server...")
 
+	// TODO configure cluster for CFX bridge?
+	ethNodeURL := viper.GetString("cfxBridge.ethNode")
+	cfxNodeURL := viper.GetString("cfxBridge.cfxNode")
 	exposedModules := viper.GetStringSlice("cfxBridge.exposedModules")
-	server := rpc.MustNewNativeSpaceBridgeServer(nodeURL, exposedModules)
+	server := rpc.MustNewNativeSpaceBridgeServer(ethNodeURL, cfxNodeURL, exposedModules)
 
 	httpEndpoint := viper.GetString("cfxBridge.endpoint")
 	go server.MustServe(httpEndpoint)

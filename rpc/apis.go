@@ -117,8 +117,8 @@ func evmSpaceApis(router infuraNode.Router) []API {
 }
 
 // nativeSpaceBridgeApis adapts EVM space RPCs to native space RPCs.
-func nativeSpaceBridgeApis(nodeURL string) ([]API, error) {
-	cfxApi, err := cfxbridge.NewCfxAPI(nodeURL)
+func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
+	cfxApi, err := cfxbridge.NewCfxAPI(ethNodeURL, cfxNodeURL)
 	if err != nil {
 		return nil, err
 	}

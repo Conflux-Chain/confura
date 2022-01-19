@@ -9,6 +9,8 @@
         "endpoint": ":22539"
     },
     "cfxBridge": {
+        "ethNode": "http://net12001eth.confluxrpc.com",
+        "cfxNode": "http://net12000cfx.confluxrpc.com",
         "exposedModules": [],
         "endpoint": ":32537"
     },

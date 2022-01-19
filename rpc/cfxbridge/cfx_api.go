@@ -22,18 +22,18 @@ type CfxAPI struct {
 	ethChainIdBig *hexutil.Big
 }
 
-func NewCfxAPI(nodeURL string) (*CfxAPI, error) {
-	eth, err := web3go.NewClient(nodeURL)
+func NewCfxAPI(ethNodeURL, cfxNodeURL string) (*CfxAPI, error) {
+	eth, err := web3go.NewClient(ethNodeURL)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to connect to eth space")
 	}
 
-	cfx, err := sdk.NewClient(nodeURL)
+	cfx, err := sdk.NewClient(cfxNodeURL)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to connect to cfx space")
 	}
 
-	chainId, err := eth.Eth.ChainId()
+	ethChainId, err := eth.Eth.ChainId()
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to get chain ID from eth space")
 	}
@@ -41,8 +41,8 @@ func NewCfxAPI(nodeURL string) (*CfxAPI, error) {
 	return &CfxAPI{
 		eth:           eth.Eth,
 		cfx:           cfx,
-		ethNetworkId:  uint32(*chainId),
-		ethChainIdBig: types.NewBigInt(uint64(*chainId)),
+		ethNetworkId:  uint32(*ethChainId),
+		ethChainIdBig: types.NewBigInt(uint64(*ethChainId)),
 	}, nil
 }
 
