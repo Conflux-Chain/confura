@@ -366,6 +366,14 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 
 	// Cache store epoch blocks mapping
 	epbCacheKey := getEpochBlocksCacheKey(data.Number)
+
+	err := rp.Expire(rs.ctx, epbCacheKey, redisCacheExpireDuration).Err()
+	if err != nil {
+		logrus.WithField("epbCacheKey", epbCacheKey).Info(
+			"Failed to set expiration date for epoch to blocks mapping redis key",
+		)
+	}
+
 	if err := rp.RPush(rs.ctx, epbCacheKey, epochBlocks...).Err(); err != nil {
 		return opHistory, err
 	}
@@ -376,6 +384,14 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 
 	// Cache store epoch transactions mapping
 	eptCacheKey := getEpochTxsCacheKey(data.Number)
+
+	err = rp.Expire(rs.ctx, eptCacheKey, redisCacheExpireDuration).Err()
+	if err != nil {
+		logrus.WithField("eptCacheKey", eptCacheKey).Info(
+			"Failed to set expiration date for epoch to txs mapping redis key",
+		)
+	}
+
 	return opHistory, rp.RPush(rs.ctx, eptCacheKey, epochTxs...).Err()
 }
 
