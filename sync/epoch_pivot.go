@@ -38,10 +38,19 @@ func (win *epochPivotWindow) reset() {
 func (win *epochPivotWindow) push(pivotBlock *types.Block) error {
 	pivotEpochNum := pivotBlock.EpochNumber.ToInt().Uint64()
 
-	if win.size() != 0 && (win.epochTo+1) != pivotEpochNum {
-		return errors.Errorf(
-			"incontinuous epoch pushed, expect %v got %v", win.epochTo+1, pivotEpochNum,
-		)
+	if win.size() > 0 { // validate incoming pivot block
+		if (win.epochTo + 1) != pivotEpochNum {
+			return errors.Errorf(
+				"incontinuous epoch pushed, expect %v got %v", win.epochTo+1, pivotEpochNum,
+			)
+		}
+
+		latestPivotHash, ok := win.epochToPivotHash[win.epochTo]
+		if !ok || pivotBlock.ParentHash != latestPivotHash {
+			return errors.Errorf(
+				"mismatched parent hash, expect %v got %v", latestPivotHash, pivotBlock.ParentHash,
+			)
+		}
 	}
 
 	// reclaim in case of memory blast
@@ -52,13 +61,17 @@ func (win *epochPivotWindow) push(pivotBlock *types.Block) error {
 
 	// cache store epoch pivot hash
 	win.epochToPivotHash[pivotEpochNum] = pivotBlock.Hash
-	if !win.isSet() {
-		win.epochFrom, win.epochTo = pivotEpochNum, pivotEpochNum
-	} else {
-		win.epochTo = pivotEpochNum
-	}
+	win.expandTo(pivotEpochNum)
 
 	return nil
+}
+
+func (win *epochPivotWindow) expandTo(newEpoch uint64) {
+	if !win.isSet() {
+		win.epochFrom, win.epochTo = newEpoch, newEpoch
+	} else if win.epochTo < newEpoch {
+		win.epochTo = newEpoch
+	}
 }
 
 func (win *epochPivotWindow) popn(epochUntil uint64) {
