@@ -22,7 +22,7 @@ const (
 	// viper key for custom db sync point
 	viperDbSyncEpochFromKey = "sync.db.epochFrom"
 	// default capacity setting for pivot info window
-	dbSyncEpochPivotWinCapacity = 500
+	dbSyncEpochPivotWinCapacity = 100
 )
 
 // DatabaseSyncer is used to sync blockchain data into database
@@ -98,15 +98,22 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 		}
 	}
 
-	for {
+	breakLoop := false
+	quit := func() {
+		breakLoop = true
+		logrus.Info("DB syncer shutdown ok")
+	}
+
+	for !breakLoop {
 		select {
-		case <-syncer.checkPointCh: // with highest priority
+		case <-ctx.Done(): // high priority
+			quit()
+		case <-syncer.checkPointCh: // high priority
 			checkpoint()
-		default:
+		default: // overall priority
 			select {
 			case <-ctx.Done():
-				logrus.Info("DB syncer shutdown ok")
-				return
+				quit()
 			case <-syncer.checkPointCh:
 				checkpoint()
 			case <-ticker.C:
@@ -150,8 +157,7 @@ func (syncer *DatabaseSyncer) loadLastSyncEpoch() (loaded bool, err error) {
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
 func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 	// Drain pivot switch epoch event channel to handle pivot chain switch before sync
-	breakLoop := false
-	for !breakLoop {
+	for breakLoop := false; !breakLoop; {
 		select {
 		case rEpoch := <-syncer.pivotSwitchEpochCh:
 			if err := syncer.pivotSwitchRevert(rEpoch); err != nil {
@@ -187,7 +193,7 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 
 		err := syncer.pivotSwitchRevert(maxEpochTo)
 		if err != nil {
-			err = errors.WithMessage(err, "failed to revert epoch(s) from invalid epoch range")
+			err = errors.WithMessage(err, "failed to revert epoch(s) due to invalid epoch range")
 		}
 
 		logger.WithError(err).Info("Db syncer reverted epoch(s) due to invalid epoch range")
@@ -213,43 +219,6 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 		eplogger := logger.WithField("epoch", epochNo)
 
 		data, err := store.QueryEpochData(syncer.cfx, epochNo)
-		if err == nil {
-			if i == 0 { // the first epoch must be continuous to the latest epoch in db store
-				latestPivotHash, err := syncer.getStoreLatestPivotHash()
-				if err != nil {
-					eplogger.WithError(err).Error(
-						"Db syncer failed to get latest pivot hash from db for parent hash check",
-					)
-					return false, errors.WithMessage(err, "failed to get latest pivot hash")
-				}
-
-				if len(latestPivotHash) > 0 && data.GetPivotBlock().ParentHash != latestPivotHash {
-					eplogger.WithFields(logrus.Fields{
-						"latestStoreEpoch": syncer.epochFrom - 1,
-						"latestPivotHash":  latestPivotHash,
-					}).Info("Db syncer popping latest epoch from db store due to parent hash mismatched")
-
-					if err := syncer.pivotSwitchRevert(syncer.epochFrom - 1); err != nil {
-						eplogger.WithError(err).Error(
-							"Db syncer failed to revert latest epoch in db due to parent hash mismatched",
-						)
-
-						return false, errors.WithMessage(
-							err, "failed to pop epoch from db store due to parent hash mismatched",
-						)
-					}
-
-					return false, nil
-				}
-			} else { // otherwise non-first epoch must also be continuous to previous one
-				continuous, desc := data.IsContinuousTo(epochDataSlice[i-1])
-				if !continuous {
-					err = errors.WithMessagef(
-						store.ErrEpochPivotSwitched, "incontinuous epoch %v for %v", epochNo, desc,
-					)
-				}
-			}
-		}
 
 		// If epoch pivot switched, stop the querying right now since it's pointless to query epoch data
 		// that will be reverted late.
@@ -260,6 +229,46 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 
 		if err != nil {
 			return false, errors.WithMessagef(err, "failed to query epoch data for epoch %v", epochNo)
+		}
+
+		if i == 0 { // the first epoch must be continuous to the latest epoch in db store
+			latestPivotHash, err := syncer.getStoreLatestPivotHash()
+			if err != nil {
+				eplogger.WithError(err).Error(
+					"Db syncer failed to get latest pivot hash from db for parent hash check",
+				)
+				return false, errors.WithMessage(err, "failed to get latest pivot hash")
+			}
+
+			if len(latestPivotHash) > 0 && data.GetPivotBlock().ParentHash != latestPivotHash {
+				eplogger.WithFields(logrus.Fields{
+					"latestStoreEpoch": syncer.epochFrom - 1,
+					"latestPivotHash":  latestPivotHash,
+				}).Info("Db syncer popping latest epoch from db store due to parent hash mismatched")
+
+				if err := syncer.pivotSwitchRevert(syncer.epochFrom - 1); err != nil {
+					eplogger.WithError(err).Error(
+						"Db syncer failed to pop latest epoch from db store due to parent hash mismatched",
+					)
+
+					return false, errors.WithMessage(
+						err, "failed to pop latest epoch from db store due to parent hash mismatched",
+					)
+				}
+
+				return false, nil
+			}
+		} else { // otherwise non-first epoch must also be continuous to previous one
+			continuous, desc := data.IsContinuousTo(epochDataSlice[i-1])
+			if !continuous {
+				// truncate the batch synced epoch data until the previous epoch
+				epochDataSlice = epochDataSlice[:i-1]
+
+				eplogger.WithField("i", i).Infof(
+					"Db syncer truncated batch synced data due to epoch not continuous for %v", desc,
+				)
+				break
+			}
 		}
 
 		epochDataSlice = append(epochDataSlice, &data)
