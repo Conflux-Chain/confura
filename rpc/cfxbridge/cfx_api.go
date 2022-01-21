@@ -16,10 +16,9 @@ import (
 )
 
 type CfxAPI struct {
-	eth           *client.RpcEthClient
-	cfx           *sdk.Client
-	ethNetworkId  uint32
-	ethChainIdBig *hexutil.Big
+	eth          *client.RpcEthClient
+	cfx          *sdk.Client
+	ethNetworkId uint32
 }
 
 func NewCfxAPI(ethNodeURL, cfxNodeURL string) (*CfxAPI, error) {
@@ -39,10 +38,9 @@ func NewCfxAPI(ethNodeURL, cfxNodeURL string) (*CfxAPI, error) {
 	}
 
 	return &CfxAPI{
-		eth:           eth.Eth,
-		cfx:           cfx,
-		ethNetworkId:  uint32(*ethChainId),
-		ethChainIdBig: types.NewBigInt(uint64(*ethChainId)),
+		eth:          eth.Eth,
+		cfx:          cfx,
+		ethNetworkId: uint32(*ethChainId),
 	}, nil
 }
 

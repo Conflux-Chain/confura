@@ -55,7 +55,7 @@ func (api *CfxAPI) convertTx(tx *ethTypes.Transaction, receipt *ethTypes.Receipt
 
 	chainId := tx.ChainID
 	if chainId == nil {
-		chainId = api.ethChainIdBig
+		chainId = HexBig0
 	}
 
 	var contractCreated *cfxaddress.Address
