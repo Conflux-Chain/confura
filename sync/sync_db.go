@@ -91,10 +91,7 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	checkpoint := func() {
 		if err := syncer.doCheckPoint(); err != nil {
 			logrus.WithError(err).Error("Db syncer failed to do checkpoint")
-
-			if len(syncer.checkPointCh) == 0 { // rethrow checkpoint task
-				syncer.checkPointCh <- true
-			}
+			syncer.triggerCheckpoint() // re-trigger checkpoint
 		}
 	}
 
@@ -105,13 +102,13 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	}
 
 	for !breakLoop {
-		select {
-		case <-ctx.Done(): // high priority
+		select { // first class priority
+		case <-ctx.Done():
 			quit()
-		case <-syncer.checkPointCh: // high priority
+		case <-syncer.checkPointCh:
 			checkpoint()
-		default: // overall priority
-			select {
+		default:
+			select { // second class priority
 			case <-ctx.Done():
 				quit()
 			case <-syncer.checkPointCh:
@@ -370,7 +367,7 @@ func (syncer *DatabaseSyncer) onEpochSubStart() {
 	logrus.Debug("DB sync onEpochSubStart event received")
 
 	atomic.StoreUint64(&(syncer.lastSubEpochNo), citypes.EpochNumberNil) // reset lastSubEpochNo
-	syncer.checkPointCh <- true
+	syncer.triggerCheckpoint()
 }
 
 func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
@@ -381,7 +378,7 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
 
 	if revertTo >= syncer.epochFrom {
 		logger.Debug(
-			"Db sync skipped pivot switch revert due to not catched up yet",
+			"Db syncer skipped pivot switch revert due to not catched up yet",
 		)
 		return nil
 	}
@@ -403,6 +400,12 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
 	syncer.epochFrom = revertTo
 
 	return nil
+}
+
+func (syncer *DatabaseSyncer) triggerCheckpoint() {
+	if len(syncer.checkPointCh) == 0 {
+		syncer.checkPointCh <- true
+	}
 }
 
 // Detect pivot chain switch by new received epoch from pubsub. Besides, it also validates if

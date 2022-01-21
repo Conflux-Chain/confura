@@ -189,7 +189,7 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 				txOpHistory.Merge(opHistory)
 			}
 
-			logrus.WithField("opHistory", txOpHistory).Debug("Pushn db operation history")
+			logrus.WithField("opHistory", txOpHistory).Debug("Pushn redis operation history")
 
 			// update epoch data count
 			if err := rs.updateEpochDataCount(pipe, txOpHistory.NumAlters); err != nil {
@@ -237,7 +237,7 @@ func (rs *redisStore) Popn(epochUntil uint64) error {
 
 	logrus.WithFields(logrus.Fields{
 		"epochUntil": epochUntil, "stackMaxEpoch": maxEpoch,
-	}).WithError(err).Info("Epoch data popped out from redis store")
+	}).WithError(err).Info("Popn operation from redis store")
 
 	return err
 }
@@ -366,16 +366,16 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 
 	// Cache store epoch blocks mapping
 	epbCacheKey := getEpochBlocksCacheKey(data.Number)
+	if err := rp.RPush(rs.ctx, epbCacheKey, epochBlocks...).Err(); err != nil {
+		return opHistory, err
+	}
 
+	// !!! order is important (must be after rpush)
 	err := rp.Expire(rs.ctx, epbCacheKey, redisCacheExpireDuration).Err()
 	if err != nil {
 		logrus.WithField("epbCacheKey", epbCacheKey).Info(
 			"Failed to set expiration date for epoch to blocks mapping redis key",
 		)
-	}
-
-	if err := rp.RPush(rs.ctx, epbCacheKey, epochBlocks...).Err(); err != nil {
-		return opHistory, err
 	}
 
 	if len(epochTxs) == 0 {
@@ -384,7 +384,11 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 
 	// Cache store epoch transactions mapping
 	eptCacheKey := getEpochTxsCacheKey(data.Number)
+	if err := rp.RPush(rs.ctx, eptCacheKey, epochTxs...).Err(); err != nil {
+		return opHistory, err
+	}
 
+	// !!! order is important (must be after rpush)
 	err = rp.Expire(rs.ctx, eptCacheKey, redisCacheExpireDuration).Err()
 	if err != nil {
 		logrus.WithField("eptCacheKey", eptCacheKey).Info(
@@ -392,7 +396,7 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 		)
 	}
 
-	return opHistory, rp.RPush(rs.ctx, eptCacheKey, epochTxs...).Err()
+	return opHistory, nil
 }
 
 func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemoveOption, rmOpType store.EpochOpType) error {
@@ -506,7 +510,7 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			logrus.WithFields(logrus.Fields{
 				"epochFrom": epochFrom, "epochTo": epochTo,
 				"rmOption": option, "rmOpType": rmOpType,
-			}).WithError(err).Debug("Failed to remove epoch data from reids store with pipeline unlink")
+			}).WithError(err).Info("Failed to remove epoch data from reids store with pipeline unlink")
 		}
 
 		return err

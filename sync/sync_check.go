@@ -131,6 +131,11 @@ func checkIfEpochIsReverted(cfx sdk.ClientOperator, s store.Store, epochNo uint6
 	// Get the sync epoch block from store
 	sBlock, err := s.GetBlockSummaryByEpoch(epochNo)
 	if err != nil {
+		// Epoch data not found in store, take it as not reverted
+		if s.IsRecordNotFound(errors.Cause(err)) {
+			return false, nil
+		}
+
 		return false, errors.WithMessagef(err, "failed to get pivot block for epoch %v from store", epochNo)
 	}
 

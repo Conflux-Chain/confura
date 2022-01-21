@@ -95,7 +95,7 @@ func start(cmd *cobra.Command, args []string) {
 		go syncer.Sync(ctx, wg)
 
 		logrus.Info("Starting to sync epoch data into cache...")
-		csyncer := cisync.NewKVCacheSyncer(syncCfx, cache)
+		csyncer := cisync.MustNewKVCacheSyncer(syncCfx, cache)
 		go csyncer.Sync(ctx, wg)
 
 		// Prepare cfx instance with ws portocol for pub/sub purpose
