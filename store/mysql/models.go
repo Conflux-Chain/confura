@@ -25,7 +25,7 @@ type transaction struct {
 	TxRawDataLen      uint64 `gorm:"not null"`
 	ReceiptRawData    []byte `gorm:"type:MEDIUMBLOB"`
 	ReceiptRawDataLen uint64 `gorm:"not null"`
-	NumReceiptLogs    int    `gorm:"default:-1"`
+	NumReceiptLogs    int    `gorm:"not null"`
 }
 
 func (transaction) TableName() string {
