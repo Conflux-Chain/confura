@@ -169,17 +169,28 @@ type EthCallRequest struct {
 
 func (req *EthCallRequest) ToCallMsg() ethTypes.CallRequest {
 	msg := ethTypes.CallRequest{
-		From:     req.From.ValueOrNil(),
-		To:       req.To.ValueOrNil(),
-		GasPrice: req.GasPrice,
-		Gas:      req.Gas,
-		Value:    req.Value,
-		Nonce:    req.Nonce,
+		From: req.From.ValueOrNil(),
+		To:   req.To.ValueOrNil(),
+	}
+
+	if req.GasPrice != nil {
+		msg.GasPrice = req.GasPrice.ToInt()
+	}
+
+	if req.Gas != nil {
+		msg.Gas = (*uint64)(req.Gas)
+	}
+
+	if req.Value != nil {
+		msg.Value = req.Value.ToInt()
+	}
+
+	if req.Nonce != nil {
+		msg.Nonce = (*uint64)(req.Nonce)
 	}
 
 	if req.Data != nil {
-		data := hexutil.Bytes(hexutil.MustDecode(*req.Data))
-		msg.Data = &data
+		msg.Data = hexutil.MustDecode(*req.Data)
 	}
 
 	return msg
@@ -193,6 +204,7 @@ type EthLogFilter struct {
 	BlockHashes *common.Hash // eth space only accept a single block hash as filter
 	Address     []EthAddress
 	Topics      [][]common.Hash
+	Limit       *hexutil.Uint64
 }
 
 func (filter *EthLogFilter) ToFilterQuery() ethTypes.FilterQuery {
@@ -205,6 +217,11 @@ func (filter *EthLogFilter) ToFilterQuery() ethTypes.FilterQuery {
 
 	for i := range filter.Address {
 		query.Addresses = append(query.Addresses, filter.Address[i].value)
+	}
+
+	if filter.Limit != nil {
+		limit := uint(*filter.Limit)
+		query.Limit = &limit
 	}
 
 	return query

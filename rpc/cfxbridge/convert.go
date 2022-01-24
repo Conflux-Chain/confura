@@ -1,6 +1,8 @@
 package cfxbridge
 
 import (
+	"math/big"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
@@ -8,6 +10,14 @@ import (
 	ethTypes "github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 )
+
+func (api *CfxAPI) normalizeBig(value *big.Int, err error) (*hexutil.Big, error) {
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewBigIntByRaw(value), nil
+}
 
 func (api *CfxAPI) convertHashNullable(value *common.Hash) *types.Hash {
 	if value == nil {
@@ -32,7 +42,7 @@ func (api *CfxAPI) convertAddress(value common.Address) types.Address {
 	return address
 }
 
-func (api *CfxAPI) convertTxStatus(value *hexutil.Uint) *hexutil.Uint64 {
+func (api *CfxAPI) convertTxStatus(value *uint) *hexutil.Uint64 {
 	if value == nil {
 		return nil
 	}
@@ -48,42 +58,35 @@ func (api *CfxAPI) convertTxStatus(value *hexutil.Uint) *hexutil.Uint64 {
 	return &status
 }
 
-func (api *CfxAPI) convertTx(tx *ethTypes.Transaction, receipt *ethTypes.Receipt) *types.Transaction {
+func (api *CfxAPI) convertTx(tx *ethTypes.Transaction) *types.Transaction {
 	if tx == nil {
 		return nil
 	}
 
-	chainId := tx.ChainID
-	if chainId == nil {
-		chainId = HexBig0
-	}
-
-	var contractCreated *cfxaddress.Address
-	var status *hexutil.Uint64
-	if receipt != nil {
-		contractCreated = api.convertAddressNullable(receipt.ContractAddress)
-		status = api.convertTxStatus(receipt.Status)
+	chainId := HexBig0
+	if tx.ChainID != nil {
+		chainId = types.NewBigIntByRaw(tx.ChainID)
 	}
 
 	return &types.Transaction{
 		Hash:             types.Hash(tx.Hash.Hex()),
-		Nonce:            types.NewBigInt(uint64(tx.Nonce)),
+		Nonce:            types.NewBigInt(tx.Nonce),
 		BlockHash:        api.convertHashNullable(tx.BlockHash),
-		TransactionIndex: tx.TransactionIndex,
+		TransactionIndex: (*hexutil.Uint64)(tx.TransactionIndex),
 		From:             api.convertAddress(tx.From),
 		To:               api.convertAddressNullable(tx.To),
-		Value:            tx.Value,
-		GasPrice:         tx.GasPrice,
-		Gas:              types.NewBigInt(uint64(tx.Gas)),
-		ContractCreated:  contractCreated,
+		Value:            types.NewBigIntByRaw(tx.Value),
+		GasPrice:         types.NewBigIntByRaw(tx.GasPrice),
+		Gas:              types.NewBigInt(tx.Gas),
+		ContractCreated:  api.convertAddressNullable(tx.Creates),
 		Data:             hexutil.Encode(tx.Input),
 		StorageLimit:     HexBig0,
 		EpochHeight:      HexBig0,
 		ChainID:          chainId,
-		Status:           status,
-		V:                tx.V,
-		R:                tx.R,
-		S:                tx.S,
+		Status:           api.convertTxStatus(tx.Status),
+		V:                types.NewBigIntByRaw(tx.V),
+		R:                types.NewBigIntByRaw(tx.R),
+		S:                types.NewBigIntByRaw(tx.S),
 	}
 }
 
@@ -105,24 +108,24 @@ func (api *CfxAPI) convertBlockHeader(block *ethTypes.Block) *types.BlockHeader 
 	return &types.BlockHeader{
 		Hash:                  types.Hash(block.Hash.Hex()),
 		ParentHash:            types.Hash(block.ParentHash.Hex()),
-		Height:                block.Number,
+		Height:                types.NewBigIntByRaw(block.Number),
 		Miner:                 api.convertAddress(block.Miner),
 		DeferredStateRoot:     types.Hash(block.StateRoot.Hex()),
 		DeferredReceiptsRoot:  types.Hash(block.ReceiptsRoot.Hex()),
 		DeferredLogsBloomHash: types.Hash(hexutil.Encode(block.LogsBloom.Bytes())),
 		Blame:                 0,
 		TransactionsRoot:      types.Hash(block.TransactionsRoot.Hex()),
-		EpochNumber:           block.Number,
-		BlockNumber:           block.Number,
-		GasLimit:              types.NewBigInt(uint64(block.GasLimit)),
-		GasUsed:               types.NewBigInt(uint64(block.GasUsed)),
-		Timestamp:             types.NewBigInt(uint64(block.Timestamp)),
-		Difficulty:            block.Difficulty,
+		EpochNumber:           types.NewBigIntByRaw(block.Number),
+		BlockNumber:           types.NewBigIntByRaw(block.Number),
+		GasLimit:              types.NewBigInt(block.GasLimit),
+		GasUsed:               types.NewBigInt(block.GasUsed),
+		Timestamp:             types.NewBigInt(block.Timestamp),
+		Difficulty:            types.NewBigIntByRaw(block.Difficulty),
 		PowQuality:            HexBig0,
 		RefereeHashes:         referees,
 		Adaptive:              false,
 		Nonce:                 types.NewBigInt(block.Nonce.Uint64()),
-		Size:                  types.NewBigInt(uint64(block.Size)),
+		Size:                  types.NewBigInt(block.Size),
 		Custom:                [][]byte{extraData},
 	}
 }
@@ -136,7 +139,7 @@ func (api *CfxAPI) convertBlock(block *ethTypes.Block) *types.Block {
 
 	txs := make([]types.Transaction, len(blockTxs))
 	for i := range blockTxs {
-		txs[i] = *api.convertTx(&blockTxs[i], nil)
+		txs[i] = *api.convertTx(&blockTxs[i])
 	}
 
 	return &types.Block{
@@ -178,11 +181,11 @@ func (api *CfxAPI) convertLog(log *ethTypes.Log) *types.Log {
 		Topics:              topics,
 		Data:                log.Data,
 		BlockHash:           api.convertHashNullable(&log.BlockHash),
-		EpochNumber:         types.NewBigInt(uint64(log.BlockNumber)),
+		EpochNumber:         types.NewBigInt(log.BlockNumber),
 		TransactionHash:     api.convertHashNullable(&log.TxHash),
-		TransactionIndex:    types.NewBigInt(uint64(log.TxIndex)), // tx index in block
-		LogIndex:            types.NewBigInt(uint64(log.Index)),   // log index in block
-		TransactionLogIndex: log.TransactionLogIndex,              // log index in tx
+		TransactionIndex:    types.NewBigInt(uint64(log.TxIndex)),              // tx index in block
+		LogIndex:            types.NewBigInt(uint64(log.Index)),                // log index in block
+		TransactionLogIndex: types.NewBigInt(uint64(*log.TransactionLogIndex)), // log index in tx
 	}
 }
 
@@ -197,33 +200,32 @@ func (api *CfxAPI) convertReceipt(receipt *ethTypes.Receipt) *types.TransactionR
 	}
 
 	var stateRoot types.Hash
-	if receipt.Root == nil || len(*receipt.Root) == 0 {
+	if len(receipt.Root) == 0 {
 		stateRoot = types.Hash(common.Hash{}.Hex())
 	} else {
-		stateRoot = types.Hash(receipt.Root.String())
+		stateRoot = types.Hash(hexutil.Encode(receipt.Root))
 	}
 
-	var errMsg *string
-	if *receipt.Status == 0 {
-		errMsg = &defaultReceiptErrMsg
-	}
+	gasFee := new(big.Int).Mul(
+		new(big.Int).SetUint64(receipt.EffectiveGasPrice),
+		new(big.Int).SetUint64(receipt.GasUsed),
+	)
 
-	// TODO missed fields: GasFee (price * gasCharged?), TxExecErrorMsg
 	return &types.TransactionReceipt{
 		TransactionHash:         types.Hash(receipt.TransactionHash.Hex()),
-		Index:                   receipt.TransactionIndex,
+		Index:                   hexutil.Uint64(receipt.TransactionIndex),
 		BlockHash:               types.Hash(receipt.BlockHash.Hex()),
-		EpochNumber:             &receipt.BlockNumber,
+		EpochNumber:             types.NewUint64(receipt.BlockNumber),
 		From:                    api.convertAddress(receipt.From),
 		To:                      api.convertAddressNullable(receipt.To),
-		GasUsed:                 types.NewBigInt(uint64(receipt.GasUsed)),
-		GasFee:                  HexBig0,
+		GasUsed:                 types.NewBigInt(receipt.GasUsed),
+		GasFee:                  types.NewBigIntByRaw(gasFee),
 		ContractCreated:         api.convertAddressNullable(receipt.ContractAddress),
 		Logs:                    logs,
 		LogsBloom:               types.Bloom(hexutil.Encode(receipt.LogsBloom.Bytes())),
 		StateRoot:               stateRoot,
-		OutcomeStatus:           *api.convertTxStatus(receipt.Status), // receipt status should be always available
-		TxExecErrorMsg:          errMsg,
+		OutcomeStatus:           *api.convertTxStatus(&receipt.Status),
+		TxExecErrorMsg:          receipt.TxExecErrorMsg,
 		GasCoveredBySponsor:     false,
 		StorageCoveredBySponsor: false,
 		StorageCollateralized:   0,

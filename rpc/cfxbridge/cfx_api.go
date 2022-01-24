@@ -45,7 +45,7 @@ func NewCfxAPI(ethNodeURL, cfxNodeURL string) (*CfxAPI, error) {
 }
 
 func (api *CfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
-	return api.eth.GasPrice()
+	return api.normalizeBig(api.eth.GasPrice())
 }
 
 func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexutil.Big, error) {
@@ -58,7 +58,7 @@ func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexuti
 }
 
 func (api *CfxAPI) GetBalance(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
-	return api.eth.Balance(address.value, bn.ValueOrNil())
+	return api.normalizeBig(api.eth.Balance(address.value, bn.ValueOrNil()))
 }
 
 func (api *CfxAPI) GetAdmin(ctx context.Context, contract EthAddress, bn *EthBlockNumber) (*string, error) {
@@ -96,7 +96,7 @@ func (api *CfxAPI) GetCode(ctx context.Context, contract EthAddress, bn *EthBloc
 }
 
 func (api *CfxAPI) GetStorageAt(ctx context.Context, address EthAddress, position *hexutil.Big, bn *EthBlockNumber) (common.Hash, error) {
-	return api.eth.StorageAt(address.value, position, bn.ValueOrNil())
+	return api.eth.StorageAt(address.value, position.ToInt(), bn.ValueOrNil())
 }
 
 func (api *CfxAPI) GetStorageRoot(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*types.StorageRoot, error) {
@@ -132,7 +132,7 @@ func (api *CfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockH
 		return nil, ErrInvalidBlockAssumption
 	}
 
-	if block.Number.ToInt().Uint64() != uint64(bn) {
+	if block.Number.Uint64() != uint64(bn) {
 		return nil, ErrInvalidBlockAssumption
 	}
 
@@ -174,7 +174,7 @@ func (api *CfxAPI) GetBestBlockHash(ctx context.Context) (common.Hash, error) {
 }
 
 func (api *CfxAPI) GetNextNonce(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
-	return api.eth.TransactionCount(address.value, bn.ValueOrNil())
+	return api.normalizeBig(api.eth.TransactionCount(address.value, bn.ValueOrNil()))
 }
 
 func (api *CfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
@@ -205,14 +205,7 @@ func (api *CfxAPI) GetTransactionByHash(ctx context.Context, txHash common.Hash)
 		return nil, err
 	}
 
-	var receipt *ethTypes.Receipt
-	if tx.BlockHash != nil {
-		if receipt, err = api.eth.TransactionReceipt(txHash); err != nil {
-			return nil, err
-		}
-	}
-
-	return api.convertTx(tx, receipt), nil
+	return api.convertTx(tx), nil
 }
 
 func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCallRequest, bn *EthBlockNumber) (types.Estimate, error) {
@@ -221,10 +214,10 @@ func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCall
 		return types.Estimate{}, err
 	}
 
-	gasUsed := float64(gasLimit.ToInt().Uint64()) * 3.0 / 4.0
+	gasUsed := float64(gasLimit.Uint64()) * 3.0 / 4.0
 
 	return types.Estimate{
-		GasLimit:              gasLimit,
+		GasLimit:              types.NewBigIntByRaw(gasLimit),
 		GasUsed:               types.NewBigInt(uint64(gasUsed)),
 		StorageCollateralized: HexBig0,
 	}, nil
@@ -300,8 +293,8 @@ func (api *CfxAPI) GetAccount(ctx context.Context, address EthAddress, bn *EthBl
 	}
 
 	return types.AccountInfo{
-		Balance:                   balance,
-		Nonce:                     nonce,
+		Balance:                   types.NewBigIntByRaw(balance),
+		Nonce:                     types.NewBigIntByRaw(nonce),
 		CodeHash:                  types.Hash(crypto.Keccak256Hash(code).Hex()),
 		StakingBalance:            HexBig0,
 		CollateralForStorage:      HexBig0,
@@ -333,12 +326,12 @@ func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
 		return types.Status{}, err
 	}
 
-	latestBlockNumber := hexutil.Uint64(block.Number.ToInt().Uint64())
+	latestBlockNumber := hexutil.Uint64(block.Number.Uint64())
 
 	return types.Status{
 		BestHash:         types.Hash(block.Hash.Hex()),
-		ChainID:          *chainId,
-		NetworkID:        *chainId, // eth space return chainId as networkId
+		ChainID:          hexutil.Uint64(*chainId),
+		NetworkID:        hexutil.Uint64(*chainId), // eth space return chainId as networkId
 		EpochNumber:      latestBlockNumber,
 		BlockNumber:      latestBlockNumber,
 		PendingTxNumber:  0,

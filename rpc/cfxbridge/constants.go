@@ -25,7 +25,3 @@ var (
 	emptyReceiptList       = []*types.TransactionReceipt{}
 	emptyStorageChangeList = []types.StorageChange{}
 )
-
-var (
-	defaultReceiptErrMsg = "transaction reverted"
-)
