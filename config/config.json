@@ -21,6 +21,12 @@
         "retryInterval": "1s",
         "requestTimeout": "3s"
     },
+    "eth": {
+        "http": "http://net12001eth.confluxrpc.com",
+        "retry": 3,
+        "retryInterval": "1s",
+        "requestTimeout": "3s"
+    },
     "sync": {
         "poll": {
             "interval": "300ms"

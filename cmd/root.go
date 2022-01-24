@@ -125,7 +125,7 @@ func start(cmd *cobra.Command, args []string) {
 		nsServer := startNativeSpaceRpcServer(router, db, cache)
 		rpcServers = append(rpcServers, nsServer)
 
-		evmServer := startEvmSpaceRpcServer(router)
+		evmServer := startEvmSpaceRpcServer()
 		rpcServers = append(rpcServers, evmServer)
 
 		cfxBridgeServer := startNativeSpaceBridgeRpcServer()
@@ -150,12 +150,14 @@ func start(cmd *cobra.Command, args []string) {
 	}, wg, cancel)
 }
 
-func startEvmSpaceRpcServer(router node.Router) *util.RpcServer {
+func startEvmSpaceRpcServer() *util.RpcServer {
 	// Start RPC server
 	logrus.Info("Start to run EVM space rpc server...")
 
+	// TODO: add support for ETH client pool from node cluster
+	ethNodeURL := viper.GetString("eth.http")
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
-	server := rpc.MustNewEvmSpaceServer(router, exposedModules)
+	server := rpc.MustNewEvmSpaceServer(ethNodeURL, exposedModules)
 
 	httpEndpoint := viper.GetString("ethrpc.endpoint")
 	go server.MustServe(httpEndpoint)

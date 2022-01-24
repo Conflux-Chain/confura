@@ -38,9 +38,12 @@ func MustNewNativeSpaceServer(
 // MustNewNativeSpaceServer new EVM space RPC server by specifying router, and exposed modules.
 // `exposedModules` is a list of API modules to expose via the RPC interface. If the module
 // list is empty, all RPC API endpoints designated public will be exposed.
-func MustNewEvmSpaceServer(router infuraNode.Router, exposedModules []string) *util.RpcServer {
+func MustNewEvmSpaceServer(ethNodeURL string, exposedModules []string) *util.RpcServer {
 	// retrieve all available EVM space rpc apis
-	allApis := evmSpaceApis(router)
+	allApis, err := evmSpaceApis(ethNodeURL)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to new EVM space RPC server")
+	}
 
 	exposedApis, err := filterExposedApis(allApis, exposedModules)
 	if err != nil {
