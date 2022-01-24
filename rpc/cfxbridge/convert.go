@@ -42,7 +42,7 @@ func (api *CfxAPI) convertAddress(value common.Address) types.Address {
 	return address
 }
 
-func (api *CfxAPI) convertTxStatus(value *uint) *hexutil.Uint64 {
+func (api *CfxAPI) convertTxStatus(value *uint64) *hexutil.Uint64 {
 	if value == nil {
 		return nil
 	}
