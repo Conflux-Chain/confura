@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -29,12 +30,15 @@ func (api *ethAPI) GetBlockByHash(
 
 // ChainId returns the chainID value for transaction replay protection.
 func (api *ethAPI) ChainId(ctx context.Context) (*hexutil.Uint64, error) {
-	return api.w3c.Eth.ChainId()
+
+	chainId, err := api.w3c.Eth.ChainId()
+	return (*hexutil.Uint64)(chainId), err
 }
 
 // BlockNumber returns the block number of the chain head.
 func (api *ethAPI) BlockNumber(ctx context.Context) (*hexutil.Big, error) {
-	return api.w3c.Eth.BlockNumber()
+	blockNum, err := api.w3c.Eth.BlockNumber()
+	return (*hexutil.Big)(blockNum), err
 }
 
 // GetBalance returns the amount of wei for the given address in the state of the
@@ -42,7 +46,8 @@ func (api *ethAPI) BlockNumber(ctx context.Context) (*hexutil.Big, error) {
 func (api *ethAPI) GetBalance(
 	ctx context.Context, address common.Address, blockNum *web3Types.BlockNumber,
 ) (*hexutil.Big, error) {
-	return api.w3c.Eth.Balance(address, blockNum)
+	balance, err := api.w3c.Eth.Balance(address, blockNum)
+	return (*hexutil.Big)(balance), err
 }
 
 // GetBlockByNumber returns the requested canonical block.
@@ -60,7 +65,7 @@ func (api *ethAPI) GetBlockByNumber(
 func (api *ethAPI) GetUncleByBlockNumberAndIndex(
 	ctx context.Context, blockNr *web3Types.BlockNumber, index hexutil.Uint,
 ) (*web3Types.Block, error) {
-	return api.w3c.Eth.UncleByBlockNumberAndIndex(*blockNr, index)
+	return api.w3c.Eth.UncleByBlockNumberAndIndex(*blockNr, uint(index))
 }
 
 // GetUncleCountByBlockHash returns the number of uncles in a block from a block matching
@@ -68,7 +73,8 @@ func (api *ethAPI) GetUncleByBlockNumberAndIndex(
 func (api *ethAPI) GetUncleCountByBlockHash(ctx context.Context, hash common.Hash) (
 	*hexutil.Big, error,
 ) {
-	return api.w3c.Eth.BlockUnclesCountByHash(hash)
+	count, err := api.w3c.Eth.BlockUnclesCountByHash(hash)
+	return (*hexutil.Big)(count), err
 }
 
 // ProtocolVersion returns the current ethereum protocol version.
@@ -78,14 +84,15 @@ func (api *ethAPI) ProtocolVersion(ctx context.Context) (string, error) {
 
 // GasPrice returns the current gas price in wei.
 func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
-	return api.w3c.Eth.GasPrice()
+	gasPrice, err := api.w3c.Eth.GasPrice()
+	return (*hexutil.Big)(gasPrice), err
 }
 
 // GetStorageAt returns the value from a storage position at a given address.
 func (api *ethAPI) GetStorageAt(
 	ctx context.Context, address common.Address, location *hexutil.Big, blockNum *web3Types.BlockNumber,
 ) (common.Hash, error) {
-	return api.w3c.Eth.StorageAt(address, location, blockNum)
+	return api.w3c.Eth.StorageAt(address, (*big.Int)(location), blockNum)
 }
 
 // GetCode returns the contract code of the given account.
@@ -101,7 +108,8 @@ func (api *ethAPI) GetCode(
 func (api *ethAPI) GetTransactionCount(
 	ctx context.Context, account common.Address, blockNum *web3Types.BlockNumber,
 ) (*hexutil.Big, error) {
-	return api.w3c.Eth.TransactionCount(account, blockNum)
+	count, err := api.w3c.Eth.TransactionCount(account, blockNum)
+	return (*hexutil.Big)(count), err
 }
 
 // SendTransaction injects a signed transaction into the pending pool for execution.
@@ -131,7 +139,8 @@ func (api *ethAPI) Call(
 func (api *ethAPI) EstimateGas(
 	ctx context.Context, request web3Types.CallRequest, blockNum *web3Types.BlockNumber,
 ) (*hexutil.Big, error) {
-	return api.w3c.Eth.EstimateGas(request, blockNum)
+	gas, err := api.w3c.Eth.EstimateGas(request, blockNum)
+	return (*hexutil.Big)(gas), err
 }
 
 // TransactionByHash returns the transaction with the given hash.
@@ -155,7 +164,8 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 func (api *ethAPI) GetBlockTransactionCountByHash(ctx context.Context, blockHash common.Hash) (
 	*hexutil.Big, error,
 ) {
-	return api.w3c.Eth.BlockTransactionCountByHash(blockHash)
+	count, err := api.w3c.Eth.BlockTransactionCountByHash(blockHash)
+	return (*hexutil.Big)(count), err
 }
 
 // GetBlockTransactionCountByNumber returns the number of transactions in the block with the given
@@ -163,19 +173,21 @@ func (api *ethAPI) GetBlockTransactionCountByHash(ctx context.Context, blockHash
 func (api *ethAPI) GetBlockTransactionCountByNumber(ctx context.Context, blockNum *web3Types.BlockNumber) (
 	*hexutil.Big, error,
 ) {
-	return api.w3c.Eth.BlockTransactionCountByNumber(*blockNum)
+	count, err := api.w3c.Eth.BlockTransactionCountByNumber(*blockNum)
+	return (*hexutil.Big)(count), err
 }
 
 // Syncing returns an object with data about the sync status or false.
 // https://openethereum.github.io/JSONRPC-eth-module#eth_syncing
-func (api *ethAPI) Syncing(ctx context.Context) (web3Types.SyncProgress, error) {
+func (api *ethAPI) Syncing(ctx context.Context) (web3Types.SyncStatus, error) {
 	return api.w3c.Eth.Syncing()
 }
 
 // Hashrate returns the number of hashes per second that the node is mining with.
 // Only applicable when the node is mining.
 func (api *ethAPI) Hashrate(ctx context.Context) (*hexutil.Big, error) {
-	return api.w3c.Eth.Hashrate()
+	hashrate, err := api.w3c.Eth.Hashrate()
+	return (*hexutil.Big)(hashrate), err
 }
 
 // Coinbase returns the client coinbase address..
@@ -192,7 +204,8 @@ func (api *ethAPI) Mining(ctx context.Context) (bool, error) {
 // MaxPriorityFeePerGas returns a fee per gas that is an estimate of how much you can pay as
 // a priority fee, or "tip", to get a transaction included in the current block.
 func (api *ethAPI) MaxPriorityFeePerGas(ctx context.Context) (*hexutil.Big, error) {
-	return api.w3c.Eth.MaxPriorityFeePerGas()
+	priorityFee, err := api.w3c.Eth.MaxPriorityFeePerGas()
+	return (*hexutil.Big)(priorityFee), err
 }
 
 // Accounts returns a list of addresses owned by client.
@@ -204,7 +217,7 @@ func (api *ethAPI) Accounts(ctx context.Context) ([]common.Address, error) {
 func (api *ethAPI) SubmitHashrate(
 	ctx context.Context, hashrate *hexutil.Big, clientId common.Hash,
 ) (bool, error) {
-	return api.w3c.Eth.SubmitHashrate(hashrate, clientId)
+	return api.w3c.Eth.SubmitHashrate((*big.Int)(hashrate), clientId)
 }
 
 // GetUncleByBlockHashAndIndex returns information about the 'Uncle' of a block by hash and
@@ -220,7 +233,7 @@ func (api *ethAPI) GetUncleByBlockHashAndIndex(
 func (api *ethAPI) GetTransactionByBlockHashAndIndex(
 	ctx context.Context, hash common.Hash, index hexutil.Uint,
 ) (*web3Types.Transaction, error) {
-	return api.w3c.Eth.TransactionByBlockHashAndIndex(hash, index)
+	return api.w3c.Eth.TransactionByBlockHashAndIndex(hash, uint(index))
 }
 
 // GetTransactionByBlockNumberAndIndex returns information about a transaction by block number and
@@ -228,7 +241,7 @@ func (api *ethAPI) GetTransactionByBlockHashAndIndex(
 func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 	ctx context.Context, blockNum web3Types.BlockNumber, index hexutil.Uint,
 ) (*web3Types.Transaction, error) {
-	return api.w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, index)
+	return api.w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))
 }
 
 // The following RPC methods are not supported yet by the fullnode:
