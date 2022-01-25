@@ -277,3 +277,13 @@ func incrEpochDataCount(ctx context.Context, rc redis.Cmdable, dt store.EpochDat
 	newCnt, err := rc.HIncrBy(ctx, getMetaCacheKey("epoch.statistics"), field, cnt).Result()
 	return newCnt, err
 }
+
+func refreshEpochStatsExpr(ctx context.Context, rc redis.Cmdable) error {
+	cacheKey := getMetaCacheKey("epoch.statistics")
+	return rc.Expire(ctx, cacheKey, redisCacheExpireDuration).Err()
+}
+
+func refreshEpochRangeExpr(ctx context.Context, rc redis.Cmdable) error {
+	cacheKey := getMetaCacheKey("epoch.ranges")
+	return rc.Expire(ctx, cacheKey, redisCacheExpireDuration).Err()
+}
