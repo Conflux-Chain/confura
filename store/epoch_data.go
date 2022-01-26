@@ -320,28 +320,10 @@ func checkPivotSwitchWithError(err error) bool {
 	}
 
 	// The error is detected as a business error and pivot hash assumption failed, must be pivot switched.
-	// TODO: uncomment the following to use the sdk method to detect pivot switch once relative issues
-	// (https://github.com/Conflux-Chain/go-conflux-sdk/issues/118) resolved.
-	// detected, errCode := sdkerr.DetectErrorCode(err)
-	detected, errCode := detectErrorCode(err)
+	detected, errCode := sdkerr.DetectErrorCode(err)
 	if detected && (errCode == sdkerr.CodePivotAssumption || errCode == sdkerr.CodeBlockNotFound) {
 		return true
 	}
 
 	return false
-}
-
-// TODO: remove this function once relative issues
-// (https://github.com/Conflux-Chain/go-conflux-sdk/issues/118) resolved.
-func detectErrorCode(err error) (ok bool, code sdkerr.ErrorCode) {
-	ok, code = sdkerr.DetectErrorCode(err)
-	if !ok && err != nil {
-		errStr := strings.ToLower(err.Error())
-
-		if strings.Contains(errStr, "pivot chain assumption failed") {
-			return true, sdkerr.CodePivotAssumption
-		}
-	}
-
-	return ok, code
 }
