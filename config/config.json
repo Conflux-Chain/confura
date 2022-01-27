@@ -9,8 +9,8 @@
         "endpoint": ":22539"
     },
     "cfxBridge": {
-        "ethNode": "http://net12001eth.confluxrpc.com",
-        "cfxNode": "http://net12000cfx.confluxrpc.com",
+        "ethNode": "http://net8889eth.confluxrpc.com",
+        "cfxNode": "http://net8888cfx.confluxrpc.com",
         "exposedModules": [],
         "endpoint": ":32537"
     },
@@ -22,7 +22,7 @@
         "requestTimeout": "3s"
     },
     "eth": {
-        "http": "http://net12001eth.confluxrpc.com",
+        "http": "http://net8889eth.confluxrpc.com",
         "retry": 3,
         "retryInterval": "1s",
         "requestTimeout": "3s"
