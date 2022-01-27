@@ -169,6 +169,10 @@ func (syncer *KVCacheSyncer) doCheckPoint() error {
 
 // Revert the epoch data in cache store until to some epoch
 func (syncer *KVCacheSyncer) pivotSwitchRevert(revertTo uint64) error {
+	if revertTo == 0 {
+		return errors.New("genesis epoch must not be reverted")
+	}
+
 	logger := logrus.WithFields(logrus.Fields{
 		"revertTo":   revertTo,
 		"syncWindow": syncer.syncWindow,

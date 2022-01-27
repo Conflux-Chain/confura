@@ -5,7 +5,9 @@ import (
 	"sync"
 	"time"
 
+	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	gometrics "github.com/ethereum/go-ethereum/metrics"
@@ -25,6 +27,8 @@ const (
 type EthSyncer struct {
 	// EVM space ETH client
 	w3c *web3go.Client
+	// EVM space chain id
+	chainId uint32
 	// db store
 	db store.Store
 	// block number to sync chaindata from
@@ -39,8 +43,14 @@ type EthSyncer struct {
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
 func MustNewEthSyncer(ethC *web3go.Client, db store.Store) *EthSyncer {
+	ethChainId, err := ethC.Eth.ChainId()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to get chain ID from eth space")
+	}
+
 	syncer := &EthSyncer{
 		w3c:                 ethC,
+		chainId:             uint32(*ethChainId),
 		db:                  db,
 		maxSyncBlocks:       viper.GetUint64("sync.maxEpochs"),
 		syncIntervalNormal:  time.Second,
@@ -202,17 +212,12 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	// brige for db store logic reuse by converting eth data to epoch data
 	epochDataSlice := make([]*store.EpochData, 0, len(ethDataSlice))
 	for i := 0; i < len(ethDataSlice); i++ {
-		epochData, err := ethDataSlice[i].ToEpochData()
-		if err != nil {
-			logger.WithField("blockNumber", epochData.Number).Info(
-				"ETH syncer failed to convert ETH data to epoch data for bridge",
-			)
-			return false, errors.WithMessage(err, "failed to convert eth to epoch data")
-		}
+		epochData := syncer.convertToEpochData(ethDataSlice[i])
+		epochDataSlice = append(epochDataSlice, epochData)
 	}
 
 	if err = syncer.db.Pushn(epochDataSlice); err != nil {
-		logger.WithError(err).Error("ETH syncer failed to save eth data to ethdb")
+		logger.WithError(err).Info("ETH syncer failed to save eth data to ethdb")
 		return false, errors.WithMessage(err, "failed to save eth data")
 	}
 
@@ -227,6 +232,10 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 }
 
 func (syncer *EthSyncer) reorgRevert(revertTo uint64) error {
+	if revertTo == 0 {
+		return errors.New("genesis block must not be reverted")
+	}
+
 	logger := logrus.WithFields(logrus.Fields{
 		"revertTo": revertTo, "revertFrom": syncer.fromBlock - 1,
 	})
@@ -301,4 +310,24 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 	}
 
 	return "", errors.WithMessagef(err, "failed to get block #%v", latestBlockNo)
+}
+
+// convertToEpochData converts ETH block data to Conflux epoch data. This is used for bridge eth
+// block data with epoch data to reduce redundant codes eg., store logic.
+func (syncer *EthSyncer) convertToEpochData(ethData *store.EthData) *store.EpochData {
+	epochData := &store.EpochData{
+		Number: ethData.Number, Receipts: make(map[cfxtypes.Hash]*cfxtypes.TransactionReceipt),
+	}
+
+	pivotBlock := cfxbridge.ConvertBlock(ethData.Block, syncer.chainId)
+	epochData.Blocks = []*cfxtypes.Block{pivotBlock}
+
+	for txh, rcpt := range ethData.Receipts {
+		txRcpt := cfxbridge.ConvertReceipt(rcpt, syncer.chainId)
+		txHash := cfxbridge.ConvertHashNullable(&txh)
+
+		epochData.Receipts[*txHash] = txRcpt
+	}
+
+	return epochData
 }

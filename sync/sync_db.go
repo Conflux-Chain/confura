@@ -371,6 +371,10 @@ func (syncer *DatabaseSyncer) onEpochSubStart() {
 }
 
 func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
+	if revertTo == 0 {
+		return errors.New("genesis epoch must not be reverted")
+	}
+
 	logger := logrus.WithFields(logrus.Fields{
 		"epochFrom": revertTo,
 		"epochTo":   syncer.epochFrom - 1,

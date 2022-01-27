@@ -37,13 +37,6 @@ func (current *EthData) IsContinuousTo(prev *EthData) (continuous bool, desc str
 	return true, ""
 }
 
-// ToEpochData converts ETH block data to Conflux epoch data. This is used for bridge eth
-// block data with epoch data to reduce redundant codes eg., store logic.
-func (current *EthData) ToEpochData() (*EpochData, error) {
-	// TODO: convert ETH block data to epoch data
-	return nil, errors.New("not implemented yet")
-}
-
 // QueryEthData queries blockchain data for the specified block number.
 func QueryEthData(w3c *web3go.Client, blockNumber uint64) (*EthData, error) {
 	updater := metrics.NewTimerUpdaterByName("infura/duration/store/eth/query")
@@ -63,7 +56,7 @@ func QueryEthData(w3c *web3go.Client, blockNumber uint64) (*EthData, error) {
 	blockTxs := block.Transactions.Transactions()
 
 	// TODO: improve performance with batch block receipts
-	for i := 0; i <= len(blockTxs); i++ {
+	for i := 0; i < len(blockTxs); i++ {
 		txHash := blockTxs[i].Hash
 		blogger := logger.WithFields(logrus.Fields{"txHash": txHash, "i": i})
 

@@ -11,7 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func (api *CfxAPI) normalizeBig(value *big.Int, err error) (*hexutil.Big, error) {
+func NormalizeBig(value *big.Int, err error) (*hexutil.Big, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +19,7 @@ func (api *CfxAPI) normalizeBig(value *big.Int, err error) (*hexutil.Big, error)
 	return types.NewBigIntByRaw(value), nil
 }
 
-func (api *CfxAPI) convertHashNullable(value *common.Hash) *types.Hash {
+func ConvertHashNullable(value *common.Hash) *types.Hash {
 	if value == nil {
 		return nil
 	}
@@ -28,21 +28,21 @@ func (api *CfxAPI) convertHashNullable(value *common.Hash) *types.Hash {
 	return &hash
 }
 
-func (api *CfxAPI) convertAddressNullable(value *common.Address) *types.Address {
+func ConvertAddressNullable(value *common.Address, ethNetworkId uint32) *types.Address {
 	if value == nil {
 		return nil
 	}
 
-	address, _ := cfxaddress.NewFromCommon(*value, api.ethNetworkId)
+	address, _ := cfxaddress.NewFromCommon(*value, ethNetworkId)
 	return &address
 }
 
-func (api *CfxAPI) convertAddress(value common.Address) types.Address {
-	address, _ := cfxaddress.NewFromCommon(value, api.ethNetworkId)
+func ConvertAddress(value common.Address, ethNetworkId uint32) types.Address {
+	address, _ := cfxaddress.NewFromCommon(value, ethNetworkId)
 	return address
 }
 
-func (api *CfxAPI) convertTxStatus(value *uint64) *hexutil.Uint64 {
+func ConvertTxStatus(value *uint64) *hexutil.Uint64 {
 	if value == nil {
 		return nil
 	}
@@ -58,7 +58,7 @@ func (api *CfxAPI) convertTxStatus(value *uint64) *hexutil.Uint64 {
 	return &status
 }
 
-func (api *CfxAPI) convertTx(tx *ethTypes.Transaction) *types.Transaction {
+func ConvertTx(tx *ethTypes.Transaction, ethNetworkId uint32) *types.Transaction {
 	if tx == nil {
 		return nil
 	}
@@ -71,26 +71,26 @@ func (api *CfxAPI) convertTx(tx *ethTypes.Transaction) *types.Transaction {
 	return &types.Transaction{
 		Hash:             types.Hash(tx.Hash.Hex()),
 		Nonce:            types.NewBigInt(tx.Nonce),
-		BlockHash:        api.convertHashNullable(tx.BlockHash),
+		BlockHash:        ConvertHashNullable(tx.BlockHash),
 		TransactionIndex: (*hexutil.Uint64)(tx.TransactionIndex),
-		From:             api.convertAddress(tx.From),
-		To:               api.convertAddressNullable(tx.To),
+		From:             ConvertAddress(tx.From, ethNetworkId),
+		To:               ConvertAddressNullable(tx.To, ethNetworkId),
 		Value:            types.NewBigIntByRaw(tx.Value),
 		GasPrice:         types.NewBigIntByRaw(tx.GasPrice),
 		Gas:              types.NewBigInt(tx.Gas),
-		ContractCreated:  api.convertAddressNullable(tx.Creates),
+		ContractCreated:  ConvertAddressNullable(tx.Creates, ethNetworkId),
 		Data:             hexutil.Encode(tx.Input),
 		StorageLimit:     HexBig0,
 		EpochHeight:      HexBig0,
 		ChainID:          chainId,
-		Status:           api.convertTxStatus(tx.Status),
+		Status:           ConvertTxStatus(tx.Status),
 		V:                types.NewBigIntByRaw(tx.V),
 		R:                types.NewBigIntByRaw(tx.R),
 		S:                types.NewBigIntByRaw(tx.S),
 	}
 }
 
-func (api *CfxAPI) convertBlockHeader(block *ethTypes.Block) *types.BlockHeader {
+func ConvertBlockHeader(block *ethTypes.Block, ethNetworkId uint32) *types.BlockHeader {
 	if block == nil {
 		return nil
 	}
@@ -109,7 +109,7 @@ func (api *CfxAPI) convertBlockHeader(block *ethTypes.Block) *types.BlockHeader 
 		Hash:                  types.Hash(block.Hash.Hex()),
 		ParentHash:            types.Hash(block.ParentHash.Hex()),
 		Height:                types.NewBigIntByRaw(block.Number),
-		Miner:                 api.convertAddress(block.Miner),
+		Miner:                 ConvertAddress(block.Miner, ethNetworkId),
 		DeferredStateRoot:     types.Hash(block.StateRoot.Hex()),
 		DeferredReceiptsRoot:  types.Hash(block.ReceiptsRoot.Hex()),
 		DeferredLogsBloomHash: types.Hash(hexutil.Encode(block.LogsBloom.Bytes())),
@@ -130,7 +130,7 @@ func (api *CfxAPI) convertBlockHeader(block *ethTypes.Block) *types.BlockHeader 
 	}
 }
 
-func (api *CfxAPI) convertBlock(block *ethTypes.Block) *types.Block {
+func ConvertBlock(block *ethTypes.Block, ethNetworkId uint32) *types.Block {
 	if block == nil {
 		return nil
 	}
@@ -139,16 +139,16 @@ func (api *CfxAPI) convertBlock(block *ethTypes.Block) *types.Block {
 
 	txs := make([]types.Transaction, len(blockTxs))
 	for i := range blockTxs {
-		txs[i] = *api.convertTx(&blockTxs[i])
+		txs[i] = *ConvertTx(&blockTxs[i], ethNetworkId)
 	}
 
 	return &types.Block{
-		BlockHeader:  *api.convertBlockHeader(block),
+		BlockHeader:  *ConvertBlockHeader(block, ethNetworkId),
 		Transactions: txs,
 	}
 }
 
-func (api *CfxAPI) convertBlockSummary(block *ethTypes.Block) *types.BlockSummary {
+func ConvertBlockSummary(block *ethTypes.Block, ethNetworkId uint32) *types.BlockSummary {
 	if block == nil {
 		return nil
 	}
@@ -161,12 +161,12 @@ func (api *CfxAPI) convertBlockSummary(block *ethTypes.Block) *types.BlockSummar
 	}
 
 	return &types.BlockSummary{
-		BlockHeader:  *api.convertBlockHeader(block),
+		BlockHeader:  *ConvertBlockHeader(block, ethNetworkId),
 		Transactions: txs,
 	}
 }
 
-func (api *CfxAPI) convertLog(log *ethTypes.Log) *types.Log {
+func ConvertLog(log *ethTypes.Log, ethNetworkId uint32) *types.Log {
 	if log == nil {
 		return nil
 	}
@@ -177,26 +177,26 @@ func (api *CfxAPI) convertLog(log *ethTypes.Log) *types.Log {
 	}
 
 	return &types.Log{
-		Address:             api.convertAddress(log.Address),
+		Address:             ConvertAddress(log.Address, ethNetworkId),
 		Topics:              topics,
 		Data:                log.Data,
-		BlockHash:           api.convertHashNullable(&log.BlockHash),
+		BlockHash:           ConvertHashNullable(&log.BlockHash),
 		EpochNumber:         types.NewBigInt(log.BlockNumber),
-		TransactionHash:     api.convertHashNullable(&log.TxHash),
+		TransactionHash:     ConvertHashNullable(&log.TxHash),
 		TransactionIndex:    types.NewBigInt(uint64(log.TxIndex)),              // tx index in block
 		LogIndex:            types.NewBigInt(uint64(log.Index)),                // log index in block
 		TransactionLogIndex: types.NewBigInt(uint64(*log.TransactionLogIndex)), // log index in tx
 	}
 }
 
-func (api *CfxAPI) convertReceipt(receipt *ethTypes.Receipt) *types.TransactionReceipt {
+func ConvertReceipt(receipt *ethTypes.Receipt, ethNetworkId uint32) *types.TransactionReceipt {
 	if receipt == nil {
 		return nil
 	}
 
 	logs := make([]types.Log, len(receipt.Logs))
 	for i := range receipt.Logs {
-		logs[i] = *api.convertLog(receipt.Logs[i])
+		logs[i] = *ConvertLog(receipt.Logs[i], ethNetworkId)
 	}
 
 	var stateRoot types.Hash
@@ -216,15 +216,15 @@ func (api *CfxAPI) convertReceipt(receipt *ethTypes.Receipt) *types.TransactionR
 		Index:                   hexutil.Uint64(receipt.TransactionIndex),
 		BlockHash:               types.Hash(receipt.BlockHash.Hex()),
 		EpochNumber:             types.NewUint64(receipt.BlockNumber),
-		From:                    api.convertAddress(receipt.From),
-		To:                      api.convertAddressNullable(receipt.To),
+		From:                    ConvertAddress(receipt.From, ethNetworkId),
+		To:                      ConvertAddressNullable(receipt.To, ethNetworkId),
 		GasUsed:                 types.NewBigInt(receipt.GasUsed),
 		GasFee:                  types.NewBigIntByRaw(gasFee),
-		ContractCreated:         api.convertAddressNullable(receipt.ContractAddress),
+		ContractCreated:         ConvertAddressNullable(receipt.ContractAddress, ethNetworkId),
 		Logs:                    logs,
 		LogsBloom:               types.Bloom(hexutil.Encode(receipt.LogsBloom.Bytes())),
 		StateRoot:               stateRoot,
-		OutcomeStatus:           *api.convertTxStatus(&receipt.Status),
+		OutcomeStatus:           *ConvertTxStatus(&receipt.Status),
 		TxExecErrorMsg:          receipt.TxExecErrorMsg,
 		GasCoveredBySponsor:     false,
 		StorageCoveredBySponsor: false,

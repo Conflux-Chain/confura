@@ -45,7 +45,7 @@ func NewCfxAPI(ethNodeURL, cfxNodeURL string) (*CfxAPI, error) {
 }
 
 func (api *CfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
-	return api.normalizeBig(api.eth.GasPrice())
+	return NormalizeBig(api.eth.GasPrice())
 }
 
 func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexutil.Big, error) {
@@ -58,7 +58,7 @@ func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexuti
 }
 
 func (api *CfxAPI) GetBalance(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
-	return api.normalizeBig(api.eth.Balance(address.value, bn.ValueOrNil()))
+	return NormalizeBig(api.eth.Balance(address.value, bn.ValueOrNil()))
 }
 
 func (api *CfxAPI) GetAdmin(ctx context.Context, contract EthAddress, bn *EthBlockNumber) (*string, error) {
@@ -67,8 +67,8 @@ func (api *CfxAPI) GetAdmin(ctx context.Context, contract EthAddress, bn *EthBlo
 
 func (api *CfxAPI) GetSponsorInfo(ctx context.Context, contract EthAddress, bn *EthBlockNumber) (types.SponsorInfo, error) {
 	return types.SponsorInfo{
-		SponsorForGas:               api.convertAddress(common.Address{}),
-		SponsorForCollateral:        api.convertAddress(common.Address{}),
+		SponsorForGas:               ConvertAddress(common.Address{}, api.ethNetworkId),
+		SponsorForCollateral:        ConvertAddress(common.Address{}, api.ethNetworkId),
 		SponsorGasBound:             HexBig0,
 		SponsorBalanceForGas:        HexBig0,
 		SponsorBalanceForCollateral: HexBig0,
@@ -110,10 +110,10 @@ func (api *CfxAPI) GetBlockByHash(ctx context.Context, blockHash common.Hash, in
 	}
 
 	if includeTxs {
-		return api.convertBlock(block), nil
+		return ConvertBlock(block, api.ethNetworkId), nil
 	}
 
-	return api.convertBlockSummary(block), nil
+	return ConvertBlockSummary(block, api.ethNetworkId), nil
 }
 
 func (api *CfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockHash, pivotHash common.Hash, bn hexutil.Uint64) (*types.Block, error) {
@@ -136,7 +136,7 @@ func (api *CfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockH
 		return nil, ErrInvalidBlockAssumption
 	}
 
-	return api.convertBlock(block), nil
+	return ConvertBlock(block, api.ethNetworkId), nil
 }
 
 func (api *CfxAPI) GetBlockByEpochNumber(ctx context.Context, bn EthBlockNumber, includeTxs bool) (interface{}, error) {
@@ -146,10 +146,10 @@ func (api *CfxAPI) GetBlockByEpochNumber(ctx context.Context, bn EthBlockNumber,
 	}
 
 	if includeTxs {
-		return api.convertBlock(block), nil
+		return ConvertBlock(block, api.ethNetworkId), nil
 	}
 
-	return api.convertBlockSummary(block), nil
+	return ConvertBlockSummary(block, api.ethNetworkId), nil
 }
 
 func (api *CfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (interface{}, error) {
@@ -174,7 +174,7 @@ func (api *CfxAPI) GetBestBlockHash(ctx context.Context) (common.Hash, error) {
 }
 
 func (api *CfxAPI) GetNextNonce(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
-	return api.normalizeBig(api.eth.TransactionCount(address.value, bn.ValueOrNil()))
+	return NormalizeBig(api.eth.TransactionCount(address.value, bn.ValueOrNil()))
 }
 
 func (api *CfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
@@ -193,7 +193,7 @@ func (api *CfxAPI) GetLogs(ctx context.Context, filter EthLogFilter) ([]types.Lo
 
 	result := make([]types.Log, len(logs))
 	for i := range logs {
-		result[i] = *api.convertLog(&logs[i])
+		result[i] = *ConvertLog(&logs[i], api.ethNetworkId)
 	}
 
 	return result, nil
@@ -205,7 +205,7 @@ func (api *CfxAPI) GetTransactionByHash(ctx context.Context, txHash common.Hash)
 		return nil, err
 	}
 
-	return api.convertTx(tx), nil
+	return ConvertTx(tx, api.ethNetworkId), nil
 }
 
 func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCallRequest, bn *EthBlockNumber) (types.Estimate, error) {
@@ -242,7 +242,7 @@ func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 		return nil, err
 	}
 
-	return api.convertReceipt(receipt), nil
+	return ConvertReceipt(receipt, api.ethNetworkId), nil
 }
 
 func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) (receipts [][]*types.TransactionReceipt, err error) {
@@ -270,7 +270,7 @@ func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHas
 			return nil, err
 		}
 
-		result = append(result, api.convertReceipt(receipt))
+		result = append(result, ConvertReceipt(receipt, api.ethNetworkId))
 	}
 
 	return [][]*types.TransactionReceipt{result}, nil
@@ -299,7 +299,7 @@ func (api *CfxAPI) GetAccount(ctx context.Context, address EthAddress, bn *EthBl
 		StakingBalance:            HexBig0,
 		CollateralForStorage:      HexBig0,
 		AccumulatedInterestReturn: HexBig0,
-		Admin:                     api.convertAddress(common.Address{}),
+		Admin:                     ConvertAddress(common.Address{}, api.ethNetworkId),
 	}, nil
 }
 
