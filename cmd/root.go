@@ -63,10 +63,15 @@ func start(cmd *cobra.Command, args []string) {
 	wg := &sync.WaitGroup{}
 
 	// Initialize database
-	var db store.Store
-	if config, ok := mysql.NewConfigFromViper(); ok {
+	var db, ethdb store.Store
+	if config, ok := mysql.MustNewConfigFromViper(); ok {
 		db = config.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: syncServerEnabled})
 		defer db.Close()
+
+		// TODO: any need to use different database config?
+		config.Database = fmt.Sprintf("%v_eth", config.Database)
+		ethdb = config.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: syncServerEnabled})
+		defer ethdb.Close()
 	}
 
 	// Initialize cache store

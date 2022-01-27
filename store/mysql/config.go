@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/store"
-	"gorm.io/driver/mysql"
-
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
 )
@@ -23,27 +23,23 @@ type Config struct {
 	Password string
 	Database string
 
-	ConnMaxLifetime time.Duration
-	MaxOpenConns    int
-	MaxIdleConns    int
+	ConnMaxLifetime time.Duration `default:"3m"`
+	MaxOpenConns    int           `default:"10"`
+	MaxIdleConns    int           `default:"10"`
 }
 
-// NewConfigFromViper creates an instance of Config from Viper.
-func NewConfigFromViper() (Config, bool) {
+// MustNewConfigFromViper creates an instance of Config from Viper or panic on error.
+func MustNewConfigFromViper() (Config, bool) {
 	if !viper.GetBool("store.mysql.enabled") {
 		return Config{}, false
 	}
 
-	return Config{
-		Host:     viper.GetString("store.mysql.host"),
-		Username: viper.GetString("store.mysql.username"),
-		Password: viper.GetString("store.mysql.password"),
-		Database: viper.GetString("store.mysql.database"),
+	var mysqlConf Config
+	if err := viperutil.UnmarshalKey("store.mysql", &mysqlConf); err != nil {
+		logrus.WithError(err).Fatal("Failed to unmarshal mysql store config")
+	}
 
-		ConnMaxLifetime: viper.GetDuration("store.mysql.connMaxLifeTime"),
-		MaxOpenConns:    viper.GetInt("store.mysql.maxOpenConns"),
-		MaxIdleConns:    viper.GetInt("store.mysql.maxIdleConns"),
-	}, true
+	return mysqlConf, true
 }
 
 // MustOpenOrCreate creates an instance of store or exits on any erorr.
