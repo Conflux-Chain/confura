@@ -63,14 +63,15 @@ func start(cmd *cobra.Command, args []string) {
 	wg := &sync.WaitGroup{}
 
 	// Initialize database
-	var db, ethdb store.Store
+	var db store.Store
 	if config, ok := mysql.MustNewConfigFromViper(); ok {
 		db = config.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: syncServerEnabled})
 		defer db.Close()
+	}
 
-		// TODO: any need to use different database config?
-		config.Database = fmt.Sprintf("%v_eth", config.Database)
-		ethdb = config.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: syncServerEnabled})
+	var ethdb store.Store
+	if ethConfig, ok := mysql.MustNewEthStoreConfigFromViper(); ok {
+		ethdb = ethConfig.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: syncServerEnabled})
 		defer ethdb.Close()
 	}
 
@@ -82,7 +83,7 @@ func start(cmd *cobra.Command, args []string) {
 	}
 
 	if syncServerEnabled {
-		if db == nil {
+		if db == nil || ethdb == nil {
 			logrus.Fatal("database not enabled")
 		}
 
@@ -120,6 +121,19 @@ func start(cmd *cobra.Command, args []string) {
 		logrus.Info("Starting kv cache pruner...")
 		cpruner := cisync.MustNewKVCachePruner(cache)
 		go cpruner.Prune(ctx, wg)
+
+		// Prepare ETH client with http protocol for eth sync purpose
+		syncEth := util.MustNewEthClientFromViper()
+
+		// Start to sync ETH data
+		logrus.Info("Starting to sync eth data into db...")
+		ethSyncer := cisync.MustNewEthSyncer(syncEth, ethdb)
+		go ethSyncer.Sync(ctx, wg)
+
+		// Start ethdb pruner
+		logrus.Info("Starting ethdb pruner...")
+		ethdbPruner := cisync.MustNewDBPruner(ethdb)
+		go ethdbPruner.Prune(ctx, wg)
 	}
 
 	var rpcServers []*util.RpcServer

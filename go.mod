@@ -9,6 +9,7 @@ require (
 	github.com/cespare/xxhash v1.1.0
 	github.com/ethereum/go-ethereum v1.10.15
 	github.com/go-redis/redis/v8 v8.8.2
+	github.com/go-sql-driver/mysql v1.5.0
 	github.com/montanaflynn/stats v0.6.6
 	github.com/nsf/jsondiff v0.0.0-20210303162244-6ea32392771e
 	github.com/openweb3/web3go v0.0.0-20220124075725-3de8af910808

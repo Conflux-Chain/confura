@@ -9,6 +9,7 @@ import (
 
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/store"
+	gosql "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
@@ -22,6 +23,7 @@ type Config struct {
 	Username string
 	Password string
 	Database string
+	Dsn      string
 
 	ConnMaxLifetime time.Duration `default:"3m"`
 	MaxOpenConns    int           `default:"10"`
@@ -38,6 +40,29 @@ func MustNewConfigFromViper() (Config, bool) {
 	if err := viperutil.UnmarshalKey("store.mysql", &mysqlConf); err != nil {
 		logrus.WithError(err).Fatal("Failed to unmarshal mysql store config")
 	}
+
+	return mysqlConf, true
+}
+
+func MustNewEthStoreConfigFromViper() (Config, bool) {
+	if !viper.GetBool("ethstore.mysql.enabled") {
+		return Config{}, false
+	}
+
+	var mysqlConf Config
+	if err := viperutil.UnmarshalKey("ethstore.mysql", &mysqlConf); err != nil {
+		logrus.WithError(err).Fatal("Failed to unmarshal mysql config for eth store")
+	}
+
+	gsconf, err := gosql.ParseDSN(mysqlConf.Dsn)
+	if err != nil {
+		logrus.WithField("ethStoreDsn", mysqlConf.Dsn).Fatal("Failed to parse db DSN for eth store")
+	}
+
+	mysqlConf.Host = gsconf.Addr
+	mysqlConf.Username = gsconf.User
+	mysqlConf.Password = gsconf.Passwd
+	mysqlConf.Database = gsconf.DBName
 
 	return mysqlConf, true
 }
@@ -95,6 +120,10 @@ func (config *Config) mustNewDB(database string) *gorm.DB {
 
 	// refer to https://github.com/go-sql-driver/mysql#dsn-data-source-name
 	dsn := fmt.Sprintf("%v:%v@tcp(%v)/%v?parseTime=true", config.Username, config.Password, config.Host, database)
+	if database == config.Database && len(config.Dsn) > 0 {
+		dsn = config.Dsn
+	}
+
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger: gLogger,
 	})

@@ -77,6 +77,15 @@
             "url": "redis://<user>:<pass>@localhost:6379/<db>"
         }
     },
+    "ethstore": {
+        "mysql": {
+            "enabled": false,
+            "dsn": "user:password@tcp(127.0.0.1:3306)/conflux_infura_eth",
+            "connMaxLifeTime": "3m",
+            "maxOpenConns": 10,
+            "maxIdleConns": 10
+        }
+    },
     "alert": {
         "customTags": ["testnet", "prod"],
         "dingtalk": {

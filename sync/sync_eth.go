@@ -74,7 +74,7 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	defer ticker.Stop()
 
 	for {
-		select { // second class priority
+		select {
 		case <-ctx.Done():
 			logrus.Info("ETH syncer shutdown ok")
 			return
