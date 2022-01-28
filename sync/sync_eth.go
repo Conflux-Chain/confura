@@ -172,10 +172,14 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 				return false, errors.WithMessage(err, "failed to get latest block hash")
 			}
 
-			if len(latestBlockHash) > 0 && string(data.Block.ParentHash[:]) != latestBlockHash {
+			if len(latestBlockHash) > 0 && data.Block.ParentHash.Hex() != latestBlockHash {
 				if err := syncer.reorgRevert(syncer.fromBlock - 1); err != nil {
-					blogger.WithError(err).Error(
-						"ETH syncer failed to revert block data from ethdb store due to re-org",
+					parentBlockHash := data.Block.ParentHash.Hex()
+
+					blogger.WithFields(logrus.Fields{
+						"parentBlockHash": parentBlockHash, "latestBlockHash": latestBlockHash,
+					}).WithError(err).Info(
+						"ETH syncer failed to revert block data from ethdb store due to parent hash mismatched",
 					)
 					return false, errors.WithMessage(err, "failed to revert block data from ethdb")
 				}
