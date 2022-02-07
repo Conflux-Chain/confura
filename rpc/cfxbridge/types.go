@@ -78,6 +78,14 @@ func (ebnh *EthBlockNumberOrHash) Hash() (common.Hash, bool) {
 	return *ebnh.hash, true
 }
 
+func (ebnh *EthBlockNumberOrHash) ToArg() interface{} {
+	if ebnh.hash == nil {
+		return ebnh.number
+	}
+
+	return *ebnh.hash
+}
+
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (ebnh *EthBlockNumberOrHash) UnmarshalJSON(data []byte) error {
 	// Unmarshal as an epoch

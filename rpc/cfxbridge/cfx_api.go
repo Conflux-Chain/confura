@@ -16,6 +16,7 @@ import (
 )
 
 type CfxAPI struct {
+	ethClient    *web3go.Client
 	eth          *client.RpcEthClient
 	cfx          *sdk.Client
 	ethNetworkId uint32
@@ -38,6 +39,7 @@ func NewCfxAPI(ethNodeURL, cfxNodeURL string) (*CfxAPI, error) {
 	}
 
 	return &CfxAPI{
+		ethClient:    eth,
 		eth:          eth.Eth,
 		cfx:          cfx,
 		ethNetworkId: uint32(*ethChainId),
@@ -245,32 +247,15 @@ func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	return ConvertReceipt(receipt, api.ethNetworkId), nil
 }
 
-func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) (receipts [][]*types.TransactionReceipt, err error) {
-	// TODO wait for eth space to support parity_getBlockReceipts
-	var block *ethTypes.Block
-
-	if num, ok := bnh.Number(); ok {
-		block, err = api.eth.BlockByNumber(num, false)
-	} else if hash, ok := bnh.Hash(); ok {
-		block, err = api.eth.BlockByHash(hash, false)
-	}
-
-	if err != nil {
+func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) ([][]*types.TransactionReceipt, error) {
+	var receipts []*ethTypes.Receipt
+	if err := api.ethClient.Provider().Call(&receipts, "parity_getBlockReceipts", bnh.ToArg()); err != nil {
 		return nil, err
 	}
 
-	if block == nil || len(block.Transactions.Hashes()) == 0 {
-		return [][]*types.TransactionReceipt{emptyReceiptList}, nil
-	}
-
-	var result []*types.TransactionReceipt
-	for i := range block.Transactions.Hashes() {
-		receipt, err := api.eth.TransactionReceipt(block.Transactions.Hashes()[i])
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, ConvertReceipt(receipt, api.ethNetworkId))
+	result := make([]*types.TransactionReceipt, len(receipts))
+	for i := range receipts {
+		result[i] = ConvertReceipt(receipts[i], api.ethNetworkId)
 	}
 
 	return [][]*types.TransactionReceipt{result}, nil
