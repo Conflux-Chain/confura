@@ -71,8 +71,8 @@ func adaptGethLogger() {
 	logrusLevelsMap := map[log.Lvl]logrus.Level{
 		log.LvlCrit:  logrus.FatalLevel,
 		log.LvlError: logrus.ErrorLevel,
-		log.LvlWarn:  logrus.InfoLevel,
-		log.LvlInfo:  logrus.InfoLevel,
+		log.LvlWarn:  logrus.DebugLevel,
+		log.LvlInfo:  logrus.DebugLevel,
 		log.LvlDebug: logrus.DebugLevel,
 		log.LvlTrace: logrus.TraceLevel,
 	}
