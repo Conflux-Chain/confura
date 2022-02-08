@@ -62,28 +62,15 @@ type EthBlockNumberOrHash struct {
 	hash   *common.Hash
 }
 
-func (ebnh *EthBlockNumberOrHash) Number() (rpc.BlockNumber, bool) {
-	if ebnh.hash == nil {
-		return ebnh.number, true
-	}
-
-	return 0, false
-}
-
-func (ebnh *EthBlockNumberOrHash) Hash() (common.Hash, bool) {
-	if ebnh.hash == nil {
-		return common.Hash{}, false
-	}
-
-	return *ebnh.hash, true
-}
-
 func (ebnh *EthBlockNumberOrHash) ToArg() interface{} {
 	if ebnh.hash == nil {
 		return ebnh.number
 	}
 
-	return *ebnh.hash
+	return map[string]interface{}{
+		"blockHash":        ebnh.hash.Hex(),
+		"requireCanonical": true,
+	}
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
