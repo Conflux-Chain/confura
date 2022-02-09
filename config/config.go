@@ -9,6 +9,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+
+	// For go-ethereum v1.0.15, node pkg imports internal/debug pkg which will inits
+	// log root with a log.GlogHandler.
+	// Sadly if we import node pkg somewhere else, it will overrides our custom handler
+	// defined within function `adaptGethLogger`.
+	_ "github.com/ethereum/go-ethereum/node"
 )
 
 func init() {
