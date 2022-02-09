@@ -3,21 +3,30 @@ package rpc
 import (
 	"context"
 	"math/big"
+	"math/bits"
 
+	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	web3Types "github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // ethAPI provides ethereum relative API within EVM space according to:
 // https://github.com/Pana/conflux-doc/blob/master/docs/evm_space_zh.md
 type ethAPI struct {
-	w3c *web3go.Client
+	// TODO: get client by client provider from node cluster
+	w3c     *web3go.Client // eth sdk client
+	handler ethHandler     // eth rpc handler
+	chainId *uint64        // eth chain ID
 }
 
-func newEthAPI(eth *web3go.Client) *ethAPI {
-	return &ethAPI{w3c: eth}
+func newEthAPI(eth *web3go.Client, handler ethHandler) *ethAPI {
+	return &ethAPI{w3c: eth, handler: handler}
 }
 
 // GetBlockByHash returns the requested block. When fullTx is true all transactions in
@@ -25,13 +34,27 @@ func newEthAPI(eth *web3go.Client) *ethAPI {
 func (api *ethAPI) GetBlockByHash(
 	ctx context.Context, blockHash common.Hash, fullTx bool,
 ) (*web3Types.Block, error) {
+	if !util.IsInterfaceValNil(api.handler) {
+		block, err := api.handler.GetBlockByHash(ctx, blockHash, fullTx)
+		if err == nil {
+			return block, nil
+		}
+	}
+
 	return api.w3c.Eth.BlockByHash(blockHash, fullTx)
 }
 
 // ChainId returns the chainID value for transaction replay protection.
 func (api *ethAPI) ChainId(ctx context.Context) (*hexutil.Uint64, error) {
+	if api.chainId != nil {
+		return (*hexutil.Uint64)(api.chainId), nil
+	}
 
 	chainId, err := api.w3c.Eth.ChainId()
+	if err == nil {
+		api.chainId = chainId
+	}
+
 	return (*hexutil.Uint64)(chainId), err
 }
 
@@ -58,6 +81,13 @@ func (api *ethAPI) GetBalance(
 func (api *ethAPI) GetBlockByNumber(
 	ctx context.Context, blockNum *web3Types.BlockNumber, fullTx bool,
 ) (*web3Types.Block, error) {
+	if !util.IsInterfaceValNil(api.handler) {
+		block, err := api.handler.GetBlockByNumber(ctx, blockNum, fullTx)
+		if err == nil {
+			return block, nil
+		}
+	}
+
 	return api.w3c.Eth.BlockByNumber(*blockNum, fullTx)
 }
 
@@ -145,6 +175,13 @@ func (api *ethAPI) EstimateGas(
 
 // TransactionByHash returns the transaction with the given hash.
 func (api *ethAPI) TransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.Transaction, error) {
+	if !util.IsInterfaceValNil(api.handler) {
+		tx, err := api.handler.GetTransactionByHash(ctx, hash)
+		if err == nil {
+			return tx, nil
+		}
+	}
+
 	return api.w3c.Eth.TransactionByHash(hash)
 }
 
@@ -155,8 +192,56 @@ func (api *ethAPI) TransactionReceipt(ctx context.Context, txHash common.Hash) (
 }
 
 // GetLogs returns an array of all logs matching a given filter object.
+// TODO: add offset/limit support
 func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([]web3Types.Log, error) {
-	// TODO: improve performance by loading from db/cache store first
+	logger := logrus.WithField("filter", filter)
+	emptyLogs := []web3Types.Log{}
+
+	if err := api.validateEthLogFilter(&filter); err != nil {
+		logger.WithError(err).Debug("Invalid log filter parameter for eth_getLogs rpc request")
+		return emptyLogs, err
+	}
+
+	chainId, err := api.ChainId(ctx)
+	if err != nil {
+		return emptyLogs, errors.WithMessage(err, "failed to get ETH chain id")
+	}
+
+	if util.IsInterfaceValNil(api.handler) {
+		goto delegation
+	}
+
+	if sfilter, ok := store.ParseEthLogFilter(api.w3c, uint32(*chainId), &filter); ok {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			hitStatsCollector.CollectHitStats("infura/rpc/call/eth_getLogs/store/hitratio", *isHit)
+		}(&isStoreHit)
+
+		if logs, err := api.handler.GetLogs(ctx, *sfilter); err == nil {
+			// return empty slice rather than nil to comply with fullnode
+			if logs == nil {
+				logs = emptyLogs
+			}
+
+			logger.Debug("Loading blockchain data for eth_getLogs hit in the store")
+
+			isStoreHit = true
+			return logs, nil
+		}
+
+		logger.WithError(err).Debug("Loading blockchain data for eth_getLogs hit missed from the store")
+
+		// Logs already pruned from database? If so, we'd rather not delegate this request to
+		// the fullnode, as it might crush our fullnode.
+		if errors.Is(err, store.ErrAlreadyPruned) {
+			logger.Info("Event logs data already pruned for eth_getLogs to return")
+			return emptyLogs, errors.New("failed to get stale event logs (data too old)")
+		}
+	}
+
+delegation:
+	logger.Debug("Delegating eth_getLogs rpc request to fullnode")
+
 	return api.w3c.Eth.Logs(filter)
 }
 
@@ -242,6 +327,53 @@ func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 	ctx context.Context, blockNum web3Types.BlockNumber, index hexutil.Uint,
 ) (*web3Types.Transaction, error) {
 	return api.w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))
+}
+
+func (api *ethAPI) validateEthLogFilter(filter *web3Types.FilterQuery) error {
+	var filterFlag store.LogFilterType // filter type set flag bitwise
+
+	if filter.FromBlock != nil || filter.ToBlock != nil { // check if block range provided
+		filterFlag |= store.LogFilterTypeBlockRange
+	}
+
+	if filter.BlockHash != nil { // check if block hash provided
+		filterFlag |= store.LogFilterTypeBlockHashes
+	}
+
+	if bits.OnesCount(uint(filterFlag)) > 1 { // different types of log filters are mutual exclusion
+		return errInvalidLogFilter
+	}
+
+	if filter.BlockHash == nil { // normalize block number only if block hash not provided
+		defaultBlockNo := rpc.LatestBlockNumber
+
+		for _, ptrBlockNum := range []**rpc.BlockNumber{&filter.FromBlock, &filter.ToBlock} {
+			if *ptrBlockNum == nil {
+				*ptrBlockNum = &defaultBlockNo
+			}
+
+			blockNum, err := util.NormalizeEthBlockNumber(api.w3c, *ptrBlockNum)
+			if err != nil {
+				return errors.WithMessage(err, "failed to normalize block number")
+			}
+			*ptrBlockNum = blockNum
+		}
+
+		if *filter.FromBlock > *filter.ToBlock {
+			return errors.New("invalid block range (from block larger than to block)")
+		}
+
+		if count := *filter.ToBlock - *filter.FromBlock + 1; uint64(count) > store.MaxLogBlockRange {
+			return errors.Errorf("block range exceeds maximum value %v", store.MaxLogBlockRange)
+		}
+	}
+
+	if filter.Limit != nil && uint64(*filter.Limit) > store.MaxLogLimit {
+		return errors.Errorf("limit field exceed the maximum value %v", store.MaxLogLimit)
+	}
+
+	return nil
+
 }
 
 // The following RPC methods are not supported yet by the fullnode:

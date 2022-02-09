@@ -369,7 +369,7 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getLogs/store/hitratio", *isHit)
 		}(&isStoreHit)
 
-		if logs, err := api.handler.GetLogs(ctx, sfilter); err == nil {
+		if logs, err := api.handler.GetLogs(ctx, *sfilter); err == nil {
 			// return empty slice rather than nil to comply with fullnode
 			if logs == nil {
 				logs = emptyLogs
@@ -432,7 +432,7 @@ func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFi
 		toBlock := filter.ToBlock.ToInt().Uint64()
 
 		if fromBlock > toBlock {
-			return errors.New("invalid block range (from block larger than to epoch)")
+			return errors.New("invalid block range (from block larger than to block)")
 		}
 
 		if count := toBlock - fromBlock + 1; count > store.MaxLogBlockRange {

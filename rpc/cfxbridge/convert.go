@@ -28,6 +28,10 @@ func ConvertHashNullable(value *common.Hash) *types.Hash {
 	return &hash
 }
 
+func ConvertHash(value common.Hash) types.Hash {
+	return types.Hash(value.Hex())
+}
+
 func ConvertAddressNullable(value *common.Address, ethNetworkId uint32) *types.Address {
 	if value == nil {
 		return nil
@@ -40,6 +44,15 @@ func ConvertAddressNullable(value *common.Address, ethNetworkId uint32) *types.A
 func ConvertAddress(value common.Address, ethNetworkId uint32) types.Address {
 	address, _ := cfxaddress.NewFromCommon(value, ethNetworkId)
 	return address
+}
+
+func ConvertAddresses(addresses []common.Address, ethNetworkId uint32) []types.Address {
+	cAddrs := []types.Address{}
+	for _, addr := range addresses {
+		cAddrs = append(cAddrs, ConvertAddress(addr, ethNetworkId))
+	}
+
+	return cAddrs
 }
 
 func ConvertTxStatus(value *uint64) *hexutil.Uint64 {
@@ -231,4 +244,40 @@ func ConvertReceipt(receipt *ethTypes.Receipt, ethNetworkId uint32) *types.Trans
 		StorageCollateralized:   0,
 		StorageReleased:         emptyStorageChangeList,
 	}
+}
+
+func ConvertLogFilter(fq *ethTypes.FilterQuery, ethNetworkId uint32) *types.LogFilter {
+	lf := &types.LogFilter{}
+
+	// convert log filter addresses
+	for _, fqa := range fq.Addresses {
+		lfa := ConvertAddress(fqa, ethNetworkId)
+		lf.Address = append(lf.Address, lfa)
+	}
+
+	// convert log filter topics
+	for _, fqts := range fq.Topics {
+		lfts := []types.Hash{}
+		for _, fqth := range fqts {
+			lfts = append(lfts, ConvertHash(fqth))
+		}
+		lf.Topics = append(lf.Topics, lfts)
+	}
+
+	// convert log filter block hashes
+	lfBlockHash := ConvertHashNullable(fq.BlockHash)
+	if lfBlockHash != nil {
+		lf.BlockHashes = []types.Hash{*lfBlockHash}
+	}
+
+	// convert log filter block number
+	if fq.FromBlock != nil {
+		lf.FromBlock = (*hexutil.Big)(big.NewInt(fq.FromBlock.Int64()))
+	}
+
+	if fq.ToBlock != nil {
+		lf.ToBlock = (*hexutil.Big)(big.NewInt(fq.ToBlock.Int64()))
+	}
+
+	return lf
 }

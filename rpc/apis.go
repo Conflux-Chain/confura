@@ -93,8 +93,8 @@ func nativeSpaceApis(
 }
 
 // evmSpaceApis returns the collection of built-in RPC APIs for EVM space.
-func evmSpaceApis(ethNodeURL string) ([]API, error) {
-	eth, err := web3go.NewClient(ethNodeURL)
+func evmSpaceApis(ethNodeURL string, handler ethHandler) ([]API, error) {
+	w3c, err := web3go.NewClient(ethNodeURL)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to connect to eth space")
 	}
@@ -103,17 +103,17 @@ func evmSpaceApis(ethNodeURL string) ([]API, error) {
 		{
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   newEthAPI(eth),
+			Service:   newEthAPI(w3c, handler),
 			Public:    true,
 		}, {
 			Namespace: "web3",
 			Version:   "1.0",
-			Service:   newWeb3API(eth),
+			Service:   newWeb3API(w3c),
 			Public:    true,
 		}, {
 			Namespace: "net",
 			Version:   "1.0",
-			Service:   newNetAPI(eth),
+			Service:   newNetAPI(w3c),
 			Public:    true,
 		},
 	}, nil

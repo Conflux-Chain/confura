@@ -6,6 +6,8 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -86,4 +88,23 @@ func ConvertToHashSlice(ss []string) []types.Hash {
 	}
 
 	return res
+}
+
+// NormalizeEthBlockNumber normalizes ETH block number to be positive if necessary
+func NormalizeEthBlockNumber(w3c *web3go.Client, blockNum *rpc.BlockNumber) (*rpc.BlockNumber, error) {
+	if blockNum == nil {
+		return nil, errors.New("block number must be provided")
+	}
+
+	if *blockNum > 0 { // already positive block number
+		return blockNum, nil
+	}
+
+	block, err := w3c.Eth.BlockByNumber(*blockNum, false)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to normalize block number")
+	}
+
+	blockNo := block.Number.Int64()
+	return (*rpc.BlockNumber)(&blockNo), nil
 }
