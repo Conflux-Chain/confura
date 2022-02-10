@@ -353,14 +353,17 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		return emptyLogs, err
 	}
 
+	// add metrics for the `epoch` filter if block hash and block number range are not specified.
+	if len(filter.BlockHashes) == 0 && filter.FromBlock == nil && filter.ToBlock == nil {
+		// TODO optimize cfx_getLogs metrics with asynchronization to minimize side effect for rpc request
+		api.inputEpochMetric.Update(filter.FromEpoch, "cfx_getLogs/from", cfx)
+		api.inputEpochMetric.Update(filter.ToEpoch, "cfx_getLogs/to", cfx)
+	}
+
 	if err := api.validateLogFilter(cfx, &filter); err != nil {
 		logger.WithError(err).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
 		return emptyLogs, err
 	}
-
-	// TODO optimize cfx_getLogs metrics with asynchronization to minimize side effect for rpc request
-	api.inputEpochMetric.Update(filter.FromEpoch, "cfx_getLogs/from", cfx)
-	api.inputEpochMetric.Update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 
 	sfilter, ok := store.ParseLogFilter(cfx, &filter)
 	if ok && !util.IsInterfaceValNil(api.handler) {
