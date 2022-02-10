@@ -32,7 +32,6 @@ func mustInitViper() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	viper.SetConfigName("config")
-	viper.SetConfigType("json")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
 
