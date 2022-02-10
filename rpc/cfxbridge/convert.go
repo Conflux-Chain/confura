@@ -5,6 +5,7 @@ import (
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cmptutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethTypes "github.com/openweb3/web3go/types"
@@ -139,7 +140,7 @@ func ConvertBlockHeader(block *ethTypes.Block, ethNetworkId uint32) *types.Block
 		Adaptive:              false,
 		Nonce:                 types.NewBigInt(block.Nonce.Uint64()),
 		Size:                  types.NewBigInt(block.Size),
-		Custom:                [][]byte{extraData},
+		Custom:                []cmptutil.Bytes{extraData},
 	}
 }
 
