@@ -188,6 +188,13 @@ func (api *ethAPI) TransactionByHash(ctx context.Context, hash common.Hash) (*we
 // TransactionReceipt returns the receipt of a transaction by transaction hash.
 // Note that the receipt is not available for pending transactions.
 func (api *ethAPI) TransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error) {
+	if !util.IsInterfaceValNil(api.handler) {
+		tx, err := api.handler.GetTransactionReceipt(ctx, txHash)
+		if err == nil {
+			return tx, nil
+		}
+	}
+
 	return api.w3c.Eth.TransactionReceipt(txHash)
 }
 

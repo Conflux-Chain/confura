@@ -6,7 +6,7 @@ import (
 )
 
 func MustMarshalRLP(v interface{}) []byte {
-	if v == nil {
+	if IsInterfaceValNil(v) {
 		return nil
 	}
 

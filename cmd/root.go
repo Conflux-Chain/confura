@@ -145,7 +145,7 @@ func start(cmd *cobra.Command, args []string) {
 		nsServer := startNativeSpaceRpcServer(router, db, cache)
 		rpcServers = append(rpcServers, nsServer)
 
-		evmServer := startEvmSpaceRpcServer(db)
+		evmServer := startEvmSpaceRpcServer(ethdb)
 		rpcServers = append(rpcServers, evmServer)
 
 		cfxBridgeServer := startNativeSpaceBridgeRpcServer()
