@@ -41,6 +41,10 @@ type EpochData struct {
 	Number   uint64         // epoch number
 	Blocks   []*types.Block // blocks in order and the last one is pivot block
 	Receipts map[types.Hash]*types.TransactionReceipt
+
+	// custom extra extentions
+	BlockExts   []*BlockExtra
+	ReceiptExts map[types.Hash]*ReceiptExtra
 }
 
 func (epoch *EpochData) GetPivotBlock() *types.Block {
@@ -240,7 +244,9 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 		}
 	}
 
-	return EpochData{epochNumber, blocks, receipts}, nil
+	return EpochData{
+		Number: epochNumber, Blocks: blocks, Receipts: receipts,
+	}, nil
 }
 
 // Check if address blacklisted or not

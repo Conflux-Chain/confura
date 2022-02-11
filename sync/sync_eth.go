@@ -316,21 +316,27 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 	return "", errors.WithMessagef(err, "failed to get block #%v", latestBlockNo)
 }
 
-// convertToEpochData converts ETH block data to Conflux epoch data. This is used for bridge eth
+// convertToEpochData converts ETH block data to Conflux epoch data. This is used to bridge eth
 // block data with epoch data to reduce redundant codes eg., store logic.
 func (syncer *EthSyncer) convertToEpochData(ethData *store.EthData) *store.EpochData {
 	epochData := &store.EpochData{
-		Number: ethData.Number, Receipts: make(map[cfxtypes.Hash]*cfxtypes.TransactionReceipt),
+		Number:      ethData.Number,
+		Receipts:    make(map[cfxtypes.Hash]*cfxtypes.TransactionReceipt),
+		ReceiptExts: make(map[cfxtypes.Hash]*store.ReceiptExtra),
 	}
 
 	pivotBlock := cfxbridge.ConvertBlock(ethData.Block, syncer.chainId)
 	epochData.Blocks = []*cfxtypes.Block{pivotBlock}
 
+	blockExt := store.ExtractEthBlockExt(ethData.Block)
+	epochData.BlockExts = []*store.BlockExtra{blockExt}
+
 	for txh, rcpt := range ethData.Receipts {
 		txRcpt := cfxbridge.ConvertReceipt(rcpt, syncer.chainId)
-		txHash := cfxbridge.ConvertHashNullable(&txh)
+		txHash := cfxbridge.ConvertHash(txh)
 
-		epochData.Receipts[*txHash] = txRcpt
+		epochData.Receipts[txHash] = txRcpt
+		epochData.ReceiptExts[txHash] = store.ExtractEthReceiptExt(rcpt)
 	}
 
 	return epochData
