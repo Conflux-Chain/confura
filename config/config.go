@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/alert"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -17,27 +18,15 @@ import (
 	_ "github.com/ethereum/go-ethereum/node"
 )
 
+// Read system enviroment variables prefixed with "INFURA_"
+// eg., INFURA__LOG_LEVEL will override "log.level" config item from config file
+const viperEnvPrefix = "infura"
+
 func init() {
-	mustInitViper()
+	viperutil.MustInit(viperEnvPrefix)
 	initLogger()
 	initMetrics()
 	initAlert()
-}
-
-func mustInitViper() {
-	// Read system enviroment variables prefixed with "INFURA_"
-	// eg., INFURA__LOG_LEVEL will override "log.level" config item from config file
-	viper.AutomaticEnv()
-	viper.SetEnvPrefix("infura")
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-
-	viper.SetConfigName("config")
-	viper.AddConfigPath(".")
-	viper.AddConfigPath("./config")
-
-	if err := viper.ReadInConfig(); err != nil {
-		panic(errors.WithMessage(err, "Failed to initialize viper"))
-	}
 }
 
 func initAlert() {

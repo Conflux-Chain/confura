@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/config"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
@@ -191,17 +192,13 @@ func startEvmSpaceRpcServer(db store.Store) *util.RpcServer {
 }
 
 func startNativeSpaceBridgeRpcServer() *util.RpcServer {
-	// Start RPC server
-	logrus.Info("Start to run native space bridge rpc server...")
+	var config rpc.CfxBridgeServerConfig
+	viperutil.MustUnmarshalKey("rpc.cfxBridge", &config)
 
-	// TODO configure cluster for CFX bridge?
-	ethNodeURL := viper.GetString("cfxBridge.ethNode")
-	cfxNodeURL := viper.GetString("cfxBridge.cfxNode")
-	exposedModules := viper.GetStringSlice("cfxBridge.exposedModules")
-	server := rpc.MustNewNativeSpaceBridgeServer(ethNodeURL, cfxNodeURL, exposedModules)
+	logrus.WithField("config", config).Info("Start to run cfx bridge rpc server")
 
-	httpEndpoint := viper.GetString("cfxBridge.endpoint")
-	go server.MustServe(httpEndpoint)
+	server := rpc.MustNewNativeSpaceBridgeServer(&config)
+	go server.MustServe(config.Endpoint)
 
 	return server
 }

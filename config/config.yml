@@ -2,14 +2,14 @@ rpc:
   exposedModules: []
   endpoint: ":22537"
   wsEndpoint: ":22535"
+  cfxBridge:
+    ethNode: http://net8889eth.confluxrpc.com
+    cfxNode: http://net8888cfx.confluxrpc.com
+    # exposedModules: []
+    # endpoint: ":32537"
 ethrpc:
   exposedModules: []
   endpoint: ":22539"
-cfxBridge:
-  ethNode: http://net8889eth.confluxrpc.com
-  cfxNode: http://net8888cfx.confluxrpc.com
-  exposedModules: []
-  endpoint: ":32537"
 cfx:
   ws: ws://test.confluxrpc.com/ws
   http: http://test.confluxrpc.com

@@ -55,13 +55,20 @@ func MustNewEvmSpaceServer(handler ethHandler, ethNodeURL string, exposedModules
 	return util.MustNewRpcServer(evmSpaceRpcServerName, exposedApis)
 }
 
-func MustNewNativeSpaceBridgeServer(ethNodeURL, cfxNodeURL string, exposedModules []string) *util.RpcServer {
-	allApis, err := nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL)
+type CfxBridgeServerConfig struct {
+	EthNode        string
+	CfxNode        string
+	ExposedModules []string
+	Endpoint       string `default:":32537"`
+}
+
+func MustNewNativeSpaceBridgeServer(config *CfxBridgeServerConfig) *util.RpcServer {
+	allApis, err := nativeSpaceBridgeApis(config.EthNode, config.CfxNode)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server")
 	}
 
-	exposedApis, err := filterExposedApis(allApis, exposedModules)
+	exposedApis, err := filterExposedApis(allApis, config.ExposedModules)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server with bad exposed modules")
 	}

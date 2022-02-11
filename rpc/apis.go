@@ -121,6 +121,7 @@ func evmSpaceApis(ethNodeURL string, handler ethHandler) ([]API, error) {
 
 // nativeSpaceBridgeApis adapts EVM space RPCs to native space RPCs.
 func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
+	// TODO configure cluster for CFX bridge?
 	cfxApi, err := cfxbridge.NewCfxAPI(ethNodeURL, cfxNodeURL)
 	if err != nil {
 		return nil, err
