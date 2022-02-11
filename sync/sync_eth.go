@@ -306,7 +306,7 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 	// load from db store
 	block, err := syncer.db.GetBlockSummaryByEpoch(latestBlockNo)
 	if err == nil {
-		return string(block.Hash), nil
+		return string(block.CfxBlockSummary.Hash), nil
 	}
 
 	if syncer.db.IsRecordNotFound(err) {

@@ -15,6 +15,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var (
+	_ store.Store = (*redisStore)(nil) // ensure redisStore implements Store interface
+)
+
 type redisStoreConfig struct {
 	CacheTime time.Duration `default:"12h"`
 	Url       string
@@ -97,52 +101,82 @@ func (rs *redisStore) GetNumLogs() uint64 {
 	return cnt
 }
 
-func (rs *redisStore) GetLogs(filter store.LogFilter) (logs []types.Log, err error) {
+func (rs *redisStore) GetLogs(filter store.LogFilter) (logs []store.Log, err error) {
 	// TODO add implementation
 	return nil, store.ErrUnsupported
 }
 
-func (rs *redisStore) GetTransaction(txHash types.Hash) (*types.Transaction, error) {
-	return loadTx(rs.ctx, rs.rdb, txHash)
+func (rs *redisStore) GetTransaction(txHash types.Hash) (*store.Transaction, error) {
+	tx, err := loadTx(rs.ctx, rs.rdb, txHash)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: return extra data fields for more extensibility.
+	return &store.Transaction{CfxTransaction: tx}, nil
 }
 
-func (rs *redisStore) GetReceipt(txHash types.Hash) (*types.TransactionReceipt, error) {
-	return loadTxReceipt(rs.ctx, rs.rdb, txHash)
+func (rs *redisStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, error) {
+	receipt, err := loadTxReceipt(rs.ctx, rs.rdb, txHash)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: return extra data fields for more extensibility.
+	return &store.TransactionReceipt{CfxReceipt: receipt}, nil
 }
 
 func (rs *redisStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error) {
 	return loadEpochBlocks(rs.ctx, rs.rdb, epochNumber)
 }
 
-func (rs *redisStore) GetBlockByEpoch(epochNumber uint64) (*types.Block, error) {
+func (rs *redisStore) GetBlockByEpoch(epochNumber uint64) (*store.Block, error) {
 	// TODO Cannot get tx from redis in advance, since only executed txs are saved in store
 	return nil, store.ErrUnsupported
 }
 
-func (rs *redisStore) GetBlockSummaryByEpoch(epochNumber uint64) (*types.BlockSummary, error) {
+func (rs *redisStore) GetBlockSummaryByEpoch(epochNumber uint64) (*store.BlockSummary, error) {
 	pivotBlock, err := loadEpochPivotBlock(rs.ctx, rs.rdb, epochNumber)
 	if err != nil {
 		logrus.WithField("epochNumber", epochNumber).WithError(err).Debug("Pivot block missed in cache")
 		return nil, errors.WithMessage(err, "failed to load epoch pivot block")
 	}
 
-	return loadBlockByHash(rs.ctx, rs.rdb, pivotBlock)
+	blocksum, err := loadBlockSummaryByHash(rs.ctx, rs.rdb, pivotBlock)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: return extra data fields for more extensibility.
+	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
-func (rs *redisStore) GetBlockByHash(blockHash types.Hash) (*types.Block, error) {
+func (rs *redisStore) GetBlockByHash(blockHash types.Hash) (*store.Block, error) {
 	return nil, store.ErrUnsupported
 }
 
-func (rs *redisStore) GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error) {
-	return loadBlockByHash(rs.ctx, rs.rdb, blockHash)
+func (rs *redisStore) GetBlockSummaryByHash(blockHash types.Hash) (*store.BlockSummary, error) {
+	blocksum, err := loadBlockSummaryByHash(rs.ctx, rs.rdb, blockHash)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: return extra data fields for more extensibility.
+	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
-func (rs *redisStore) GetBlockByBlockNumber(blockNumber uint64) (*types.Block, error) {
+func (rs *redisStore) GetBlockByBlockNumber(blockNumber uint64) (*store.Block, error) {
 	return nil, store.ErrUnsupported
 }
 
-func (rs *redisStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*types.BlockSummary, error) {
-	return loadBlockByNumber(rs.ctx, rs.rdb, blockNumber)
+func (rs *redisStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*store.BlockSummary, error) {
+	blocksum, err := loadBlockSummaryByNumber(rs.ctx, rs.rdb, blockNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: return extra data fields for more extensibility.
+	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
 func (rs *redisStore) Push(data *store.EpochData) error {
@@ -314,6 +348,7 @@ func (rs *redisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKe
 	}
 }
 
+// TODO: store extra epoch data for more data fields extensibility.
 func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (store.EpochDataOpNumAlters, error) {
 	opHistory := store.EpochDataOpNumAlters{}
 

@@ -146,12 +146,12 @@ func checkIfEpochIsReverted(cfx sdk.ClientOperator, s store.Store, epochNo uint6
 	}
 
 	// Check if block epoch number matched or not
-	if sBlock.EpochNumber == nil || sBlock.EpochNumber.ToInt().Uint64() != epochNo {
+	if sBlock.CfxBlockSummary.EpochNumber == nil || sBlock.CfxBlockSummary.EpochNumber.ToInt().Uint64() != epochNo {
 		return true, nil
 	}
 
 	// Compare block hash to see if the epoch is reverted
-	return sBlock.BlockHeader.Hash != epBlock.BlockHeader.Hash, nil
+	return sBlock.CfxBlockSummary.BlockHeader.Hash != epBlock.BlockHeader.Hash, nil
 }
 
 // Remove reverted epoch data (blocks, trxs, and logs) from store

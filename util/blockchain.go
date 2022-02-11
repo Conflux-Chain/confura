@@ -1,11 +1,13 @@
 package util
 
 import (
+	"reflect"
 	"regexp"
 	"strconv"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
@@ -107,4 +109,8 @@ func NormalizeEthBlockNumber(w3c *web3go.Client, blockNum *rpc.BlockNumber) (*rp
 
 	blockNo := block.Number.Int64()
 	return (*rpc.BlockNumber)(&blockNo), nil
+}
+
+func IsZeroHash(hash *common.Hash) bool {
+	return hash == nil || reflect.DeepEqual(hash, &common.Hash{})
 }

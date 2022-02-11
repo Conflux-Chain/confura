@@ -93,7 +93,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
 
 	logrus.Info("MySQL database initialized")
 
-	return mustNewStore(db, option)
+	return mustNewStore(db, config, option)
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {

@@ -35,14 +35,25 @@ func NewCfxStoreHandler(store store.Store, next cfxHandler) *CfxStoreHandler {
 }
 
 func (h *CfxStoreHandler) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (block interface{}, err error) {
+	var sblock *store.Block
+	var sblocksum *store.BlockSummary
+
 	if includeTxs {
-		block, err = h.store.GetBlockByHash(blockHash)
+		sblock, err = h.store.GetBlockByHash(blockHash)
 	} else {
-		block, err = h.store.GetBlockSummaryByHash(blockHash)
+		sblocksum, err = h.store.GetBlockSummaryByHash(blockHash)
 	}
 
 	if err != nil && !util.IsInterfaceValNil(h.next) {
 		return h.next.GetBlockByHash(ctx, blockHash, includeTxs)
+	}
+
+	if sblock != nil {
+		return sblock.CfxBlock, nil
+	}
+
+	if sblocksum != nil {
+		return sblocksum.CfxBlockSummary, nil
 	}
 
 	return
@@ -55,23 +66,40 @@ func (h *CfxStoreHandler) GetBlockByEpochNumber(ctx context.Context, epoch *type
 		return
 	}
 
+	var sblock *store.Block
+	var sblocksum *store.BlockSummary
+
 	epochNo := epBigInt.Uint64()
+
 	if includeTxs {
-		block, err = h.store.GetBlockByEpoch(epochNo)
+		sblock, err = h.store.GetBlockByEpoch(epochNo)
 	} else {
-		block, err = h.store.GetBlockSummaryByEpoch(epochNo)
+		sblocksum, err = h.store.GetBlockSummaryByEpoch(epochNo)
 	}
 
 	if err != nil && !util.IsInterfaceValNil(h.next) {
 		return h.next.GetBlockByEpochNumber(ctx, epoch, includeTxs)
 	}
 
+	if sblock != nil {
+		return sblock.CfxBlock, nil
+	}
+
+	if sblocksum != nil {
+		return sblocksum.CfxBlockSummary, nil
+	}
+
 	return
 }
 
 func (h *CfxStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (logs []types.Log, err error) {
-	logs, err = h.store.GetLogs(filter)
+	slogs, err := h.store.GetLogs(filter)
 	if err == nil {
+		logs = make([]types.Log, len(slogs))
+		for i := 0; i < len(slogs); i++ {
+			logs[i] = *slogs[i].CfxLog
+		}
+
 		return logs, nil
 	}
 
@@ -90,16 +118,17 @@ func (h *CfxStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (
 	return
 }
 
-func (h *CfxStoreHandler) GetTransactionByHash(ctx context.Context, txHash types.Hash) (tx *types.Transaction, err error) {
-	if tx, err = h.store.GetTransaction(txHash); err == nil {
-		return
+func (h *CfxStoreHandler) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
+	stx, err := h.store.GetTransaction(txHash)
+	if err == nil {
+		return stx.CfxTransaction, nil
 	}
 
 	if !util.IsInterfaceValNil(h.next) {
 		return h.next.GetTransactionByHash(ctx, txHash)
 	}
 
-	return
+	return nil, err
 }
 
 func (h *CfxStoreHandler) GetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) (blockHashes []types.Hash, err error) {
@@ -121,30 +150,44 @@ func (h *CfxStoreHandler) GetBlocksByEpoch(ctx context.Context, epoch *types.Epo
 	return
 }
 
-func (h *CfxStoreHandler) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (block interface{}, err error) {
+func (h *CfxStoreHandler) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (
+	block interface{}, err error,
+) {
+	var sblock *store.Block
+	var sblocksum *store.BlockSummary
+
 	if includeTxs {
-		block, err = h.store.GetBlockByBlockNumber(uint64(blockNumer))
+		sblock, err = h.store.GetBlockByBlockNumber(uint64(blockNumer))
 	} else {
-		block, err = h.store.GetBlockSummaryByBlockNumber(uint64(blockNumer))
+		sblocksum, err = h.store.GetBlockSummaryByBlockNumber(uint64(blockNumer))
 	}
 
 	if err != nil && !util.IsInterfaceValNil(h.next) {
 		return h.next.GetBlockByBlockNumber(ctx, blockNumer, includeTxs)
 	}
 
+	if sblock != nil {
+		return sblock.CfxBlock, nil
+	}
+
+	if sblocksum != nil {
+		return sblocksum.CfxBlockSummary, nil
+	}
+
 	return
 }
 
-func (h *CfxStoreHandler) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (txRcpt *types.TransactionReceipt, err error) {
-	if txRcpt, err = h.store.GetReceipt(txHash); err == nil {
-		return
+func (h *CfxStoreHandler) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
+	stxRcpt, err := h.store.GetReceipt(txHash)
+	if err == nil {
+		return stxRcpt.CfxReceipt, nil
 	}
 
 	if !util.IsInterfaceValNil(h.next) {
 		return h.next.GetTransactionReceipt(ctx, txHash)
 	}
 
-	return
+	return nil, err
 }
 
 const ( // gas station price configs

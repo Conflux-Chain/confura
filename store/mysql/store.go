@@ -21,6 +21,8 @@ import (
 )
 
 var (
+	_ store.Store = (*mysqlStore)(nil) // ensure mysqlStore implements Store interface
+
 	// Epoch data type mapping to mysql table name
 	EpochDataTypeTableMap = map[store.EpochDataType]string{
 		store.EpochBlock:       "blocks",
@@ -60,7 +62,8 @@ func newMysqlEpochDataOpAffects(sea *store.EpochDataOpAffects) *mysqlEpochDataOp
 }
 
 type mysqlStore struct {
-	db *gorm.DB
+	db     *gorm.DB
+	config *Config
 
 	minEpoch uint64 // minimum epoch number in database (historical data may be pruned)
 	maxEpoch uint64 // maximum epoch number in database
@@ -74,9 +77,10 @@ type mysqlStore struct {
 	minUsedLogsTblPartIdx uint64 // the minimum used partition index for logs table
 }
 
-func mustNewStore(db *gorm.DB, option StoreOption) (ms *mysqlStore) {
+func mustNewStore(db *gorm.DB, config *Config, option StoreOption) (ms *mysqlStore) {
 	ms = &mysqlStore{
 		db:          db,
+		config:      config,
 		minEpoch:    citypes.EpochNumberNil,
 		maxEpoch:    citypes.EpochNumberNil,
 		epochRanges: make(map[store.EpochDataType]*citypes.EpochRange),
@@ -132,7 +136,7 @@ func (ms *mysqlStore) GetNumLogs() uint64 {
 }
 
 // TODO Cacheing nearhead epoch logs in memory or redis to improve performance
-func (ms *mysqlStore) GetLogs(filter store.LogFilter) ([]types.Log, error) {
+func (ms *mysqlStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
 	defer updater.Update()
 
@@ -218,13 +222,13 @@ func (ms *mysqlStore) GetLogs(filter store.LogFilter) ([]types.Log, error) {
 	}
 
 	if len(logsTblPartitions) == 0 { // must be empty if no logs table partition(s) found
-		return []types.Log{}, nil
+		return []store.Log{}, nil
 	}
 
 	return loadLogs(ms.db, filter, logsTblPartitions)
 }
 
-func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, error) {
+func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*store.Transaction, error) {
 	tx, err := loadTx(ms.db, txHash.String())
 	if err != nil {
 		return nil, err
@@ -233,10 +237,12 @@ func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*types.Transaction, err
 	var rpcTx types.Transaction
 	util.MustUnmarshalRLP(tx.TxRawData, &rpcTx)
 
-	return &rpcTx, nil
+	return &store.Transaction{
+		CfxTransaction: &rpcTx, Extra: parseTxExtra(tx),
+	}, nil
 }
 
-func (ms *mysqlStore) GetReceipt(txHash types.Hash) (*types.TransactionReceipt, error) {
+func (ms *mysqlStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, error) {
 	tx, err := loadTx(ms.db, txHash.String())
 	if err != nil {
 		return nil, err
@@ -245,11 +251,15 @@ func (ms *mysqlStore) GetReceipt(txHash types.Hash) (*types.TransactionReceipt, 
 	var receipt types.TransactionReceipt
 	util.MustUnmarshalRLP(tx.ReceiptRawData, &receipt)
 
+	ptrRcptExtra := parseTxReceiptExtra(tx)
+
 	// If unknown number of event logs (for back compatibility) or no event logs
 	// exists inside transaction receipts, just skip retrieving && assembling
 	// event logs for it.
 	if tx.NumReceiptLogs <= 0 {
-		return &receipt, nil
+		return &store.TransactionReceipt{
+			CfxReceipt: &receipt, Extra: ptrRcptExtra,
+		}, nil
 	}
 
 	partitions, err := findLogsPartitionsEpochRangeWithinStoreTx(ms.db, tx.Epoch, tx.Epoch)
@@ -286,13 +296,28 @@ func (ms *mysqlStore) GetReceipt(txHash types.Hash) (*types.TransactionReceipt, 
 		return nil, err
 	}
 
+	var logExts []*store.LogExtra
+	if ptrRcptExtra != nil {
+		logExts = make([]*store.LogExtra, len(logs))
+	}
+
 	rpcLogs := make([]types.Log, 0, len(logs))
 	for i := 0; i < len(logs); i++ {
 		rpcLogs = append(rpcLogs, logs[i].toRPCLog())
+
+		if ptrRcptExtra != nil && len(logs[i].Extra) > 0 {
+			logExts[i] = parseLogExtra(&logs[i])
+		}
 	}
 
 	receipt.Logs = rpcLogs
-	return &receipt, nil
+	if ptrRcptExtra != nil {
+		ptrRcptExtra.LogExts = logExts
+	}
+
+	return &store.TransactionReceipt{
+		CfxReceipt: &receipt, Extra: ptrRcptExtra,
+	}, nil
 }
 
 func (ms *mysqlStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error) {
@@ -321,30 +346,30 @@ func (ms *mysqlStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error)
 	return result, nil
 }
 
-func (ms *mysqlStore) GetBlockByEpoch(epochNumber uint64) (*types.Block, error) {
+func (ms *mysqlStore) GetBlockByEpoch(epochNumber uint64) (*store.Block, error) {
 	// TODO Cannot get tx from db in advance, since only executed txs saved in db
 	return nil, store.ErrUnsupported
 }
 
-func (ms *mysqlStore) GetBlockSummaryByEpoch(epochNumber uint64) (*types.BlockSummary, error) {
-	return loadBlock(ms.db, "epoch = ? AND pivot = true", epochNumber)
+func (ms *mysqlStore) GetBlockSummaryByEpoch(epochNumber uint64) (*store.BlockSummary, error) {
+	return loadBlockSummary(ms.db, "epoch = ? AND pivot = true", epochNumber)
 }
 
-func (ms *mysqlStore) GetBlockByHash(blockHash types.Hash) (*types.Block, error) {
+func (ms *mysqlStore) GetBlockByHash(blockHash types.Hash) (*store.Block, error) {
 	return nil, store.ErrUnsupported
 }
 
-func (ms *mysqlStore) GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error) {
+func (ms *mysqlStore) GetBlockSummaryByHash(blockHash types.Hash) (*store.BlockSummary, error) {
 	hash := blockHash.String()
-	return loadBlock(ms.db, "hash_id = ? AND hash = ?", util.GetShortIdOfHash(hash), hash)
+	return loadBlockSummary(ms.db, "hash_id = ? AND hash = ?", util.GetShortIdOfHash(hash), hash)
 }
 
-func (ms *mysqlStore) GetBlockByBlockNumber(blockNumber uint64) (*types.Block, error) {
+func (ms *mysqlStore) GetBlockByBlockNumber(blockNumber uint64) (*store.Block, error) {
 	return nil, store.ErrUnsupported
 }
 
-func (ms *mysqlStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*types.BlockSummary, error) {
-	return loadBlock(ms.db, "block_number = ?", blockNumber)
+func (ms *mysqlStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*store.BlockSummary, error) {
+	return loadBlockSummary(ms.db, "block_number = ?", blockNumber)
 }
 
 func (ms *mysqlStore) Push(data *store.EpochData) error {
@@ -593,7 +618,7 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 	}
 
 	// also calculate epoch ranges of logs table partitions and save them to epoch_stats table
-	partitionNames, err := loadLogsTblPartitionNames(dbTx)
+	partitionNames, err := loadLogsTblPartitionNames(dbTx, ms.config.Database)
 	if err != nil {
 		return rollback(errors.WithMessage(err, "failed to get logs table partition names"))
 	}
@@ -727,7 +752,12 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 
 	pivotIndex := len(data.Blocks) - 1
 	for i, block := range data.Blocks {
-		if err := dbTx.Create(newBlock(block, i == pivotIndex)).Error; err != nil {
+		var blockExt *store.BlockExtra
+		if i < len(data.BlockExts) {
+			blockExt = data.BlockExts[i]
+		}
+
+		if err := dbTx.Create(newBlock(block, i == pivotIndex, blockExt)).Error; err != nil {
 			return insertLogIdSpan, opHistory, errors.WithMessagef(err, "Failed to write block #%v", block.Hash)
 		}
 
@@ -737,7 +767,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 		trxs := make([]*transaction, 0)
 		trxlogs := make([]*log, 0)
 
-		for _, tx := range block.Transactions {
+		for j, tx := range block.Transactions {
 			receipt := data.Receipts[tx.Hash]
 
 			// Skip transactions that unexecuted in block.
@@ -747,10 +777,26 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 				continue
 			}
 
-			trxs = append(trxs, newTx(&tx, receipt))
-			for _, log := range receipt.Logs {
+			var txExt *store.TransactionExtra
+			if blockExt != nil && j < len(blockExt.TxnExts) {
+				txExt = blockExt.TxnExts[j]
+			}
+
+			var rcptExt *store.ReceiptExtra
+			if len(data.ReceiptExts) > 0 {
+				rcptExt = data.ReceiptExts[tx.Hash]
+			}
+
+			trxs = append(trxs, newTx(&tx, receipt, txExt, rcptExt))
+			for k, log := range receipt.Logs {
 				blockNum := block.BlockNumber.ToInt().Uint64()
-				trxlogs = append(trxlogs, newLog(blockNum, &log))
+
+				var logExt *store.LogExtra
+				if rcptExt != nil && k < len(rcptExt.LogExts) {
+					logExt = rcptExt.LogExts[k]
+				}
+
+				trxlogs = append(trxlogs, newLog(blockNum, &log, logExt))
 			}
 		}
 
@@ -782,8 +828,8 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 			rounds++
 		}
 
-		for i, start := 1, 0; i <= rounds; i++ {
-			end := util.MinInt(i*maxInsertLogs, len(trxlogs))
+		for m, start := 1, 0; m <= rounds; m++ {
+			end := util.MinInt(m*maxInsertLogs, len(trxlogs))
 			if err := dbTx.Create(trxlogs[start:end]).Error; err != nil {
 				logrus.WithError(err).WithFields(logrus.Fields{
 					"start": start, "end": end, "blockHash": block.Hash,

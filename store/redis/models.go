@@ -96,7 +96,7 @@ func getMetaCacheKey(keys ...string) string {
 }
 
 // Load block summary data by block hash from redis
-func loadBlockByHash(ctx context.Context, rc redis.Cmdable, blockHash types.Hash) (*types.BlockSummary, error) {
+func loadBlockSummaryByHash(ctx context.Context, rc redis.Cmdable, blockHash types.Hash) (*types.BlockSummary, error) {
 	var rpcBlock types.BlockSummary
 	err := RedisRLPGet(ctx, rc, getBlockCacheKey(blockHash), &rpcBlock)
 
@@ -104,12 +104,12 @@ func loadBlockByHash(ctx context.Context, rc redis.Cmdable, blockHash types.Hash
 }
 
 // Load block summary data by block number from redis
-func loadBlockByNumber(ctx context.Context, rc redis.Cmdable, blockNo uint64) (*types.BlockSummary, error) {
+func loadBlockSummaryByNumber(ctx context.Context, rc redis.Cmdable, blockNo uint64) (*types.BlockSummary, error) {
 	num2HashCacheKey := getBlockNumber2HashCacheKey(blockNo)
 
 	blockHash, err := rc.Get(ctx, num2HashCacheKey).Result()
 	if err = ParseRedisNil(err); err == nil {
-		return loadBlockByHash(ctx, rc, types.Hash(blockHash))
+		return loadBlockSummaryByHash(ctx, rc, types.Hash(blockHash))
 	}
 
 	return nil, err

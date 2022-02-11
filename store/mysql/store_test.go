@@ -84,7 +84,7 @@ func TestLoadEpochRange(t *testing.T) {
 
 	// Initialize database store
 	dbStub := setupMockStub()
-	mysqlStore := mustNewStore(dbStub, StoreOption{})
+	mysqlStore := mustNewStore(dbStub, &Config{}, StoreOption{})
 
 	var getEpochRange func() (uint64, uint64, error)
 	for _, tc := range testCases {

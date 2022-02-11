@@ -21,18 +21,18 @@ type Store interface {
 	GetNumTransactions() uint64
 	GetNumLogs() uint64
 
-	GetLogs(filter LogFilter) ([]types.Log, error)
+	GetLogs(filter LogFilter) ([]Log, error)
 
-	GetTransaction(txHash types.Hash) (*types.Transaction, error)
-	GetReceipt(txHash types.Hash) (*types.TransactionReceipt, error)
+	GetTransaction(txHash types.Hash) (*Transaction, error)
+	GetReceipt(txHash types.Hash) (*TransactionReceipt, error)
 
 	GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error)
-	GetBlockByEpoch(epochNumber uint64) (*types.Block, error)
-	GetBlockSummaryByEpoch(epochNumber uint64) (*types.BlockSummary, error)
-	GetBlockByHash(blockHash types.Hash) (*types.Block, error)
-	GetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error)
-	GetBlockByBlockNumber(blockNumber uint64) (*types.Block, error)
-	GetBlockSummaryByBlockNumber(blockNumber uint64) (*types.BlockSummary, error)
+	GetBlockByEpoch(epochNumber uint64) (*Block, error)
+	GetBlockSummaryByEpoch(epochNumber uint64) (*BlockSummary, error)
+	GetBlockByHash(blockHash types.Hash) (*Block, error)
+	GetBlockSummaryByHash(blockHash types.Hash) (*BlockSummary, error)
+	GetBlockByBlockNumber(blockNumber uint64) (*Block, error)
+	GetBlockSummaryByBlockNumber(blockNumber uint64) (*BlockSummary, error)
 
 	// Push appends epoch data to the store
 	Push(data *EpochData) error

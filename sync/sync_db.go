@@ -461,7 +461,7 @@ func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
 	// load from db store if cache missed
 	pivotBlock, err := syncer.db.GetBlockSummaryByEpoch(latestEpochNo)
 	if err == nil {
-		return pivotBlock.Hash, nil
+		return pivotBlock.CfxBlockSummary.Hash, nil
 	}
 
 	if syncer.db.IsRecordNotFound(err) {
