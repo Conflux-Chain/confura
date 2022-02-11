@@ -42,7 +42,7 @@ func NewMananger(urls []string, resolver ...RepartitionResolver) *Manager {
 		}
 	}
 
-	manager.hashRing = consistent.New(members, cfg.HashRing)
+	manager.hashRing = consistent.New(members, cfg.HashRingRaw())
 
 	return &manager
 }

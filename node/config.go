@@ -3,61 +3,54 @@ package node
 import (
 	"time"
 
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/buraksezer/consistent"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 var cfg config // node config from viper
 
 func init() {
-	nodeUrlsGetter := &util.ViperKeyGetter{
-		Key: "node.urls",
-		Getter: func(key string) interface{} {
-			return viper.GetViper().GetStringSlice(key)
-		},
-	}
-	if err := util.ViperSub(viper.GetViper(), "node", nodeUrlsGetter).Unmarshal(&cfg); err != nil {
-		logrus.WithError(err).Fatal("Failed to unmarshal node config from viper")
-	}
-
+	viper.MustUnmarshalKey("node", &cfg)
 	logrus.WithField("config", cfg).Debug("Node manager configurations loaded.")
-
-	cfg.HashRing.Hasher = &hasher{}
 }
 
 type config struct {
-	Endpoint string
+	Endpoint string `default:":22530"`
 	URLs     []string
 	WSURLs   []string
-	HashRing consistent.Config
-	Monitor  monitorConfig
-	Router   routerConfig
+	HashRing struct {
+		PartitionCount    int     `default:"15739"`
+		ReplicationFactor int     `default:"51"`
+		Load              float64 `default:"1.25"`
+	}
+	Monitor struct {
+		Interval time.Duration `default:"1s"`
+		Unhealth struct {
+			Failures          uint64        `default:"3"`
+			EpochsFallBehind  uint64        `default:"30"`
+			LatencyPercentile float64       `default:"0.9"`
+			MaxLatency        time.Duration `default:"3s"`
+		}
+		Recover struct {
+			RemindInterval time.Duration `default:"5m"`
+			SuccessCounter uint64        `default:"60"`
+		}
+	}
+	Router struct {
+		RedisURL        string
+		NodeRPCURL      string
+		ChainedFailover chainedFailoverConfig
+	}
 }
 
-type monitorConfig struct {
-	Interval time.Duration
-	Unhealth unhealthConfig
-	Recover  recoverConfig
-}
-
-type unhealthConfig struct {
-	Failures          uint64
-	EpochsFallBehind  uint64
-	LatencyPercentile float64
-	MaxLatency        time.Duration
-}
-
-type recoverConfig struct {
-	RemindInterval time.Duration
-	SuccessCounter uint64
-}
-
-type routerConfig struct {
-	RedisURL        string
-	NodeRPCURL      string
-	ChainedFailover chainedFailoverConfig
+func (c *config) HashRingRaw() consistent.Config {
+	return consistent.Config{
+		PartitionCount:    c.HashRing.PartitionCount,
+		ReplicationFactor: c.HashRing.ReplicationFactor,
+		Load:              c.HashRing.Load,
+		Hasher:            &hasher{},
+	}
 }
 
 type chainedFailoverConfig struct {

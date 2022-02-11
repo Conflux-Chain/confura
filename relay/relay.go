@@ -1,30 +1,22 @@
 package relay
 
 import (
-	"errors"
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
-const (
-	txnRelayChanSize = 2000 // default transaction relay channel size
-)
-
-// TODO: use `go-defaults` for default setting value.
-type txnRelayerConfig struct {
-	// sdk client option
-	RetryCount     int           `mapstructure:"retry"`
-	RetryInterval  time.Duration `mapstructure:"retryInterval"`
-	RequestTimeout time.Duration `mapstructure:"requestTimeout"`
-	// full node URL lists
-	NodeUrls []string `mapstructure:"nodeUrls"`
-	// num of relay concurrency
-	Concurrency int `mapstructure:"concurrency"`
+type TxnRelayerConfig struct {
+	BufferSize     int           `default:"2000"`
+	Concurrency    int           `default:"1"`
+	Retry          int           `default:"3"`
+	RetryInterval  time.Duration `default:"1s"`
+	RequestTimeout time.Duration `default:"3s"`
+	NodeUrls       []string
 }
 
 // TxnRelayer relays raw transaction by broadcasting to node pool
@@ -33,6 +25,7 @@ type txnRelayerConfig struct {
 type TxnRelayer struct {
 	poolClients []*sdk.Client      // sdk clients representing node pool
 	txnQueue    chan hexutil.Bytes // transactions queued to relay
+	config      *TxnRelayerConfig
 }
 
 func MustNewTxnRelayerFromViper() *TxnRelayer {
@@ -45,22 +38,21 @@ func MustNewTxnRelayerFromViper() *TxnRelayer {
 }
 
 func NewTxnRelayerFromViper() (*TxnRelayer, error) {
-	var relayConf txnRelayerConfig
-
-	subViper := util.ViperSub(viper.GetViper(), "relay")
-	if err := subViper.Unmarshal(&relayConf); err != nil {
-		return nil, errors.New("failed to load viper settings")
-	}
-
+	var relayConf TxnRelayerConfig
+	viper.MustUnmarshalKey("relay", &relayConf)
 	return NewTxnRelayer(&relayConf)
 }
 
-func NewTxnRelayer(relayConf *txnRelayerConfig) (*TxnRelayer, error) {
+func NewTxnRelayer(relayConf *TxnRelayerConfig) (*TxnRelayer, error) {
+	if len(relayConf.NodeUrls) == 0 {
+		return &TxnRelayer{}, nil
+	}
+
 	var cfxClients []*sdk.Client
 
 	for _, url := range relayConf.NodeUrls {
 		cfx, err := sdk.NewClient(url, sdk.ClientOption{
-			RetryCount:     relayConf.RetryCount,
+			RetryCount:     relayConf.Retry,
 			RetryInterval:  relayConf.RetryInterval,
 			RequestTimeout: relayConf.RequestTimeout,
 		})
@@ -73,7 +65,8 @@ func NewTxnRelayer(relayConf *txnRelayerConfig) (*TxnRelayer, error) {
 
 	relayer := &TxnRelayer{
 		poolClients: cfxClients,
-		txnQueue:    make(chan hexutil.Bytes, txnRelayChanSize),
+		txnQueue:    make(chan hexutil.Bytes, relayConf.BufferSize),
+		config:      relayConf,
 	}
 
 	// start concurrency worker(s)
@@ -91,7 +84,11 @@ func NewTxnRelayer(relayConf *txnRelayerConfig) (*TxnRelayer, error) {
 
 // AsyncRelay relays raw transaction broadcasting asynchronously.
 func (relayer *TxnRelayer) AsyncRelay(signedTx hexutil.Bytes) bool {
-	if len(relayer.txnQueue) == txnRelayChanSize { // queue is full?
+	if len(relayer.poolClients) == 0 {
+		return false
+	}
+
+	if len(relayer.txnQueue) == relayer.config.BufferSize { // queue is full?
 		return false
 	}
 

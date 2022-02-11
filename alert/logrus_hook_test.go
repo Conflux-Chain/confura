@@ -15,7 +15,7 @@ func mustInitViperFromConfig() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	viper.SetConfigName("config")
-	viper.SetConfigType("json")
+	viper.SetConfigType("yml")
 	viper.GetViper().AddConfigPath("../config")
 
 	if err := viper.ReadInConfig(); err != nil {

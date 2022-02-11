@@ -210,7 +210,7 @@ func NewLocalRouter(urls, wsUrls []string) *LocalRouter {
 		}
 
 		batchNodes[i] = nodes
-		batchHashRings[i] = consistent.New(members, cfg.HashRing)
+		batchHashRings[i] = consistent.New(members, cfg.HashRingRaw())
 	}
 
 	return &LocalRouter{
