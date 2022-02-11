@@ -33,18 +33,18 @@ sync:
 nearhead:
   cap: 100000
   logLimit: 3000
-metrics:
-  enabled: true
-  influxdb:
-    host: http://127.0.0.1:8086
-    db: infura_test
-    username: ''
-    password: ''
-  report:
-    enabled: false
-    interval: 10s
-log:
-  level: info
+# metrics:
+#   enabled: true
+#   influxdb:
+#     host: http://127.0.0.1:8086
+#     db: infura_test
+#     username: ''
+#     password: ''
+#   report:
+#     enabled: false
+#     interval: 10s
+# log:
+#   level: info
 store:
   mysql:
     enabled: false
@@ -66,16 +66,14 @@ ethstore:
     connMaxLifeTime: 3m
     maxOpenConns: 10
     maxIdleConns: 10
-alert:
-  customTags:
-  - testnet
-  - prod
-  dingtalk:
-    enabled: false
-    webhook: can also be defined with INFURA_ALERT_DINGTALK_WEBHOOK enviroment variable
-    secret: can also be defined with INFURA_ALERT_DINGTALK_SECRET enviroment variable
-    atMobiles: []
-    isAtAll: false
+# alert:
+#   customTags: [testnet,dev]
+#   dingtalk:
+#     enabled: false
+#     webhook: INFURA_ALERT_DINGTALK_WEBHOOK
+#     secret: INFURA_ALERT_DINGTALK_SECRET
+#     atMobiles: []
+#     isAtAll: false
 prune:
   db:
     interval: 30s

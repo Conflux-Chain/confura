@@ -3,13 +3,12 @@ package config
 import (
 	"strings"
 
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/alert"
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 
 	// For go-ethereum v1.0.15, node pkg imports internal/debug pkg which will inits
 	// log root with a log.GlogHandler.
@@ -23,23 +22,22 @@ import (
 const viperEnvPrefix = "infura"
 
 func init() {
-	viperutil.MustInit(viperEnvPrefix)
+	viper.MustInit(viperEnvPrefix)
 	initLogger()
-	initMetrics()
-	initAlert()
-}
-
-func initAlert() {
-	if viper.GetBool("alert.dingtalk.enabled") {
-		alert.InitDingRobot()
-	}
+	metrics.Init()
+	alert.InitDingRobot()
 }
 
 func initLogger() {
-	lvl := viper.GetString("log.level")
-	level, err := logrus.ParseLevel(lvl)
+	var config struct {
+		Level string `default:"info"`
+	}
+	viper.MustUnmarshalKey("log", &config)
+
+	// Set log level
+	level, err := logrus.ParseLevel(config.Level)
 	if err != nil {
-		logrus.WithError(err).Fatalf("invalid log level configured: %v", lvl)
+		logrus.WithError(err).Fatalf("invalid log level configured: %v", config.Level)
 	}
 	logrus.SetLevel(level)
 
@@ -49,14 +47,6 @@ func initLogger() {
 
 	// Customize logger here...
 	adaptGethLogger()
-}
-
-func initMetrics() {
-	// must initialized before any metrics created to avoid noop metrics created
-	metrics.Enabled = viper.GetBool("metrics.enabled")
-	if metrics.Enabled {
-		logrus.Debug("Metrics enabled")
-	}
 }
 
 // adaptGethLogger adapt geth logger (which is used by go sdk) to get along with logrus.

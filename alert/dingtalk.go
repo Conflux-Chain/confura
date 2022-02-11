@@ -5,38 +5,42 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/royeo/dingrobot"
-	"github.com/spf13/viper"
 )
 
 const (
 	dingTalkAlertMsgTpl = "logrus alert notification\ntags:\t%v;\nlevel:\t%v;\nbrief:\t%v;\ndetail:\t%v;\ntime:\t%v\n"
 )
 
-var (
+type config struct {
 	// custom tags are usually used to differentiate between different networks and enviroments
 	// such as mainnet/testnet, prod/test/dev or any custom info for more details.
-	dingTalkCustomTags    []string
+	CustomTags []string `default:"[testnet,dev]"`
+	DingTalk   struct {
+		Enabled   bool
+		WebHook   string
+		Secret    string
+		AtMobiles []string
+		IsAtAll   bool
+	}
+}
+
+var (
+	conf config
+
 	dingTalkCustomTagsStr string
-
-	dingTalkAtMobiles []string
-	dingTalkIsAtAll   bool
-
-	dingRobot dingrobot.Roboter
+	dingRobot             dingrobot.Roboter
 )
 
 func InitDingRobot() {
-	dingTalkCustomTags = viper.GetStringSlice("alert.customTags")
-	dingTalkCustomTagsStr = strings.Join(dingTalkCustomTags, "/")
+	viper.MustUnmarshalKey("alert", &conf)
 
-	dingTalkAtMobiles = viper.GetStringSlice("alert.dingtalk.atMobiles")
-	dingTalkIsAtAll = viper.GetBool("alert.dingtalk.isAtAll")
-
-	webHook := viper.GetString("alert.dingtalk.webhook")
-	secret := viper.GetString("alert.dingtalk.secret")
-
-	dingRobot = dingrobot.NewRobot(webHook)
-	dingRobot.SetSecret(secret)
+	if conf.DingTalk.Enabled {
+		dingTalkCustomTagsStr = strings.Join(conf.CustomTags, "/")
+		dingRobot = dingrobot.NewRobot(conf.DingTalk.WebHook)
+		dingRobot.SetSecret(conf.DingTalk.Secret)
+	}
 }
 
 func SendDingTalkTextMessage(level, brief, detail string) error {
@@ -47,5 +51,5 @@ func SendDingTalkTextMessage(level, brief, detail string) error {
 	nowStr := time.Now().Format("2006-01-02T15:04:05-0700")
 	msg := fmt.Sprintf(dingTalkAlertMsgTpl, dingTalkCustomTagsStr, level, brief, detail, nowStr)
 
-	return dingRobot.SendText(msg, dingTalkAtMobiles, dingTalkIsAtAll)
+	return dingRobot.SendText(msg, conf.DingTalk.AtMobiles, conf.DingTalk.IsAtAll)
 }
