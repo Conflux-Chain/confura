@@ -29,6 +29,8 @@ sync:
   useBatch: true
   maxEpochs: 10
   addrBlacklist: [cfx:acav5v98np8t3m66uw7x61yer1ja1jm0dpzj1zyzxv]
+  eth:
+    useBatch: true
 nearhead:
   cap: 100000
   logLimit: 3000

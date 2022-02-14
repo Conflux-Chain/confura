@@ -3,12 +3,14 @@ package store
 import (
 	"fmt"
 
+	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 // EthData wraps the blockchain data of an ETH block.
@@ -52,41 +54,69 @@ func QueryEthData(w3c *web3go.Client, blockNumber uint64) (*EthData, error) {
 		"blockHash": block.Hash, "blockNumber": blockNumber,
 	})
 
-	txReceipts := map[common.Hash]*web3Types.Receipt{}
-	blockTxs := block.Transactions.Transactions()
+	var blockReceipts []*web3Types.Receipt
+	useBatch := viper.GetBool("sync.eth.useBatch")
 
-	// TODO: improve performance with batch block receipts
+	if useBatch {
+		// Batch get block receipts.
+		err := w3c.Provider().Call(&blockReceipts, "parity_getBlockReceipts", rpc.BlockNumber(blockNumber))
+		if err != nil {
+			logger.WithError(err).Info("Failed to batch query ETH block receipts")
+			return nil, errors.WithMessage(err, "failed to get block receipts")
+		}
+	}
+
+	txReceipts := map[common.Hash]*web3Types.Receipt{}
+
+	blockTxs := block.Transactions.Transactions()
 	for i := 0; i < len(blockTxs); i++ {
 		txHash := blockTxs[i].Hash
 		blogger := logger.WithFields(logrus.Fields{"txHash": txHash, "i": i})
 
-		receipt, err := w3c.Eth.TransactionReceipt(txHash)
-		if err != nil {
-			blogger.WithError(err).Info("Failed to query ETH transaction receipt")
-			return nil, errors.WithMessage(err, "failed to get receipt for tx")
+		var receipt *web3Types.Receipt
+		if useBatch {
+			if blockReceipts == nil {
+				blogger.Info("Failed to match tx receipts due to block receipts nil (regarded as chain reorg)")
+				return nil, errors.WithMessage(ErrChainReorged, "batch retrieved block receipts nil")
+			}
+
+			if i >= len(blockReceipts) {
+				blogger.WithField("blockReceipts", blockReceipts).Info(
+					"Failed to match tx receipts due to block receipts out of bound",
+				)
+				return nil, errors.New("batch retrieved block receipts out of bound")
+			}
+
+			receipt = blockReceipts[i]
+		} else {
+			receipt, err = w3c.Eth.TransactionReceipt(txHash)
+			if err != nil {
+				blogger.WithError(err).Info("Failed to query ETH transaction receipt")
+				return nil, errors.WithMessagef(err, "failed to get receipt for tx %v", txHash)
+			}
 		}
 
 		// sanity check in case of chain re-org
 		switch {
 		case receipt == nil: // receipt shouldn't be nil unless chain re-org
-			err = errors.WithMessage(ErrEpochPivotSwitched, "receipt nil")
+			err = errors.WithMessage(ErrChainReorged, "tx receipt nil")
 		case receipt.BlockHash != block.Hash:
 			blogger = blogger.WithFields(logrus.Fields{
 				"rcptBlockHash": receipt.BlockHash, "expectedBlockHash": block.Hash,
 			})
-			err = errors.WithMessage(ErrEpochPivotSwitched, "receipt block hash mismatch")
+			err = errors.WithMessage(ErrChainReorged, "receipt block hash mismatch")
 		case receipt.BlockNumber != blockNumber:
 			blogger = blogger.WithFields(logrus.Fields{
 				"rcptBlockNumber": receipt.BlockNumber, "expectedBlockNumber": blockNumber,
 			})
-			err = errors.WithMessage(ErrEpochPivotSwitched, "receipt block number mismatch")
+			err = errors.WithMessage(ErrChainReorged, "receipt block number mismatch")
 		case receipt.TransactionHash != txHash:
 			blogger = blogger.WithField("rcptTxHash", receipt.TransactionHash)
-			err = errors.WithMessage(ErrEpochPivotSwitched, "receipt tx hash mismatch")
+			err = errors.WithMessage(ErrChainReorged, "receipt tx hash mismatch")
 		}
 
 		if err != nil {
-			blogger.WithError(err).Info("Failed to query ETH transaction receipt due to chain re-org")
+			blogger.WithError(err).Info("Failed to query ETH transaction receipt (regarded as chain re-org)")
 			return nil, err
 		}
 
