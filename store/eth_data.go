@@ -3,7 +3,8 @@ package store
 import (
 	"fmt"
 
-	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
+	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go"
