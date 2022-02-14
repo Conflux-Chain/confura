@@ -63,7 +63,7 @@ store:
 ethstore:
   mysql:
     enabled: false
-    dsn: user:password@tcp(127.0.0.1:3306)/conflux_infura_eth
+    dsn: user:password@tcp(127.0.0.1:3306)/conflux_infura_eth?parseTime=true
     connMaxLifeTime: 3m
     maxOpenConns: 10
     maxIdleConns: 10
