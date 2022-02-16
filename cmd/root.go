@@ -46,6 +46,7 @@ func init() {
 
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(wsTestCmd)
+	rootCmd.AddCommand(ethTestCmd)
 }
 
 func start(cmd *cobra.Command, args []string) {
