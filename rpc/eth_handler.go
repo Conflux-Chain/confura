@@ -36,6 +36,10 @@ func NewEthStoreHandler(store store.Store, next ethHandler) *EthStoreHandler {
 func (h *EthStoreHandler) GetBlockByHash(ctx context.Context, blockHash common.Hash, includeTxs bool) (
 	block *web3Types.Block, err error,
 ) {
+	logger := logrus.WithFields(logrus.Fields{
+		"blockHash": blockHash, "includeTxs": includeTxs,
+	})
+
 	var sblock *store.Block
 	var sblocksum *store.BlockSummary
 
@@ -47,8 +51,11 @@ func (h *EthStoreHandler) GetBlockByHash(ctx context.Context, blockHash common.H
 		sblocksum, err = h.store.GetBlockSummaryByHash(cfxBlockHash)
 	}
 
-	if err != nil && !util.IsInterfaceValNil(h.next) {
-		return h.next.GetBlockByHash(ctx, blockHash, includeTxs)
+	if err != nil {
+		logger.WithError(err).Debug("ETH handler failed to handle GetBlockByHash")
+		if !util.IsInterfaceValNil(h.next) {
+			return h.next.GetBlockByHash(ctx, blockHash, includeTxs)
+		}
 	}
 
 	if sblock != nil {
@@ -65,6 +72,10 @@ func (h *EthStoreHandler) GetBlockByHash(ctx context.Context, blockHash common.H
 func (h *EthStoreHandler) GetBlockByNumber(ctx context.Context, blockNum *web3Types.BlockNumber, includeTxs bool) (
 	block *web3Types.Block, err error,
 ) {
+	logger := logrus.WithFields(logrus.Fields{
+		"blockNum": *blockNum, "includeTxs": includeTxs,
+	})
+
 	if *blockNum <= 0 {
 		return nil, store.ErrUnsupported
 	}
@@ -78,8 +89,12 @@ func (h *EthStoreHandler) GetBlockByNumber(ctx context.Context, blockNum *web3Ty
 		sblocksum, err = h.store.GetBlockSummaryByBlockNumber(uint64(*blockNum))
 	}
 
-	if err != nil && !util.IsInterfaceValNil(h.next) {
-		return h.next.GetBlockByNumber(ctx, blockNum, includeTxs)
+	if err != nil {
+		logger.WithError(err).Debug("ETH handler failed to handle GetBlockByNumber")
+
+		if !util.IsInterfaceValNil(h.next) {
+			return h.next.GetBlockByNumber(ctx, blockNum, includeTxs)
+		}
 	}
 
 	if sblock != nil {

@@ -174,7 +174,7 @@ func (api *ethAPI) EstimateGas(
 }
 
 // TransactionByHash returns the transaction with the given hash.
-func (api *ethAPI) TransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.Transaction, error) {
+func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.Transaction, error) {
 	if !util.IsInterfaceValNil(api.handler) {
 		tx, err := api.handler.GetTransactionByHash(ctx, hash)
 		if err == nil {
@@ -187,7 +187,7 @@ func (api *ethAPI) TransactionByHash(ctx context.Context, hash common.Hash) (*we
 
 // TransactionReceipt returns the receipt of a transaction by transaction hash.
 // Note that the receipt is not available for pending transactions.
-func (api *ethAPI) TransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error) {
+func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error) {
 	if !util.IsInterfaceValNil(api.handler) {
 		tx, err := api.handler.GetTransactionReceipt(ctx, txHash)
 		if err == nil {
