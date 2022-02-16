@@ -21,11 +21,13 @@ import (
 type syncEthConfig struct {
 	FromBlock uint64 `default:"1"`
 	MaxBlocks uint64 `default:"10"`
+	UseBatch  bool   `default:"false"`
 }
 
 // EthSyncer is used to synchronize conflux EVM space blockchain data
 // into db and cache store.
 type EthSyncer struct {
+	conf *syncEthConfig
 	// EVM space ETH client
 	w3c *web3go.Client
 	// EVM space chain id
@@ -53,6 +55,7 @@ func MustNewEthSyncer(ethC *web3go.Client, db store.Store) *EthSyncer {
 	viperutil.MustUnmarshalKey("sync.eth", &ethConf)
 
 	syncer := &EthSyncer{
+		conf:                &ethConf,
 		w3c:                 ethC,
 		chainId:             uint32(*ethChainId),
 		db:                  db,
@@ -62,7 +65,7 @@ func MustNewEthSyncer(ethC *web3go.Client, db store.Store) *EthSyncer {
 	}
 
 	// Load last sync block information
-	syncer.mustLoadLastSyncBlock(&ethConf)
+	syncer.mustLoadLastSyncBlock()
 
 	return syncer
 }
@@ -154,7 +157,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 		blockNo := syncer.fromBlock + uint64(i)
 		blogger := logger.WithField("block", blockNo)
 
-		data, err := store.QueryEthData(syncer.w3c, blockNo)
+		data, err := store.QueryEthData(syncer.w3c, blockNo, syncer.conf.UseBatch)
 
 		// If chain re-orged, stop the querying right now since it's pointless to query data
 		// that will be reverted late.
@@ -272,15 +275,15 @@ func (syncer *EthSyncer) reorgRevert(revertTo uint64) error {
 }
 
 // Load last sync block from databse to continue synchronization.
-func (syncer *EthSyncer) mustLoadLastSyncBlock(conf *syncEthConfig) {
+func (syncer *EthSyncer) mustLoadLastSyncBlock() {
 	loaded, err := syncer.loadLastSyncBlock()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to load last sync block range from ethdb")
 	}
 
 	// Load eth sync start block config on initial loading if necessary.
-	if !loaded && conf != nil {
-		syncer.fromBlock = conf.FromBlock
+	if !loaded && syncer.conf != nil {
+		syncer.fromBlock = syncer.conf.FromBlock
 	}
 }
 

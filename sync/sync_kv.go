@@ -8,13 +8,13 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	gometrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -26,6 +26,7 @@ const (
 // KVCacheSyncer is used to sync blockchain data into kv cache against
 // the latest state epoch.
 type KVCacheSyncer struct {
+	conf *syncConfig
 	// conflux sdk client
 	cfx sdk.ClientOperator
 	// redis store
@@ -53,15 +54,19 @@ type KVCacheSyncer struct {
 // MustNewKVCacheSyncer creates an instance of KVCacheSyncer to sync
 // the latest state epoch data.
 func MustNewKVCacheSyncer(cfx sdk.ClientOperator, cache store.CacheStore) *KVCacheSyncer {
+	var conf syncConfig
+	viperutil.MustUnmarshalKey("sync", &conf)
+
 	syncer := &KVCacheSyncer{
+		conf:                &conf,
 		cfx:                 cfx,
 		cache:               cache,
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
-		maxSyncEpochs:       viper.GetUint64("sync.maxEpochs"),
+		maxSyncEpochs:       conf.MaxEpochs,
 		syncWindow:          newEpochWindow(decayedEpochGapThreshold),
 		lastSubEpochNo:      citypes.EpochNumberNil,
-		subEpochCh:          make(chan uint64, viper.GetInt64("sync.sub.buffer")),
+		subEpochCh:          make(chan uint64, conf.Sub.Buffer),
 		checkPointCh:        make(chan bool, 2),
 	}
 
@@ -266,7 +271,7 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 		epochNo := syncFrom + uint64(i)
 		eplogger := logger.WithField("epoch", epochNo)
 
-		data, err := store.QueryEpochData(syncer.cfx, epochNo)
+		data, err := store.QueryEpochData(syncer.cfx, epochNo, syncer.conf.UseBatch)
 
 		// If epoch pivot switched, stop the querying right now since it's pointless to query epoch data
 		// that will be reverted late.

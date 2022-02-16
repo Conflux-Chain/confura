@@ -27,6 +27,7 @@ const (
 type syncConfig struct {
 	FromEpoch uint64 `default:"0"`
 	MaxEpochs uint64 `default:"10"`
+	UseBatch  bool   `default:"false"`
 	Sub       syncSubConfig
 }
 
@@ -37,6 +38,7 @@ type syncSubConfig struct {
 // DatabaseSyncer is used to sync blockchain data into database
 // against the latest confirmed epoch.
 type DatabaseSyncer struct {
+	conf *syncConfig
 	// conflux sdk client
 	cfx sdk.ClientOperator
 	// db store
@@ -65,6 +67,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSync
 	viperutil.MustUnmarshalKey("sync", &conf)
 
 	syncer := &DatabaseSyncer{
+		conf:                &conf,
 		cfx:                 cfx,
 		db:                  db,
 		epochFrom:           0,
@@ -85,7 +88,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSync
 	}
 
 	// Load last sync epoch information
-	syncer.mustLoadLastSyncEpoch(&conf)
+	syncer.mustLoadLastSyncEpoch()
 
 	return syncer
 }
@@ -137,15 +140,15 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 }
 
 // Load last sync epoch from databse to continue synchronization.
-func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch(conf *syncConfig) {
+func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 	loaded, err := syncer.loadLastSyncEpoch()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to load last sync epoch range from db")
 	}
 
 	// Load db sync start epoch config on initial loading if necessary.
-	if !loaded && conf != nil {
-		syncer.epochFrom = conf.FromEpoch
+	if !loaded && syncer.conf != nil {
+		syncer.epochFrom = syncer.conf.FromEpoch
 	}
 }
 
@@ -227,7 +230,7 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 		epochNo := syncer.epochFrom + uint64(i)
 		eplogger := logger.WithField("epoch", epochNo)
 
-		data, err := store.QueryEpochData(syncer.cfx, epochNo)
+		data, err := store.QueryEpochData(syncer.cfx, epochNo, syncer.conf.UseBatch)
 
 		// If epoch pivot switched, stop the querying right now since it's pointless to query epoch data
 		// that will be reverted late.

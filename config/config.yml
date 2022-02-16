@@ -3,13 +3,13 @@ rpc:
   endpoint: ":22537"
   wsEndpoint: ":22535"
   cfxBridge:
-    ethNode: http://net8889eth.confluxrpc.com
-    cfxNode: http://net8888cfx.confluxrpc.com
+    ethNode: http://evmtestnet.confluxrpc.com
+    cfxNode: http://test.confluxrpc.com
     # exposedModules: []
     # endpoint: ":32537"
 ethrpc:
   exposedModules: []
-  endpoint: ":22539"
+  endpoint: ":28545"
 cfx:
   ws: ws://test.confluxrpc.com/ws
   http: http://test.confluxrpc.com
@@ -17,7 +17,7 @@ cfx:
   retryInterval: 1s
   requestTimeout: 3s
 eth:
-  http: http://net8889eth.confluxrpc.com
+  http: http://evmtestnet.confluxrpc.com
   retry: 3
   retryInterval: 1s
   requestTimeout: 3s
@@ -26,12 +26,12 @@ sync:
     interval: 300ms
   sub:
     buffer: 1000
-  useBatch: true   # Whether to use epoch_getEpochReceipts to batch get receipts
+#  useBatch: false   # Whether to use epoch_getEpochReceipts to batch get receipts
 #  fromEpoch: 0    # The block number from which to sync core space
 #  maxEpochs: 10   # Maximum number of epochs to batch sync epoch data once
   addrBlacklist: [cfx:acav5v98np8t3m66uw7x61yer1ja1jm0dpzj1zyzxv]
-  eth:
-    useBatch: true   # Whether to use parity_getBlockReceipts to batch get receipts
+#  eth:
+#    useBatch: false   # Whether to use parity_getBlockReceipts to batch get receipts
 #    fromBlock: 1    # The block number from which to sync eSpace
 #    maxBlocks: 10   # Maximum number of blocks to batch sync ETH data once
 nearhead:

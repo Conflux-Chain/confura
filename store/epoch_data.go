@@ -83,7 +83,7 @@ func (epoch *EpochData) IsContinuousTo(prev *EpochData) (continuous bool, desc s
 
 // QueryEpochData queries blockchain data for the specified epoch number.
 // TODO better to use batch API to return all if performance is low in case of high TPS.
-func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, error) {
+func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (EpochData, error) {
 	updater := metrics.NewTimerUpdaterByName("infura/duration/store/epoch/query")
 	defer updater.Update()
 
@@ -132,8 +132,6 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64) (EpochData, erro
 	}
 
 	var epochReceipts [][]types.TransactionReceipt
-	useBatch := viper.GetBool("sync.useBatch")
-
 	if useBatch {
 		// Batch get epoch receipts.
 		epochReceipts, err = cfx.GetEpochReceiptsByPivotBlockHash(pivotHash)

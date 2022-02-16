@@ -11,7 +11,6 @@ import (
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 // EthData wraps the blockchain data of an ETH block.
@@ -41,7 +40,7 @@ func (current *EthData) IsContinuousTo(prev *EthData) (continuous bool, desc str
 }
 
 // QueryEthData queries blockchain data for the specified block number.
-func QueryEthData(w3c *web3go.Client, blockNumber uint64) (*EthData, error) {
+func QueryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthData, error) {
 	updater := metrics.NewTimerUpdaterByName("infura/duration/store/eth/query")
 	defer updater.Update()
 
@@ -56,8 +55,6 @@ func QueryEthData(w3c *web3go.Client, blockNumber uint64) (*EthData, error) {
 	})
 
 	var blockReceipts []*web3Types.Receipt
-	useBatch := viper.GetBool("sync.eth.useBatch")
-
 	if useBatch {
 		// Batch get block receipts.
 		err := w3c.Provider().Call(&blockReceipts, "parity_getBlockReceipts", rpc.BlockNumber(blockNumber))
