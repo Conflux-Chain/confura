@@ -8,6 +8,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
@@ -15,15 +16,23 @@ import (
 	gometrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 const (
-	// viper key for custom db sync point
-	viperDbSyncEpochFromKey = "sync.db.epochFrom"
 	// default capacity setting for pivot info window
 	dbSyncEpochPivotWinCapacity = 100
 )
+
+// TODO: extract more sync config items
+type syncConfig struct {
+	FromEpoch uint64 `default:"0"`
+	MaxEpochs uint64 `default:"10"`
+	Sub       syncSubConfig
+}
+
+type syncSubConfig struct {
+	Buffer uint64 `default:"1000"`
+}
 
 // DatabaseSyncer is used to sync blockchain data into database
 // against the latest confirmed epoch.
@@ -52,15 +61,18 @@ type DatabaseSyncer struct {
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
 func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSyncer {
+	var conf syncConfig
+	viperutil.MustUnmarshalKey("sync", &conf)
+
 	syncer := &DatabaseSyncer{
 		cfx:                 cfx,
 		db:                  db,
 		epochFrom:           0,
-		maxSyncEpochs:       viper.GetUint64("sync.maxEpochs"),
+		maxSyncEpochs:       conf.MaxEpochs,
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		lastSubEpochNo:      citypes.EpochNumberNil,
-		pivotSwitchEpochCh:  make(chan uint64, viper.GetInt64("sync.sub.buffer")),
+		pivotSwitchEpochCh:  make(chan uint64, conf.Sub.Buffer),
 		checkPointCh:        make(chan bool, 2),
 		epochPivotWin:       newEpochPivotWindow(dbSyncEpochPivotWinCapacity),
 	}
@@ -73,7 +85,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSync
 	}
 
 	// Load last sync epoch information
-	syncer.mustLoadLastSyncEpoch()
+	syncer.mustLoadLastSyncEpoch(&conf)
 
 	return syncer
 }
@@ -125,15 +137,15 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 }
 
 // Load last sync epoch from databse to continue synchronization.
-func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
+func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch(conf *syncConfig) {
 	loaded, err := syncer.loadLastSyncEpoch()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to load last sync epoch range from db")
 	}
 
 	// Load db sync start epoch config on initial loading if necessary.
-	if !loaded && viper.IsSet(viperDbSyncEpochFromKey) {
-		syncer.epochFrom = viper.GetUint64(viperDbSyncEpochFromKey)
+	if !loaded && conf != nil {
+		syncer.epochFrom = conf.FromEpoch
 	}
 }
 
