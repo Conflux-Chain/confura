@@ -156,7 +156,7 @@ func (api *cfxAPI) GetCode(ctx context.Context, contract types.Address, epoch *t
 	return cfx.GetCode(contract, toSlice(epoch)...)
 }
 
-func (api *cfxAPI) GetStorageAt(ctx context.Context, address types.Address, position types.Hash, epoch *types.Epoch) (hexutil.Bytes, error) {
+func (api *cfxAPI) GetStorageAt(ctx context.Context, address types.Address, position *hexutil.Big, epoch *types.Epoch) (hexutil.Bytes, error) {
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return nil, err
