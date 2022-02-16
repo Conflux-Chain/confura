@@ -7,6 +7,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
@@ -724,14 +725,26 @@ func (api *cfxAPI) GetPoSEconomics(ctx context.Context, epoch ...*types.Epoch) (
 		return nil, err
 	}
 
-	// TODO: remove this type assertion once Golang SDK interface method added.
-	cfxc, ok := cfx.(*sdk.Client)
-	if !ok {
-		return nil, store.ErrUnsupported
+	posEconomics, err := cfx.GetPoSEconomics(epoch...)
+	return &posEconomics, err
+}
+
+func (api *cfxAPI) GetOpenedMethodGroups(ctx context.Context) (openedGroups []string, err error) {
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	posEconomics, err := cfxc.GetPoSEconomics(epoch...)
-	return &posEconomics, err
+	return cfx.GetOpenedMethodGroups()
+}
+
+func (api *cfxAPI) GetPoSRewardByEpoch(ctx context.Context, epoch types.Epoch) (reward *postypes.EpochReward, err error) {
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfx.GetPoSRewardByEpoch(epoch)
 }
 
 // PubSub notification
