@@ -400,7 +400,7 @@ func (validator *EpochValidator) doValidate(fnCall, infuraCall func() (interface
 func (validator *EpochValidator) validateGetTransactionReceipt(txHash types.Hash) error {
 	genCall := func(src string, cfx sdk.ClientOperator) func() (interface{}, error) {
 		return func() (interface{}, error) {
-			rcpt, err := validator.cfx.GetTransactionReceipt(txHash)
+			rcpt, err := cfx.GetTransactionReceipt(txHash)
 			if err != nil {
 				return rcpt, errors.WithMessagef(
 					err, "failed to query transaction receipts from %v", src,
