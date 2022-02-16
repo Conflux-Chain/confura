@@ -284,8 +284,7 @@ func (api *ethAPI) Hashrate(ctx context.Context) (*hexutil.Big, error) {
 
 // Coinbase returns the client coinbase address..
 func (api *ethAPI) Coinbase(ctx context.Context) (common.Address, error) {
-	// Always return empty coinbase address for our service.
-	return common.Address{}, nil
+	return api.w3c.Eth.Author()
 }
 
 // Mining returns true if client is actively mining new blocks.
