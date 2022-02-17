@@ -4,22 +4,28 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/sirupsen/logrus"
-	"go.uber.org/multierr"
 )
+
+type RpcProtocol string
+
+const (
+	RpcProtocolHttp = "HTTP"
+	RpcProtocolWS   = "WS"
+)
+
+// DefaultShutdownTimeout is default timeout to shutdown RPC server.
+var DefaultShutdownTimeout = 3 * time.Second
 
 // RpcServer serves JSON RPC services.
 type RpcServer struct {
-	name string
-
-	http *http.Server
-	ws   *http.Server
-
-	stop chan struct{} // Channel to wait for termination notifications
+	name    string
+	servers map[RpcProtocol]*http.Server
 }
 
 // MustNewRpcServer creates an instance of RpcServer with specified RPC services.
@@ -41,59 +47,66 @@ func MustNewRpcServer(name string, rpcs map[string]interface{}) *RpcServer {
 
 	return &RpcServer{
 		name: name,
-
-		http: &http.Server{
-			Handler: node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
+		servers: map[RpcProtocol]*http.Server{
+			RpcProtocolHttp: {
+				Handler: node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
+			},
+			RpcProtocolWS: {
+				Handler: handler.WebsocketHandler([]string{"*"}),
+			},
 		},
-		ws: &http.Server{
-			Handler: handler.WebsocketHandler([]string{"*"}),
-		},
-
-		stop: make(chan struct{}),
 	}
 }
 
-// MustServe serves RPC server with blocking until closed or panics if failed to listen to the
-// specified endpoints starting with http endpoint then followed websocket endpoint (optional).
-func (s *RpcServer) MustServe(endpoints ...string) {
-	servers := []*http.Server{s.http, s.ws}
+// MustServe serves RPC server in blocking way or panics if failed.
+func (s *RpcServer) MustServe(endpoint string, protocol RpcProtocol) {
+	logger := logrus.WithFields(logrus.Fields{
+		"name":     s.name,
+		"endpoint": endpoint,
+		"protocol": protocol,
+	})
 
-	for i := 0; i < len(servers); i++ {
-		if i >= len(endpoints) || len(endpoints[i]) == 0 {
-			continue
-		}
-
-		listener, err := net.Listen("tcp", endpoints[i])
-		if err != nil {
-			logrus.WithError(err).WithField("endpoint", endpoints[i]).Fatal("Failed to listen to endpoint")
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"endpoint": endpoints[i],
-			"name":     s.name,
-		}).Info("JSON RPC server started")
-
-		go servers[i].Serve(listener)
+	server, ok := s.servers[protocol]
+	if !ok {
+		logger.Fatal("RPC protocol unsupported")
 	}
 
-	<-s.stop
+	listener, err := net.Listen("tcp", endpoint)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to listen to endpoint")
+	}
+
+	logger.Info("JSON RPC server started")
+
+	server.Serve(listener)
 }
 
-// Close immediately closes the server.
-func (s *RpcServer) Close() error {
-	close(s.stop) // unblock
+// MustServeGraceful serves RPC server in a goroutine until graceful shutdown.
+func (s *RpcServer) MustServeGraceful(ctx context.Context, wg *sync.WaitGroup, endpoint string, protocol RpcProtocol) {
+	wg.Add(1)
+	defer wg.Done()
 
-	return multierr.Combine(s.http.Close(), s.ws.Close())
+	go s.MustServe(endpoint, protocol)
+
+	<-ctx.Done()
+
+	s.shutdown(protocol)
 }
 
-// Shutdown gracefully shutdown the server.
-func (s *RpcServer) Shutdown(timeout time.Duration) error {
-	close(s.stop) // unblock
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func (s *RpcServer) shutdown(protocol RpcProtocol) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultShutdownTimeout)
 	defer cancel()
 
-	return multierr.Combine(s.http.Shutdown(ctx), s.ws.Shutdown(ctx))
+	logger := logrus.WithFields(logrus.Fields{
+		"name":     s.name,
+		"protocol": protocol,
+	})
+
+	if err := s.servers[protocol].Shutdown(ctx); err != nil {
+		logger.WithError(err).Error("Failed to shutdown RPC server")
+	} else {
+		logger.Info("Succeed to shutdown RPC server")
+	}
 }
 
 func (s *RpcServer) String() string { return s.name }

@@ -56,10 +56,8 @@ func startEthTest(cmd *cobra.Command, args []string) {
 	logrus.Info("Starting ETH data validator...")
 
 	validator := test.MustNewEthValidator(&ethValidConf)
+	defer validator.Destroy()
 	go validator.Run(ctx, wg)
 
-	gracefulShutdown(ctx, func() error {
-		validator.Destroy()
-		return nil
-	}, wg, cancel)
+	gracefulShutdown(wg, cancel)
 }

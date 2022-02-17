@@ -45,10 +45,8 @@ func startTest(cmd *cobra.Command, args []string) {
 	logrus.Info("Starting epoch data validator...")
 
 	validator := test.MustNewEpochValidator(&validConf)
+	defer validator.Destroy()
 	go validator.Run(ctx, wg)
 
-	gracefulShutdown(ctx, func() error {
-		validator.Destroy()
-		return nil
-	}, wg, cancel)
+	gracefulShutdown(wg, cancel)
 }

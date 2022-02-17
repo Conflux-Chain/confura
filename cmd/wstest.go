@@ -38,10 +38,8 @@ func startWSTest(cmd *cobra.Command, args []string) {
 	logrus.Info("Starting websocket pubsub validator...")
 
 	validator := test.MustNewPubSubValidator(&psValidConf)
+	defer validator.Destroy()
 	go validator.Run(ctx, wg)
 
-	gracefulShutdown(ctx, func() error {
-		validator.Destroy()
-		return nil
-	}, wg, cancel)
+	gracefulShutdown(wg, cancel)
 }

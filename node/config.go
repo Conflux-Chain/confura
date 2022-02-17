@@ -15,6 +15,11 @@ func init() {
 	logrus.WithField("config", cfg).Debug("Node manager configurations loaded.")
 }
 
+// Config returns the configuration from viper.
+func Config() config {
+	return cfg
+}
+
 type config struct {
 	Endpoint string `default:":22530"`
 	URLs     []string

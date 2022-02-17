@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/config"
@@ -137,43 +136,20 @@ func start(cmd *cobra.Command, args []string) {
 		go ethdbPruner.Prune(ctx, wg)
 	}
 
-	var rpcServers []*util.RpcServer
-
 	if rpcServerEnabled {
-		router := node.MustNewRouterFromViper()
-
-		nsServer := startNativeSpaceRpcServer(router, db, cache)
-		rpcServers = append(rpcServers, nsServer)
-
-		evmServer := startEvmSpaceRpcServer(ethdb)
-		rpcServers = append(rpcServers, evmServer)
-
-		cfxBridgeServer := startNativeSpaceBridgeRpcServer()
-		rpcServers = append(rpcServers, cfxBridgeServer)
+		startNativeSpaceRpcServer(ctx, wg, db, cache)
+		startEvmSpaceRpcServer(ctx, wg, ethdb)
+		startNativeSpaceBridgeRpcServer(ctx, wg)
 	}
 
 	if nodeServerEnabled {
-		server := startNodeServer()
-		rpcServers = append(rpcServers, server)
+		startNodeServer(ctx, wg)
 	}
 
-	gracefulShutdown(ctx, func() error {
-		// Shutdown the RPC server gracefully
-		for _, server := range rpcServers {
-			if err := server.Shutdown(3 * time.Second); err != nil {
-				logrus.WithError(err).WithField("name", server.String()).Error("RPC server shutdown failed")
-			} else {
-				logrus.WithField("name", server.String()).Info("RPC server shutdown ok")
-			}
-		}
-		return nil
-	}, wg, cancel)
+	gracefulShutdown(wg, cancel)
 }
 
-func startEvmSpaceRpcServer(db store.Store) *util.RpcServer {
-	// Start RPC server
-	logrus.Info("Start to run EVM space rpc server...")
-
+func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, db store.Store) {
 	// Add empty store tolerance
 	var ethhandler *rpc.EthStoreHandler
 	if !util.IsInterfaceValNil(db) {
@@ -186,26 +162,21 @@ func startEvmSpaceRpcServer(db store.Store) *util.RpcServer {
 	server := rpc.MustNewEvmSpaceServer(ethhandler, ethNodeURL, exposedModules)
 
 	httpEndpoint := viper.GetString("ethrpc.endpoint")
-	go server.MustServe(httpEndpoint)
-
-	return server
+	go server.MustServeGraceful(ctx, wg, httpEndpoint, util.RpcProtocolHttp)
 }
 
-func startNativeSpaceBridgeRpcServer() *util.RpcServer {
+func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup) {
 	var config rpc.CfxBridgeServerConfig
 	viperutil.MustUnmarshalKey("rpc.cfxBridge", &config)
 
 	logrus.WithField("config", config).Info("Start to run cfx bridge rpc server")
 
 	server := rpc.MustNewNativeSpaceBridgeServer(&config)
-	go server.MustServe(config.Endpoint)
-
-	return server
+	go server.MustServeGraceful(ctx, wg, config.Endpoint, util.RpcProtocolHttp)
 }
 
-func startNativeSpaceRpcServer(router node.Router, db, cache store.Store) *util.RpcServer {
-	// Start RPC server
-	logrus.Info("Start to run native space rpc server...")
+func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, db, cache store.Store) {
+	router := node.MustNewRouterFromViper()
 
 	// Add empty store tolerance
 	var cfxHandler *rpc.CfxStoreHandler
@@ -224,20 +195,20 @@ func startNativeSpaceRpcServer(router node.Router, db, cache store.Store) *util.
 	)
 
 	httpEndpoint := viper.GetString("rpc.endpoint")
-	wsEndpoint := viper.GetString("rpc.wsEndpoint")
-	go server.MustServe(httpEndpoint, wsEndpoint)
+	go server.MustServeGraceful(ctx, wg, httpEndpoint, util.RpcProtocolHttp)
 
-	return server
+	if wsEndpoint := viper.GetString("rpc.wsEndpoint"); len(wsEndpoint) > 0 {
+		go server.MustServeGraceful(ctx, wg, wsEndpoint, util.RpcProtocolWS)
+	}
 }
 
-func startNodeServer() *util.RpcServer {
-	logrus.Info("Start to run node management rpc server")
+func startNodeServer(ctx context.Context, wg *sync.WaitGroup) {
 	server := node.NewServer()
-	go server.MustServe(viper.GetString("node.endpoint"))
-	return server
+	endpoint := node.Config().Endpoint
+	go server.MustServeGraceful(ctx, wg, endpoint, util.RpcProtocolHttp)
 }
 
-func gracefulShutdown(ctx context.Context, destroy func() error, wg *sync.WaitGroup, cancel context.CancelFunc) {
+func gracefulShutdown(wg *sync.WaitGroup, cancel context.CancelFunc) {
 	// Handle sigterm and await termChan signal
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGTERM, syscall.SIGINT)
@@ -245,10 +216,6 @@ func gracefulShutdown(ctx context.Context, destroy func() error, wg *sync.WaitGr
 	// Wait for SIGTERM to be captured
 	<-termChan
 	logrus.Info("SIGTERM/SIGINT received, shutdown process initiated")
-
-	if destroy != nil {
-		destroy()
-	}
 
 	// Cancel to notify active goroutines to clean up.
 	cancel()
