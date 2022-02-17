@@ -49,27 +49,27 @@ nearhead:
 #     interval: 10s
 # log:
 #   level: info
-store:
-  mysql:
-    enabled: false
-    host: 127.0.0.1:3306
-    username: ''
-    password: ''
-    database: conflux_infura
-    connMaxLifeTime: 3m
-    maxOpenConns: 10
-    maxIdleConns: 10
-  redis:
-    enabled: false
-    cacheTime: 12h
-    url: redis://<user>:<pass>@localhost:6379/<db>
-ethstore:
-  mysql:
-    enabled: false
-    dsn: user:password@tcp(127.0.0.1:3306)/conflux_infura_eth?parseTime=true
-    connMaxLifeTime: 3m
-    maxOpenConns: 10
-    maxIdleConns: 10
+# store:
+  # mysql:
+    # enabled: false
+    # host: 127.0.0.1:3306
+    # username: ''
+    # password: ''
+    # database: conflux_infura
+    # connMaxLifeTime: 3m
+    # maxOpenConns: 10
+    # maxIdleConns: 10
+  # redis:
+  #   enabled: false
+  #   cacheTime: 12h
+  #   url: redis://<user>:<pass>@localhost:6379/<db>
+# ethstore:
+  # mysql:
+    # enabled: false
+    # dsn: user:password@tcp(127.0.0.1:3306)/conflux_infura_eth?parseTime=true
+    # connMaxLifeTime: 3m
+    # maxOpenConns: 10
+    # maxIdleConns: 10
 # alert:
 #   customTags: [testnet,dev]
 #   dingtalk:

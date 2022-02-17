@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
@@ -20,6 +20,7 @@ var (
 )
 
 type redisStoreConfig struct {
+	Enabled   bool
 	CacheTime time.Duration `default:"12h"`
 	Url       string
 }
@@ -30,10 +31,12 @@ type redisStore struct {
 	cacheTime time.Duration
 }
 
-func MustNewCacheStoreFromViper() *redisStore {
+func MustNewCacheStoreFromViper() (*redisStore, bool) {
 	var rsconf redisStoreConfig
-	if err := viperutil.UnmarshalKey("store.redis", &rsconf); err != nil {
-		logrus.WithError(err).Fatal("Failed to unmarshal redis store config")
+	viper.MustUnmarshalKey("store.redis", &rsconf)
+
+	if !rsconf.Enabled {
+		return nil, false
 	}
 
 	logrus.WithField("config", rsconf).Debug("Creating redis store from viper config")
@@ -51,7 +54,7 @@ func MustNewCacheStoreFromViper() *redisStore {
 		logrus.WithError(err).Fatal("Failed to create redis store")
 	}
 
-	return &redisStore{rdb: rdb, ctx: ctx, cacheTime: rsconf.CacheTime}
+	return &redisStore{rdb: rdb, ctx: ctx, cacheTime: rsconf.CacheTime}, true
 }
 
 func (rs *redisStore) IsRecordNotFound(err error) bool {

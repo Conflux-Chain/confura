@@ -7,11 +7,10 @@ import (
 	"strings"
 	"time"
 
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/store"
 	gosql "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
@@ -19,7 +18,7 @@ import (
 
 // Config represents the mysql configurations to open a database instance.
 type Config struct {
-	Host     string
+	Host     string `default:"127.0.0.1:3306"`
 	Username string
 	Password string
 	Database string
@@ -32,39 +31,36 @@ type Config struct {
 
 // MustNewConfigFromViper creates an instance of Config from Viper or panic on error.
 func MustNewConfigFromViper() (Config, bool) {
-	if !viper.GetBool("store.mysql.enabled") {
-		return Config{}, false
+	var cfg struct {
+		Config
+		Enabled bool
 	}
-
-	var mysqlConf Config
-	if err := viperutil.UnmarshalKey("store.mysql", &mysqlConf); err != nil {
-		logrus.WithError(err).Fatal("Failed to unmarshal mysql store config")
-	}
-
-	return mysqlConf, true
+	viper.MustUnmarshalKey("store.mysql", &cfg)
+	return cfg.Config, cfg.Enabled
 }
 
 func MustNewEthStoreConfigFromViper() (Config, bool) {
-	if !viper.GetBool("ethstore.mysql.enabled") {
+	var cfg struct {
+		Config
+		Enabled bool
+	}
+
+	viper.MustUnmarshalKey("ethstore.mysql", &cfg)
+	if !cfg.Enabled {
 		return Config{}, false
 	}
 
-	var mysqlConf Config
-	if err := viperutil.UnmarshalKey("ethstore.mysql", &mysqlConf); err != nil {
-		logrus.WithError(err).Fatal("Failed to unmarshal mysql config for eth store")
-	}
-
-	gsconf, err := gosql.ParseDSN(mysqlConf.Dsn)
+	gsconf, err := gosql.ParseDSN(cfg.Dsn)
 	if err != nil {
-		logrus.WithField("ethStoreDsn", mysqlConf.Dsn).Fatal("Failed to parse db DSN for eth store")
+		logrus.WithField("ethStoreDsn", cfg.Dsn).Fatal("Failed to parse db DSN for eth store")
 	}
 
-	mysqlConf.Host = gsconf.Addr
-	mysqlConf.Username = gsconf.User
-	mysqlConf.Password = gsconf.Passwd
-	mysqlConf.Database = gsconf.DBName
+	cfg.Host = gsconf.Addr
+	cfg.Username = gsconf.User
+	cfg.Password = gsconf.Passwd
+	cfg.Database = gsconf.DBName
 
-	return mysqlConf, true
+	return cfg.Config, true
 }
 
 // MustOpenOrCreate creates an instance of store or exits on any erorr.

@@ -17,10 +17,10 @@ const (
 )
 
 // Get logs partition name by id column of logs table
-func getLogsPartitionNameFromId(logsId uint64) string {
-	idx := getLogsPartitionIdxFromId(logsId)
-	return getLogsPartitionNameByIdx(idx)
-}
+// func getLogsPartitionNameFromId(logsId uint64) string {
+// 	idx := getLogsPartitionIdxFromId(logsId)
+// 	return getLogsPartitionNameByIdx(idx)
+// }
 
 func getLogsPartitionIdxFromId(logsId uint64) uint64 {
 	return util.MinUint64(logsId/LogsTablePartitionRangeSize, LogsTablePartitionsNum)

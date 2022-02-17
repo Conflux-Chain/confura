@@ -78,9 +78,8 @@ func start(cmd *cobra.Command, args []string) {
 	}
 
 	// Initialize cache store
-	var cache store.CacheStore
-	if viper.GetBool("store.redis.enabled") {
-		cache = redis.MustNewCacheStoreFromViper()
+	cache, ok := redis.MustNewCacheStoreFromViper()
+	if ok {
 		defer cache.Close()
 	}
 
