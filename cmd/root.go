@@ -56,10 +56,9 @@ func start(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	util.StartAndGracefulShutdown(startAll)
-}
+	ctx, cancel := context.WithCancel(context.Background())
+	wg := &sync.WaitGroup{}
 
-func startAll(ctx context.Context, wg *sync.WaitGroup) {
 	// Initialize database
 	var db store.Store
 	if config := mysql.MustNewConfigFromViper(); config.Enabled {
@@ -142,6 +141,8 @@ func startAll(ctx context.Context, wg *sync.WaitGroup) {
 	if nodeServerEnabled {
 		startNodeServer(ctx, wg)
 	}
+
+	util.GracefulShutdown(wg, cancel)
 }
 
 func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, db store.Store) {

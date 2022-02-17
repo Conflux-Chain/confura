@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// GracefulShutdown supports to clean up goroutines after termination signal captured.
 func GracefulShutdown(wg *sync.WaitGroup, cancel context.CancelFunc) {
 	// Handle sigterm and await termChan signal
 	termChan := make(chan os.Signal, 1)
@@ -28,6 +29,10 @@ func GracefulShutdown(wg *sync.WaitGroup, cancel context.CancelFunc) {
 	logrus.Info("Shutdown gracefully")
 }
 
+// StartAndGracefulShutdown starts to run the specified task in a goroutine
+// and wait for termination signal to shutdown gracefully.
+//
+// Note, this method is not suitable for any non-blocking task that release resources in defer way.
 func StartAndGracefulShutdown(run func(ctx context.Context, wg *sync.WaitGroup)) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
