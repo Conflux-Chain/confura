@@ -27,27 +27,24 @@ type Config struct {
 	ConnMaxLifetime time.Duration `default:"3m"`
 	MaxOpenConns    int           `default:"10"`
 	MaxIdleConns    int           `default:"10"`
+
+	Enabled bool
 }
 
 // MustNewConfigFromViper creates an instance of Config from Viper or panic on error.
-func MustNewConfigFromViper() (Config, bool) {
-	var cfg struct {
-		Config
-		Enabled bool
-	}
+func MustNewConfigFromViper() *Config {
+	var cfg Config
+
 	viper.MustUnmarshalKey("store.mysql", &cfg)
-	return cfg.Config, cfg.Enabled
+	return &cfg
 }
 
-func MustNewEthStoreConfigFromViper() (Config, bool) {
-	var cfg struct {
-		Config
-		Enabled bool
-	}
+func MustNewEthStoreConfigFromViper() *Config {
+	var cfg Config
 
 	viper.MustUnmarshalKey("ethstore.mysql", &cfg)
 	if !cfg.Enabled {
-		return Config{}, false
+		return &Config{}
 	}
 
 	gsconf, err := gosql.ParseDSN(cfg.Dsn)
@@ -60,7 +57,7 @@ func MustNewEthStoreConfigFromViper() (Config, bool) {
 	cfg.Password = gsconf.Passwd
 	cfg.Database = gsconf.DBName
 
-	return cfg.Config, true
+	return &cfg
 }
 
 // MustOpenOrCreate creates an instance of store or exits on any erorr.

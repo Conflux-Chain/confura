@@ -139,4 +139,18 @@ func TestViperSub(t *testing.T) {
 
 		assert.ElementsMatch(t, pc3.Threshold.Tags, []string{"tx", "delete"})
 	}
+
+	{ // test viper not working with composite embeded struct
+		os.Setenv("CI_PRUNE_THRESHOLD_LOG_MAXLOGS", "8888")
+
+		var logLimitVal logLimit
+		ViperSub(viper.GetViper(), "prune.threshold.log").Unmarshal(&logLimitVal)
+		assert.Nil(t, err)
+		assert.Equal(t, 8888, logLimitVal.MaxLogs)
+
+		var logLimitWrapVal struct{ logLimit }
+		ViperSub(viper.GetViper(), "prune.threshold.log").Unmarshal(&logLimitWrapVal)
+		assert.Nil(t, err)
+		assert.NotEqual(t, 8888, logLimitWrapVal.MaxLogs)
+	}
 }

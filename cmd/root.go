@@ -66,13 +66,13 @@ func start(cmd *cobra.Command, args []string) {
 
 	// Initialize database
 	var db store.Store
-	if config, ok := mysql.MustNewConfigFromViper(); ok {
+	if config := mysql.MustNewConfigFromViper(); config.Enabled {
 		db = config.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: syncServerEnabled})
 		defer db.Close()
 	}
 
 	var ethdb store.Store
-	if ethConfig, ok := mysql.MustNewEthStoreConfigFromViper(); ok {
+	if ethConfig := mysql.MustNewEthStoreConfigFromViper(); ethConfig.Enabled {
 		ethdb = ethConfig.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: syncServerEnabled})
 		defer ethdb.Close()
 	}
