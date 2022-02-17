@@ -1,12 +1,11 @@
-package cmd
+package test
 
 import (
-	"context"
 	"math"
-	"sync"
 	"time"
 
 	"github.com/conflux-chain/conflux-infura/test"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -14,7 +13,7 @@ import (
 var (
 	validConf test.EVConfig // epoch data validation configuration
 	testCmd   = &cobra.Command{
-		Use:   "test",
+		Use:   "cfx",
 		Short: "Test/validate if infura epoch data complies with fullnode",
 		Run:   startTest,
 	}
@@ -31,6 +30,8 @@ func init() {
 	testCmd.Flags().DurationVarP(&validConf.ScanInterval, "scan-interval", "c", 1*time.Second, "the interval for each scan validation")
 	testCmd.Flags().DurationVarP(&validConf.SamplingInterval, "sampling-interval", "a", 10*time.Second, "the interval for each sampling validation")
 	testCmd.Flags().StringVarP(&validConf.SamplingEpochType, "sampling-epoch-type", "t", "lc", "the epoch type for sampling validation: lm(latest_mined)/ls(latest_state)/lc(latest_confirmed)")
+
+	Cmd.AddCommand(testCmd)
 }
 
 func startTest(cmd *cobra.Command, args []string) {
@@ -38,15 +39,10 @@ func startTest(cmd *cobra.Command, args []string) {
 		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for epoch data test/validation")
 	}
 
-	// Context to control child go routines
-	ctx, cancel := context.WithCancel(context.Background())
-	wg := &sync.WaitGroup{}
-
 	logrus.Info("Starting epoch data validator...")
 
 	validator := test.MustNewEpochValidator(&validConf)
 	defer validator.Destroy()
-	go validator.Run(ctx, wg)
 
-	gracefulShutdown(wg, cancel)
+	util.StartAndGracefulShutdown(validator.Run)
 }

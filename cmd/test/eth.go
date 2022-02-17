@@ -1,12 +1,11 @@
-package cmd
+package test
 
 import (
-	"context"
 	"math"
-	"sync"
 	"time"
 
 	"github.com/conflux-chain/conflux-infura/test"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -14,7 +13,7 @@ import (
 var (
 	ethValidConf test.EthValidConfig // eth data validation configuration
 	ethTestCmd   = &cobra.Command{
-		Use:   "ethtest",
+		Use:   "eth",
 		Short: "Test/validate if infura ETH data complies with fullnode",
 		Run:   startEthTest,
 	}
@@ -42,6 +41,8 @@ func init() {
 	ethTestCmd.Flags().DurationVarP(
 		&ethValidConf.SamplingInterval, "sampling-interval", "a", 15*time.Second, "the interval for each sampling validation",
 	)
+
+	Cmd.AddCommand(ethTestCmd)
 }
 
 func startEthTest(cmd *cobra.Command, args []string) {
@@ -49,15 +50,9 @@ func startEthTest(cmd *cobra.Command, args []string) {
 		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for ETH data test/validation")
 	}
 
-	// Context to control child go routines
-	ctx, cancel := context.WithCancel(context.Background())
-	wg := &sync.WaitGroup{}
-
 	logrus.Info("Starting ETH data validator...")
 
 	validator := test.MustNewEthValidator(&ethValidConf)
 	defer validator.Destroy()
-	go validator.Run(ctx, wg)
-
-	gracefulShutdown(wg, cancel)
+	util.StartAndGracefulShutdown(validator.Run)
 }

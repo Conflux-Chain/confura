@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/conflux-chain/conflux-infura/cmd/test"
 	"github.com/conflux-chain/conflux-infura/config"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
@@ -43,9 +42,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&rpcServerEnabled, "rpc", false, "whether to start Conflux public RPC service")
 	rootCmd.Flags().BoolVar(&syncServerEnabled, "sync", false, "whether to start data sync/prune service")
 
-	rootCmd.AddCommand(testCmd)
-	rootCmd.AddCommand(wsTestCmd)
-	rootCmd.AddCommand(ethTestCmd)
+	rootCmd.AddCommand(test.Cmd)
 }
 
 func start(cmd *cobra.Command, args []string) {
@@ -59,10 +56,10 @@ func start(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Context to control child go routines
-	ctx, cancel := context.WithCancel(context.Background())
-	wg := &sync.WaitGroup{}
+	util.StartAndGracefulShutdown(startAll)
+}
 
+func startAll(ctx context.Context, wg *sync.WaitGroup) {
 	// Initialize database
 	var db store.Store
 	if config := mysql.MustNewConfigFromViper(); config.Enabled {
@@ -145,8 +142,6 @@ func start(cmd *cobra.Command, args []string) {
 	if nodeServerEnabled {
 		startNodeServer(ctx, wg)
 	}
-
-	gracefulShutdown(wg, cancel)
 }
 
 func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, db store.Store) {
@@ -206,24 +201,6 @@ func startNodeServer(ctx context.Context, wg *sync.WaitGroup) {
 	server := node.NewServer()
 	endpoint := node.Config().Endpoint
 	go server.MustServeGraceful(ctx, wg, endpoint, util.RpcProtocolHttp)
-}
-
-func gracefulShutdown(wg *sync.WaitGroup, cancel context.CancelFunc) {
-	// Handle sigterm and await termChan signal
-	termChan := make(chan os.Signal, 1)
-	signal.Notify(termChan, syscall.SIGTERM, syscall.SIGINT)
-
-	// Wait for SIGTERM to be captured
-	<-termChan
-	logrus.Info("SIGTERM/SIGINT received, shutdown process initiated")
-
-	// Cancel to notify active goroutines to clean up.
-	cancel()
-
-	logrus.Info("Waiting for shutdown...")
-	wg.Wait()
-
-	logrus.Info("Shutdown gracefully")
 }
 
 // Execute is the command line entrypoint.
