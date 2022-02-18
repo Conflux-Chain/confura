@@ -67,9 +67,9 @@ func (api *ethAPI) BlockNumber(ctx context.Context) (*hexutil.Big, error) {
 // GetBalance returns the amount of wei for the given address in the state of the
 // given block number.
 func (api *ethAPI) GetBalance(
-	ctx context.Context, address common.Address, blockNum *web3Types.BlockNumber,
+	ctx context.Context, address common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
-	balance, err := api.w3c.Eth.Balance(address, blockNum)
+	balance, err := api.w3c.Eth.Balance(address, blockNumOrHash)
 	return (*hexutil.Big)(balance), err
 }
 
@@ -120,25 +120,25 @@ func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 
 // GetStorageAt returns the value from a storage position at a given address.
 func (api *ethAPI) GetStorageAt(
-	ctx context.Context, address common.Address, location *hexutil.Big, blockNum *web3Types.BlockNumber,
+	ctx context.Context, address common.Address, location *hexutil.Big, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (common.Hash, error) {
-	return api.w3c.Eth.StorageAt(address, (*big.Int)(location), blockNum)
+	return api.w3c.Eth.StorageAt(address, (*big.Int)(location), blockNumOrHash)
 }
 
 // GetCode returns the contract code of the given account.
 // The block number can be nil, in which case the code is taken from the latest known block.
 func (api *ethAPI) GetCode(
-	ctx context.Context, account common.Address, blockNum *web3Types.BlockNumber,
+	ctx context.Context, account common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (hexutil.Bytes, error) {
-	return api.w3c.Eth.CodeAt(account, blockNum)
+	return api.w3c.Eth.CodeAt(account, blockNumOrHash)
 }
 
 // GetTransactionCount returns the number of transactions (nonce) sent from the given account.
 // The block number can be nil, in which case the nonce is taken from the latest known block.
 func (api *ethAPI) GetTransactionCount(
-	ctx context.Context, account common.Address, blockNum *web3Types.BlockNumber,
+	ctx context.Context, account common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
-	count, err := api.w3c.Eth.TransactionCount(account, blockNum)
+	count, err := api.w3c.Eth.TransactionCount(account, blockNumOrHash)
 	return (*hexutil.Big)(count), err
 }
 
@@ -157,9 +157,9 @@ func (api *ethAPI) SubmitTransaction(ctx context.Context, signedTx hexutil.Bytes
 
 // Call executes a new message call immediately without creating a transaction on the block chain.
 func (api *ethAPI) Call(
-	ctx context.Context, request web3Types.CallRequest, blockNum *web3Types.BlockNumber,
+	ctx context.Context, request web3Types.CallRequest, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (hexutil.Bytes, error) {
-	return api.w3c.Eth.Call(request, blockNum)
+	return api.w3c.Eth.Call(request, blockNumOrHash)
 }
 
 // EstimateGas generates and returns an estimate of how much gas is necessary to allow the transaction
@@ -167,9 +167,9 @@ func (api *ethAPI) Call(
 // significantly more than the amount of gas actually used by the transaction, for a variety of reasons
 // including EVM mechanics and node performance or miner policy.
 func (api *ethAPI) EstimateGas(
-	ctx context.Context, request web3Types.CallRequest, blockNum *web3Types.BlockNumber,
+	ctx context.Context, request web3Types.CallRequest, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
-	gas, err := api.w3c.Eth.EstimateGas(request, blockNum)
+	gas, err := api.w3c.Eth.EstimateGas(request, blockNumOrHash)
 	return (*hexutil.Big)(gas), err
 }
 

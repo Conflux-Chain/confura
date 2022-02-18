@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/client"
-	ethTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 )
 
@@ -60,7 +59,7 @@ func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexuti
 }
 
 func (api *CfxAPI) GetBalance(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
-	return NormalizeBig(api.eth.Balance(address.value, bn.ValueOrNil()))
+	return NormalizeBig(api.eth.Balance(address.value, bn.ToArg()))
 }
 
 func (api *CfxAPI) GetAdmin(ctx context.Context, contract EthAddress, bn *EthBlockNumber) (*string, error) {
@@ -94,11 +93,11 @@ func (api *CfxAPI) GetCollateralForStorage(ctx context.Context, address EthAddre
 }
 
 func (api *CfxAPI) GetCode(ctx context.Context, contract EthAddress, bn *EthBlockNumber) (hexutil.Bytes, error) {
-	return api.eth.CodeAt(contract.value, bn.ValueOrNil())
+	return api.eth.CodeAt(contract.value, bn.ToArg())
 }
 
 func (api *CfxAPI) GetStorageAt(ctx context.Context, address EthAddress, position *hexutil.Big, bn *EthBlockNumber) (common.Hash, error) {
-	return api.eth.StorageAt(address.value, position.ToInt(), bn.ValueOrNil())
+	return api.eth.StorageAt(address.value, position.ToInt(), bn.ToArg())
 }
 
 func (api *CfxAPI) GetStorageRoot(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*types.StorageRoot, error) {
@@ -176,7 +175,7 @@ func (api *CfxAPI) GetBestBlockHash(ctx context.Context) (common.Hash, error) {
 }
 
 func (api *CfxAPI) GetNextNonce(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
-	return NormalizeBig(api.eth.TransactionCount(address.value, bn.ValueOrNil()))
+	return NormalizeBig(api.eth.TransactionCount(address.value, bn.ToArg()))
 }
 
 func (api *CfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
@@ -184,7 +183,7 @@ func (api *CfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Byte
 }
 
 func (api *CfxAPI) Call(ctx context.Context, request EthCallRequest, bn *EthBlockNumber) (hexutil.Bytes, error) {
-	return api.eth.Call(request.ToCallMsg(), bn.ValueOrNil())
+	return api.eth.Call(request.ToCallMsg(), bn.ToArg())
 }
 
 func (api *CfxAPI) GetLogs(ctx context.Context, filter EthLogFilter) ([]types.Log, error) {
@@ -211,7 +210,7 @@ func (api *CfxAPI) GetTransactionByHash(ctx context.Context, txHash common.Hash)
 }
 
 func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCallRequest, bn *EthBlockNumber) (types.Estimate, error) {
-	gasLimit, err := api.eth.EstimateGas(request.ToCallMsg(), bn.ValueOrNil())
+	gasLimit, err := api.eth.EstimateGas(request.ToCallMsg(), bn.ToArg())
 	if err != nil {
 		return types.Estimate{}, err
 	}
@@ -248,31 +247,31 @@ func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 }
 
 func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) ([][]*types.TransactionReceipt, error) {
-	var receipts []*ethTypes.Receipt
-	if err := api.ethClient.Provider().Call(&receipts, "parity_getBlockReceipts", bnh.ToArg()); err != nil {
+	receipts, err := api.ethClient.Parity.BlockReceipts(bnh.ToArg())
+	if err != nil {
 		return nil, err
 	}
 
 	result := make([]*types.TransactionReceipt, len(receipts))
 	for i := range receipts {
-		result[i] = ConvertReceipt(receipts[i], api.ethNetworkId)
+		result[i] = ConvertReceipt(&receipts[i], api.ethNetworkId)
 	}
 
 	return [][]*types.TransactionReceipt{result}, nil
 }
 
 func (api *CfxAPI) GetAccount(ctx context.Context, address EthAddress, bn *EthBlockNumber) (types.AccountInfo, error) {
-	balance, err := api.eth.Balance(address.value, bn.ValueOrNil())
+	balance, err := api.eth.Balance(address.value, bn.ToArg())
 	if err != nil {
 		return types.AccountInfo{}, err
 	}
 
-	nonce, err := api.eth.TransactionCount(address.value, bn.ValueOrNil())
+	nonce, err := api.eth.TransactionCount(address.value, bn.ToArg())
 	if err != nil {
 		return types.AccountInfo{}, err
 	}
 
-	code, err := api.eth.CodeAt(address.value, bn.ValueOrNil())
+	code, err := api.eth.CodeAt(address.value, bn.ToArg())
 	if err != nil {
 		return types.AccountInfo{}, err
 	}

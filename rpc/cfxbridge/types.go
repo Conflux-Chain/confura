@@ -33,6 +33,15 @@ func (ebn *EthBlockNumber) Value() rpc.BlockNumber {
 	return ebn.value
 }
 
+func (ebn *EthBlockNumber) ToArg() *rpc.BlockNumberOrHash {
+	if ebn == nil {
+		return nil
+	}
+
+	v := rpc.BlockNumberOrHashWithNumber(ebn.value)
+	return &v
+}
+
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 	// Unmarshal as an epoch
@@ -62,15 +71,14 @@ type EthBlockNumberOrHash struct {
 	hash   *common.Hash
 }
 
-func (ebnh *EthBlockNumberOrHash) ToArg() interface{} {
+func (ebnh *EthBlockNumberOrHash) ToArg() *ethTypes.BlockNumberOrHash {
 	if ebnh.hash == nil {
-		return ebnh.number
+		v := rpc.BlockNumberOrHashWithNumber(ebnh.number)
+		return &v
 	}
 
-	return map[string]interface{}{
-		"blockHash":        ebnh.hash.Hex(),
-		"requireCanonical": true,
-	}
+	v := rpc.BlockNumberOrHashWithHash(*ebnh.hash, true)
+	return &v
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
