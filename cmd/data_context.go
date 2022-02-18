@@ -56,19 +56,31 @@ type syncContext struct {
 }
 
 func mustInitSyncContext(storeCtx storeContext) syncContext {
-	return syncContext{
-		storeContext: storeCtx,
-		syncCfx:      util.MustNewCfxClient(viper.GetString("cfx.http")),
-		subCfx:       util.MustNewCfxClient(viper.GetString("cfx.ws")),
-		syncEth:      util.MustNewEthClientFromViper(),
+	sc := syncContext{storeContext: storeCtx}
+
+	if storeCtx.cfxDB != nil || storeCtx.cfxCache != nil {
+		sc.syncCfx = util.MustNewCfxClient(viper.GetString("cfx.http"))
+		sc.subCfx = util.MustNewCfxClient(viper.GetString("cfx.ws"))
 	}
+
+	if storeCtx.ethDB != nil {
+		sc.syncEth = util.MustNewEthClientFromViper()
+	}
+
+	return sc
 }
 
 func (ctx *syncContext) Close() {
 	// Usually, storeContext will be defer closed by itself
 	// ctx.storeContext.Close()
-	ctx.syncCfx.Close()
-	ctx.subCfx.Close()
+	if ctx.syncCfx != nil {
+		ctx.syncCfx.Close()
+	}
+
+	if ctx.subCfx != nil {
+		ctx.subCfx.Close()
+	}
+
 	// not provided yet!
 	// ctx.syncEth.Close()
 }
