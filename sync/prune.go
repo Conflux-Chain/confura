@@ -5,11 +5,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 var (
@@ -32,20 +32,14 @@ type PruneThresHold struct {
 // MustNewDBPruner creates an instance of Pruner to prune blockchain data in database
 func MustNewDBPruner(db store.Store) *Pruner {
 	var pc PruneConfig
-	if err := util.ViperSub(viper.GetViper(), "prune.db").Unmarshal(&pc); err != nil {
-		logrus.WithError(err).Fatal("DBPruner failed to load prune config")
-	}
-
+	viper.MustUnmarshalKey("prune.db", &pc)
 	return newPruner("DBPruner", db, &pc)
 }
 
 // MustNewKVCachePruner creates an instance of Pruner to prune blockchain data in kv cache
 func MustNewKVCachePruner(cache store.Store) *Pruner {
 	var pc PruneConfig
-	if err := util.ViperSub(viper.GetViper(), "prune.cache").Unmarshal(&pc); err != nil {
-		logrus.WithError(err).Fatal("KVPruner failed to load prune config")
-	}
-
+	viper.MustUnmarshalKey("prune.cache", &pc)
 	return newPruner("KVPruner", cache, &pc)
 }
 
