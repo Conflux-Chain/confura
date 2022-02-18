@@ -49,6 +49,7 @@ nearhead:
 #     interval: 10s
 # log:
 #   level: info
+#   forceColor: false
 # store:
   # mysql:
     # enabled: false

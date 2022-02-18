@@ -30,7 +30,8 @@ func init() {
 
 func initLogger() {
 	var config struct {
-		Level string `default:"info"`
+		Level      string `default:"info"`
+		ForceColor bool
 	}
 	viper.MustUnmarshalKey("log", &config)
 
@@ -40,6 +41,13 @@ func initLogger() {
 		logrus.WithError(err).Fatalf("invalid log level configured: %v", config.Level)
 	}
 	logrus.SetLevel(level)
+
+	if config.ForceColor {
+		logrus.SetFormatter(&logrus.TextFormatter{
+			ForceColors:   true,
+			FullTimestamp: true,
+		})
+	}
 
 	// Add alert hook for logrus fatal/warn/error level
 	hookLevels := []logrus.Level{logrus.FatalLevel, logrus.WarnLevel, logrus.ErrorLevel}
