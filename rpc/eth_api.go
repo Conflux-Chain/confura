@@ -188,13 +188,18 @@ func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (
 // TransactionReceipt returns the receipt of a transaction by transaction hash.
 // Note that the receipt is not available for pending transactions.
 func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error) {
+	logger := logrus.WithField("txHash", txHash.Hex())
+
 	if !util.IsInterfaceValNil(api.handler) {
 		tx, err := api.handler.GetTransactionReceipt(ctx, txHash)
 		if err == nil {
+			logger.Debug("Loading blockchain data for eth_getTransactionReceipt hit in the store")
+
 			return tx, nil
 		}
 	}
 
+	logger.Debug("Delegating eth_getTransactionReceipt rpc request to fullnode")
 	return api.w3c.Eth.TransactionReceipt(txHash)
 }
 

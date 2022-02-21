@@ -77,10 +77,7 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 		ethTxn.BlockNumber = txExt.BlockNumber.ToInt()
 		ethTxn.MaxFeePerGas = txExt.MaxFeePerGas.ToInt()
 		ethTxn.MaxPriorityFeePerGas = txExt.MaxPriorityFeePerGas.ToInt()
-
-		if txExt.Type != nil {
-			ethTxn.Type = *txExt.Type
-		}
+		ethTxn.Type = txExt.Type
 	}
 
 	return ethTxn
@@ -216,7 +213,10 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 	logsBloomBytes, _ := hexutil.Decode(string(value.LogsBloom))
 	logsBloom := gethTypes.BytesToBloom(logsBloomBytes)
 
-	root, _ := hexutil.Decode(string(value.StateRoot))
+	var root []byte
+	if len(value.StateRoot) > 0 && value.StateRoot != cfxtypes.Hash(common.Hash{}.Hex()) {
+		root, _ = hexutil.Decode(string(value.StateRoot))
+	}
 
 	receipt := &types.Receipt{
 		BlockHash:        ConvertHash(value.BlockHash),
@@ -244,9 +244,7 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 			receipt.EffectiveGasPrice = *rcptExtra.EffectiveGasPrice
 		}
 
-		if rcptExtra.Type != nil {
-			receipt.Type = *rcptExtra.Type
-		}
+		receipt.Type = rcptExtra.Type
 	}
 
 	return receipt

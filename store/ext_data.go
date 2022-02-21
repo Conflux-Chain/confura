@@ -68,7 +68,7 @@ func ExtractEthTransactionExt(ethTxn *web3Types.Transaction) *TransactionExtra {
 		BlockNumber:          (*hexutil.Big)(ethTxn.BlockNumber),
 		MaxFeePerGas:         (*hexutil.Big)(ethTxn.MaxFeePerGas),
 		MaxPriorityFeePerGas: (*hexutil.Big)(ethTxn.MaxPriorityFeePerGas),
-		Type:                 &ethTxn.Type,
+		Type:                 ethTxn.Type,
 	}
 }
 
@@ -89,7 +89,7 @@ func ExtractEthReceiptExt(ethRcpt *web3Types.Receipt) *ReceiptExtra {
 	return &ReceiptExtra{
 		CumulativeGasUsed: &ethRcpt.CumulativeGasUsed,
 		EffectiveGasPrice: &ethRcpt.EffectiveGasPrice,
-		Type:              &ethRcpt.Type,
+		Type:              ethRcpt.Type,
 		LogExts:           logExts,
 	}
 }
