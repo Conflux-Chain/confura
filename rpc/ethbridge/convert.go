@@ -58,7 +58,7 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 		Creates:          creates,
 		From:             from,
 		Gas:              tx.Gas.ToInt().Uint64(),
-		GasPrice:         tx.Gas.ToInt(),
+		GasPrice:         tx.GasPrice.ToInt(),
 		Hash:             ConvertHash(tx.Hash),
 		Input:            input,
 		Nonce:            tx.Nonce.ToInt().Uint64(),
@@ -121,7 +121,7 @@ func ConvertBlockHeader(value *cfxtypes.BlockHeader, blockExt *store.BlockExtra)
 		nonce = &v
 	}
 
-	logsBloomBytes := common.Hex2Bytes(string(value.DeferredLogsBloomHash))
+	logsBloomBytes, _ := hexutil.Decode(string(value.DeferredLogsBloomHash))
 	minerAddr, _ := ConvertAddress(value.Miner)
 
 	uncleHashes := make([]common.Hash, len(value.RefereeHashes))
@@ -212,8 +212,11 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 	from, _ := ConvertAddress(value.From)
 	to, _ := ConvertAddressNullable(value.To)
 	contractAddr, _ := ConvertAddressNullable(value.ContractCreated)
-	logsBloom := gethTypes.BytesToBloom(common.Hex2Bytes(string(value.LogsBloom)))
-	root := common.Hex2Bytes(string(value.StateRoot))
+
+	logsBloomBytes, _ := hexutil.Decode(string(value.LogsBloom))
+	logsBloom := gethTypes.BytesToBloom(logsBloomBytes)
+
+	root, _ := hexutil.Decode(string(value.StateRoot))
 
 	receipt := &types.Receipt{
 		BlockHash:        ConvertHash(value.BlockHash),
