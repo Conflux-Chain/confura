@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
@@ -43,7 +42,8 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 		return nil, nil
 	}
 
-	bnh := rpc.BlockNumberOrHashWithHash(ethBlockHash, true)
+	// TODO use block hash to query when eSpace supports blockNumberOrHash
+	bnh := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(ethBlock.Number.Int64()))
 	traces, err := api.ethClient.Trace.Blocks(bnh)
 	if err != nil {
 		return nil, err
@@ -108,8 +108,8 @@ func (api *TraceAPI) Filter(ctx context.Context, filter types.TraceFilter) ([]ty
 	return []types.LocalizedTrace{}, nil
 }
 
-func (api *TraceAPI) Transaction(ctx context.Context, txHash common.Hash) ([]types.LocalizedTrace, error) {
-	traces, err := api.ethClient.Trace.Transactions(txHash)
+func (api *TraceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]types.LocalizedTrace, error) {
+	traces, err := api.ethClient.Trace.Transactions(*txHash.ToCommonHash())
 	if err != nil {
 		return nil, err
 	}
@@ -124,11 +124,21 @@ func (api *TraceAPI) Transaction(ctx context.Context, txHash common.Hash) ([]typ
 		cfxTrace, cfxTraceResult := ConvertTrace(&ethTraces[i], api.ethNetworkId)
 
 		if cfxTrace != nil {
+			// TODO remove when eSpace always return tx hash
+			if cfxTrace.TransactionHash == nil {
+				cfxTrace.TransactionHash = &txHash
+			}
+
 			cfxTraces = append(cfxTraces, *cfxTrace)
 		}
 
 		// TODO use `ethTrace.subtraces` to construct traces in stack manner.
 		if cfxTraceResult != nil {
+			// TODO remove when eSpace always return tx hash
+			if cfxTraceResult.TransactionHash == nil {
+				cfxTraceResult.TransactionHash = &txHash
+			}
+
 			cfxTraces = append(cfxTraces, *cfxTraceResult)
 		}
 	}
