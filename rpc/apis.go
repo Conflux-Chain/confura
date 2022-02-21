@@ -127,6 +127,11 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 		return nil, err
 	}
 
+	traceApi, err := cfxbridge.NewTraceAPI(ethNodeURL)
+	if err != nil {
+		return nil, err
+	}
+
 	return []API{
 		{
 			Namespace: "cfx",
@@ -136,7 +141,7 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 		}, {
 			Namespace: "trace",
 			Version:   "1.0",
-			Service:   cfxbridge.NewTraceAPI(),
+			Service:   traceApi,
 			Public:    true, // TODO false by default
 		},
 	}, nil
