@@ -53,13 +53,12 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 		return nil, nil
 	}
 
-	ethTraces := *traces
 	cfxTxTraces := []types.LocalizedTransactionTrace{}
 	var lastTxTrace types.LocalizedTransactionTrace
 	var lastTxHash types.Hash
 
-	for i := range ethTraces {
-		cfxTrace, cfxTraceResult := ConvertTrace(&ethTraces[i], api.ethNetworkId)
+	for i := range traces {
+		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
 		if cfxTrace == nil {
 			continue
 		}
@@ -118,10 +117,9 @@ func (api *TraceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]type
 		return nil, nil
 	}
 
-	ethTraces := *traces
 	cfxTraces := []types.LocalizedTrace{}
-	for i := range ethTraces {
-		cfxTrace, cfxTraceResult := ConvertTrace(&ethTraces[i], api.ethNetworkId)
+	for i := range traces {
+		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
 
 		if cfxTrace != nil {
 			// TODO remove when eSpace always return tx hash

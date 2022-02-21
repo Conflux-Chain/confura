@@ -115,6 +115,11 @@ func evmSpaceApis(ethNodeURL string, handler ethHandler) ([]API, error) {
 			Version:   "1.0",
 			Service:   newNetAPI(w3c),
 			Public:    true,
+		}, {
+			Namespace: "trace",
+			Version:   "1.0",
+			Service:   newEthTraceAPI(w3c),
+			Public:    false,
 		},
 	}, nil
 }
