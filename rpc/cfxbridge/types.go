@@ -33,12 +33,12 @@ func (ebn *EthBlockNumber) Value() rpc.BlockNumber {
 	return ebn.value
 }
 
-func (ebn *EthBlockNumber) ToArg() *rpc.BlockNumberOrHash {
+func (ebn *EthBlockNumber) ToArg() *ethTypes.BlockNumberOrHash {
 	if ebn == nil {
 		return nil
 	}
 
-	v := rpc.BlockNumberOrHashWithNumber(ebn.value)
+	v := ethTypes.BlockNumberOrHashWithNumber(ebn.value)
 	return &v
 }
 
@@ -73,11 +73,11 @@ type EthBlockNumberOrHash struct {
 
 func (ebnh *EthBlockNumberOrHash) ToArg() *ethTypes.BlockNumberOrHash {
 	if ebnh.hash == nil {
-		v := rpc.BlockNumberOrHashWithNumber(ebnh.number)
+		v := ethTypes.BlockNumberOrHashWithNumber(ebnh.number)
 		return &v
 	}
 
-	v := rpc.BlockNumberOrHashWithHash(*ebnh.hash, true)
+	v := ethTypes.BlockNumberOrHashWithHash(*ebnh.hash, true)
 	return &v
 }
 

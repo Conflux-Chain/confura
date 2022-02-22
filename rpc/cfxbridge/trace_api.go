@@ -5,8 +5,8 @@ import (
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
+	ethTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 )
 
@@ -43,7 +43,7 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 	}
 
 	// TODO use block hash to query when eSpace supports blockNumberOrHash
-	bnh := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(ethBlock.Number.Int64()))
+	bnh := ethTypes.BlockNumberOrHashWithNumber(ethTypes.BlockNumber(ethBlock.Number.Int64()))
 	traces, err := api.ethClient.Trace.Blocks(bnh)
 	if err != nil {
 		return nil, err

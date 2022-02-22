@@ -57,7 +57,7 @@ func QueryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthDa
 	var blockReceipts []web3Types.Receipt
 	if useBatch {
 		// Batch get block receipts.
-		blockNumOrHash := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(blockNumber))
+		blockNumOrHash := web3Types.BlockNumberOrHashWithNumber(rpc.BlockNumber(blockNumber))
 		blockReceipts, err = w3c.Parity.BlockReceipts(&blockNumOrHash)
 		if err != nil {
 			logger.WithError(err).Info("Failed to batch query ETH block receipts")
