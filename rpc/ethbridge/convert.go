@@ -71,13 +71,14 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 		Value:            tx.Value.ToInt(),
 	}
 
-	// fill missed data field `Accesses`, `BlockNumber`, `MaxFeePerGas`, `MaxPriorityFeePerGas`, `type`
+	// fill missed data field `Accesses`, `BlockNumber`, `MaxFeePerGas`, `MaxPriorityFeePerGas`, `type`, `StandardV`
 	if txExt != nil {
 		ethTxn.Accesses = txExt.Accesses
 		ethTxn.BlockNumber = txExt.BlockNumber.ToInt()
 		ethTxn.MaxFeePerGas = txExt.MaxFeePerGas.ToInt()
 		ethTxn.MaxPriorityFeePerGas = txExt.MaxPriorityFeePerGas.ToInt()
 		ethTxn.Type = txExt.Type
+		ethTxn.StandardV = txExt.StandardV.ToInt()
 	}
 
 	return ethTxn

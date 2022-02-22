@@ -26,6 +26,7 @@ type TransactionExtra struct {
 	MaxFeePerGas         *hexutil.Big         `json:"maxFeePerGas,omitempty"`
 	MaxPriorityFeePerGas *hexutil.Big         `json:"maxPriorityFeePerGas,omitempty"`
 	Type                 *uint64              `json:"type,omitempty"`
+	StandardV            *hexutil.Big         `json:"standardV,omitempty"`
 }
 
 // custom receipt fields for extention
@@ -69,6 +70,7 @@ func ExtractEthTransactionExt(ethTxn *web3Types.Transaction) *TransactionExtra {
 		MaxFeePerGas:         (*hexutil.Big)(ethTxn.MaxFeePerGas),
 		MaxPriorityFeePerGas: (*hexutil.Big)(ethTxn.MaxPriorityFeePerGas),
 		Type:                 ethTxn.Type,
+		StandardV:            (*hexutil.Big)(ethTxn.StandardV),
 	}
 }
 
