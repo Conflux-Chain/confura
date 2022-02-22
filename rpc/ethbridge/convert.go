@@ -52,16 +52,25 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 	to, _ := ConvertAddressNullable(tx.To)
 	input, _ := hexutil.Decode(tx.Data)
 
+	var gas, nonce uint64
+	if tx.Gas != nil {
+		gas = tx.Gas.ToInt().Uint64()
+	}
+
+	if tx.Nonce != nil {
+		nonce = tx.Nonce.ToInt().Uint64()
+	}
+
 	ethTxn := &types.Transaction{
 		BlockHash:        tx.BlockHash.ToCommonHash(),
 		ChainID:          big.NewInt(int64(chainId)),
 		Creates:          creates,
 		From:             from,
-		Gas:              tx.Gas.ToInt().Uint64(),
+		Gas:              gas,
 		GasPrice:         tx.GasPrice.ToInt(),
 		Hash:             ConvertHash(tx.Hash),
 		Input:            input,
-		Nonce:            tx.Nonce.ToInt().Uint64(),
+		Nonce:            nonce,
 		R:                tx.R.ToInt(),
 		S:                tx.S.ToInt(),
 		Status:           ConvertTxStatus(tx.Status),
@@ -224,7 +233,7 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 		BlockNumber:      uint64(*value.EpochNumber),
 		ContractAddress:  contractAddr,
 		From:             from,
-		GasUsed:          value.GasFee.ToInt().Uint64(),
+		GasUsed:          value.GasUsed.ToInt().Uint64(),
 		Logs:             logs,
 		LogsBloom:        logsBloom,
 		Root:             root,
@@ -262,7 +271,12 @@ func ConvertLog(log *cfxtypes.Log, logExtra *store.LogExtra) *types.Log {
 	for i := range log.Topics {
 		topics[i] = ConvertHash(log.Topics[i])
 	}
-	txLogIdx := uint(log.TransactionLogIndex.ToInt().Uint64())
+
+	var txnLogIndex *uint
+	if log.TransactionLogIndex != nil {
+		v := uint(log.TransactionLogIndex.ToInt().Uint64())
+		txnLogIndex = &v
+	}
 
 	ethLog := &types.Log{
 		Address:             ethAddr,
@@ -273,7 +287,7 @@ func ConvertLog(log *cfxtypes.Log, logExtra *store.LogExtra) *types.Log {
 		Topics:              topics,
 		TxHash:              ConvertHashNullable(log.TransactionHash),
 		TxIndex:             uint(log.TransactionIndex.ToInt().Uint64()),
-		TransactionLogIndex: &txLogIdx,
+		TransactionLogIndex: txnLogIndex,
 	}
 
 	// fill missed data field `LogType`, `Removed`
