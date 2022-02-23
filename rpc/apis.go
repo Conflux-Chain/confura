@@ -120,6 +120,11 @@ func evmSpaceApis(ethNodeURL string, handler ethHandler) ([]API, error) {
 			Version:   "1.0",
 			Service:   newEthTraceAPI(w3c),
 			Public:    false,
+		}, {
+			Namespace: "parity",
+			Version:   "1.0",
+			Service:   newParityAPI(w3c),
+			Public:    false,
 		},
 	}, nil
 }
