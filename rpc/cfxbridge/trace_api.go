@@ -58,6 +58,11 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 	var lastTxHash types.Hash
 
 	for i := range traces {
+		// TODO remove when eSpace always return phantom tx hash
+		if traces[i].TransactionHash == nil {
+			continue
+		}
+
 		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
 		if cfxTrace == nil {
 			continue
