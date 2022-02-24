@@ -12,6 +12,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var (
+	txnStatusFailed  = uint64(0) // ethereum tx status `failed`
+	txnStatusSuccess = uint64(1) // ethereum tx status `success`
+)
+
 // convert cfx address => eth address
 func ConvertAddress(value cfxtypes.Address) (common.Address, uint32) {
 	addr, ethNetworkId, _ := value.ToCommon()
@@ -93,22 +98,23 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 	return ethTxn
 }
 
-func ConvertTxStatus(value *hexutil.Uint64) *uint64 {
+func ConvertTxStatus(value *hexutil.Uint64) (status *uint64) {
 	if value == nil {
 		return nil
 	}
 
-	var status uint64
-
-	if *value == 0 {
-		status = 1
-	} else if *value != 1 {
+	switch {
+	case *value == 0: // cfx txn status `success`
+		status = &txnStatusSuccess
+	case *value == 1: // cfx txn status `failed`
+		status = &txnStatusFailed
+	default:
 		logrus.WithField("txStatus", *value).Error(
 			"Failed to convert unexpected tx status to eth tx status",
 		)
 	}
 
-	return &status
+	return
 }
 
 // convert cfx block header => eth block
@@ -237,7 +243,7 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 		Logs:             logs,
 		LogsBloom:        logsBloom,
 		Root:             root,
-		Status:           *ConvertTxStatus(&value.OutcomeStatus),
+		Status:           ConvertTxStatus(&value.OutcomeStatus),
 		To:               to,
 		TransactionHash:  ConvertHash(value.TransactionHash),
 		TransactionIndex: uint64(value.Index),

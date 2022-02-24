@@ -12,7 +12,7 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/montanaflynn/stats v0.6.6
 	github.com/nsf/jsondiff v0.0.0-20210303162244-6ea32392771e
-	github.com/openweb3/web3go v0.0.0-20220222103047-41d8078dc65e
+	github.com/openweb3/web3go v0.0.0-20220224030609-37b0c2f254dd
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
 	github.com/selvatico/go-mocket v1.0.7

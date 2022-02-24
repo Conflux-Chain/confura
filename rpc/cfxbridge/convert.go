@@ -12,6 +12,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var (
+	txnStatusFailed  = hexutil.Uint64(1) // conflux tx status `failed`
+	txnStatusSuccess = hexutil.Uint64(0) // conflux tx status `success`
+)
+
 func NormalizeBig(value *big.Int, err error) (*hexutil.Big, error) {
 	if err != nil {
 		return nil, err
@@ -56,20 +61,30 @@ func ConvertAddresses(addresses []common.Address, ethNetworkId uint32) []types.A
 	return cAddrs
 }
 
-func ConvertTxStatus(value *uint64) *hexutil.Uint64 {
+func ConvertTxStatus(value *uint64) hexutil.Uint64 {
+	v := ConvertTxStatusNullable(value)
+	if v == nil { // unkown status? regarded as `failed` anyway
+		return txnStatusFailed
+	}
+
+	return *v
+}
+
+func ConvertTxStatusNullable(value *uint64) (status *hexutil.Uint64) {
 	if value == nil {
 		return nil
 	}
 
-	var status hexutil.Uint64
-
-	if *value == 0 {
-		status = 1
-	} else if *value != 1 {
+	switch {
+	case *value == 0: // eth tx status `failed`
+		status = &txnStatusFailed
+	case *value == 1: // eth tx status `success`
+		status = &txnStatusSuccess
+	default:
 		logrus.WithField("ethTxStatus", *value).Error("Unexpected tx status from eth space")
 	}
 
-	return &status
+	return
 }
 
 func ConvertTx(tx *ethTypes.Transaction, ethNetworkId uint32) *types.Transaction {
@@ -97,7 +112,7 @@ func ConvertTx(tx *ethTypes.Transaction, ethNetworkId uint32) *types.Transaction
 		StorageLimit:     HexBig0,
 		EpochHeight:      HexBig0,
 		ChainID:          chainId,
-		Status:           ConvertTxStatus(tx.Status),
+		Status:           ConvertTxStatusNullable(tx.Status),
 		V:                types.NewBigIntByRaw(tx.V),
 		R:                types.NewBigIntByRaw(tx.R),
 		S:                types.NewBigIntByRaw(tx.S),
@@ -238,7 +253,7 @@ func ConvertReceipt(receipt *ethTypes.Receipt, ethNetworkId uint32) *types.Trans
 		Logs:                    logs,
 		LogsBloom:               types.Bloom(hexutil.Encode(receipt.LogsBloom.Bytes())),
 		StateRoot:               stateRoot,
-		OutcomeStatus:           *ConvertTxStatus(&receipt.Status),
+		OutcomeStatus:           ConvertTxStatus(receipt.Status),
 		TxExecErrorMsg:          receipt.TxExecErrorMsg,
 		GasCoveredBySponsor:     false,
 		StorageCoveredBySponsor: false,
