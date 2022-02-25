@@ -9,26 +9,29 @@ import (
 	"github.com/conflux-chain/conflux-infura/util"
 )
 
+// Manager manages full node cluster, including:
+// 1. Monitor node health and disable/enable full node automatically.
+// 2. Implements Router interface to route RPC requests to different full nodes
+// in manner of consistent hashing.
 type Manager struct {
-	nodes    map[string]*Node
-	hashRing *consistent.Consistent
-	resolver RepartitionResolver
+	nodes    map[string]*Node       // node name => Node
+	hashRing *consistent.Consistent // consistent hashing algorithm
+	resolver RepartitionResolver    // support repartition for hash ring
 	mu       sync.RWMutex
 
-	nodeName2Epochs map[string]uint64
-	midEpoch        uint64
+	nodeName2Epochs map[string]uint64 // node name => epoch
+	midEpoch        uint64            // middle epoch of managed full nodes.
 }
 
-func NewMananger(urls []string, resolver ...RepartitionResolver) *Manager {
+func NewManager(urls []string) *Manager {
+	return NewManagerWithRepartition(urls, &noopRepartitionResolver{})
+}
+
+func NewManagerWithRepartition(urls []string, resolver RepartitionResolver) *Manager {
 	manager := Manager{
 		nodes:           make(map[string]*Node),
+		resolver:        resolver,
 		nodeName2Epochs: make(map[string]uint64),
-	}
-
-	if len(resolver) == 0 {
-		manager.resolver = &noopRepartitionResolver{}
-	} else {
-		manager.resolver = resolver[0]
 	}
 
 	var members []consistent.Member
@@ -113,6 +116,7 @@ func (m *Manager) Distribute(key []byte) *Node {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	// Use repartition resolver to distribute if configured.
 	if name, ok := m.resolver.Get(k); ok {
 		return m.nodes[name]
 	}

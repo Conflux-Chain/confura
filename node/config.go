@@ -8,7 +8,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var cfg config // node config from viper
+// Node manager component always uses configuration from viper.
+var cfg config
 
 func init() {
 	viper.MustUnmarshalKey("node", &cfg)

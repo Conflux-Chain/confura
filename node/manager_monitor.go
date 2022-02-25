@@ -18,16 +18,19 @@ func (m *Manager) ReportEpoch(nodeName string, epoch uint64) {
 	defer m.mu.Unlock()
 
 	m.nodeName2Epochs[nodeName] = epoch
-
-	var epochs UInt64Slice
-
-	for _, epoch := range m.nodeName2Epochs {
-		epochs = append(epochs, epoch)
+	if len(m.nodeName2Epochs) == 1 {
+		atomic.StoreUint64(&m.midEpoch, epoch)
+		return
 	}
 
-	sort.Sort(epochs)
+	var epochs []int
+	for _, epoch := range m.nodeName2Epochs {
+		epochs = append(epochs, int(epoch))
+	}
 
-	atomic.StoreUint64(&m.midEpoch, epochs[len(epochs)/2])
+	sort.Ints(epochs)
+
+	atomic.StoreUint64(&m.midEpoch, uint64(epochs[len(epochs)/2]))
 }
 
 func (m *Manager) ReportUnhealthy(nodeName string, remind bool, reason error) {
@@ -53,9 +56,3 @@ func (m *Manager) ReportHealthy(nodeName string) {
 	// add recovered node into hash ring again
 	m.hashRing.Add(m.nodes[nodeName])
 }
-
-type UInt64Slice []uint64
-
-func (p UInt64Slice) Len() int           { return len(p) }
-func (p UInt64Slice) Less(i, j int) bool { return p[i] < p[j] }
-func (p UInt64Slice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }

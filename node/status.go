@@ -11,17 +11,29 @@ import (
 	"github.com/pkg/errors"
 )
 
+// HealthMonitor is implemented by any objects that support to monitor full node health.
 type HealthMonitor interface {
+	// HealthyEpoch returns the healthy epoch number among full nodes.
+	// Usually, it is the middle epoch number of all full nodes.
 	HealthyEpoch() uint64
+
+	// ReportEpoch fired when epoch changes.
 	ReportEpoch(nodeName string, epoch uint64)
+
+	// ReportUnhealthy fired when full node becomes unhealthy or unrecovered for a long time.
 	ReportUnhealthy(nodeName string, remind bool, reason error)
+
+	// ReportHealthy fired when full node becomes healthy.
 	ReportHealthy(nodeName string)
 }
 
+// Status represents the node status, including current epoch number and health.
 type Status struct {
-	nodeName         string
-	metricName       string
-	latencyMetric    metrics.Histogram // ping latency via cfx_epochNumber
+	nodeName string
+
+	metricName    string
+	latencyMetric metrics.Histogram // ping latency via cfx_epochNumber
+
 	latestStateEpoch uint64
 	successCounter   uint64
 	failureCounter   uint64
@@ -70,7 +82,7 @@ func (s *Status) updateHealth(monitor HealthMonitor) {
 				monitor.ReportHealthy(s.nodeName)
 			}
 		} else {
-			// remind long unhealthy every N minutes, even occasionally suscceeded
+			// remind long unhealthy every N minutes, even occasionally succeeded
 			remindTime := s.unhealthReportAt.Add(cfg.Monitor.Recover.RemindInterval)
 			if now := time.Now(); now.After(remindTime) {
 				monitor.ReportUnhealthy(s.nodeName, true, reason)

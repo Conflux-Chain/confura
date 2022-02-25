@@ -8,8 +8,8 @@ import (
 func NewServer() *util.RpcServer {
 	return util.MustNewRpcServer("node", map[string]interface{}{
 		"node": &api{
-			manager:   NewMananger(cfg.URLs),
-			wsManager: NewMananger(cfg.WSURLs),
+			manager:   NewManager(cfg.URLs),
+			wsManager: NewManager(cfg.WSURLs),
 		},
 	})
 }

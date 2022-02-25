@@ -11,10 +11,12 @@ import (
 	"github.com/spf13/viper"
 )
 
+// ClientProvider provides different RPC client based on user IP to achieve load balance.
+// Generally, it is used by RPC server to delegate RPC requests to full node cluster.
 type ClientProvider struct {
 	router    Router
-	clients   util.ConcurrentMap
-	wsClients util.ConcurrentMap // used for pubsub on connection to fullnode
+	clients   util.ConcurrentMap // node name => RPC client (HTTP)
+	wsClients util.ConcurrentMap // node name => RPC client (WebSocket)
 }
 
 func NewClientProvider(router Router) *ClientProvider {

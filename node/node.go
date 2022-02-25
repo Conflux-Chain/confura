@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Node represents a full node with friendly name and status.
 type Node struct {
 	sdk.ClientOperator
 	name         string
@@ -18,6 +19,8 @@ type Node struct {
 	atomicStatus atomic.Value
 }
 
+// NewNode creates an instance of Node and start to monitor node health
+// in a separate goroutine until node closed.
 func NewNode(name, url string, hm HealthMonitor) *Node {
 	ctx, cancel := context.WithCancel(context.Background())
 	requestTimeout := viper.GetDuration("cfx.requestTimeout")
