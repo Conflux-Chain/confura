@@ -14,58 +14,57 @@ import (
 // ClientProvider provides different RPC client based on user IP to achieve load balance.
 // Generally, it is used by RPC server to delegate RPC requests to full node cluster.
 type ClientProvider struct {
-	router    Router
-	clients   util.ConcurrentMap // node name => RPC client (HTTP)
-	wsClients util.ConcurrentMap // node name => RPC client (WebSocket)
+	router  Router
+	clients map[Group]*util.ConcurrentMap // group => node name => RPC client
 }
 
 func NewClientProvider(router Router) *ClientProvider {
-	return &ClientProvider{
-		router: router,
+	clients := make(map[Group]*util.ConcurrentMap)
+	for k := range urlCfg {
+		clients[k] = &util.ConcurrentMap{}
 	}
+
+	return &ClientProvider{router, clients}
 }
 
 func (p *ClientProvider) GetClientByIP(ctx context.Context) (sdk.ClientOperator, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
-	return p.GetClient(remoteAddr, false)
+	return p.GetClient(remoteAddr, GroupCfxHttp)
 }
 
 func (p *ClientProvider) GetWSClientByIP(ctx context.Context) (sdk.ClientOperator, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
-	return p.GetClient(remoteAddr, true)
+	return p.GetClient(remoteAddr, GroupCfxWs)
 }
 
-func (p *ClientProvider) GetClient(key string, isWebsocket bool) (sdk.ClientOperator, error) {
-	var url string
-	var mapClients *util.ConcurrentMap
-
-	if isWebsocket {
-		url = p.router.WSRoute([]byte(key))
-		mapClients = &p.wsClients
-	} else {
-		url = p.router.Route([]byte(key))
-		mapClients = &p.clients
+func (p *ClientProvider) GetClient(key string, group Group) (sdk.ClientOperator, error) {
+	clients, ok := p.clients[group]
+	if !ok {
+		return nil, errors.Errorf("Unknown group %v", group)
 	}
 
+	url := p.router.Route(group, []byte(key))
+
 	logger := logrus.WithFields(logrus.Fields{
-		"key": key, "isWebsocket": isWebsocket,
+		"key":   key,
+		"group": group,
 	})
 
 	if len(url) == 0 {
 		err := errors.New("no full node routed from the router")
 		logger.WithError(err).Error("Failed to get full node client from provider")
-
 		return nil, err
 	}
 
 	nodeName := util.Url2NodeName(url)
 
 	logger = logger.WithFields(logrus.Fields{
-		"node": nodeName, "url": url,
+		"node": nodeName,
+		"url":  url,
 	})
 	logger.Trace("Route RPC requests")
 
-	client, loaded, err := mapClients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+	client, loaded, err := clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
 		// TODO improvements required
 		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
 		// 2. Different metrics for different full nodes.

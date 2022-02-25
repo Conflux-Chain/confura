@@ -11,9 +11,22 @@ import (
 // Node manager component always uses configuration from viper.
 var cfg config
 
+var urlCfg map[Group]UrlConfig
+
 func init() {
 	viper.MustUnmarshalKey("node", &cfg)
 	logrus.WithField("config", cfg).Debug("Node manager configurations loaded.")
+
+	urlCfg = map[Group]UrlConfig{
+		GroupCfxHttp: {
+			Nodes:    cfg.URLs,
+			Failover: cfg.Router.ChainedFailover.URL,
+		},
+		GroupCfxWs: {
+			Nodes:    cfg.WSURLs,
+			Failover: cfg.Router.ChainedFailover.WSURL,
+		},
+	}
 }
 
 // Config returns the configuration from viper.
@@ -46,7 +59,10 @@ type config struct {
 	Router struct {
 		RedisURL        string
 		NodeRPCURL      string
-		ChainedFailover chainedFailoverConfig
+		ChainedFailover struct {
+			URL   string
+			WSURL string
+		}
 	}
 }
 
@@ -59,7 +75,7 @@ func (c *config) HashRingRaw() consistent.Config {
 	}
 }
 
-type chainedFailoverConfig struct {
-	URL   string
-	WSURL string
+type UrlConfig struct {
+	Nodes    []string
+	Failover string
 }

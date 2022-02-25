@@ -13,12 +13,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Group allows to manage full nodes in multiple groups.
+type Group string
+
+const (
+	GroupCfxHttp = "cfxhttp"
+	GroupCfxWs   = "cfxws"
+)
+
 // Router is used to route RPC requests to multiple full nodes.
 type Router interface {
-	// Route returns the full node URL for specified key.
-	Route(key []byte) string
-	// WSRoute returns the websocket full node URL for specified key.
-	WSRoute(key []byte) string
+	// Route returns the full node URL for specified group and key.
+	Route(group Group, key []byte) string
 }
 
 // MustNewRouterFromViper creates an instance of Router based on viper.
@@ -60,50 +66,43 @@ func MustNewRouterFromViper() Router {
 		routers = append(routers, NewLocalRouterFromViper())
 	}
 
-	return NewChainedRouter(cfg.Router.ChainedFailover, routers...)
+	return NewChainedRouter(routers...)
 }
 
 // chainedRouter routes RPC requests in chained responsibility pattern.
 type chainedRouter struct {
-	failover chainedFailoverConfig
-	routers  []Router
+	routers []Router
 }
 
-func NewChainedRouter(failover chainedFailoverConfig, routers ...Router) Router {
-	return &chainedRouter{failover: failover, routers: routers}
+func NewChainedRouter(routers ...Router) Router {
+	return &chainedRouter{
+		routers: routers,
+	}
 }
 
-func (r *chainedRouter) Route(key []byte) string {
+func (r *chainedRouter) Route(group Group, key []byte) string {
 	for _, r := range r.routers {
-		if val := r.Route(key); len(val) > 0 {
+		if val := r.Route(group, key); len(val) > 0 {
 			return val
 		}
 	}
 
-	l := logrus.WithFields(logrus.Fields{
-		"failover": r.failover.URL, "key": string(key),
-	})
-	l.Warn("No router handled the route key, failover to chained default")
-
-	return r.failover.URL
-}
-
-func (r *chainedRouter) WSRoute(key []byte) string {
-	for _, r := range r.routers {
-		if val := r.WSRoute(key); len(val) > 0 {
-			return val
-		}
+	// Failover if configured
+	config, ok := urlCfg[group]
+	if !ok {
+		return ""
 	}
 
-	l := logrus.WithFields(logrus.Fields{
-		"failover": r.failover.WSURL, "key": string(key),
-	})
-	l.Warn("No router handled the websocket route key, failover to chained default")
+	logrus.WithFields(logrus.Fields{
+		"failover": config.Failover,
+		"key":      string(key),
+	}).Warn("No router handled the route key, failover to chained default")
 
-	return r.failover.WSURL
+	return config.Failover
 }
 
 // RedisRouter routes RPC requests via redis.
+// It should be used together with RedisRepartitionResolver.
 type RedisRouter struct {
 	client *redis.Client
 }
@@ -114,21 +113,10 @@ func NewRedisRouter(client *redis.Client) *RedisRouter {
 	}
 }
 
-func (r *RedisRouter) Route(key []byte) string {
+func (r *RedisRouter) Route(group Group, key []byte) string {
 	uintKey := xxhash.Sum64(key)
-	redisKey := redisRepartitionKey(uintKey)
+	redisKey := redisRepartitionKey(uintKey, string(group))
 
-	return r.routeWithRedisKey(redisKey)
-}
-
-func (r *RedisRouter) WSRoute(key []byte) string {
-	uintKey := xxhash.Sum64(key)
-	redisKey := redisRepartitionKey(uintKey, "ws")
-
-	return r.routeWithRedisKey(redisKey)
-}
-
-func (r *RedisRouter) routeWithRedisKey(redisKey string) string {
 	node, err := r.client.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
 		return ""
@@ -153,20 +141,10 @@ func NewNodeRpcRouter(client *rpc.Client) *NodeRpcRouter {
 	}
 }
 
-func (r *NodeRpcRouter) Route(key []byte) string {
+func (r *NodeRpcRouter) Route(group Group, key []byte) string {
 	var result string
-	if err := r.client.Call(&result, "node_route", hexutil.Bytes(key)); err != nil {
+	if err := r.client.Call(&result, "node_route", group, hexutil.Bytes(key)); err != nil {
 		logrus.WithError(err).Error("Failed to route key from node RPC")
-		return ""
-	}
-
-	return result
-}
-
-func (r *NodeRpcRouter) WSRoute(key []byte) string {
-	var result string
-	if err := r.client.Call(&result, "node_wsRoute", hexutil.Bytes(key)); err != nil {
-		logrus.WithError(err).Error("Failed to route key for websocket from node RPC")
 		return ""
 	}
 
@@ -183,76 +161,82 @@ func (h hasher) Sum64(data []byte) uint64 {
 	return xxhash.Sum64(data)
 }
 
-// LocalRouter routes RPC requests based on local hash ring.
-type LocalRouter struct {
-	nodes    map[string]localNode // name -> node
+type localNodeGroup struct {
+	nodes    map[string]localNode // name -> node URL
 	hashRing *consistent.Consistent
-
-	// used for websocket routing
-	wsNodes    map[string]localNode
-	wsHashRing *consistent.Consistent
 }
 
-func NewLocalRouter(urls, wsUrls []string) *LocalRouter {
-	batchNodes := make([]map[string]localNode, 2)
-	batchHashRings := make([]*consistent.Consistent, 2)
+func newLocalNodeGroup(urls []string) *localNodeGroup {
+	item := localNodeGroup{
+		nodes: make(map[string]localNode),
+	}
 
-	for i, urls := range [][]string{urls, wsUrls} {
-		nodes := make(map[string]localNode)
-		var members []consistent.Member
+	var members []consistent.Member
 
-		for _, url := range urls {
-			nodeName := util.Url2NodeName(url)
-			if _, ok := nodes[nodeName]; !ok {
-				nodes[nodeName] = localNode(url)
-				members = append(members, localNode(url))
-			}
+	for _, v := range urls {
+		nodeName := util.Url2NodeName(v)
+		if _, ok := item.nodes[nodeName]; !ok {
+			item.nodes[nodeName] = localNode(v)
+			members = append(members, localNode(v))
 		}
-
-		batchNodes[i] = nodes
-		batchHashRings[i] = consistent.New(members, cfg.HashRingRaw())
 	}
 
-	return &LocalRouter{
-		nodes:      batchNodes[0],
-		hashRing:   batchHashRings[0],
-		wsNodes:    batchNodes[1],
-		wsHashRing: batchHashRings[1],
+	item.hashRing = consistent.New(members, cfg.HashRingRaw())
+
+	return &item
+}
+
+// LocalRouter routes RPC requests based on local hash ring.
+type LocalRouter struct {
+	groups map[Group]*localNodeGroup
+}
+
+func NewLocalRouter(group2Urls map[Group][]string) *LocalRouter {
+	groups := make(map[Group]*localNodeGroup)
+
+	for k, v := range group2Urls {
+		groups[k] = newLocalNodeGroup(v)
 	}
+
+	return &LocalRouter{groups}
 }
 
 func NewLocalRouterFromViper() *LocalRouter {
-	return NewLocalRouter(cfg.URLs, cfg.WSURLs)
+	group2Urls := make(map[Group][]string)
+	for k, v := range urlCfg {
+		group2Urls[k] = v.Nodes
+	}
+
+	return NewLocalRouter(group2Urls)
 }
 
-func (r *LocalRouter) Route(key []byte) string {
-	if member := r.hashRing.LocateKey(key); member != nil {
-		return member.String()
+func (r *LocalRouter) Route(group Group, key []byte) string {
+	item, ok := r.groups[group]
+	if !ok {
+		return ""
 	}
-	return ""
-}
 
-func (r *LocalRouter) WSRoute(key []byte) string {
-	if member := r.wsHashRing.LocateKey(key); member != nil {
+	if member := item.hashRing.LocateKey(key); member != nil {
 		return member.String()
 	}
+
 	return ""
 }
 
 func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
-	batchUrls := make([][]string, 2)
+	group2Urls := make(map[Group][]string)
 
-	for i, method := range []string{"node_list", "node_wsList"} {
+	for _, v := range []Group{GroupCfxHttp, GroupCfxWs} {
 		var urls []string
-		if err := client.Call(&urls, method); err != nil {
-			logrus.WithError(err).WithField("rpcMethod", method).Error("Failed to get nodes from node RPC")
+		if err := client.Call(&urls, "node_list", v); err != nil {
+			logrus.WithError(err).WithField("group", v).Error("Failed to get nodes from node manager RPC")
 			return nil, err
 		}
 
-		batchUrls[i] = urls
+		group2Urls[v] = urls
 	}
 
-	router := NewLocalRouter(batchUrls[0], batchUrls[1])
+	router := NewLocalRouter(group2Urls)
 
 	go router.update(client)
 
@@ -265,23 +249,20 @@ func (r *LocalRouter) update(client *rpc.Client) {
 
 	// could update nodes periodically all the time
 	for range ticker.C {
-		for i, method := range []string{"node_list", "node_wsList"} {
+		for _, v := range []Group{GroupCfxHttp, GroupCfxWs} {
 			var urls []string
-			if err := client.Call(&urls, method); err != nil {
-				logrus.WithError(err).WithField("rpcMethod", method).Debug("Failed to get nodes from node RPC periodically")
+			if err := client.Call(&urls, "node_list", v); err != nil {
+				logrus.WithError(err).WithField("group", v).Debug("Failed to get nodes from node manager RPC periodically")
 				continue
 			}
 
-			r.updateOnce(urls, i == 1)
+			r.updateOnce(urls, v)
 		}
 	}
 }
 
-func (r *LocalRouter) updateOnce(urls []string, isWebsocket bool) {
-	fnNodes, hashRing := r.nodes, r.hashRing
-	if isWebsocket {
-		fnNodes, hashRing = r.wsNodes, r.wsHashRing
-	}
+func (r *LocalRouter) updateOnce(urls []string, group Group) {
+	fnNodes, hashRing := r.groups[group].nodes, r.groups[group].hashRing
 
 	// detect new added
 	for _, v := range urls {

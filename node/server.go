@@ -6,51 +6,42 @@ import (
 )
 
 func NewServer() *util.RpcServer {
+	managers := make(map[Group]*Manager)
+	for k, v := range urlCfg {
+		managers[k] = NewManager(v.Nodes)
+	}
+
 	return util.MustNewRpcServer("node", map[string]interface{}{
-		"node": &api{
-			manager:   NewManager(cfg.URLs),
-			wsManager: NewManager(cfg.WSURLs),
-		},
+		"node": &api{managers},
 	})
 }
 
 type api struct {
-	manager   *Manager
-	wsManager *Manager // node manager for websocket fullnodes
+	managers map[Group]*Manager
 }
 
-func (api *api) Add(url string) {
-	api.manager.Add(url)
+func (api *api) Add(group Group, url string) {
+	if m, ok := api.managers[group]; ok {
+		m.Add(url)
+	}
 }
 
-func (api *api) WsAdd(url string) {
-	api.wsManager.Add(url)
-}
-
-func (api *api) Remove(url string) {
-	api.manager.Remove(url)
-}
-
-func (api *api) WsRemove(url string) {
-	api.wsManager.Remove(url)
+func (api *api) Remove(group Group, url string) {
+	if m, ok := api.managers[group]; ok {
+		m.Remove(url)
+	}
 }
 
 // List returns the URL list of all nodes.
-func (api *api) List() []string {
-	var nodes []string
-
-	for _, n := range api.manager.List() {
-		nodes = append(nodes, n.GetNodeURL())
+func (api *api) List(group Group) []string {
+	m, ok := api.managers[group]
+	if !ok {
+		return nil
 	}
 
-	return nodes
-}
-
-// WSList returns the URL list of all websocket full nodes.
-func (api *api) WsList() []string {
 	var nodes []string
 
-	for _, n := range api.wsManager.List() {
+	for _, n := range m.List() {
 		nodes = append(nodes, n.GetNodeURL())
 	}
 
@@ -59,10 +50,10 @@ func (api *api) WsList() []string {
 
 // Route implements the Router interface. It routes the specified key to any node
 // and return the node URL.
-func (api *api) Route(key hexutil.Bytes) string {
-	return api.manager.Route(key)
-}
+func (api *api) Route(group Group, key hexutil.Bytes) string {
+	if m, ok := api.managers[group]; ok {
+		return m.Route(key)
+	}
 
-func (api *api) WsRoute(key hexutil.Bytes) string {
-	return api.wsManager.Route(key)
+	return ""
 }
