@@ -16,6 +16,7 @@ var defaultEpochs = map[string]bool{
 	types.EpochLatestConfirmed.String():  true,
 	types.EpochLatestState.String():      true,
 	types.EpochLatestMined.String():      true,
+	types.EpochLatestFinalized.String():  true,
 }
 
 // InputEpochMetric is used to add metrics for input epoch parameter.

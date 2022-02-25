@@ -2,9 +2,11 @@ package rpc
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"math/bits"
 
+	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -16,13 +18,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var (
+	ethHitStatsCollector = cimetrics.NewHitStatsCollector()
+)
+
+func getEthStoreHitRatioMetricKey(method string) string {
+	return fmt.Sprintf("infura/rpc/call/%v/ethstore/hitratio", method)
+}
+
 // ethAPI provides ethereum relative API within EVM space according to:
 // https://github.com/Pana/conflux-doc/blob/master/docs/evm_space_zh.md
 type ethAPI struct {
 	// TODO: get client by client provider from node cluster
-	w3c     *web3go.Client // eth sdk client
-	handler ethHandler     // eth rpc handler
-	chainId *uint64        // eth chain ID
+	w3c              *web3go.Client // eth sdk client
+	handler          ethHandler     // eth rpc handler
+	chainId          *uint64        // eth chain ID
+	inputBlockMetric cimetrics.InputBlockMetric
 }
 
 func newEthAPI(eth *web3go.Client, handler ethHandler) *ethAPI {
@@ -34,13 +45,29 @@ func newEthAPI(eth *web3go.Client, handler ethHandler) *ethAPI {
 func (api *ethAPI) GetBlockByHash(
 	ctx context.Context, blockHash common.Hash, fullTx bool,
 ) (*web3Types.Block, error) {
+	logger := logrus.WithFields(logrus.Fields{
+		"blockHash": blockHash.Hex(), "includeTxs": fullTx,
+	})
+
 	if !util.IsInterfaceValNil(api.handler) {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			metricKey := getEthStoreHitRatioMetricKey("eth_getBlockByHash")
+			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
+		}(&isStoreHit)
+
 		block, err := api.handler.GetBlockByHash(ctx, blockHash, fullTx)
 		if err == nil {
+			logger.Debug("Loading eth data for eth_getBlockByHash hit in the store")
+
+			isStoreHit = true
 			return block, nil
 		}
+
+		logger.WithError(err).Debug("Loading eth data for eth_getBlockByHash missed from the ethstore")
 	}
 
+	logger.Debug("Delegating eth_getBlockByHash rpc request to fullnode")
 	return api.w3c.Eth.BlockByHash(blockHash, fullTx)
 }
 
@@ -70,6 +97,8 @@ func (api *ethAPI) GetBalance(
 	ctx context.Context, address common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
 	balance, err := api.w3c.Eth.Balance(address, blockNumOrHash)
+
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getBalance", api.w3c)
 	return (*hexutil.Big)(balance), err
 }
 
@@ -81,13 +110,31 @@ func (api *ethAPI) GetBalance(
 func (api *ethAPI) GetBlockByNumber(
 	ctx context.Context, blockNum *web3Types.BlockNumber, fullTx bool,
 ) (*web3Types.Block, error) {
+	logger := logrus.WithFields(logrus.Fields{
+		"blockNum": blockNum, "includeTxs": fullTx,
+	})
+
 	if !util.IsInterfaceValNil(api.handler) {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			metricKey := getEthStoreHitRatioMetricKey("eth_getBlockByNumber")
+			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
+		}(&isStoreHit)
+
 		block, err := api.handler.GetBlockByNumber(ctx, blockNum, fullTx)
 		if err == nil {
+			logger.Debug("Loading eth data for eth_getBlockByNumber hit in the store")
+
+			isStoreHit = true
 			return block, nil
 		}
+
+		logger.WithError(err).Debug("Loading eth data for eth_getBlockByNumber missed from the ethstore")
 	}
 
+	logger.Debug("Delegating eth_getBlockByNumber rpc request to fullnode")
+
+	api.inputBlockMetric.Update1(blockNum, "eth_getBlockByNumber", api.w3c)
 	return api.w3c.Eth.BlockByNumber(*blockNum, fullTx)
 }
 
@@ -95,6 +142,7 @@ func (api *ethAPI) GetBlockByNumber(
 func (api *ethAPI) GetUncleByBlockNumberAndIndex(
 	ctx context.Context, blockNr *web3Types.BlockNumber, index hexutil.Uint,
 ) (*web3Types.Block, error) {
+	api.inputBlockMetric.Update1(blockNr, "eth_getUncleByBlockNumberAndIndex", api.w3c)
 	return api.w3c.Eth.UncleByBlockNumberAndIndex(*blockNr, uint(index))
 }
 
@@ -122,6 +170,7 @@ func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 func (api *ethAPI) GetStorageAt(
 	ctx context.Context, address common.Address, location *hexutil.Big, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (common.Hash, error) {
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getStorageAt", api.w3c)
 	return api.w3c.Eth.StorageAt(address, (*big.Int)(location), blockNumOrHash)
 }
 
@@ -130,6 +179,7 @@ func (api *ethAPI) GetStorageAt(
 func (api *ethAPI) GetCode(
 	ctx context.Context, account common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (hexutil.Bytes, error) {
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getCode", api.w3c)
 	return api.w3c.Eth.CodeAt(account, blockNumOrHash)
 }
 
@@ -138,6 +188,7 @@ func (api *ethAPI) GetCode(
 func (api *ethAPI) GetTransactionCount(
 	ctx context.Context, account common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getTransactionCount", api.w3c)
 	count, err := api.w3c.Eth.TransactionCount(account, blockNumOrHash)
 	return (*hexutil.Big)(count), err
 }
@@ -159,6 +210,7 @@ func (api *ethAPI) SubmitTransaction(ctx context.Context, signedTx hexutil.Bytes
 func (api *ethAPI) Call(
 	ctx context.Context, request web3Types.CallRequest, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (hexutil.Bytes, error) {
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_call", api.w3c)
 	return api.w3c.Eth.Call(request, blockNumOrHash)
 }
 
@@ -169,19 +221,34 @@ func (api *ethAPI) Call(
 func (api *ethAPI) EstimateGas(
 	ctx context.Context, request web3Types.CallRequest, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_estimateGas", api.w3c)
 	gas, err := api.w3c.Eth.EstimateGas(request, blockNumOrHash)
 	return (*hexutil.Big)(gas), err
 }
 
 // TransactionByHash returns the transaction with the given hash.
 func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.Transaction, error) {
+	logger := logrus.WithField("txHash", hash.Hex())
+
 	if !util.IsInterfaceValNil(api.handler) {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			metricKey := getEthStoreHitRatioMetricKey("eth_getTransactionByHash")
+			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
+		}(&isStoreHit)
+
 		tx, err := api.handler.GetTransactionByHash(ctx, hash)
 		if err == nil {
+			logger.Debug("Loading eth data for eth_getTransactionByHash hit in the store")
+
+			isStoreHit = true
 			return tx, nil
 		}
+
+		logger.WithError(err).Debug("Loading eth data for eth_getTransactionByHash missed from the ethstore")
 	}
 
+	logger.Debug("Delegating eth_getTransactionByHash rpc request to fullnode")
 	return api.w3c.Eth.TransactionByHash(hash)
 }
 
@@ -191,12 +258,21 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	logger := logrus.WithField("txHash", txHash.Hex())
 
 	if !util.IsInterfaceValNil(api.handler) {
+		isStoreHit := false
+		defer func(isHit *bool) {
+			metricKey := getEthStoreHitRatioMetricKey("eth_getTransactionReceipt")
+			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
+		}(&isStoreHit)
+
 		tx, err := api.handler.GetTransactionReceipt(ctx, txHash)
 		if err == nil {
-			logger.Debug("Loading blockchain data for eth_getTransactionReceipt hit in the store")
+			logger.Debug("Loading eth data for eth_getTransactionReceipt hit in the ethstore")
 
+			isStoreHit = true
 			return tx, nil
 		}
+
+		logger.WithError(err).Debug("Loading eth data for eth_getTransactionReceipt missed from the ethstore")
 	}
 
 	logger.Debug("Delegating eth_getTransactionReceipt rpc request to fullnode")
@@ -226,7 +302,8 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 	if sfilter, ok := store.ParseEthLogFilter(api.w3c, uint32(*chainId), &filter); ok {
 		isStoreHit := false
 		defer func(isHit *bool) {
-			hitStatsCollector.CollectHitStats("infura/rpc/call/eth_getLogs/store/hitratio", *isHit)
+			metricKey := getEthStoreHitRatioMetricKey("eth_getLogs")
+			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
 		}(&isStoreHit)
 
 		if logs, err := api.handler.GetLogs(ctx, *sfilter); err == nil {
@@ -235,13 +312,13 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 				logs = emptyLogs
 			}
 
-			logger.Debug("Loading blockchain data for eth_getLogs hit in the store")
+			logger.Debug("Loading eth data for eth_getLogs hit in the ethstore")
 
 			isStoreHit = true
 			return logs, nil
 		}
 
-		logger.WithError(err).Debug("Loading blockchain data for eth_getLogs hit missed from the store")
+		logger.WithError(err).Debug("Loading eth data for eth_getLogs hit missed from the ethstore")
 
 		// Logs already pruned from database? If so, we'd rather not delegate this request to
 		// the fullnode, as it might crush our fullnode.
@@ -270,6 +347,7 @@ func (api *ethAPI) GetBlockTransactionCountByHash(ctx context.Context, blockHash
 func (api *ethAPI) GetBlockTransactionCountByNumber(ctx context.Context, blockNum *web3Types.BlockNumber) (
 	*hexutil.Big, error,
 ) {
+	api.inputBlockMetric.Update1(blockNum, "eth_getBlockTransactionCountByNumber", api.w3c)
 	count, err := api.w3c.Eth.BlockTransactionCountByNumber(*blockNum)
 	return (*hexutil.Big)(count), err
 }
@@ -337,6 +415,7 @@ func (api *ethAPI) GetTransactionByBlockHashAndIndex(
 func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 	ctx context.Context, blockNum web3Types.BlockNumber, index hexutil.Uint,
 ) (*web3Types.Transaction, error) {
+	api.inputBlockMetric.Update1(&blockNum, "eth_getTransactionByBlockNumberAndIndex", api.w3c)
 	return api.w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))
 }
 
