@@ -37,9 +37,13 @@ func MustNewCfxClientWithRetry(url string, retry int, retryInterval, requestTime
 		logrus.WithError(err).Fatalf("Failed to create CFX client to %v", url)
 	}
 
-	cfx.UseCallRpcMiddleware(callRpcMetricsMiddleware)
+	HookCfxRpcMetricsMiddleware(cfx)
 
 	return cfx
+}
+
+func HookCfxRpcMetricsMiddleware(cfx *sdk.Client) {
+	cfx.UseCallRpcMiddleware(callRpcMetricsMiddleware)
 }
 
 func callRpcMetricsMiddleware(handler middleware.CallRpcHandler) middleware.CallRpcHandler {

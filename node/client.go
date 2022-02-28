@@ -70,9 +70,14 @@ func (p *ClientProvider) GetClient(key string, group Group) (sdk.ClientOperator,
 		// 2. Different metrics for different full nodes.
 
 		requestTimeout := viper.GetDuration("cfx.requestTimeout")
-		return sdk.NewClient(url, sdk.ClientOption{
+		cfx, err := sdk.NewClient(url, sdk.ClientOption{
 			RequestTimeout: requestTimeout,
 		})
+		if err == nil {
+			util.HookCfxRpcMetricsMiddleware(cfx)
+		}
+
+		return cfx, err
 	})
 
 	if err != nil {

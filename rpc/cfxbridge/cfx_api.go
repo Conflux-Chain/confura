@@ -35,6 +35,8 @@ func NewCfxAPI(ethNodeURL, cfxNodeURL string) (*CfxAPI, error) {
 		return nil, errors.WithMessage(err, "Failed to connect to cfx space")
 	}
 
+	util.HookCfxRpcMetricsMiddleware(cfx)
+
 	ethChainId, err := eth.Eth.ChainId()
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to get chain ID from eth space")
