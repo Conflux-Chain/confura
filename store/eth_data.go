@@ -46,6 +46,11 @@ func QueryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthDa
 
 	// Get block by number
 	block, err := w3c.Eth.BlockByNumber(web3Types.BlockNumber(blockNumber), true)
+
+	if err == nil && block == nil {
+		err = errors.New("invalid block data (must not be nil)")
+	}
+
 	if err != nil {
 		return nil, errors.WithMessagef(err, "failed to get block by number %v", blockNumber)
 	}
