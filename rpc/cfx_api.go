@@ -390,7 +390,18 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		// Logs already pruned from database? If so, we'd rather not delegate this request to
 		// the fullnode, as it might crush our fullnode.
 		if errors.Is(err, store.ErrAlreadyPruned) {
-			logger.Info("Epoch log data already pruned for cfx_getLogs to return")
+			logger.Debug("Epoch log data already pruned for cfx_getLogs to return")
+
+			// Try to access archive node for pruned event logs if configured.
+			logs, ok, err := api.getLogsFromArchiveNodes(ctx, filter)
+			if err != nil {
+				return nil, err
+			}
+
+			if ok {
+				return logs, nil
+			}
+
 			return emptyLogs, errors.New("failed to get stale epoch logs (data too old)")
 		}
 	}
@@ -401,6 +412,27 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	// 1. database level error
 	// 2. record not found (log range mismatch)
 	return cfx.GetLogs(filter)
+}
+
+// getLogsFromArchiveNodes query event logs from archive nodes, especailly for historical data that pruned in database.
+func (api *cfxAPI) getLogsFromArchiveNodes(ctx context.Context, filter types.LogFilter) ([]types.Log, bool, error) {
+	client, err := api.provider.GetClientByIPGroup(ctx, node.GroupCfxArchives)
+	if err == node.ErrClientUnavailable {
+		return nil, false, nil
+	}
+
+	if err != nil {
+		return nil, false, err
+	}
+
+	// TODO add necessary throttling mechanism to protect full node.
+
+	logs, err := client.GetLogs(filter)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return logs, true, nil
 }
 
 func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) error {
@@ -940,7 +972,7 @@ func (api *cfxAPI) pubsubCtxFromContext(ctx context.Context) (psCtx *pubsubConte
 		return
 	}
 
-	cfx, err := api.provider.GetWSClientByIP(ctx)
+	cfx, err := api.provider.GetClientByIPGroup(ctx, node.GroupCfxWs)
 	if err != nil {
 		err = errors.WithMessage(err, "failed to get cfx wsclient by ip")
 		return

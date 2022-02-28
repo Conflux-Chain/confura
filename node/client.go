@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+var ErrClientUnavailable = errors.New("No full node available")
+
 // ClientProvider provides different RPC client based on user IP to achieve load balance.
 // Generally, it is used by RPC server to delegate RPC requests to full node cluster.
 type ClientProvider struct {
@@ -32,9 +34,9 @@ func (p *ClientProvider) GetClientByIP(ctx context.Context) (sdk.ClientOperator,
 	return p.GetClient(remoteAddr, GroupCfxHttp)
 }
 
-func (p *ClientProvider) GetWSClientByIP(ctx context.Context) (sdk.ClientOperator, error) {
+func (p *ClientProvider) GetClientByIPGroup(ctx context.Context, group Group) (sdk.ClientOperator, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
-	return p.GetClient(remoteAddr, GroupCfxWs)
+	return p.GetClient(remoteAddr, group)
 }
 
 func (p *ClientProvider) GetClient(key string, group Group) (sdk.ClientOperator, error) {
@@ -51,9 +53,8 @@ func (p *ClientProvider) GetClient(key string, group Group) (sdk.ClientOperator,
 	})
 
 	if len(url) == 0 {
-		err := errors.New("no full node routed from the router")
-		logger.WithError(err).Error("Failed to get full node client from provider")
-		return nil, err
+		logger.WithError(ErrClientUnavailable).Error("Failed to get full node client from provider")
+		return nil, ErrClientUnavailable
 	}
 
 	nodeName := util.Url2NodeName(url)

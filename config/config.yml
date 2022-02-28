@@ -96,7 +96,8 @@ prune:
       maxLogs: 100000
 node:
   urls: [http://test.confluxrpc.com,http://portal-test.confluxrpc.com]
-  #wsUrls: [ws://test.confluxrpc.com/ws]
+  # wsUrls: [ws://test.confluxrpc.com/ws]
+  # archiveNodes: []
   # hashRing:
   #   partitionCount: 15739
   #   replicationFactor: 51

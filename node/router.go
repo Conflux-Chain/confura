@@ -17,8 +17,9 @@ import (
 type Group string
 
 const (
-	GroupCfxHttp = "cfxhttp"
-	GroupCfxWs   = "cfxws"
+	GroupCfxHttp     = "cfxhttp"
+	GroupCfxWs       = "cfxws"
+	GroupCfxArchives = "cfxarchives"
 )
 
 // Router is used to route RPC requests to multiple full nodes.
@@ -226,14 +227,14 @@ func (r *LocalRouter) Route(group Group, key []byte) string {
 func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
 	group2Urls := make(map[Group][]string)
 
-	for _, v := range []Group{GroupCfxHttp, GroupCfxWs} {
+	for key := range urlCfg {
 		var urls []string
-		if err := client.Call(&urls, "node_list", v); err != nil {
-			logrus.WithError(err).WithField("group", v).Error("Failed to get nodes from node manager RPC")
+		if err := client.Call(&urls, "node_list", key); err != nil {
+			logrus.WithError(err).WithField("group", key).Error("Failed to get nodes from node manager RPC")
 			return nil, err
 		}
 
-		group2Urls[v] = urls
+		group2Urls[key] = urls
 	}
 
 	router := NewLocalRouter(group2Urls)
@@ -249,14 +250,14 @@ func (r *LocalRouter) update(client *rpc.Client) {
 
 	// could update nodes periodically all the time
 	for range ticker.C {
-		for _, v := range []Group{GroupCfxHttp, GroupCfxWs} {
+		for key := range urlCfg {
 			var urls []string
-			if err := client.Call(&urls, "node_list", v); err != nil {
-				logrus.WithError(err).WithField("group", v).Debug("Failed to get nodes from node manager RPC periodically")
+			if err := client.Call(&urls, "node_list", key); err != nil {
+				logrus.WithError(err).WithField("group", key).Debug("Failed to get nodes from node manager RPC periodically")
 				continue
 			}
 
-			r.updateOnce(urls, v)
+			r.updateOnce(urls, key)
 		}
 	}
 }

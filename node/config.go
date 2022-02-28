@@ -26,6 +26,9 @@ func init() {
 			Nodes:    cfg.WSURLs,
 			Failover: cfg.Router.ChainedFailover.WSURL,
 		},
+		GroupCfxArchives: {
+			Nodes: cfg.ArchiveNodes,
+		},
 	}
 }
 
@@ -35,10 +38,11 @@ func Config() config {
 }
 
 type config struct {
-	Endpoint string `default:":22530"`
-	URLs     []string
-	WSURLs   []string
-	HashRing struct {
+	Endpoint     string `default:":22530"`
+	URLs         []string
+	WSURLs       []string
+	ArchiveNodes []string
+	HashRing     struct {
 		PartitionCount    int     `default:"15739"`
 		ReplicationFactor int     `default:"51"`
 		Load              float64 `default:"1.25"`
