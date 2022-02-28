@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/web3go"
 	ethTypes "github.com/openweb3/web3go/types"
@@ -20,6 +21,8 @@ func NewTraceAPI(ethNodeURL string) (*TraceAPI, error) {
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to connect to eth space")
 	}
+
+	util.HookEthRpcMetricsMiddleware(eth)
 
 	ethChainId, err := eth.Eth.ChainId()
 	if err != nil {

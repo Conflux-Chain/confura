@@ -5,6 +5,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -26,6 +27,8 @@ func NewCfxAPI(ethNodeURL, cfxNodeURL string) (*CfxAPI, error) {
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to connect to eth space")
 	}
+
+	util.HookEthRpcMetricsMiddleware(eth)
 
 	cfx, err := sdk.NewClient(cfxNodeURL)
 	if err != nil {

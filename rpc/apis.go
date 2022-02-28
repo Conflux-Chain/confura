@@ -4,7 +4,7 @@ import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
-	"github.com/openweb3/web3go"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 )
 
@@ -94,10 +94,7 @@ func nativeSpaceApis(
 
 // evmSpaceApis returns the collection of built-in RPC APIs for EVM space.
 func evmSpaceApis(ethNodeURL string, handler ethHandler) ([]API, error) {
-	w3c, err := web3go.NewClient(ethNodeURL)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to connect to eth space")
-	}
+	w3c := util.MustNewEthClient(ethNodeURL)
 
 	return []API{
 		{
