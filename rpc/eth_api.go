@@ -49,7 +49,7 @@ func (api *ethAPI) GetBlockByHash(
 		"blockHash": blockHash.Hex(), "includeTxs": fullTx,
 	})
 
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			metricKey := getEthStoreHitRatioMetricKey("eth_getBlockByHash")
@@ -114,7 +114,7 @@ func (api *ethAPI) GetBlockByNumber(
 		"blockNum": blockNum, "includeTxs": fullTx,
 	})
 
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			metricKey := getEthStoreHitRatioMetricKey("eth_getBlockByNumber")
@@ -230,7 +230,7 @@ func (api *ethAPI) EstimateGas(
 func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.Transaction, error) {
 	logger := logrus.WithField("txHash", hash.Hex())
 
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			metricKey := getEthStoreHitRatioMetricKey("eth_getTransactionByHash")
@@ -257,7 +257,7 @@ func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (
 func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error) {
 	logger := logrus.WithField("txHash", txHash.Hex())
 
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.EthStoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			metricKey := getEthStoreHitRatioMetricKey("eth_getTransactionReceipt")
@@ -290,45 +290,42 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 		return emptyLogs, err
 	}
 
-	chainId, err := api.ChainId(ctx)
-	if err != nil {
-		return emptyLogs, errors.WithMessage(err, "failed to get ETH chain id")
-	}
+	if !store.EthStoreConfig().IsChainLogDisabled() && !util.IsInterfaceValNil(api.handler) {
+		chainId, err := api.ChainId(ctx)
+		if err != nil {
+			return emptyLogs, errors.WithMessage(err, "failed to get ETH chain id")
+		}
 
-	if util.IsInterfaceValNil(api.handler) {
-		goto delegation
-	}
+		if sfilter, ok := store.ParseEthLogFilter(api.w3c, uint32(*chainId), &filter); ok {
+			isStoreHit := false
+			defer func(isHit *bool) {
+				metricKey := getEthStoreHitRatioMetricKey("eth_getLogs")
+				ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
+			}(&isStoreHit)
 
-	if sfilter, ok := store.ParseEthLogFilter(api.w3c, uint32(*chainId), &filter); ok {
-		isStoreHit := false
-		defer func(isHit *bool) {
-			metricKey := getEthStoreHitRatioMetricKey("eth_getLogs")
-			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
-		}(&isStoreHit)
+			if logs, err := api.handler.GetLogs(ctx, *sfilter); err == nil {
+				// return empty slice rather than nil to comply with fullnode
+				if logs == nil {
+					logs = emptyLogs
+				}
 
-		if logs, err := api.handler.GetLogs(ctx, *sfilter); err == nil {
-			// return empty slice rather than nil to comply with fullnode
-			if logs == nil {
-				logs = emptyLogs
+				logger.Debug("Loading eth data for eth_getLogs hit in the ethstore")
+
+				isStoreHit = true
+				return logs, nil
 			}
 
-			logger.Debug("Loading eth data for eth_getLogs hit in the ethstore")
+			logger.WithError(err).Debug("Loading eth data for eth_getLogs hit missed from the ethstore")
 
-			isStoreHit = true
-			return logs, nil
-		}
-
-		logger.WithError(err).Debug("Loading eth data for eth_getLogs hit missed from the ethstore")
-
-		// Logs already pruned from database? If so, we'd rather not delegate this request to
-		// the fullnode, as it might crush our fullnode.
-		if errors.Is(err, store.ErrAlreadyPruned) {
-			logger.Info("Event logs data already pruned for eth_getLogs to return")
-			return emptyLogs, errors.New("failed to get stale event logs (data too old)")
+			// Logs already pruned from database? If so, we'd rather not delegate this request to
+			// the fullnode, as it might crush our fullnode.
+			if errors.Is(err, store.ErrAlreadyPruned) {
+				logger.Info("Event logs data already pruned for eth_getLogs to return")
+				return emptyLogs, errors.New("failed to get stale event logs (data too old)")
+			}
 		}
 	}
 
-delegation:
 	logger.Debug("Delegating eth_getLogs rpc request to fullnode")
 
 	return api.w3c.Eth.Logs(filter)

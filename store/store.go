@@ -2,8 +2,16 @@ package store
 
 import (
 	"io"
+	"strings"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/sirupsen/logrus"
+)
+
+var (
+	cfxStoreConfig storeConfig
+	ethStoreConfig storeConfig
 )
 
 // Store is implemented by any object that persist blockchain data, especially for event logs.
@@ -63,4 +71,64 @@ type CacheStore interface {
 
 	// Flush deletes all kv pairs in cache
 	Flush() error
+}
+
+func StoreConfig() *storeConfig {
+	return &cfxStoreConfig
+}
+
+func EthStoreConfig() *storeConfig {
+	return &ethStoreConfig
+}
+
+type storeConfig struct {
+	// disabled store chain data types, available options are:
+	// `block`, `transaction`, `receipt` and `log`
+	Disables []string
+
+	disabledDataTypeMapping map[string]bool
+}
+
+func (conf *storeConfig) mustInit(viperRoot string) {
+	viper.MustUnmarshalKey(viperRoot, conf)
+
+	dataTypeMapping := make(map[string]bool, 4)
+	for _, dt := range []string{"block", "transaction", "receipt", "log"} {
+		dataTypeMapping[dt] = false
+	}
+
+	for _, dt := range conf.Disables {
+		ldt := strings.ToLower(dt)
+
+		if _, ok := dataTypeMapping[ldt]; !ok {
+			logrus.WithField("dataType", dt).Fatal(
+				"Failed to init store config due to invalid disabled store data type",
+			)
+		}
+
+		dataTypeMapping[ldt] = true
+	}
+
+	conf.disabledDataTypeMapping = dataTypeMapping
+}
+
+func (conf *storeConfig) IsChainBlockDisabled() bool {
+	return conf.disabledDataTypeMapping["block"]
+}
+
+func (conf *storeConfig) IsChainTxnDisabled() bool {
+	return conf.disabledDataTypeMapping["transaction"]
+}
+
+func (conf *storeConfig) IsChainReceiptDisabled() bool {
+	return conf.disabledDataTypeMapping["receipt"]
+}
+
+func (conf *storeConfig) IsChainLogDisabled() bool {
+	return conf.disabledDataTypeMapping["log"]
+}
+
+func init() {
+	cfxStoreConfig.mustInit("store")
+	ethStoreConfig.mustInit("ethstore")
 }

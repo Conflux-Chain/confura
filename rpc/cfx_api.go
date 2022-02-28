@@ -180,11 +180,7 @@ func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, ep
 func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (interface{}, error) {
 	logger := logrus.WithFields(logrus.Fields{"blockHash": blockHash, "includeTxs": includeTxs})
 
-	if !util.IsValidHashStr(blockHash.String()) { // directly fall through to fullnode delegation to conform rpc error
-		goto delegation
-	}
-
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.StoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlockByHash/store/hitratio", *isHit)
@@ -201,7 +197,6 @@ func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, inc
 		logger.WithError(err).Debug("Loading epoch data for cfx_getBlockByHash hit missed from the store")
 	}
 
-delegation:
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to delegate cfx_getBlockByHash rpc request to fullnode")
@@ -218,7 +213,9 @@ delegation:
 	return cfx.GetBlockSummaryByHash(blockHash)
 }
 
-func (api *cfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockHash, pivotHash types.Hash, epoch hexutil.Uint64) (types.Block, error) {
+func (api *cfxAPI) GetBlockByHashWithPivotAssumption(
+	ctx context.Context, blockHash, pivotHash types.Hash, epoch hexutil.Uint64,
+) (types.Block, error) {
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return emptyBlock, err
@@ -230,7 +227,7 @@ func (api *cfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockH
 func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (interface{}, error) {
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch, "includeTxs": includeTxs})
 
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.StoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlockByEpochNumber/store/hitratio", *isHit)
@@ -267,7 +264,7 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch,
 func (api *cfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (block interface{}, err error) {
 	logger := logrus.WithFields(logrus.Fields{"blockNumber": blockNumer, "includeTxs": includeTxs})
 
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.StoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlockByBlockNumber/store/hitratio", *isHit)
@@ -366,43 +363,44 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		return emptyLogs, err
 	}
 
-	sfilter, ok := store.ParseLogFilter(cfx, &filter)
-	if ok && !util.IsInterfaceValNil(api.handler) {
-		isStoreHit := false
-		defer func(isHit *bool) {
-			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getLogs/store/hitratio", *isHit)
-		}(&isStoreHit)
+	if !store.StoreConfig().IsChainLogDisabled() && !util.IsInterfaceValNil(api.handler) {
+		if sfilter, ok := store.ParseLogFilter(cfx, &filter); ok {
+			isStoreHit := false
+			defer func(isHit *bool) {
+				hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getLogs/store/hitratio", *isHit)
+			}(&isStoreHit)
 
-		if logs, err := api.handler.GetLogs(ctx, *sfilter); err == nil {
-			// return empty slice rather than nil to comply with fullnode
-			if logs == nil {
-				logs = emptyLogs
-			}
+			if logs, err := api.handler.GetLogs(ctx, *sfilter); err == nil {
+				// return empty slice rather than nil to comply with fullnode
+				if logs == nil {
+					logs = emptyLogs
+				}
 
-			logger.Debug("Loading epoch data for cfx_getLogs hit in the store")
+				logger.Debug("Loading epoch data for cfx_getLogs hit in the store")
 
-			isStoreHit = true
-			return logs, nil
-		}
-
-		logger.WithError(err).Debug("Loading epoch data for cfx_getLogs hit missed from the store")
-
-		// Logs already pruned from database? If so, we'd rather not delegate this request to
-		// the fullnode, as it might crush our fullnode.
-		if errors.Is(err, store.ErrAlreadyPruned) {
-			logger.Debug("Epoch log data already pruned for cfx_getLogs to return")
-
-			// Try to access archive node for pruned event logs if configured.
-			logs, ok, err := api.getLogsFromArchiveNodes(ctx, filter)
-			if err != nil {
-				return nil, err
-			}
-
-			if ok {
+				isStoreHit = true
 				return logs, nil
 			}
 
-			return emptyLogs, errors.New("failed to get stale epoch logs (data too old)")
+			logger.WithError(err).Debug("Loading epoch data for cfx_getLogs hit missed from the store")
+
+			// Logs already pruned from database? If so, we'd rather not delegate this request to
+			// the fullnode, as it might crush our fullnode.
+			if errors.Is(err, store.ErrAlreadyPruned) {
+				logger.Debug("Epoch log data already pruned for cfx_getLogs to return")
+
+				// Try to access archive node for pruned event logs if configured.
+				logs, ok, err := api.getLogsFromArchiveNodes(ctx, filter)
+				if err != nil {
+					return nil, err
+				}
+
+				if ok {
+					return logs, nil
+				}
+
+				return emptyLogs, errors.New("failed to get stale epoch logs (data too old)")
+			}
 		}
 	}
 
@@ -522,11 +520,7 @@ func uniformLogFilterEpochRange(cfx sdk.ClientOperator, filter *types.LogFilter)
 func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
 	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
 
-	if !util.IsValidHashStr(txHash.String()) {
-		goto delegation
-	}
-
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.StoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getTransactionByHash/store/hitratio", *isHit)
@@ -543,7 +537,6 @@ func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) 
 		logger.WithError(err).Debug("Loading epoch data for cfx_getTransactionByHash hit missed from the store")
 	}
 
-delegation:
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to delegate cfx_getTransactionByHash rpc request to fullnode")
@@ -564,7 +557,9 @@ func (api *cfxAPI) EstimateGasAndCollateral(ctx context.Context, request types.C
 	return cfx.EstimateGasAndCollateral(request, toSlice(epoch)...)
 }
 
-func (api *cfxAPI) CheckBalanceAgainstTransaction(ctx context.Context, account, contract types.Address, gas, price, storage *hexutil.Big, epoch *types.Epoch) (types.CheckBalanceAgainstTransactionResponse, error) {
+func (api *cfxAPI) CheckBalanceAgainstTransaction(
+	ctx context.Context, account, contract types.Address, gas, price, storage *hexutil.Big, epoch *types.Epoch,
+) (types.CheckBalanceAgainstTransactionResponse, error) {
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return types.CheckBalanceAgainstTransactionResponse{}, err
@@ -577,7 +572,7 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(ctx context.Context, account, 
 func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch})
 
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.StoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getBlocksByEpoch/store/hitratio", *isHit)
@@ -619,11 +614,7 @@ func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch types.Epoc
 func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
 	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
 
-	if !util.IsValidHashStr(txHash.String()) {
-		goto delegation
-	}
-
-	if !util.IsInterfaceValNil(api.handler) {
+	if !store.StoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.handler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getTransactionReceipt/store/hitratio", *isHit)
@@ -642,7 +633,6 @@ func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash)
 		logger.WithError(err).Debug("Loading epoch data for cfx_getTransactionReceipt hit missed from the store")
 	}
 
-delegation:
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		logger.WithError(err).Debug("Failed to delegate cfx_getTransactionReceipt rpc request to fullnode")
