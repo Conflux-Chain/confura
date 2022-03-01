@@ -80,8 +80,9 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
 	txRelayer := relay.MustNewTxnRelayerFromViper()
 
+	// TODO config redis for RPC and store in common
 	server := rpc.MustNewNativeSpaceServer(
-		router, cfxHandler, gasHandler, exposedModules, txRelayer,
+		router, cfxHandler, gasHandler, exposedModules, txRelayer, nil,
 	)
 
 	httpEndpoint := viper.GetString("rpc.endpoint")

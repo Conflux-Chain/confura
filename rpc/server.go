@@ -4,6 +4,7 @@ import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 )
 
@@ -20,10 +21,10 @@ const (
 // public will be exposed.
 func MustNewNativeSpaceServer(
 	router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler,
-	exposedModules []string, relayer *relay.TxnRelayer,
+	exposedModules []string, relayer *relay.TxnRelayer, redisClient *redis.Client,
 ) *util.RpcServer {
 	// retrieve all available native space rpc apis
-	allApis := nativeSpaceApis(router, handler, gashandler, relayer)
+	allApis := nativeSpaceApis(router, handler, gashandler, relayer, redisClient)
 
 	exposedApis, err := filterExposedApis(allApis, exposedModules)
 	if err != nil {

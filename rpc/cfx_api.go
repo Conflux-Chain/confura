@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"fmt"
 	"math/bits"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -11,10 +12,12 @@ import (
 	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
+	"github.com/conflux-chain/conflux-infura/rpc/throttle"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -31,22 +34,28 @@ var (
 	emptyBlock          = types.Block{}
 
 	hitStatsCollector = cimetrics.NewHitStatsCollector()
+
+	defaultLogLimit = types.NewUint64(store.MaxLogLimit)
 )
+
+const thresholdGetLogs = 1
 
 type cfxAPI struct {
 	provider         *node.ClientProvider
 	inputEpochMetric cimetrics.InputEpochMetric
 	handler          cfxHandler
 	relayer          *relay.TxnRelayer
+	logsRefCnt       *throttle.RefCounter
 }
 
 func newCfxAPI(
-	provider *node.ClientProvider, handler cfxHandler, relayer *relay.TxnRelayer,
+	provider *node.ClientProvider, handler cfxHandler, relayer *relay.TxnRelayer, redisClient *redis.Client,
 ) *cfxAPI {
 	return &cfxAPI{
-		provider: provider,
-		handler:  handler,
-		relayer:  relayer,
+		provider:   provider,
+		handler:    handler,
+		relayer:    relayer,
+		logsRefCnt: throttle.NewRefCounter(redisClient, thresholdGetLogs),
 	}
 }
 
@@ -358,6 +367,11 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		api.inputEpochMetric.Update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 	}
 
+	// Set `limit` parameter to default max value if not specified.
+	if filter.Limit == nil {
+		filter.Limit = defaultLogLimit
+	}
+
 	if err := api.validateLogFilter(cfx, &filter); err != nil {
 		logger.WithError(err).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
 		return emptyLogs, err
@@ -414,8 +428,16 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 
 // getLogsFromArchiveNodes query event logs from archive nodes, especailly for historical data that pruned in database.
 func (api *cfxAPI) getLogsFromArchiveNodes(ctx context.Context, filter types.LogFilter) ([]types.Log, bool, error) {
+	// Do not allow to access archive node to query event logs if throttling not configured.
+	// Otherwise, archive nodes may be hang if too many cfx_getLogs requested.
+	if api.logsRefCnt == nil {
+		return nil, false, nil
+	}
+
+	// Select an archive node to query historical event logs if configured.
 	client, err := api.provider.GetClientByIPGroup(ctx, node.GroupCfxArchives)
 	if err == node.ErrClientUnavailable {
+		// no archive node configured
 		return nil, false, nil
 	}
 
@@ -423,7 +445,14 @@ func (api *cfxAPI) getLogsFromArchiveNodes(ctx context.Context, filter types.Log
 		return nil, false, err
 	}
 
-	// TODO add necessary throttling mechanism to protect full node.
+	// Throttle cfx_getLogs RPC by reference counter.
+	nodeName := util.Url2NodeName(client.GetNodeURL())
+	key := fmt.Sprintf("rpc:throttle:cfx_getLogs:%v", nodeName)
+	if !api.logsRefCnt.Ref(key) {
+		// no quota available
+		return nil, false, nil
+	}
+	defer api.logsRefCnt.UnrefAsync(key)
 
 	logs, err := client.GetLogs(filter)
 	if err != nil {
