@@ -7,6 +7,8 @@ rpc:
     cfxNode: http://test.confluxrpc.com
     # exposedModules: []
     # endpoint: ":32537"
+  # throttling:
+    # redisUrl: redis://<user>:<pass>@localhost:6379/<db>
 ethrpc:
   exposedModules: []
   endpoint: ":28545"

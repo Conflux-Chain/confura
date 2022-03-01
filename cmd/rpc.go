@@ -78,12 +78,17 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 	gasHandler := rpc.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
-	txRelayer := relay.MustNewTxnRelayerFromViper()
 
-	// TODO config redis for RPC and store in common
-	server := rpc.MustNewNativeSpaceServer(
-		router, cfxHandler, gasHandler, exposedModules, txRelayer, nil,
-	)
+	option := rpc.CfxAPIOption{
+		Handler: cfxHandler,
+		Relayer: relay.MustNewTxnRelayerFromViper(),
+	}
+
+	if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
+		option.RedisClient = util.MustNewRedisClient(redisUrl)
+	}
+
+	server := rpc.MustNewNativeSpaceServer(router, gasHandler, exposedModules, option)
 
 	httpEndpoint := viper.GetString("rpc.endpoint")
 	go server.MustServeGraceful(ctx, wg, httpEndpoint, util.RpcProtocolHttp)

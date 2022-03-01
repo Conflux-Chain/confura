@@ -2,10 +2,8 @@ package rpc
 
 import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
-	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/conflux-chain/conflux-infura/util"
-	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 )
 
@@ -54,7 +52,7 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 
 // nativeSpaceApis returns the collection of built-in RPC APIs for native space.
 func nativeSpaceApis(
-	router infuraNode.Router, handler cfxHandler, gashandler *GasStationHandler, relayer *relay.TxnRelayer, redisClient *redis.Client,
+	router infuraNode.Router, gashandler *GasStationHandler, option ...CfxAPIOption,
 ) []API {
 	clientProvider := infuraNode.NewClientProvider(router)
 
@@ -62,7 +60,7 @@ func nativeSpaceApis(
 		{
 			Namespace: "cfx",
 			Version:   "1.0",
-			Service:   newCfxAPI(clientProvider, handler, relayer, redisClient),
+			Service:   newCfxAPI(clientProvider, option...),
 			Public:    true,
 		}, {
 			Namespace: "txpool",

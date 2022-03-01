@@ -41,18 +41,8 @@ func MustNewCacheStoreFromViper() (*redisStore, bool) {
 
 	logrus.WithField("config", rsconf).Debug("Creating redis store from viper config")
 
-	opt, err := redis.ParseURL(rsconf.Url)
-	if err != nil {
-		logrus.WithError(err).Fatal("Failed to parse redis url")
-	}
-
-	rdb := redis.NewClient(opt)
+	rdb := util.MustNewRedisClient(rsconf.Url)
 	ctx := context.Background()
-
-	// Test redis connection
-	if _, err := rdb.Ping(ctx).Result(); err != nil {
-		logrus.WithError(err).Fatal("Failed to create redis store")
-	}
 
 	return &redisStore{rdb: rdb, ctx: ctx, cacheTime: rsconf.CacheTime}, true
 }
