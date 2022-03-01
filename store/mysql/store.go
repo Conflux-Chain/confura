@@ -45,6 +45,7 @@ type StoreOption struct {
 	// preload epoch statistics before sync. It's not necessary for rpc service since this operation
 	// can be heavy and time consumming.
 	CalibrateEpochStats bool
+	Disabler            store.StoreDisabler
 }
 
 type mysqlEpochDataOpAffects struct {
@@ -75,6 +76,8 @@ type mysqlStore struct {
 
 	maxUsedLogsTblPartIdx uint64 // the maximum used partition index for logs table
 	minUsedLogsTblPartIdx uint64 // the minimum used partition index for logs table
+
+	disabler store.StoreDisabler // store chaindata disabler
 }
 
 func mustNewStore(db *gorm.DB, config *Config, option StoreOption) (ms *mysqlStore) {
@@ -100,6 +103,7 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) (ms *mysqlSto
 		}).Debug("New mysql store loaded with epoch stats")
 	}
 
+	ms.disabler = option.Disabler
 	return
 }
 
@@ -400,7 +404,7 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 			)
 		}
 
-		if insertLogs || len(data.Receipts) == 0 {
+		if ms.disabler.IsChainLogDisabled() || insertLogs || len(data.Receipts) == 0 {
 			continue
 		}
 
@@ -757,11 +761,13 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 			blockExt = data.BlockExts[i]
 		}
 
-		if err := dbTx.Create(newBlock(block, i == pivotIndex, blockExt)).Error; err != nil {
-			return insertLogIdSpan, opHistory, errors.WithMessagef(err, "Failed to write block #%v", block.Hash)
-		}
+		if !ms.disabler.IsChainBlockDisabled() {
+			if err := dbTx.Create(newBlock(block, i == pivotIndex, blockExt)).Error; err != nil {
+				return insertLogIdSpan, opHistory, errors.WithMessagef(err, "failed to write block #%v", block.Hash)
+			}
 
-		opHistory[store.EpochBlock]++
+			opHistory[store.EpochBlock]++
+		}
 
 		// Containers to collect block trxs & trx logs for batch inserting
 		trxs := make([]*transaction, 0)
@@ -787,36 +793,42 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 				rcptExt = data.ReceiptExts[tx.Hash]
 			}
 
-			trxs = append(trxs, newTx(&tx, receipt, txExt, rcptExt))
-			for k, log := range receipt.Logs {
-				blockNum := block.BlockNumber.ToInt().Uint64()
+			skipTx := ms.disabler.IsChainTxnDisabled()
+			skipRcpt := ms.disabler.IsChainReceiptDisabled()
+			if !skipTx || !skipRcpt {
+				txn := newTx(&tx, receipt, txExt, rcptExt, skipTx, skipRcpt)
+				trxs = append(trxs, txn)
+			}
 
-				var logExt *store.LogExtra
-				if rcptExt != nil && k < len(rcptExt.LogExts) {
-					logExt = rcptExt.LogExts[k]
+			if !ms.disabler.IsChainLogDisabled() {
+				for k, log := range receipt.Logs {
+					blockNum := block.BlockNumber.ToInt().Uint64()
+
+					var logExt *store.LogExtra
+					if rcptExt != nil && k < len(rcptExt.LogExts) {
+						logExt = rcptExt.LogExts[k]
+					}
+
+					trxlogs = append(trxlogs, newLog(blockNum, &log, logExt))
 				}
-
-				trxlogs = append(trxlogs, newLog(blockNum, &log, logExt))
 			}
 		}
 
 		// Batch insert block transactions
-		if len(trxs) == 0 {
-			continue
-		}
+		if len(trxs) > 0 {
+			if err := dbTx.Create(trxs).Error; err != nil {
+				return insertLogIdSpan, opHistory, errors.WithMessagef(
+					err, "Failed to batch write txs and receipts for block #%v", block.Hash,
+				)
+			}
 
-		opHistory[store.EpochTransaction] += int64(len(trxs))
-
-		if err := dbTx.Create(trxs).Error; err != nil {
-			return insertLogIdSpan, opHistory, errors.WithMessagef(err, "Failed to batch write txs and receipts for block #%v", block.Hash)
+			opHistory[store.EpochTransaction] += int64(len(trxs))
 		}
 
 		// Batch insert block transaction event logs
 		if len(trxlogs) == 0 {
 			continue
 		}
-
-		opHistory[store.EpochLog] += int64(len(trxlogs))
 
 		// According to statistics, some epoch block even has more than 2200 event logs (eg. epoch #13329688).
 		// It would be better to insert limited event logs per time for good performance. With some testing, the
@@ -843,6 +855,8 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 		// accumulate inserted logs id span
 		insertLogIdSpan[0] = util.MinUint64(trxlogs[0].ID, insertLogIdSpan[0])
 		insertLogIdSpan[1] = util.MaxUint64(trxlogs[len(trxlogs)-1].ID, insertLogIdSpan[1])
+
+		opHistory[store.EpochLog] += int64(len(trxlogs))
 	}
 
 	return insertLogIdSpan, opHistory, nil
@@ -1110,7 +1124,9 @@ func (ms *mysqlStore) updateMaxEpoch(newMaxEpoch uint64, growFrom ...uint64) {
 
 	// Update local epoch ranges
 	for _, t := range store.OpEpochDataTypes {
-		atomic.StoreUint64(&ms.epochRanges[t].EpochTo, newMaxEpoch)
+		if !ms.disabler.IsDisabledForType(t) {
+			atomic.StoreUint64(&ms.epochRanges[t].EpochTo, newMaxEpoch)
+		}
 	}
 
 	// Update global min epoch range if necessary (only when initial loading)
@@ -1120,7 +1136,9 @@ func (ms *mysqlStore) updateMaxEpoch(newMaxEpoch uint64, growFrom ...uint64) {
 
 	// Update all local min epoch ranges
 	for _, t := range store.OpEpochDataTypes {
-		atomic.CompareAndSwapUint64(&ms.epochRanges[t].EpochFrom, math.MaxUint64, growFrom[0])
+		if !ms.disabler.IsDisabledForType(t) {
+			atomic.CompareAndSwapUint64(&ms.epochRanges[t].EpochFrom, math.MaxUint64, growFrom[0])
+		}
 	}
 }
 
@@ -1223,7 +1241,9 @@ func (ms *mysqlStore) updateMaxEpochTx(dbTx *gorm.DB, newMaxEpoch uint64, growFr
 
 	keys := []string{getEpochRangeStatsKey(store.EpochDataNil)}
 	for _, t := range store.OpEpochDataTypes {
-		keys = append(keys, getEpochRangeStatsKey(t))
+		if !ms.disabler.IsDisabledForType(t) {
+			keys = append(keys, getEpochRangeStatsKey(t))
+		}
 	}
 
 	cond := map[string]interface{}{

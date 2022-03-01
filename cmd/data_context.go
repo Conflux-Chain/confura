@@ -20,14 +20,20 @@ func mustInitStoreContext(calibrateEpochStats bool) storeContext {
 	var ctx storeContext
 
 	if config := mysql.MustNewConfigFromViper(); config.Enabled {
-		ctx.cfxDB = config.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: calibrateEpochStats})
+		ctx.cfxDB = config.MustOpenOrCreate(mysql.StoreOption{
+			CalibrateEpochStats: calibrateEpochStats,
+			Disabler:            store.StoreConfig(),
+		})
 	}
 
 	if ethConfig := mysql.MustNewEthStoreConfigFromViper(); ethConfig.Enabled {
-		ctx.ethDB = ethConfig.MustOpenOrCreate(mysql.StoreOption{CalibrateEpochStats: calibrateEpochStats})
+		ctx.ethDB = ethConfig.MustOpenOrCreate(mysql.StoreOption{
+			CalibrateEpochStats: calibrateEpochStats,
+			Disabler:            store.EthStoreConfig(),
+		})
 	}
 
-	if cache, ok := redis.MustNewCacheStoreFromViper(); ok {
+	if cache, ok := redis.MustNewCacheStoreFromViper(store.StoreConfig()); ok {
 		ctx.cfxCache = cache
 	}
 

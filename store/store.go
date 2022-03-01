@@ -81,6 +81,14 @@ func EthStoreConfig() *storeConfig {
 	return &ethStoreConfig
 }
 
+type StoreDisabler interface {
+	IsChainBlockDisabled() bool
+	IsChainTxnDisabled() bool
+	IsChainReceiptDisabled() bool
+	IsChainLogDisabled() bool
+	IsDisabledForType(edt EpochDataType) bool
+}
+
 type storeConfig struct {
 	// disabled store chain data types, available options are:
 	// `block`, `transaction`, `receipt` and `log`
@@ -126,6 +134,19 @@ func (conf *storeConfig) IsChainReceiptDisabled() bool {
 
 func (conf *storeConfig) IsChainLogDisabled() bool {
 	return conf.disabledDataTypeMapping["log"]
+}
+
+func (conf *storeConfig) IsDisabledForType(edt EpochDataType) bool {
+	switch edt {
+	case EpochBlock:
+		return conf.IsChainBlockDisabled()
+	case EpochTransaction:
+		return conf.IsChainTxnDisabled() && conf.IsChainReceiptDisabled()
+	case EpochLog:
+		return conf.IsChainLogDisabled()
+	}
+
+	return false
 }
 
 func init() {

@@ -29,9 +29,10 @@ type redisStore struct {
 	ctx       context.Context
 	rdb       *redis.Client
 	cacheTime time.Duration
+	disabler  store.StoreDisabler
 }
 
-func MustNewCacheStoreFromViper() (*redisStore, bool) {
+func MustNewCacheStoreFromViper(disabler store.StoreDisabler) (*redisStore, bool) {
 	var rsconf redisStoreConfig
 	viper.MustUnmarshalKey("store.redis", &rsconf)
 
@@ -44,7 +45,7 @@ func MustNewCacheStoreFromViper() (*redisStore, bool) {
 	rdb := util.MustNewRedisClient(rsconf.Url)
 	ctx := context.Background()
 
-	return &redisStore{rdb: rdb, ctx: ctx, cacheTime: rsconf.CacheTime}, true
+	return &redisStore{rdb: rdb, ctx: ctx, cacheTime: rsconf.CacheTime, disabler: disabler}, true
 }
 
 func (rs *redisStore) IsRecordNotFound(err error) bool {
@@ -353,23 +354,25 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 		blockHash := block.Hash.String()
 		epochBlocks = append(epochBlocks, blockHash)
 
-		// Cache store block number mapping to block hash
-		blockNo := block.BlockNumber.ToInt().Uint64()
-		blockNo2HashCacheKey := getBlockNumber2HashCacheKey(blockNo)
-		if err := rp.Set(rs.ctx, blockNo2HashCacheKey, blockHash, rs.cacheTime).Err(); err != nil {
-			return opHistory, errors.WithMessage(err, "failed to cache block num to hash mapping")
+		if !rs.disabler.IsChainBlockDisabled() {
+			// Cache store block number mapping to block hash
+			blockNo := block.BlockNumber.ToInt().Uint64()
+			blockNo2HashCacheKey := getBlockNumber2HashCacheKey(blockNo)
+			if err := rp.Set(rs.ctx, blockNo2HashCacheKey, blockHash, rs.cacheTime).Err(); err != nil {
+				return opHistory, errors.WithMessage(err, "failed to cache block num to hash mapping")
+			}
+
+			// Cache store block summary
+			blockSummary := util.GetSummaryOfBlock(block)
+			blockRaw := util.MustMarshalRLP(blockSummary)
+
+			blockCacheKey := getBlockCacheKey(block.Hash)
+			if err := rp.Set(rs.ctx, blockCacheKey, blockRaw, rs.cacheTime).Err(); err != nil {
+				return opHistory, errors.WithMessage(err, "failed to cache block summary")
+			}
+
+			opHistory[store.EpochBlock]++
 		}
-
-		// Cache store block summary
-		blockSummary := util.GetSummaryOfBlock(block)
-		blockRaw := util.MustMarshalRLP(blockSummary)
-
-		blockCacheKey := getBlockCacheKey(block.Hash)
-		if err := rp.Set(rs.ctx, blockCacheKey, blockRaw, rs.cacheTime).Err(); err != nil {
-			return opHistory, errors.WithMessage(err, "failed to cache block summary")
-		}
-
-		opHistory[store.EpochBlock]++
 
 		for _, btx := range block.Transactions {
 			receipt := data.Receipts[btx.Hash]
@@ -382,56 +385,68 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 
 			epochTxs = append(epochTxs, btx.Hash.String())
 
-			// Cache store transactions
-			txRaw := util.MustMarshalRLP(btx)
-			txCacheKey := getTxCacheKey(btx.Hash)
-			if err := rp.Set(rs.ctx, txCacheKey, txRaw, rs.cacheTime).Err(); err != nil {
-				return opHistory, errors.WithMessage(err, "failed to cache transaction")
+			skipTx := rs.disabler.IsChainTxnDisabled()
+			skipRcpt := rs.disabler.IsChainReceiptDisabled()
+			if !skipTx {
+				// Cache store transactions
+				txRaw := util.MustMarshalRLP(btx)
+				txCacheKey := getTxCacheKey(btx.Hash)
+				if err := rp.Set(rs.ctx, txCacheKey, txRaw, rs.cacheTime).Err(); err != nil {
+					return opHistory, errors.WithMessage(err, "failed to cache transaction")
+				}
 			}
 
-			// Cache store transaction receipts
-			receiptRaw := util.MustMarshalRLP(receipt)
-			receiptCacheKey := getTxReceiptCacheKey(btx.Hash)
-			if err := rp.Set(rs.ctx, receiptCacheKey, receiptRaw, rs.cacheTime).Err(); err != nil {
-				return opHistory, errors.WithMessage(err, "failed to cache transaction receipt")
+			if !skipRcpt {
+				// Cache store transaction receipts
+				receiptRaw := util.MustMarshalRLP(receipt)
+				receiptCacheKey := getTxReceiptCacheKey(btx.Hash)
+				if err := rp.Set(rs.ctx, receiptCacheKey, receiptRaw, rs.cacheTime).Err(); err != nil {
+					return opHistory, errors.WithMessage(err, "failed to cache transaction receipt")
+				}
 			}
 
-			opHistory[store.EpochTransaction]++
+			if !skipTx || !skipRcpt {
+				opHistory[store.EpochTransaction]++
+			}
 
 			// TODO cache store transaction receipt logs
 		}
 	}
 
-	// Cache store epoch blocks mapping
-	epbCacheKey := getEpochBlocksCacheKey(data.Number)
-	if err := rp.RPush(rs.ctx, epbCacheKey, epochBlocks...).Err(); err != nil {
-		return opHistory, errors.WithMessage(err, "failed to cache epoch to blocks mapping")
-	}
+	if !rs.disabler.IsChainBlockDisabled() {
+		// Cache store epoch blocks mapping
+		epbCacheKey := getEpochBlocksCacheKey(data.Number)
+		if err := rp.RPush(rs.ctx, epbCacheKey, epochBlocks...).Err(); err != nil {
+			return opHistory, errors.WithMessage(err, "failed to cache epoch to blocks mapping")
+		}
 
-	// !!! order is important (must be after rpush)
-	err := rp.Expire(rs.ctx, epbCacheKey, rs.cacheTime).Err()
-	if err != nil {
-		logrus.WithField("epbCacheKey", epbCacheKey).Info(
-			"Failed to set expiration date for epoch to blocks mapping redis key",
-		)
+		// !!! order is important (must be after rpush)
+		err := rp.Expire(rs.ctx, epbCacheKey, rs.cacheTime).Err()
+		if err != nil {
+			logrus.WithField("epbCacheKey", epbCacheKey).Info(
+				"Failed to set expiration date for epoch to blocks mapping redis key",
+			)
+		}
 	}
 
 	if len(epochTxs) == 0 {
 		return opHistory, nil
 	}
 
-	// Cache store epoch transactions mapping
-	eptCacheKey := getEpochTxsCacheKey(data.Number)
-	if err := rp.RPush(rs.ctx, eptCacheKey, epochTxs...).Err(); err != nil {
-		return opHistory, errors.WithMessage(err, "failed to cache epoch to transactions mapping")
-	}
+	if !rs.disabler.IsChainTxnDisabled() || !rs.disabler.IsChainReceiptDisabled() {
+		// Cache store epoch transactions mapping
+		eptCacheKey := getEpochTxsCacheKey(data.Number)
+		if err := rp.RPush(rs.ctx, eptCacheKey, epochTxs...).Err(); err != nil {
+			return opHistory, errors.WithMessage(err, "failed to cache epoch to transactions mapping")
+		}
 
-	// !!! order is important (must be after rpush)
-	err = rp.Expire(rs.ctx, eptCacheKey, rs.cacheTime).Err()
-	if err != nil {
-		logrus.WithField("eptCacheKey", eptCacheKey).Info(
-			"Failed to set expiration date for epoch to txs mapping redis key",
-		)
+		// !!! order is important (must be after rpush)
+		err := rp.Expire(rs.ctx, eptCacheKey, rs.cacheTime).Err()
+		if err != nil {
+			logrus.WithField("eptCacheKey", eptCacheKey).Info(
+				"Failed to set expiration date for epoch to txs mapping redis key",
+			)
+		}
 	}
 
 	return opHistory, nil
@@ -588,6 +603,10 @@ func (rs *redisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64, gr
 	opEpochDataTypes := append([]store.EpochDataType{}, store.OpEpochDataTypes...)
 	opEpochDataTypes = append(opEpochDataTypes, store.EpochDataNil)
 	for _, rt := range opEpochDataTypes {
+		if rs.disabler.IsDisabledForType(rt) {
+			continue
+		}
+
 		if rt == store.EpochLog { // TODO add event logs support
 			continue
 		}

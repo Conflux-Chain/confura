@@ -23,7 +23,7 @@ type transaction struct {
 	Epoch             uint64 `gorm:"not null;index"`
 	HashId            uint64 `gorm:"not null;index"` // as an index, number is better than long string
 	Hash              string `gorm:"size:66;not null"`
-	TxRawData         []byte `gorm:"type:MEDIUMBLOB;not null"`
+	TxRawData         []byte `gorm:"type:MEDIUMBLOB"`
 	TxRawDataLen      uint64 `gorm:"not null"`
 	ReceiptRawData    []byte `gorm:"type:MEDIUMBLOB"`
 	ReceiptRawDataLen uint64 `gorm:"not null"`
@@ -37,7 +37,8 @@ func (transaction) TableName() string {
 }
 
 func newTx(
-	tx *types.Transaction, receipt *types.TransactionReceipt, txExtra *store.TransactionExtra, rcptExtra *store.ReceiptExtra,
+	tx *types.Transaction, receipt *types.TransactionReceipt, txExtra *store.TransactionExtra,
+	rcptExtra *store.ReceiptExtra, skipTx, skipReceipt bool,
 ) *transaction {
 	rcptPtr := receipt
 
@@ -50,10 +51,16 @@ func newTx(
 	}
 
 	result := &transaction{
-		Epoch:          uint64(*receipt.EpochNumber),
-		Hash:           tx.Hash.String(),
-		TxRawData:      util.MustMarshalRLP(tx),
-		ReceiptRawData: util.MustMarshalRLP(rcptPtr),
+		Epoch: uint64(*receipt.EpochNumber),
+		Hash:  tx.Hash.String(),
+	}
+
+	if !skipTx {
+		result.TxRawData = util.MustMarshalRLP(tx)
+	}
+
+	if !skipReceipt {
+		result.ReceiptRawData = util.MustMarshalRLP(rcptPtr)
 	}
 
 	result.HashId = util.GetShortIdOfHash(result.Hash)
@@ -61,13 +68,13 @@ func newTx(
 	result.ReceiptRawDataLen = uint64(len(result.ReceiptRawData))
 	result.NumReceiptLogs = len(receipt.Logs)
 
-	if txExtra != nil {
+	if !skipTx && txExtra != nil {
 		// no need to store block number since epoch number can be used instead
 		txExtra.BlockNumber = nil
 		result.Extra = util.MustMarshalJson(txExtra)
 	}
 
-	if rcptExtra != nil {
+	if !skipReceipt && rcptExtra != nil {
 		result.ReceiptExtra = util.MustMarshalJson(rcptExtra)
 	}
 
