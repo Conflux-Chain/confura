@@ -9,6 +9,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/rpc"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -79,13 +80,21 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	gasHandler := rpc.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
 
+	var logApi *rpc.CfxLogApi
+	if storeCtx.cfxDB != nil {
+		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
+			logApi = rpc.NewCfxLogApi(
+				node.NewClientProvider(router),
+				mysql.MustConvert(storeCtx.cfxDB),
+				util.MustNewRedisClient(redisUrl),
+			)
+		}
+	}
+
 	option := rpc.CfxAPIOption{
 		Handler: cfxHandler,
 		Relayer: relay.MustNewTxnRelayerFromViper(),
-	}
-
-	if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
-		option.RedisClient = util.MustNewRedisClient(redisUrl)
+		LogApi:  logApi,
 	}
 
 	server := rpc.MustNewNativeSpaceServer(router, gasHandler, exposedModules, option)

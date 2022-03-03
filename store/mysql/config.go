@@ -67,7 +67,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
 	db := config.mustNewDB(config.Database)
 
 	if newCreated {
-		if err := db.Migrator().CreateTable(&transaction{}, &block{}, &log{}, &epochStats{}, &conf{}); err != nil {
+		if err := db.Migrator().CreateTable(allModels...); err != nil {
 			logrus.WithError(err).Fatal("Failed to create tables")
 		}
 
@@ -87,6 +87,15 @@ func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
 	logrus.Info("MySQL database initialized")
 
 	return mustNewStore(db, config, option)
+}
+
+func MustConvert(store store.Store) *mysqlStore {
+	ms, ok := store.(*mysqlStore)
+	if !ok {
+		logrus.Fatal("Failed to convert store to mysqlStore instance")
+	}
+
+	return ms
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {
