@@ -318,6 +318,8 @@ func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
 	latestBlockNumber := hexutil.Uint64(block.Number.Uint64())
 
 	status.BestHash = ConvertHash(block.Hash)
+	status.ChainID = status.EthereumSpaceChainId
+	status.NetworkID = status.EthereumSpaceChainId
 	status.EpochNumber = latestBlockNumber
 	status.BlockNumber = latestBlockNumber
 	status.PendingTxNumber = 0
