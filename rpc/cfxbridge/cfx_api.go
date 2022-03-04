@@ -305,7 +305,7 @@ func (api *CfxAPI) GetConfirmationRiskByHash(ctx context.Context, blockHash type
 }
 
 func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
-	chainId, err := api.eth.ChainId()
+	status, err := api.cfx.GetStatus()
 	if err != nil {
 		return types.Status{}, err
 	}
@@ -317,17 +317,13 @@ func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
 
 	latestBlockNumber := hexutil.Uint64(block.Number.Uint64())
 
-	return types.Status{
-		BestHash:         types.Hash(block.Hash.Hex()),
-		ChainID:          hexutil.Uint64(*chainId),
-		NetworkID:        hexutil.Uint64(*chainId), // eth space return chainId as networkId
-		EpochNumber:      latestBlockNumber,
-		BlockNumber:      latestBlockNumber,
-		PendingTxNumber:  0,
-		LatestCheckpoint: 0,
-		LatestConfirmed:  0,
-		LatestState:      latestBlockNumber,
-	}, nil
+	status.BestHash = ConvertHash(block.Hash)
+	status.EpochNumber = latestBlockNumber
+	status.BlockNumber = latestBlockNumber
+	status.PendingTxNumber = 0
+	status.LatestState = latestBlockNumber
+
+	return status, nil
 }
 
 func (api *CfxAPI) GetBlockRewardInfo(ctx context.Context, epoch types.Epoch) ([]types.RewardInfo, error) {
