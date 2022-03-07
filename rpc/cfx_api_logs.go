@@ -21,17 +21,13 @@ const thresholdGetLogs = 1
 
 var errQuotaNotEnough = errors.New("quota not enough")
 
-type UserStore interface {
-	GetUserByKey(key string) (*mysql.User, bool, error)
-}
-
 type CfxLogApi struct {
 	pool       *node.ClientProvider
-	store      UserStore
+	store      *mysql.UserStore
 	throttling *throttle.RefCounter
 }
 
-func NewCfxLogApi(pool *node.ClientProvider, store UserStore, client *redis.Client) *CfxLogApi {
+func NewCfxLogApi(pool *node.ClientProvider, store *mysql.UserStore, client *redis.Client) *CfxLogApi {
 	return &CfxLogApi{
 		pool:       pool,
 		store:      store,

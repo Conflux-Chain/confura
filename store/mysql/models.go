@@ -514,15 +514,3 @@ type conf struct {
 func (conf) TableName() string {
 	return "configs"
 }
-
-type User struct {
-	ID          uint32
-	Name        string `gorm:"size:256;not null;unique"`
-	Description string `gorm:"size:1024"`
-	ApiKey      string `gorm:"size:256;not null;unique"`
-	NodeUrl     string `gorm:"size:256;not null"`
-}
-
-func (User) TableName() string {
-	return "users"
-}

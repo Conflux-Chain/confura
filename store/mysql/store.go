@@ -62,7 +62,15 @@ func newMysqlEpochDataOpAffects(sea *store.EpochDataOpAffects) *mysqlEpochDataOp
 	}
 }
 
+type baseStore struct{}
+
+func (baseStore) IsRecordNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, store.ErrNotFound)
+}
+
 type mysqlStore struct {
+	baseStore
+	*UserStore
 	db     *gorm.DB
 	config *Config
 
@@ -82,6 +90,7 @@ type mysqlStore struct {
 
 func mustNewStore(db *gorm.DB, config *Config, option StoreOption) (ms *mysqlStore) {
 	ms = &mysqlStore{
+		UserStore:   newUserStore(db),
 		db:          db,
 		config:      config,
 		minEpoch:    citypes.EpochNumberNil,
@@ -105,10 +114,6 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) (ms *mysqlSto
 
 	ms.disabler = option.Disabler
 	return
-}
-
-func (ms *mysqlStore) IsRecordNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, store.ErrNotFound)
 }
 
 func (ms *mysqlStore) GetBlockEpochRange() (uint64, uint64, error) {
@@ -1422,19 +1427,4 @@ func diffLogsPartitionEpochRangeForRealSet(beforeER, afterER citypes.EpochRange)
 		diff(beforeER.EpochFrom, afterER.EpochFrom),
 		diff(beforeER.EpochTo, afterER.EpochTo),
 	}
-}
-
-func (ms *mysqlStore) GetUserByKey(key string) (*User, bool, error) {
-	var user User
-
-	err := ms.db.Where("api_key = ?", key).First(&user).Error
-	if err == nil {
-		return &user, true, nil
-	}
-
-	if ms.IsRecordNotFound(err) {
-		return nil, false, nil
-	}
-
-	return nil, false, err
 }
