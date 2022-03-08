@@ -103,6 +103,7 @@ func (tx *transaction) parseTxReceiptExtra() *store.ReceiptExtra {
 }
 
 type txStore struct {
+	logPartitioner
 	db *gorm.DB
 }
 
@@ -157,7 +158,7 @@ func (ts *txStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, err
 		}, nil
 	}
 
-	partitions, err := findLogsPartitionsEpochRangeWithinStoreTx(ts.db, tx.Epoch, tx.Epoch)
+	partitions, err := ts.findLogsPartitionsEpochRangeWithinStoreTx(ts.db, tx.Epoch, tx.Epoch)
 	if err != nil {
 		err = errors.WithMessage(err, "failed to get partitions for receipt logs assembling")
 		return nil, err
@@ -201,7 +202,7 @@ func (ts *txStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, err
 		rpcLogs = append(rpcLogs, logs[i].toRPCLog())
 
 		if ptrRcptExtra != nil && len(logs[i].Extra) > 0 {
-			logExts[i] = parseLogExtra(&logs[i])
+			logExts[i] = logs[i].parseLogExtra()
 		}
 	}
 

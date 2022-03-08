@@ -1,0 +1,370 @@
+package mysql
+
+import (
+	"fmt"
+	"math"
+	"strings"
+
+	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
+	"github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/store"
+	citypes "github.com/conflux-chain/conflux-infura/types"
+	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
+)
+
+type log struct {
+	ID              uint64
+	Epoch           uint64 `gorm:"not null;index"`
+	BlockNumber     uint64 `gorm:"not null;index"`
+	BlockHashId     uint64 `gorm:"not null;index"`
+	BlockHash       string `gorm:"size:66;not null"`
+	ContractAddress string `gorm:"size:64;not null"`
+	Topic0          string `gorm:"size:66;not null"`
+	Topic1          string `gorm:"size:66"`
+	Topic2          string `gorm:"size:66"`
+	Topic3          string `gorm:"size:66"`
+	Data            []byte `gorm:"type:MEDIUMBLOB"`
+	DataLen         uint64 `gorm:"not null"`
+	TxHash          string `gorm:"size:66;not null"`
+	TxIndex         uint64 `gorm:"not null"`
+	TxLogIndex      uint64 `gorm:"not null"`
+	LogIndex        uint64 `gorm:"not null"`
+	Extra           []byte `gorm:"type:text"` // dynamic fields within json string for extention
+}
+
+func newLog(blockNumber uint64, data *types.Log, extra *store.LogExtra) *log {
+	log := &log{
+		Epoch:           data.EpochNumber.ToInt().Uint64(),
+		BlockNumber:     blockNumber,
+		BlockHash:       data.BlockHash.String(),
+		ContractAddress: data.Address.MustGetBase32Address(),
+		Data:            []byte(data.Data),
+		Topic0:          data.Topics[0].String(),
+		TxHash:          data.TransactionHash.String(),
+		TxIndex:         data.TransactionIndex.ToInt().Uint64(),
+		TxLogIndex:      data.TransactionLogIndex.ToInt().Uint64(),
+		LogIndex:        data.LogIndex.ToInt().Uint64(),
+	}
+
+	log.BlockHashId = util.GetShortIdOfHash(log.BlockHash)
+	log.DataLen = uint64(len(log.Data))
+
+	numTopics := len(data.Topics)
+
+	if numTopics > 1 {
+		log.Topic1 = data.Topics[1].String()
+	}
+
+	if numTopics > 2 {
+		log.Topic2 = data.Topics[2].String()
+	}
+
+	if numTopics > 3 {
+		log.Topic3 = data.Topics[3].String()
+	}
+
+	if extra != nil {
+		log.Extra = util.MustMarshalJson(extra)
+	}
+
+	return log
+}
+
+func (log *log) toRPCLog() types.Log {
+	blockHash := types.Hash(log.BlockHash)
+	txHash := types.Hash(log.TxHash)
+
+	topics := []types.Hash{types.Hash(log.Topic0)}
+
+	// in case of empty hex string with 0x prefix
+	if len(log.Topic1) > 2 {
+		topics = append(topics, types.Hash(log.Topic1))
+	}
+
+	if len(log.Topic2) > 2 {
+		topics = append(topics, types.Hash(log.Topic2))
+	}
+
+	if len(log.Topic3) > 2 {
+		topics = append(topics, types.Hash(log.Topic3))
+	}
+
+	return types.Log{
+		Address:             cfxaddress.MustNewFromBase32(log.ContractAddress),
+		Topics:              topics,
+		Data:                types.NewBytes(log.Data),
+		BlockHash:           &blockHash,
+		EpochNumber:         types.NewBigInt(log.Epoch),
+		TransactionHash:     &txHash,
+		TransactionIndex:    types.NewBigInt(log.TxIndex),
+		LogIndex:            types.NewBigInt(log.LogIndex),
+		TransactionLogIndex: types.NewBigInt(log.TxLogIndex),
+	}
+}
+
+func (log *log) parseLogExtra() *store.LogExtra {
+	if len(log.Extra) > 0 {
+		var extra store.LogExtra
+		util.MustUnmarshalJson(log.Extra, &extra)
+
+		return &extra
+	}
+
+	return nil
+}
+
+type logStore struct {
+	logPartitioner
+	db *gorm.DB
+}
+
+func newLogStore(db *gorm.DB) *logStore {
+	return &logStore{
+		db: db,
+	}
+}
+
+// TODO Cacheing nearhead epoch logs in memory or redis to improve performance
+func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
+	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
+	defer updater.Update()
+
+	// epoch range calculated from log filter, which can be used to help locate the logs table partitions
+	epochRange := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0}
+
+	switch filter.Type {
+	case store.LogFilterTypeBlockHashes:
+		blockParts, err := ls.getLogsRelBlockInfoWithinStore(&filter)
+		if err != nil {
+			logrus.WithField("filter", filter).WithError(err).Error("Failed to calculate epoch range for log filter of type block hashes")
+			return nil, err
+		}
+
+		foundHashes := make([]string, 0, len(blockParts))
+		for i := 0; i < len(blockParts); i++ {
+			foundHashes = append(foundHashes, blockParts[i].Hash)
+
+			// update epoch range from store
+			epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, blockParts[i].Epoch)
+			epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, blockParts[i].Epoch)
+		}
+
+		if len(foundHashes) == filter.BlockHashes.Count() { // already have all block hashes in store
+			break
+		}
+
+		fer, err := filter.FetchEpochRangeByBlockHashes(foundHashes...) // fetch epoch range from fullnode
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to fetch epoch range from fullnode for log filter of type block hashes")
+		}
+
+		// update epoch range from fullnode
+		epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, fer.EpochFrom)
+		epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, fer.EpochTo)
+
+	case store.LogFilterTypeBlockRange:
+		blockParts, err := ls.getLogsRelBlockInfoWithinStore(&filter)
+		if err != nil {
+			logrus.WithField("filter", filter).WithError(err).Error("Failed to calculate epoch range for log filter of type block range")
+			return nil, err
+		}
+
+		for i := 0; i < len(blockParts); i++ {
+			// update epoch range from store
+			epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, blockParts[i].Epoch)
+			epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, blockParts[i].Epoch)
+		}
+
+		if len(blockParts) == len(filter.BlockRange.ToSlice()) { // already have all block numbers in store
+			break
+		}
+
+		fer, err := filter.FetchEpochRangeByBlockNumber() // fetch epoch range from fullnode
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to fetch epoch range from fullnode for log filter of type block range")
+		}
+
+		// update epoch range from fullnode
+		epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, fer.EpochFrom)
+		epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, fer.EpochTo)
+
+	default:
+		if filter.EpochRange != nil { // default use epoch range of log filter
+			epochRange = *filter.EpochRange
+		}
+	}
+
+	if err := citypes.ValidateEpochRange(&epochRange); err != nil {
+		return nil, errors.WithMessage(err, "failed to calculate a valid epoch range for logs partitions")
+	}
+
+	// Check if epoch ranges of the log filter are within the store.
+	// TODO add a cache layer for better performance if necessary
+	if _, err := ls.checkLogsEpochRangeWithinStore(epochRange.EpochFrom, epochRange.EpochTo); err != nil {
+		return nil, errors.WithMessage(err, "failed to check filter epoch range within store")
+	}
+
+	// calcuate logs table partitions to get logs within the filter epoch range
+	logsTblPartitions, err := ls.findLogsPartitionsEpochRangeWithinStoreTx(ls.db, epochRange.EpochFrom, epochRange.EpochTo)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get logs partitions for filter epoch range")
+	}
+
+	if len(logsTblPartitions) == 0 { // must be empty if no logs table partition(s) found
+		return []store.Log{}, nil
+	}
+
+	return ls.loadLogs(filter, logsTblPartitions)
+}
+
+func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]store.Log, error) {
+	// Unfortunately MySQL (v5.7 as we know) will select primary as default index,
+	// which will incur performance problem as table rows grow up.
+	// Here we order by specified field descendingly to force use some MySQL index to
+	// improve query performance.
+	db := ls.db
+	var prefind func()
+	switch filter.Type {
+	case store.LogFilterTypeBlockHashes:
+		db = ls.applyVariadicFilter(db, "block_hash_id", filter.BlockHashIds)
+		db = ls.applyVariadicFilter(db, "block_hash", filter.BlockHashes)
+		prefind = func() {
+			db = db.Order("block_hash_id DESC")
+		}
+	case store.LogFilterTypeBlockRange:
+		db = db.Where("block_number BETWEEN ? AND ?", filter.BlockRange.EpochFrom, filter.BlockRange.EpochTo)
+		db = db.Order("block_number DESC")
+	case store.LogFilterTypeEpochRange:
+		db = db.Where("epoch BETWEEN ? AND ?", filter.EpochRange.EpochFrom, filter.EpochRange.EpochTo)
+		db = db.Order("epoch DESC")
+	}
+
+	db = ls.applyVariadicFilter(db, "contract_address", filter.Contracts)
+
+	numTopics := len(filter.Topics)
+
+	if numTopics > 0 {
+		db = ls.applyVariadicFilter(db, "topic0", filter.Topics[0])
+	}
+
+	if numTopics > 1 {
+		db = ls.applyVariadicFilter(db, "topic1", filter.Topics[1])
+	}
+
+	if numTopics > 2 {
+		db = ls.applyVariadicFilter(db, "topic2", filter.Topics[2])
+	}
+
+	if numTopics > 3 {
+		db = ls.applyVariadicFilter(db, "topic3", filter.Topics[3])
+	}
+
+	if len(partitions) > 0 {
+		db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
+	}
+
+	// IMPORTANT: full node returns the last N logs.
+	// To limit the number of records fetched for better performance,  we'd better retrieve
+	// the logs in reverse order first, and then reverse them for the final order.
+	db = db.Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit))
+	if prefind != nil {
+		prefind()
+	}
+
+	var logs []log
+	if err := db.Find(&logs).Error; err != nil {
+		return nil, err
+	}
+
+	result := make([]store.Log, 0, len(logs))
+	for i := len(logs) - 1; i >= 0; i-- { // reverse the order for the final
+		rpclog := logs[i].toRPCLog()
+
+		var ptrExtra *store.LogExtra
+		if len(logs[i].Extra) > 0 {
+			var extra store.LogExtra
+			util.MustUnmarshalJson(logs[i].Extra, &extra)
+			ptrExtra = &extra
+		}
+
+		result = append(result, store.Log{
+			CfxLog: &rpclog, Extra: ptrExtra,
+		})
+	}
+
+	return result, nil
+}
+
+func (*logStore) applyVariadicFilter(db *gorm.DB, column string, value store.VariadicValue) *gorm.DB {
+	if single, ok := value.Single(); ok {
+		return db.Where(fmt.Sprintf("%v = ?", column), single)
+	}
+
+	if multiple, ok := value.FlatMultiple(); ok {
+		return db.Where(fmt.Sprintf("%v IN (?)", column), multiple)
+	}
+
+	return db
+}
+
+// logsRelBlockPart logs relative data part of block model, it can be used to calcuate the epoch range for log filters
+// of type block number range or block hashes.
+type logsRelBlockPart struct {
+	Epoch       uint64
+	Hash        string // for block hash
+	BlockNumber string // for block number
+}
+
+func (ls *logStore) getLogsRelBlockInfoWithinStore(filter *store.LogFilter) ([]logsRelBlockPart, error) {
+	var res []logsRelBlockPart
+	db := ls.db.Model(&block{})
+
+	switch filter.Type {
+	case store.LogFilterTypeBlockHashes:
+		db = ls.applyVariadicFilter(db, "hash_id", filter.BlockHashIds)
+		db = ls.applyVariadicFilter(db, "hash", filter.BlockHashes)
+
+		if err := db.Select("hash", "epoch").Find(&res).Error; err != nil {
+			err = errors.WithMessage(err, "failed to get logs relative block info by hash")
+			return res, err
+		}
+	case store.LogFilterTypeBlockRange:
+		blockNums := filter.BlockRange.ToSlice()
+		db.Where("block_number IN (?)", blockNums)
+
+		if err := db.Select("block_number", "epoch").Find(&res).Error; err != nil {
+			err = errors.WithMessage(err, "failed to get logs relative block info by number")
+			return res, err
+		}
+	}
+
+	return res, nil
+}
+
+// Checks if specified epoch range of logs is within db store
+func (ls *logStore) checkLogsEpochRangeWithinStore(epochFrom, epochTo uint64) (bool, error) {
+	var stats epochStats
+	cond := map[string]interface{}{
+		"type": epochStatsEpochRange, "key": getEpochRangeStatsKey(store.EpochLog),
+	}
+
+	mdb := ls.db.Where(cond).Select("id", "epoch1", "epoch2")
+	if err := mdb.First(&stats).Error; err != nil {
+		return false, err
+	}
+
+	// Check if epoch logs already pruned or not.
+	if stats.Epoch1 > (epochFrom + minNumEpochsLeftToBePruned) {
+		return false, store.ErrAlreadyPruned
+	}
+
+	if stats.Epoch1 <= epochFrom && stats.Epoch2 >= epochTo {
+		return true, nil
+	}
+
+	return false, store.ErrNotFound
+}
