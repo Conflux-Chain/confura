@@ -590,9 +590,7 @@ func (rs *redisStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil u
 		return nil
 	}
 
-	rmOpt := store.EpochDataTypeRemoveOptionMap[rt]
-	dqOpt := store.EpochDataTypeDequeueOptionMap[rt]
-	return rs.remove(epochFrom, epochUntil, rmOpt, dqOpt)
+	return rs.remove(epochFrom, epochUntil, rt.ToRemoveOption(), rt.ToDequeOption())
 }
 
 func (rs *redisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64, growFrom ...uint64) error {

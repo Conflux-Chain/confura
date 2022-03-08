@@ -702,10 +702,10 @@ func (ms *mysqlStore) dequeueEpochRangeData(dt store.EpochDataType, epochUntil u
 		return nil
 	}
 
-	opAffects := store.NewEpochDataOpAffects(store.EpochDataTypeDequeueOptionMap[dt], epochUntil)
+	opAffects := store.NewEpochDataOpAffects(dt.ToDequeOption(), epochUntil)
 	txOpAffects := newMysqlEpochDataOpAffects(opAffects)
 
-	err := ms.remove(epochFrom, epochUntil, store.EpochDataTypeRemoveOptionMap[dt], func() *mysqlEpochDataOpAffects {
+	err := ms.remove(epochFrom, epochUntil, dt.ToRemoveOption(), func() *mysqlEpochDataOpAffects {
 		return txOpAffects
 	})
 

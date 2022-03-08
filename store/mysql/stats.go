@@ -5,14 +5,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type epochStatsType uint8
-
-const (
-	epochStatsEpochRange epochStatsType = iota + 1
-	epochStatsEpochTotal
-	epochStatsLogsPartEpochRange
-)
-
 var (
 	epochDataType2EpochRangeStatsKey = map[store.EpochDataType]string{
 		store.EpochDataNil:     "global_epoch_range",

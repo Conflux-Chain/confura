@@ -2,9 +2,11 @@ package store
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // Epoch data operation type
@@ -53,24 +55,10 @@ var (
 		EpochTransaction,
 		EpochLog,
 	}
-
-	// epoch data remove options
-	EpochDataTypeRemoveOptionMap = map[EpochDataType]EpochRemoveOption{
-		EpochBlock:       EpochRemoveBlock,
-		EpochTransaction: EpochRemoveTransaction,
-		EpochLog:         EpochRemoveLog,
-	}
-
-	// epoch data dequeue options
-	EpochDataTypeDequeueOptionMap = map[EpochDataType]EpochOpType{
-		EpochBlock:       EpochOpDequeueBlock,
-		EpochTransaction: EpochOpDequeueTx,
-		EpochLog:         EpochOpDequeueLog,
-	}
 )
 
-func EpochDataTypeToStr(t EpochDataType) string {
-	switch t {
+func (edt EpochDataType) Name() string {
+	switch edt {
 	case EpochTransaction:
 		return "tx"
 	case EpochLog:
@@ -80,6 +68,34 @@ func EpochDataTypeToStr(t EpochDataType) string {
 	}
 
 	return "unknown"
+}
+
+func (edt EpochDataType) ToRemoveOption() EpochRemoveOption {
+	switch edt {
+	case EpochTransaction:
+		return EpochRemoveTransaction
+	case EpochLog:
+		return EpochRemoveLog
+	case EpochBlock:
+		return EpochRemoveBlock
+	default:
+		logrus.WithField("name", edt.Name()).Error("Do not to support remove option")
+		return EpochRemoveOption(0x01 << 7)
+	}
+}
+
+func (edt EpochDataType) ToDequeOption() EpochOpType {
+	switch edt {
+	case EpochTransaction:
+		return EpochOpDequeueTx
+	case EpochLog:
+		return EpochOpDequeueLog
+	case EpochBlock:
+		return EpochOpDequeueBlock
+	default:
+		logrus.WithField("name", edt.Name()).Error("Do not to support deque option")
+		return EpochOpType(math.MaxUint8)
+	}
 }
 
 // EpochDataOpNumAlters to record num of alters (add or delete) for epoch data op
@@ -122,7 +138,7 @@ func (affects EpochDataOpAffects) String() string {
 	strBuilder.Grow(len(affects.NumAlters) * 30)
 
 	for t, v := range affects.NumAlters {
-		strBuilder.WriteString(fmt.Sprintf("%v:%v;", EpochDataTypeToStr(t), v))
+		strBuilder.WriteString(fmt.Sprintf("%v:%v;", t.Name(), v))
 	}
 
 	return strBuilder.String()

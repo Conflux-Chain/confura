@@ -18,6 +18,14 @@ var allModels = []interface{}{
 	&User{},
 }
 
+type epochStatsType uint8
+
+const (
+	epochStatsEpochRange epochStatsType = iota + 1
+	epochStatsEpochTotal
+	epochStatsLogsPartEpochRange
+)
+
 // epoch statistics
 type epochStats struct {
 	ID uint32
