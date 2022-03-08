@@ -3,7 +3,6 @@ package mysql
 import (
 	"database/sql"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -12,8 +11,6 @@ import (
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -25,176 +22,6 @@ var allModels = []interface{}{
 	&epochStats{},
 	&conf{},
 	&User{},
-}
-
-type transaction struct {
-	ID                uint64
-	Epoch             uint64 `gorm:"not null;index"`
-	HashId            uint64 `gorm:"not null;index"` // as an index, number is better than long string
-	Hash              string `gorm:"size:66;not null"`
-	TxRawData         []byte `gorm:"type:MEDIUMBLOB"`
-	TxRawDataLen      uint64 `gorm:"not null"`
-	ReceiptRawData    []byte `gorm:"type:MEDIUMBLOB"`
-	ReceiptRawDataLen uint64 `gorm:"not null"`
-	NumReceiptLogs    int    `gorm:"not null"`
-	Extra             []byte `gorm:"type:text"` // dynamic fields within json string for txn extention
-	ReceiptExtra      []byte `gorm:"type:text"` // dynamic fields within json string for receipt extention
-}
-
-func (transaction) TableName() string {
-	return "txs"
-}
-
-func newTx(
-	tx *types.Transaction, receipt *types.TransactionReceipt, txExtra *store.TransactionExtra,
-	rcptExtra *store.ReceiptExtra, skipTx, skipReceipt bool,
-) *transaction {
-	rcptPtr := receipt
-
-	// Receipt logs are not persisted into db store to save storage space, since
-	// they can be retrieved and assembled from event logs.
-	if len(receipt.Logs) > 0 {
-		rcptCopy := *receipt
-		rcptCopy.Logs = []types.Log{}
-		rcptPtr = &rcptCopy
-	}
-
-	result := &transaction{
-		Epoch: uint64(*receipt.EpochNumber),
-		Hash:  tx.Hash.String(),
-	}
-
-	if !skipTx {
-		result.TxRawData = util.MustMarshalRLP(tx)
-	}
-
-	if !skipReceipt {
-		result.ReceiptRawData = util.MustMarshalRLP(rcptPtr)
-	}
-
-	result.HashId = util.GetShortIdOfHash(result.Hash)
-	result.TxRawDataLen = uint64(len(result.TxRawData))
-	result.ReceiptRawDataLen = uint64(len(result.ReceiptRawData))
-	result.NumReceiptLogs = len(receipt.Logs)
-
-	if !skipTx && txExtra != nil {
-		// no need to store block number since epoch number can be used instead
-		txExtra.BlockNumber = nil
-		result.Extra = util.MustMarshalJson(txExtra)
-	}
-
-	if !skipReceipt && rcptExtra != nil {
-		result.ReceiptExtra = util.MustMarshalJson(rcptExtra)
-	}
-
-	return result
-}
-
-func loadTx(db *gorm.DB, txHash string) (*transaction, error) {
-	hashId := util.GetShortIdOfHash(txHash)
-
-	var tx transaction
-
-	db = db.Where("hash_id = ? AND hash = ?", hashId, txHash).First(&tx)
-	if err := db.Error; err != nil {
-		return nil, err
-	}
-
-	return &tx, nil
-}
-
-func parseTxExtra(tx *transaction) *store.TransactionExtra {
-	if len(tx.Extra) > 0 {
-		var extra store.TransactionExtra
-		util.MustUnmarshalJson(tx.Extra, &extra)
-
-		// To save space, we don't save blockNumber within extra fields.
-		// Here we restore the block number from epoch number.
-		extra.BlockNumber = (*hexutil.Big)(big.NewInt(int64(tx.Epoch)))
-		return &extra
-	}
-
-	return nil
-}
-
-func parseTxReceiptExtra(tx *transaction) *store.ReceiptExtra {
-	if len(tx.ReceiptExtra) > 0 {
-		var extra store.ReceiptExtra
-		util.MustUnmarshalJson(tx.ReceiptExtra, &extra)
-
-		return &extra
-	}
-
-	return nil
-}
-
-type block struct {
-	ID          uint64
-	Epoch       uint64 `gorm:"not null;index"`
-	BlockNumber uint64 `gorm:"not null;index"`
-	HashId      uint64 `gorm:"not null;index"`
-	Hash        string `gorm:"size:66;not null"`
-	Pivot       bool   `gorm:"not null"`
-	RawData     []byte `gorm:"type:MEDIUMBLOB;not null"`
-	RawDataLen  uint64 `gorm:"not null"`
-	Extra       []byte `gorm:"type:text"` // dynamic fields within json string for extention
-}
-
-func newBlock(data *types.Block, pivot bool, extra *store.BlockExtra) *block {
-	block := &block{
-		Epoch:       data.EpochNumber.ToInt().Uint64(),
-		BlockNumber: data.BlockNumber.ToInt().Uint64(),
-		Hash:        data.Hash.String(),
-		Pivot:       pivot,
-		RawData:     util.MustMarshalRLP(util.GetSummaryOfBlock(data)),
-	}
-
-	block.HashId = util.GetShortIdOfHash(block.Hash)
-	block.RawDataLen = uint64(len(block.RawData))
-
-	if extra != nil {
-		// to save storage space, skip saving zero mix hash
-		if util.IsZeroHash(extra.MixHash) {
-			extra.MixHash = nil
-		}
-
-		block.Extra = util.MustMarshalJson(extra)
-	}
-
-	return block
-}
-
-func loadBlockSummary(db *gorm.DB, whereClause string, args ...interface{}) (*store.BlockSummary, error) {
-	var blk block
-
-	db = db.Where(whereClause, args...).First(&blk)
-	if err := db.Error; err != nil {
-		return nil, err
-	}
-
-	var summary types.BlockSummary
-	util.MustUnmarshalRLP(blk.RawData, &summary)
-
-	return &store.BlockSummary{
-		CfxBlockSummary: &summary, Extra: parseBlockExtra(&blk),
-	}, nil
-}
-
-func parseBlockExtra(block *block) *store.BlockExtra {
-	if len(block.Extra) > 0 {
-		var extra store.BlockExtra
-		util.MustUnmarshalJson(block.Extra, &extra)
-
-		// To save storage space, we skip saving zero mixHash within extra field.
-		// Here we restore the zero mixHash if necessary.
-		if util.IsZeroHash(extra.MixHash) {
-			extra.MixHash = &common.Hash{}
-		}
-
-		return &extra
-	}
-
-	return nil
 }
 
 type log struct {
@@ -500,17 +327,4 @@ func loadEpochStats(db *gorm.DB, est epochStatsType, keys ...string) ([]epochSta
 
 	err := db.Where(cond).Find(&ess).Error
 	return ess, err
-}
-
-// conf configuration tables
-type conf struct {
-	ID        uint32
-	Name      string `gorm:"unique;size:128;not null"` // config name
-	Value     string `gorm:"size:256;not null"`        // config value
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
-func (conf) TableName() string {
-	return "configs"
 }

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
@@ -16,8 +15,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-	"gorm.io/hints"
 )
 
 var (
@@ -70,6 +67,9 @@ func (baseStore) IsRecordNotFound(err error) bool {
 
 type mysqlStore struct {
 	baseStore
+	*txStore
+	*blockStore
+	*confStore
 	*UserStore
 	db     *gorm.DB
 	config *Config
@@ -90,6 +90,9 @@ type mysqlStore struct {
 
 func mustNewStore(db *gorm.DB, config *Config, option StoreOption) (ms *mysqlStore) {
 	ms = &mysqlStore{
+		txStore:     newTxStore(db),
+		blockStore:  newBlockStore(db),
+		confStore:   newConfStore(db),
 		UserStore:   newUserStore(db),
 		db:          db,
 		config:      config,
@@ -235,150 +238,6 @@ func (ms *mysqlStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	}
 
 	return loadLogs(ms.db, filter, logsTblPartitions)
-}
-
-func (ms *mysqlStore) GetTransaction(txHash types.Hash) (*store.Transaction, error) {
-	tx, err := loadTx(ms.db, txHash.String())
-	if err != nil {
-		return nil, err
-	}
-
-	var rpcTx types.Transaction
-	util.MustUnmarshalRLP(tx.TxRawData, &rpcTx)
-
-	return &store.Transaction{
-		CfxTransaction: &rpcTx, Extra: parseTxExtra(tx),
-	}, nil
-}
-
-func (ms *mysqlStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, error) {
-	tx, err := loadTx(ms.db, txHash.String())
-	if err != nil {
-		return nil, err
-	}
-
-	var receipt types.TransactionReceipt
-	util.MustUnmarshalRLP(tx.ReceiptRawData, &receipt)
-
-	ptrRcptExtra := parseTxReceiptExtra(tx)
-
-	// If unknown number of event logs (for back compatibility) or no event logs
-	// exists inside transaction receipts, just skip retrieving && assembling
-	// event logs for it.
-	if tx.NumReceiptLogs <= 0 {
-		return &store.TransactionReceipt{
-			CfxReceipt: &receipt, Extra: ptrRcptExtra,
-		}, nil
-	}
-
-	partitions, err := findLogsPartitionsEpochRangeWithinStoreTx(ms.db, tx.Epoch, tx.Epoch)
-	if err != nil {
-		err = errors.WithMessage(err, "failed to get partitions for receipt logs assembling")
-		return nil, err
-	}
-
-	if len(partitions) == 0 { // no partitions found?
-		return nil, errors.New("no partitions found for receipt logs assembling")
-	}
-
-	// TODO: add benchmark to see if adding transaction hash short ID as index in logs table
-	// would bring better performance.
-	blockHashId := util.GetShortIdOfHash(string(receipt.BlockHash))
-	db := ms.db.Where(
-		"epoch = ? AND block_hash_id = ? AND tx_hash = ?", tx.Epoch, blockHashId, tx.Hash,
-	)
-	db = db.Clauses(hints.UseIndex("idx_logs_block_hash_id"))
-	db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
-
-	var logs []log
-
-	if err := db.Find(&logs).Error; err != nil {
-		err = errors.WithMessage(err, "failed to get data for receipt logs assembling")
-		return nil, err
-	}
-
-	if len(logs) != tx.NumReceiptLogs { // validate number of assembled receipt logs
-		err := errors.Errorf(
-			"num of assembled receipt logs mismatched, expect %v got %v",
-			tx.NumReceiptLogs, len(logs),
-		)
-		return nil, err
-	}
-
-	var logExts []*store.LogExtra
-	if ptrRcptExtra != nil {
-		logExts = make([]*store.LogExtra, len(logs))
-	}
-
-	rpcLogs := make([]types.Log, 0, len(logs))
-	for i := 0; i < len(logs); i++ {
-		rpcLogs = append(rpcLogs, logs[i].toRPCLog())
-
-		if ptrRcptExtra != nil && len(logs[i].Extra) > 0 {
-			logExts[i] = parseLogExtra(&logs[i])
-		}
-	}
-
-	receipt.Logs = rpcLogs
-	if ptrRcptExtra != nil {
-		ptrRcptExtra.LogExts = logExts
-	}
-
-	return &store.TransactionReceipt{
-		CfxReceipt: &receipt, Extra: ptrRcptExtra,
-	}, nil
-}
-
-func (ms *mysqlStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error) {
-	rows, err := ms.db.Raw("SELECT hash FROM blocks WHERE epoch = ?", epochNumber).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var result []types.Hash
-
-	for rows.Next() {
-		var hash string
-
-		if err = rows.Scan(&hash); err != nil {
-			return nil, err
-		}
-
-		result = append(result, types.Hash(hash))
-	}
-
-	if len(result) == 0 { // no data in db since each epoch has at least 1 block (pivot block)
-		return result, gorm.ErrRecordNotFound
-	}
-
-	return result, nil
-}
-
-func (ms *mysqlStore) GetBlockByEpoch(epochNumber uint64) (*store.Block, error) {
-	// TODO Cannot get tx from db in advance, since only executed txs saved in db
-	return nil, store.ErrUnsupported
-}
-
-func (ms *mysqlStore) GetBlockSummaryByEpoch(epochNumber uint64) (*store.BlockSummary, error) {
-	return loadBlockSummary(ms.db, "epoch = ? AND pivot = true", epochNumber)
-}
-
-func (ms *mysqlStore) GetBlockByHash(blockHash types.Hash) (*store.Block, error) {
-	return nil, store.ErrUnsupported
-}
-
-func (ms *mysqlStore) GetBlockSummaryByHash(blockHash types.Hash) (*store.BlockSummary, error) {
-	hash := blockHash.String()
-	return loadBlockSummary(ms.db, "hash_id = ? AND hash = ?", util.GetShortIdOfHash(hash), hash)
-}
-
-func (ms *mysqlStore) GetBlockByBlockNumber(blockNumber uint64) (*store.Block, error) {
-	return nil, store.ErrUnsupported
-}
-
-func (ms *mysqlStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*store.BlockSummary, error) {
-	return loadBlockSummary(ms.db, "block_number = ?", blockNumber)
 }
 
 func (ms *mysqlStore) Push(data *store.EpochData) error {
@@ -528,30 +387,6 @@ func (ms *mysqlStore) Close() error {
 	} else {
 		return mysqlDb.Close()
 	}
-}
-
-func (ms *mysqlStore) LoadConfig(confNames ...string) (map[string]interface{}, error) {
-	var confs []conf
-
-	if err := ms.db.Where("name IN ?", confNames).Find(&confs).Error; err != nil {
-		return nil, err
-	}
-
-	res := make(map[string]interface{}, len(confs))
-	for _, c := range confs {
-		res[c.Name] = c.Value
-	}
-
-	return res, nil
-}
-
-func (ms *mysqlStore) StoreConfig(confName string, confVal interface{}) error {
-	return ms.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "name"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{"value": confVal}),
-	}).Create(&conf{
-		Name: confName, Value: confVal.(string),
-	}).Error
 }
 
 // calibrateEpochStats calibrates epoch statistics by running MySQL OLAP.
