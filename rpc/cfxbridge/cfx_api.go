@@ -335,3 +335,21 @@ func (api *CfxAPI) GetBlockRewardInfo(ctx context.Context, epoch types.Epoch) ([
 func (api *CfxAPI) ClientVersion(ctx context.Context) (string, error) {
 	return api.eth.ClientVersion()
 }
+
+func (api *CfxAPI) GetSupplyInfo(ctx context.Context, epoch *types.Epoch) (types.TokenSupplyInfo, error) {
+	if epoch == nil {
+		epoch = types.EpochLatestState
+	}
+
+	result, err := api.cfx.GetSupplyInfo(epoch)
+	if err != nil {
+		return types.TokenSupplyInfo{}, err
+	}
+
+	result.TotalCirculating = result.TotalEspaceTokens
+	result.TotalIssued = result.TotalEspaceTokens
+	result.TotalStaking = HexBig0
+	result.TotalCollateral = HexBig0
+
+	return result, nil
+}
