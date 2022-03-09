@@ -5,7 +5,6 @@ import (
 	"math/bits"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
@@ -15,6 +14,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/openweb3/go-rpc-provider"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 	ring "github.com/zealws/golang-ring"
 )

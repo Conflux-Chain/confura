@@ -27,10 +27,16 @@ func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.Trace
 		txPos = &txPosU64
 	}
 
+	var valid bool
+	if ethTrace.Valid != nil {
+		valid = *ethTrace.Valid
+	} else if ethTrace.Error == nil {
+		valid = true
+	}
+
 	return types.LocalizedTrace{
-		Action: cfxTraceAction,
-		// TODO Valid is true only when all ancestors are valid
-		Valid:               ethTrace.Error == nil,
+		Action:              cfxTraceAction,
+		Valid:               valid,
 		Type:                cfxTraceType,
 		EpochHash:           ConvertHashNullable(&ethTrace.BlockHash),
 		EpochNumber:         types.NewBigInt(ethTrace.BlockNumber),
@@ -77,13 +83,17 @@ func convertTraceCall(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32)
 
 func convertTraceCreate(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32) (types.LocalizedTrace, types.LocalizedTrace) {
 	ethActionCreate := ethTrace.Action.(web3goTypes.Create)
+	createType := types.CREATE_NONE
+	if ethActionCreate.CreateType != nil {
+		createType = types.CreateType(*ethActionCreate.CreateType)
+	}
 	cfxTraceCreate := convertTrace(ethTrace, types.TRACE_CREATE, types.Create{
 		Space:      types.SPACE_EVM,
 		From:       ConvertAddress(ethActionCreate.From, ethNetworkId),
 		Value:      *types.NewBigIntByRaw(ethActionCreate.Value),
 		Gas:        *types.NewBigIntByRaw(ethActionCreate.Gas),
 		Init:       ethActionCreate.Init,
-		CreateType: types.CREATE_NONE, // TODO eth space missed the create type
+		CreateType: createType,
 	})
 
 	var cfxCreateResult interface{}

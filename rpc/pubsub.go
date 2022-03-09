@@ -8,13 +8,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/openweb3/go-rpc-provider"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
-	"github.com/Conflux-Chain/go-conflux-sdk/types"
 )
 
 type delegateStatus uint32

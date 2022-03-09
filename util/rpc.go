@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Conflux-Chain/go-conflux-sdk/rpc"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 )
 
