@@ -151,6 +151,7 @@ func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, s
 	}
 
 	btb.seal()
+	btb.builer.Append(trace, traceResult, subTraces)
 }
 
 func (btb *BlockTraceBuilder) seal() {
