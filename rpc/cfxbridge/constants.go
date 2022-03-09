@@ -23,4 +23,6 @@ var (
 	emptyDepositList       = []types.DepositInfo{}
 	emptyVoteList          = []types.VoteStakeInfo{}
 	emptyStorageChangeList = []types.StorageChange{}
+	emptyTraces            = []types.LocalizedTrace{}
+	emptyTxTraces          = []types.LocalizedTransactionTrace{}
 )

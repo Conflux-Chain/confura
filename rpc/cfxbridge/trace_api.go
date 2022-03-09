@@ -5,7 +5,6 @@ import (
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/util"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/web3go"
 	ethTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -45,8 +44,7 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 		return nil, nil
 	}
 
-	// TODO use block hash to query when eSpace supports blockNumberOrHash
-	bnh := ethTypes.BlockNumberOrHashWithNumber(ethTypes.BlockNumber(ethBlock.Number.Int64()))
+	bnh := ethTypes.BlockNumberOrHashWithHash(ethBlockHash, true)
 	traces, err := api.ethClient.Trace.Blocks(bnh)
 	if err != nil {
 		return nil, err
@@ -56,54 +54,14 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 		return nil, nil
 	}
 
-	cfxTxTraces := []types.LocalizedTransactionTrace{}
-	var lastTxTrace types.LocalizedTransactionTrace
-	var lastTxHash types.Hash
-
+	var builder BlockTraceBuilder
 	for i := range traces {
-		// TODO remove when eSpace always return phantom tx hash
-		if traces[i].TransactionHash == nil {
-			continue
-		}
-
 		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
-		if cfxTrace == nil {
-			continue
-		}
-
-		if txHash := *cfxTrace.TransactionHash; txHash != lastTxHash {
-			if len(lastTxHash) > 0 {
-				cfxTxTraces = append(cfxTxTraces, lastTxTrace)
-			}
-
-			lastTxHash = txHash
-
-			var txPos hexutil.Uint64
-			if cfxTrace.TransactionPosition != nil {
-				txPos = *cfxTrace.TransactionPosition
-			}
-
-			lastTxTrace = types.LocalizedTransactionTrace{
-				Traces:              []types.LocalizedTrace{},
-				TransactionPosition: txPos,
-				TransactionHash:     txHash,
-			}
-		}
-
-		lastTxTrace.Traces = append(lastTxTrace.Traces, *cfxTrace)
-
-		// TODO use `ethTrace.subtraces` to construct traces in stack manner.
-		if cfxTraceResult != nil {
-			lastTxTrace.Traces = append(lastTxTrace.Traces, *cfxTraceResult)
-		}
-	}
-
-	if len(lastTxHash) > 0 {
-		cfxTxTraces = append(cfxTxTraces, lastTxTrace)
+		builder.Append(cfxTrace, cfxTraceResult, traces[i].Subtraces)
 	}
 
 	return &types.LocalizedBlockTrace{
-		TransactionTraces: cfxTxTraces,
+		TransactionTraces: builder.Build(),
 		EpochHash:         blockHash,
 		EpochNumber:       *types.NewBigIntByRaw(ethBlock.Number),
 		BlockHash:         blockHash,
@@ -112,7 +70,7 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 
 func (api *TraceAPI) Filter(ctx context.Context, filter types.TraceFilter) ([]types.LocalizedTrace, error) {
 	// not supported yet
-	return []types.LocalizedTrace{}, nil
+	return emptyTraces, nil
 }
 
 func (api *TraceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]types.LocalizedTrace, error) {
@@ -125,29 +83,11 @@ func (api *TraceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]type
 		return nil, nil
 	}
 
-	cfxTraces := []types.LocalizedTrace{}
+	var builder TraceBuilder
 	for i := range traces {
 		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
-
-		if cfxTrace != nil {
-			// TODO remove when eSpace always return tx hash
-			if cfxTrace.TransactionHash == nil {
-				cfxTrace.TransactionHash = &txHash
-			}
-
-			cfxTraces = append(cfxTraces, *cfxTrace)
-		}
-
-		// TODO use `ethTrace.subtraces` to construct traces in stack manner.
-		if cfxTraceResult != nil {
-			// TODO remove when eSpace always return tx hash
-			if cfxTraceResult.TransactionHash == nil {
-				cfxTraceResult.TransactionHash = &txHash
-			}
-
-			cfxTraces = append(cfxTraces, *cfxTraceResult)
-		}
+		builder.Append(cfxTrace, cfxTraceResult, traces[i].Subtraces)
 	}
 
-	return cfxTraces, nil
+	return builder.Build(), nil
 }
