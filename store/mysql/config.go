@@ -29,6 +29,8 @@ type Config struct {
 	MaxIdleConns    int           `default:"10"`
 
 	Enabled bool
+
+	AddressIndexedLogEnabled bool
 }
 
 // MustNewConfigFromViper creates an instance of Config from Viper or panic on error.

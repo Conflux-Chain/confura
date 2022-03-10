@@ -16,6 +16,7 @@ var allModels = []interface{}{
 	&epochStats{},
 	&conf{},
 	&User{},
+	&Contract{},
 }
 
 type epochStatsType uint8

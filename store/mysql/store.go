@@ -72,6 +72,7 @@ type mysqlStore struct {
 	*logStore
 	*confStore
 	*UserStore
+	*ContractStore
 
 	db     *gorm.DB
 	config *Config
@@ -92,18 +93,19 @@ type mysqlStore struct {
 
 func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 	ms := mysqlStore{
-		txStore:     newTxStore(db),
-		blockStore:  newBlockStore(db),
-		logStore:    newLogStore(db),
-		confStore:   newConfStore(db),
-		UserStore:   newUserStore(db),
-		db:          db,
-		config:      config,
-		minEpoch:    citypes.EpochNumberNil,
-		maxEpoch:    citypes.EpochNumberNil,
-		epochRanges: make(map[store.EpochDataType]*citypes.EpochRange),
-		epochTotals: make(map[store.EpochDataType]*uint64),
-		disabler:    option.Disabler,
+		txStore:       newTxStore(db),
+		blockStore:    newBlockStore(db),
+		logStore:      newLogStore(db),
+		confStore:     newConfStore(db),
+		UserStore:     newUserStore(db),
+		ContractStore: NewContractStore(db),
+		db:            db,
+		config:        config,
+		minEpoch:      citypes.EpochNumberNil,
+		maxEpoch:      citypes.EpochNumberNil,
+		epochRanges:   make(map[store.EpochDataType]*citypes.EpochRange),
+		epochTotals:   make(map[store.EpochDataType]*uint64),
+		disabler:      option.Disabler,
 	}
 
 	if option.CalibrateEpochStats {
@@ -192,6 +194,19 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 
 	updater := metrics.NewTimerUpdaterByName("infura/duration/store/mysql/write")
 	defer updater.Update()
+
+	// Disabled during development
+	if ms.config.AddressIndexedLogEnabled {
+		newAdded, err := ms.AddContractByEpochData(dataSlice...)
+		if err != nil {
+			return errors.WithMessage(err, "Failed to add contracts for specified epoch data slice")
+		}
+
+		// Note, even if failed to insert event logs afterward, no need to rollback the inserted contract records.
+		if newAdded > 0 {
+			logrus.WithField("count", newAdded).Debug("Succeeded to add new contract into database")
+		}
+	}
 
 	opAffects := store.NewEpochDataOpAffects(store.EpochOpPush, pushFromEpoch, lastEpoch)
 	txOpAffects := newMysqlEpochDataOpAffects(opAffects)
