@@ -9,11 +9,11 @@ import (
 
 type partitionedStore struct{}
 
-func (*partitionedStore) getPartitionedTableName(tabler schema.Tabler, partition uint) string {
+func (*partitionedStore) getPartitionedTableName(tabler schema.Tabler, partition uint32) string {
 	return fmt.Sprintf("%v_%v", tabler.TableName(), partition)
 }
 
-func (ps *partitionedStore) createPartitionedTable(db *gorm.DB, modelPtr schema.Tabler, partition uint) (bool, error) {
+func (ps *partitionedStore) createPartitionedTable(db *gorm.DB, modelPtr schema.Tabler, partition uint32) (bool, error) {
 	tableName := ps.getPartitionedTableName(modelPtr, partition)
 	migrator := db.Migrator()
 
@@ -33,7 +33,7 @@ func (ps *partitionedStore) createPartitionedTable(db *gorm.DB, modelPtr schema.
 	return true, nil
 }
 
-func (ps *partitionedStore) createPartitionedTables(db *gorm.DB, modelPtr schema.Tabler, partitionFrom, count uint) (int, error) {
+func (ps *partitionedStore) createPartitionedTables(db *gorm.DB, modelPtr schema.Tabler, partitionFrom, count uint32) (int, error) {
 	var numCreated int
 
 	for i, end := partitionFrom, partitionFrom+count; i < end; i++ {
@@ -50,7 +50,7 @@ func (ps *partitionedStore) createPartitionedTables(db *gorm.DB, modelPtr schema
 	return numCreated, nil
 }
 
-func (ps *partitionedStore) deletePartitionedTable(db *gorm.DB, modelPtr schema.Tabler, partition uint) (bool, error) {
+func (ps *partitionedStore) deletePartitionedTable(db *gorm.DB, modelPtr schema.Tabler, partition uint32) (bool, error) {
 	tableName := ps.getPartitionedTableName(modelPtr, partition)
 	migrator := db.Migrator()
 

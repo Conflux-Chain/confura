@@ -9,6 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+const defaultBatchSizeLogInsert = 500
+
 // convertLogTopic converts RPC log topic to store topic.
 func convertLogTopic(log *types.Log, index int) string {
 	if index < 0 || index >= len(log.Topics) {

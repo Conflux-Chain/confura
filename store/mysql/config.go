@@ -31,7 +31,7 @@ type Config struct {
 	Enabled bool
 
 	AddressIndexedLogEnabled    bool
-	AddressIndexedLogPartitions uint `default:"10"`
+	AddressIndexedLogPartitions uint32 `default:"10"`
 }
 
 // MustNewConfigFromViper creates an instance of Config from Viper or panic on error.

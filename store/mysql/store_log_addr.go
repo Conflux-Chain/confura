@@ -1,6 +1,8 @@
 package mysql
 
 import (
+	"hash/fnv"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
@@ -78,22 +80,22 @@ func NewAddressIndexedLogStore(db *gorm.DB) *AddressIndexedLogStore {
 	}
 }
 
-func (ls *AddressIndexedLogStore) CreateAddressIndexedLogTable(partitionFrom, count uint) (int, error) {
+func (ls *AddressIndexedLogStore) CreateAddressIndexedLogTable(partitionFrom, count uint32) (int, error) {
 	return ls.createPartitionedTables(ls.db, &AddressIndexedLog{}, partitionFrom, count)
 }
 
-func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogTable(partition uint) (bool, error) {
+func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogTable(partition uint32) (bool, error) {
 	return ls.deletePartitionedTable(ls.db, &AddressIndexedLog{}, partition)
 }
 
-// ParseAddressIndexedLogs returns a slice of address indexed logs to create in batch.
-func (ls *AddressIndexedLogStore) ParseAddressIndexedLogs(data *store.EpochData) []*AddressIndexedLog {
-	var logs []*AddressIndexedLog
+func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *store.EpochData, totalPartitions uint32) error {
+	partition2Logs := make(map[uint32][]*AddressIndexedLog)
 
 	for _, block := range data.Blocks {
 		bn := block.BlockNumber.ToInt().Uint64()
 
 		for _, tx := range block.Transactions {
+			// ignore txs that not executed in current block
 			if !util.IsTxExecutedInBlock(&tx) {
 				continue
 			}
@@ -110,14 +112,33 @@ func (ls *AddressIndexedLogStore) ParseAddressIndexedLogs(data *store.EpochData)
 
 			receiptExt := data.ReceiptExts[tx.Hash]
 
-			for i := range receipt.Logs {
+			for i, v := range receipt.Logs {
 				// TODO ignore logs of big contracts
-				logs = append(logs, NewAddressIndexedLog(&receipt.Logs[i], bn, receiptExt.LogExts[i]))
+				log := NewAddressIndexedLog(&v, bn, receiptExt.LogExts[i])
+				partition := ls.getLogPartitionByAddress(&v.Address, totalPartitions)
+				partition2Logs[partition] = append(partition2Logs[partition], log)
 			}
 		}
 	}
 
-	return logs
+	var model AddressIndexedLog
+
+	// Insert address indexed logs into different partitions.
+	for partition, logs := range partition2Logs {
+		tableName := ls.getPartitionedTableName(&model, partition)
+		if err := dbTx.Table(tableName).CreateInBatches(&logs, defaultBatchSizeLogInsert).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (ls *AddressIndexedLogStore) getLogPartitionByAddress(contract *cfxaddress.Address, totalPartitions uint32) uint32 {
+	hasher := fnv.New32()
+	hasher.Write(contract.MustGetCommonAddress().Bytes())
+	// Use consistent hashing if repartition supported
+	return hasher.Sum32() % totalPartitions
 }
 
 // TODO getLogs by address and optional block number
