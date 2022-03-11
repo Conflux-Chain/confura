@@ -30,7 +30,8 @@ type Config struct {
 
 	Enabled bool
 
-	AddressIndexedLogEnabled bool
+	AddressIndexedLogEnabled    bool
+	AddressIndexedLogPartitions uint `default:"10"`
 }
 
 // MustNewConfigFromViper creates an instance of Config from Viper or panic on error.
@@ -75,6 +76,13 @@ func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
 
 		if err := initLogsPartitions(db); err != nil {
 			logrus.WithError(err).Fatal("Failed to init logs table partitions")
+		}
+
+		ls := NewAddressIndexedLogStore(db)
+		if _, err := ls.CreateAddressIndexedLogTable(0, config.AddressIndexedLogPartitions); err != nil {
+			logrus.WithError(err).
+				WithField("partitions", config.AddressIndexedLogPartitions).
+				Fatal("Failed to create address indexed log tables")
 		}
 	}
 

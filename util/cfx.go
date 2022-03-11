@@ -7,6 +7,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/middleware"
+	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -78,4 +79,8 @@ func callRpcMetricsMiddleware(handler middleware.CallRpcHandler) middleware.Call
 	}
 
 	return middleware.CallRpcHandlerFunc(metricFn)
+}
+
+func IsTxExecutedInBlock(tx *types.Transaction) bool {
+	return tx != nil && tx.BlockHash != nil && tx.Status != nil && *tx.Status < 2
 }
