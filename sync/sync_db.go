@@ -11,6 +11,7 @@ import (
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/sync/catchup"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	gometrics "github.com/ethereum/go-ethereum/metrics"
@@ -59,6 +60,8 @@ type DatabaseSyncer struct {
 	checkPointCh chan bool
 	// window to cache epoch pivot info
 	epochPivotWin *epochPivotWindow
+	// sync is ready only after fast catch-up is completed
+	catchupCompleted uint32
 }
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
@@ -82,9 +85,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSync
 
 	// Ensure epoch data validity in database
 	if err := ensureStoreEpochDataOk(cfx, db); err != nil {
-		logrus.WithError(err).Fatal(
-			"Db sync failed to ensure epoch data validity in db",
-		)
+		logrus.WithError(err).Fatal("Db sync failed to ensure epoch data validity in db")
 	}
 
 	// Load last sync epoch information
@@ -100,9 +101,6 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
-	ticker := time.NewTicker(syncer.syncIntervalCatchUp)
-	defer ticker.Stop()
-
 	checkpoint := func() {
 		if err := syncer.doCheckPoint(); err != nil {
 			logrus.WithError(err).Error("Db syncer failed to do checkpoint")
@@ -115,6 +113,12 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 		breakLoop = true
 		logrus.Info("DB syncer shutdown ok")
 	}
+
+	syncer.fastCatchup(ctx)
+	atomic.StoreUint32(&syncer.catchupCompleted, 1)
+
+	ticker := time.NewTicker(syncer.syncIntervalCatchUp)
+	defer ticker.Stop()
 
 	for !breakLoop {
 		select { // first class priority
@@ -137,6 +141,14 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 			}
 		}
 	}
+}
+
+// fast catch-up until the latest finalized/checkpoint epoch
+func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
+	catchUpSyncer := catchup.MustNewSyncerFromViper(syncer.cfx, syncer.db, syncer.epochFrom)
+	defer catchUpSyncer.Close()
+
+	catchUpSyncer.Sync(ctx)
 }
 
 // Load last sync epoch from databse to continue synchronization.
@@ -366,6 +378,10 @@ func (syncer *DatabaseSyncer) doTicker(ticker *time.Ticker) error {
 
 // implement the EpochSubscriber interface.
 func (syncer *DatabaseSyncer) onEpochReceived(epoch types.WebsocketEpochResponse) {
+	if atomic.LoadUint32(&syncer.catchupCompleted) != 1 { // not ready for sync yet
+		return
+	}
+
 	epochNo := epoch.EpochNumber.ToInt().Uint64()
 
 	logger := logrus.WithField("epoch", epochNo)
@@ -379,6 +395,10 @@ func (syncer *DatabaseSyncer) onEpochReceived(epoch types.WebsocketEpochResponse
 }
 
 func (syncer *DatabaseSyncer) onEpochSubStart() {
+	if atomic.LoadUint32(&syncer.catchupCompleted) != 1 { // not ready for sync yet
+		return
+	}
+
 	logrus.Debug("DB sync onEpochSubStart event received")
 
 	atomic.StoreUint64(&(syncer.lastSubEpochNo), citypes.EpochNumberNil) // reset lastSubEpochNo

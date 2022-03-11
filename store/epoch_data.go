@@ -47,6 +47,28 @@ type EpochData struct {
 	ReceiptExts map[types.Hash]*ReceiptExtra
 }
 
+// CalculateDbRows calculates to be inserted db rows
+func (epoch *EpochData) CalculateDbRows() int {
+	dbRows := 0
+
+	storeDisabler := StoreConfig()
+	if !storeDisabler.IsChainBlockDisabled() {
+		dbRows += len(epoch.Blocks)
+	}
+
+	if !storeDisabler.IsChainReceiptDisabled() || !storeDisabler.IsChainTxnDisabled() {
+		dbRows += len(epoch.Receipts)
+	}
+
+	if !storeDisabler.IsChainLogDisabled() {
+		for _, rcpt := range epoch.Receipts {
+			dbRows += len(rcpt.Logs)
+		}
+	}
+
+	return dbRows
+}
+
 func (epoch *EpochData) GetPivotBlock() *types.Block {
 	return epoch.Blocks[len(epoch.Blocks)-1]
 }
