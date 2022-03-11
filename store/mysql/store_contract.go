@@ -18,8 +18,7 @@ func (Contract) TableName() string {
 }
 
 type ContractStore struct {
-	baseStore
-	db    *gorm.DB
+	*baseStore
 	cache *lru.Cache // generally, active contracts are limited
 }
 
@@ -32,8 +31,8 @@ func NewContractStore(db *gorm.DB, cacheSize ...int) *ContractStore {
 	cache, _ := lru.New(size)
 
 	return &ContractStore{
-		db:    db,
-		cache: cache,
+		baseStore: newBaseStore(db),
+		cache:     cache,
 	}
 }
 
@@ -44,21 +43,13 @@ func (cs *ContractStore) GetContractByAddress(address string) (*Contract, bool, 
 	}
 
 	var contract Contract
-
-	err := cs.db.Where("address = ?", address).First(&contract).Error
-
-	if cs.IsRecordNotFound(err) {
-		return nil, false, nil
+	exists, err := cs.exists(&contract, "address = ?", address)
+	if err == nil && exists {
+		// update cache if exists
+		cs.cache.Add(address, &contract)
 	}
 
-	if err != nil {
-		return nil, false, err
-	}
-
-	// update cache if exists
-	cs.cache.Add(address, &contract)
-
-	return &contract, true, nil
+	return &contract, exists, err
 }
 
 // AddContract adds contract in batch and return the number of new added contracts.

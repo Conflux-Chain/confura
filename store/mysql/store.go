@@ -58,14 +58,8 @@ func newMysqlEpochDataOpAffects(sea *store.EpochDataOpAffects) *mysqlEpochDataOp
 	}
 }
 
-type baseStore struct{}
-
-func (baseStore) IsRecordNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, store.ErrNotFound)
-}
-
 type mysqlStore struct {
-	baseStore
+	*baseStore
 	logPartitioner
 	*txStore
 	*blockStore
@@ -93,6 +87,7 @@ type mysqlStore struct {
 
 func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 	ms := mysqlStore{
+		baseStore:     newBaseStore(db),
 		txStore:       newTxStore(db),
 		blockStore:    newBlockStore(db),
 		logStore:      newLogStore(db),
@@ -304,14 +299,6 @@ func (ms *mysqlStore) DequeueTransactions(epochUntil uint64) error {
 
 func (ms *mysqlStore) DequeueLogs(epochUntil uint64) error {
 	return ms.dequeueEpochRangeData(store.EpochLog, epochUntil)
-}
-
-func (ms *mysqlStore) Close() error {
-	if mysqlDb, err := ms.db.DB(); err != nil {
-		return err
-	} else {
-		return mysqlDb.Close()
-	}
 }
 
 func (ms *mysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) (*mysqlEpochDataOpAffects, error)) error {

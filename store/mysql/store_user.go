@@ -16,27 +16,17 @@ func (User) TableName() string {
 }
 
 type UserStore struct {
-	baseStore
-	db *gorm.DB
+	*baseStore
 }
 
 func newUserStore(db *gorm.DB) *UserStore {
 	return &UserStore{
-		db: db,
+		baseStore: newBaseStore(db),
 	}
 }
 
 func (us *UserStore) GetUserByKey(key string) (*User, bool, error) {
 	var user User
-
-	err := us.db.Where("api_key = ?", key).First(&user).Error
-	if err == nil {
-		return &user, true, nil
-	}
-
-	if us.IsRecordNotFound(err) {
-		return nil, false, nil
-	}
-
-	return nil, false, err
+	exists, err := us.exists(&user, "api_key = ?", key)
+	return &user, exists, err
 }
