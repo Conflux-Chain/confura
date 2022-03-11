@@ -5,10 +5,103 @@ import (
 	"sync"
 
 	cisync "github.com/conflux-chain/conflux-infura/sync"
+	"github.com/conflux-chain/conflux-infura/sync/catchup"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
-func startSyncService(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) {
+type syncOption struct {
+	dbSyncEnabled  bool
+	kvSyncEnabled  bool
+	ethSyncEnabled bool
+	catchupEnabled bool
+}
+
+type catchupSetting struct {
+	epochFrom, epochTo uint64
+	adaptive           bool
+}
+
+var (
+	syncOpt syncOption
+	cuSet   catchupSetting
+
+	syncCmd = &cobra.Command{
+		Use:   "sync",
+		Short: "Start sync service, including DB/KV/ETH sync and fast catchup servers",
+		Run:   startSyncService,
+	}
+)
+
+func init() {
+	syncCmd.Flags().BoolVar(&syncOpt.dbSyncEnabled, "db", false, "Start DB sync server")
+	syncCmd.Flags().BoolVar(&syncOpt.kvSyncEnabled, "kv", false, "Start KV sync server")
+	syncCmd.Flags().BoolVar(&syncOpt.ethSyncEnabled, "eth", false, "Start ETH sync server")
+	syncCmd.Flags().BoolVar(&syncOpt.catchupEnabled, "catchup", false, "Start catchup fast sync server")
+
+	// load catchup fast sync settings from command line arguments
+	syncCmd.Flags().Uint64Var(
+		&cuSet.epochFrom, "start", 0,
+		"the epoch from which catch-up fast sync will start",
+	)
+	syncCmd.Flags().Uint64Var(
+		&cuSet.epochTo, "end", 0,
+		"the epoch until which catch-up fast sync will end",
+	)
+	syncCmd.Flags().BoolVar(
+		&cuSet.adaptive, "adaptive", false,
+		"automatically adjust target epoch number to the latest stable epoch",
+	)
+
+	rootCmd.AddCommand(syncCmd)
+}
+
+func startSyncService(*cobra.Command, []string) {
+	if !syncOpt.dbSyncEnabled && !syncOpt.kvSyncEnabled &&
+		!syncOpt.ethSyncEnabled && !syncOpt.catchupEnabled {
+		logrus.Fatal("No Sync server specified")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+
+	storeCtx := mustInitStoreContext(true)
+	defer storeCtx.Close()
+
+	syncCtx := mustInitSyncContext(storeCtx)
+	defer syncCtx.Close()
+
+	var subs []cisync.EpochSubscriber
+
+	if syncOpt.dbSyncEnabled {
+		syncer := startSyncCfxDatabase(ctx, &wg, syncCtx)
+		subs = append(subs, syncer)
+	}
+
+	if syncOpt.kvSyncEnabled {
+		syncer := startSyncCfxCache(ctx, &wg, syncCtx)
+		subs = append(subs, syncer)
+	}
+
+	if syncOpt.ethSyncEnabled {
+		startSyncEthDatabase(ctx, &wg, syncCtx)
+	}
+
+	if syncOpt.catchupEnabled {
+		startFastSyncCfxDatabase(ctx, &wg, syncCtx)
+	}
+
+	if len(subs) > 0 {
+		// Monitor pivot chain switch via pub/sub
+		logrus.Info("Start to pub/sub epoch to monitor pivot chain switch")
+		go cisync.MustSubEpoch(ctx, &wg, syncCtx.subCfx, subs...)
+	}
+
+	util.GracefulShutdown(&wg, cancel)
+}
+
+func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) {
 	if syncCtx.cfxDB == nil && syncCtx.cfxCache == nil && syncCtx.ethDB == nil {
 		logrus.Fatal("No data sync configured")
 	}
@@ -74,4 +167,27 @@ func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncC
 	logrus.Info("Start to prune ETH blockchain data from database")
 	ethdbPruner := cisync.MustNewDBPruner(syncCtx.ethDB)
 	go ethdbPruner.Prune(ctx, wg)
+}
+
+func startFastSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) {
+	// Catch-up fast sync core space epoch data to db
+	logrus.Info("Start to catch-up fast sync CFX blockchain data into database")
+
+	if !cuSet.adaptive && cuSet.epochFrom >= cuSet.epochTo {
+		logrus.Info("Catch-up fast sync should have end epoch > start epoch for non-adaptive mode")
+		return
+	}
+
+	syncer := catchup.MustNewSyncer(
+		syncCtx.syncCfx, syncCtx.cfxDB,
+		catchup.WithAdaptive(cuSet.adaptive),
+		catchup.WithEpochFrom(cuSet.epochFrom),
+		catchup.WithEpochTo(cuSet.epochTo),
+	)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		syncer.Sync(ctx)
+	}()
 }

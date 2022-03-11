@@ -56,7 +56,7 @@ func start(cmd *cobra.Command, args []string) {
 	if syncServerEnabled {
 		syncCtx := mustInitSyncContext(storeCtx)
 		defer syncCtx.Close()
-		startSyncService(ctx, wg, syncCtx)
+		startSyncServiceAdaptively(ctx, wg, syncCtx)
 	}
 
 	if rpcServerEnabled {

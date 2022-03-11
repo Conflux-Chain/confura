@@ -1,8 +1,7 @@
 package catchup
 
 type config struct {
-	// list of Conflux fullnodes to accelerate catching up until the latest
-	// finalized/checkpoint epochs
+	// list of Conflux fullnodes to accelerate catching up until the latest stable epoch
 	CfxPool []string
 	// threshold for num of db rows per batch persistence
 	DbRowsThreshold int `default:"1500"`

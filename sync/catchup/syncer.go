@@ -9,6 +9,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -20,31 +21,79 @@ import (
 type Syncer struct {
 	// goroutine workers to fetch epoch data concurrently
 	workers []*worker
-	// specifying the epoch number from which to sync
-	epochFrom uint64
-	// specifying the epoch number until which to sync
-	epochTo uint64
 	// conflux sdk client delegated to get network status
 	cfx sdk.ClientOperator
 	// db store to persist epoch data
 	db store.Store
-	// catch-up config
-	conf *config
+	// specifying the epoch range to sync
+	syncRange types.EpochRange
+	// whether to automatically adjust target sync epoch number to the latest stable epoch,
+	// which is maximum between the latest finalized and the checkpoint epoch number.
+	adaptive bool
+	// min num of db rows per batch persistence
+	minBatchDbRows int
 }
 
-func MustNewSyncerFromViper(cfx sdk.ClientOperator, db store.Store, epochFrom uint64) *Syncer {
+// functional options for syncer
+type SyncOption func(*Syncer)
+
+func WithAdaptive(adaptive bool) SyncOption {
+	return func(s *Syncer) {
+		s.adaptive = adaptive
+	}
+}
+
+func WithEpochFrom(epochFrom uint64) SyncOption {
+	return func(s *Syncer) {
+		s.syncRange.EpochFrom = epochFrom
+	}
+}
+
+func WithEpochTo(epochTo uint64) SyncOption {
+	return func(s *Syncer) {
+		s.syncRange.EpochTo = epochTo
+	}
+}
+
+func WithMinBatchDbRows(dbRows int) SyncOption {
+	return func(s *Syncer) {
+		s.minBatchDbRows = dbRows
+	}
+}
+
+func WithWorkers(workers []*worker) SyncOption {
+	return func(s *Syncer) {
+		s.workers = workers
+	}
+}
+
+func MustNewSyncer(cfx sdk.ClientOperator, db store.Store, opts ...SyncOption) *Syncer {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
-	syncer := &Syncer{
-		db: db, cfx: cfx, conf: &conf, epochFrom: epochFrom,
-	}
-
+	var workers []*worker
 	for i, nodeUrl := range conf.CfxPool { // initialize workers
 		name := fmt.Sprintf("CUWorker#%v", i)
 		worker := mustNewWorker(name, nodeUrl, conf.WorkerChanSize)
+		workers = append(workers, worker)
+	}
 
-		syncer.workers = append(syncer.workers, worker)
+	var newOpts []SyncOption
+	newOpts = append(newOpts,
+		WithMinBatchDbRows(conf.DbRowsThreshold),
+		WithWorkers(workers),
+	)
+
+	return newSyncer(cfx, db, append(newOpts, opts...)...)
+}
+
+func newSyncer(cfx sdk.ClientOperator, db store.Store, opts ...SyncOption) *Syncer {
+	syncer := &Syncer{
+		db: db, cfx: cfx, adaptive: true, minBatchDbRows: 1500,
+	}
+
+	for _, opt := range opts {
+		opt(syncer)
 	}
 
 	return syncer
@@ -66,16 +115,21 @@ func (s *Syncer) Sync(ctx context.Context) {
 		return
 	}
 
-	if !s.updateEpochTo(ctx) {
-		logrus.Debug("Catch-up syncer skipped due to canceled during epoch to number update")
+	if s.adaptive && !s.updateEpochTo(ctx) {
+		logrus.Debug("Catch-up syncer skipped due to context canceled")
 		return
 	}
 
-	for s.epochFrom <= s.epochTo {
-		s.syncOnce(ctx, s.epochFrom, s.epochTo)
-
-		if !s.updateEpochTo(ctx) {
+	for {
+		start, end := s.syncRange.EpochFrom, s.syncRange.EpochTo
+		if start > end {
 			break
+		}
+
+		s.syncOnce(ctx, start, end)
+
+		if s.adaptive && !s.updateEpochTo(ctx) {
+			return
 		}
 	}
 }
@@ -128,7 +182,7 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 			}).Debug("Catch-up syncer collects new epoch data from worker")
 
 			// bath insert into db if enough db rows collected
-			if state.dbRows >= s.conf.DbRowsThreshold {
+			if state.dbRows >= s.minBatchDbRows {
 				s.persist(&state)
 			}
 		}
@@ -176,12 +230,14 @@ func (s *Syncer) persist(state *persistState) {
 		time.Sleep(time.Second)
 	}
 
-	s.epochFrom += numEpochs
+	s.syncRange.EpochFrom += numEpochs
 	s.logger().WithField("numEpochs", numEpochs).Debug("Catch-up syncer persisted epoch data")
 }
 
 func (s *Syncer) logger() *logrus.Entry {
-	return logrus.WithFields(logrus.Fields{"epochFrom": s.epochFrom, "epochTo": s.epochTo})
+	return logrus.WithFields(logrus.Fields{
+		"epochFrom": s.syncRange.EpochFrom, "epochTo": s.syncRange.EpochTo,
+	})
 }
 
 // updateEpochTo repeatedly try to update the target epoch number
@@ -220,7 +276,7 @@ func (s *Syncer) doUpdateEpochTo() error {
 		return errors.WithMessage(err, "failed to get network status")
 	}
 
-	s.epochTo = util.MaxUint64(
+	s.syncRange.EpochTo = util.MaxUint64(
 		uint64(status.LatestFinalized), uint64(status.LatestCheckpoint),
 	)
 
