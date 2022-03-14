@@ -63,7 +63,9 @@ type EVConfig struct {
 	EpochScanFrom       uint64        // the epoch scan from
 	ScanInterval        time.Duration // scan interval
 	SamplingInterval    time.Duration // sampling interval
-	SamplingEpochType   string        // sampling epoch type: lm(latest_mined), ls(latest_state), lc(latest_confirmed)
+	// sampling epoch type:
+	// lm(latest_mined), ls(latest_state), lc(latest_confirmed), lf(latest_finalized), lcp(latest_checkpoint)
+	SamplingEpochType string
 }
 
 // EpochValidator pulls epoch data from fullnode and infura endpoints, and then compares the
@@ -102,11 +104,21 @@ func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
 		fallthrough
 	case "latest_state":
 		validator.samplingEpoch = types.EpochLatestState
-	default:
+	case "lcp":
+		fallthrough
+	case "latest_checkpoint":
+		validator.samplingEpoch = types.EpochLatestCheckpoint
+	case "lc":
+		fallthrough
+	case "latest_confirmed":
 		validator.samplingEpoch = types.EpochLatestConfirmed
+	default:
+		validator.samplingEpoch = types.EpochLatestFinalized
 	}
 
-	defer logrus.WithFields(logrus.Fields{"config": conf, "samplingEpoch": validator.samplingEpoch}).Info("Test validation configurations loaded.")
+	defer logrus.
+		WithFields(logrus.Fields{"config": conf, "samplingEpoch": validator.samplingEpoch}).
+		Info("Test validation configurations loaded.")
 
 	if conf.EpochScanFrom != math.MaxUint64 {
 		return validator
@@ -222,10 +234,10 @@ func (validator *EpochValidator) doSampling() error {
 	err = validator.doRun(epochNo, epochVFuncs...)
 	// Since nearhead epoch re-orgs are of high possibility due to pivot switch,
 	// we'd better do some retrying before determining the final validation result.
-	for i := 0; i < samplingValidationRetries && errors.Is(err, errResultNotMatched); i++ {
+	for i := 1; i <= samplingValidationRetries && errors.Is(err, errResultNotMatched); i++ {
 		time.Sleep(samplingValidationSleepDuration)
 		err = validator.doRun(epochNo, epochVFuncs...)
-		logrus.WithField("epoch", epochNo).WithError(err).Infof("Epoch validator sampling validation retried %v time(s)", i+1)
+		logrus.WithField("epoch", epochNo).WithError(err).Infof("Epoch validator sampling validation retried %v time(s)", i)
 	}
 
 	return errors.WithMessagef(err, "failed to validate epoch #%v", epochNo)
@@ -695,7 +707,7 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	}
 
 	if err := validator.doValidateGetLogs(filterByEpoch); err != nil {
-		logger.WithField("filterByEpoch", filterByEpoch).WithError(err).Error("Epoch validator failed to validate cfx_getLogs")
+		logger.WithField("filterByEpoch", filterByEpoch).WithError(err).Info("Epoch validator failed to validate cfx_getLogs")
 		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
 	}
 
@@ -707,7 +719,7 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	}
 
 	if err != nil {
-		logger.WithError(err).Error("Epoch validator failed to query epoch block hashes for validating cfx_getLogs")
+		logger.WithError(err).Info("Epoch validator failed to query epoch block hashes for validating cfx_getLogs")
 		return errors.WithMessage(err, "failed to query epoch block hashes for validating cfx_getLogs")
 	}
 
@@ -722,7 +734,7 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	}
 
 	if err := validator.doValidateGetLogs(filterByBlockHashes); err != nil {
-		logger.WithField("filterByBlockHashes", filterByBlockHashes).WithError(err).Error("Epoch validator failed to validate cfx_getLogs")
+		logger.WithField("filterByBlockHashes", filterByBlockHashes).WithError(err).Info("Epoch validator failed to validate cfx_getLogs")
 		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
 	}
 
@@ -737,7 +749,7 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	}
 
 	if err != nil {
-		logger.WithError(err).Error("Epoch validator failed to query epoch pivot block for validating cfx_getLogs")
+		logger.WithError(err).Info("Epoch validator failed to query epoch pivot block for validating cfx_getLogs")
 		return errors.WithMessage(err, "failed to query epoch pivot block for validating cfx_getLogs")
 	}
 
@@ -759,8 +771,10 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	}
 
 	if err := validator.doValidateGetLogs(filterByBlockNumbers); err != nil {
-		l := logger.WithField("filterByBlockNumbers", filterByBlockNumbers).WithError(err)
-		l.Error("Epoch validator failed to validate cfx_getLogs")
+		logger.
+			WithField("filterByBlockNumbers", filterByBlockNumbers).
+			WithError(err).
+			Info("Epoch validator failed to validate cfx_getLogs")
 
 		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
 	}

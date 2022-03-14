@@ -194,10 +194,10 @@ func (validator *EthValidator) doSampling() error {
 	err = validator.validateEthBlock(blockNo)
 	// Since nearhead block revert are of high possibility due to chain reorg,
 	// we'd better do some retrying before determining the final validation result.
-	for i := 0; i < samplingValidationRetries && errors.Is(err, errResultNotMatched); i++ {
+	for i := 1; i <= samplingValidationRetries && errors.Is(err, errResultNotMatched); i++ {
 		time.Sleep(samplingValidationSleepDuration)
 		err = validator.validateEthBlock(blockNo)
-		logrus.WithField("block", blockNo).WithError(err).Infof("ETH validator sampling validation retried %v time(s)", i+1)
+		logrus.WithField("block", blockNo).WithError(err).Infof("ETH validator sampling validation retried %v time(s)", i)
 	}
 
 	return errors.WithMessagef(err, "failed to validate block #%v", blockNo)
@@ -526,7 +526,7 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 	if err := validator.doValidateGetLogs(&filterByBlockNums); err != nil {
 		logger.WithField(
 			"filterByBlockNums", filterByBlockNums,
-		).WithError(err).Error("ETH validator failed to validate eth_getLogs")
+		).WithError(err).Info("ETH validator failed to validate eth_getLogs")
 		return errors.WithMessagef(err, "failed to validate eth_getLogs")
 	}
 
@@ -539,7 +539,7 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 	if err := validator.doValidateGetLogs(&filterByBlockHash); err != nil {
 		logger.WithField(
 			"filterByBlockHash", filterByBlockHash,
-		).WithError(err).Error("ETH validator failed to validate eth_getLogs")
+		).WithError(err).Info("ETH validator failed to validate eth_getLogs")
 		return errors.WithMessagef(err, "failed to validate eth_getLogs")
 	}
 

@@ -26,10 +26,19 @@ func init() {
 	testCmd.Flags().StringVarP(&validConf.InfuraRpcEndpoint, "infura-endpoint", "u", "", "infura rpc endpoint to be validated against")
 	testCmd.MarkFlagRequired("infura-endpoint")
 
-	testCmd.Flags().Uint64VarP(&validConf.EpochScanFrom, "start-epoch", "e", math.MaxUint64, "the epoch from where scan validation will start")
-	testCmd.Flags().DurationVarP(&validConf.ScanInterval, "scan-interval", "c", 1*time.Second, "the interval for each scan validation")
-	testCmd.Flags().DurationVarP(&validConf.SamplingInterval, "sampling-interval", "a", 10*time.Second, "the interval for each sampling validation")
-	testCmd.Flags().StringVarP(&validConf.SamplingEpochType, "sampling-epoch-type", "t", "lc", "the epoch type for sampling validation: lm(latest_mined)/ls(latest_state)/lc(latest_confirmed)")
+	testCmd.Flags().Uint64VarP(
+		&validConf.EpochScanFrom, "start-epoch", "e", math.MaxUint64, "the epoch from where scan validation will start",
+	)
+	testCmd.Flags().DurationVarP(
+		&validConf.ScanInterval, "scan-interval", "c", 1*time.Second, "the interval for each scan validation",
+	)
+	testCmd.Flags().DurationVarP(
+		&validConf.SamplingInterval, "sampling-interval", "a", 10*time.Second, "the interval for each sampling validation",
+	)
+	testCmd.Flags().StringVarP(
+		&validConf.SamplingEpochType, "sampling-epoch-type", "t", "lf",
+		"sampling epoch type: lm(latest_mined)/ls(latest_state)/lc(latest_confirmed)/lf(latest_finalized)/lcp(latest_checkpoint)",
+	)
 
 	Cmd.AddCommand(testCmd)
 }
