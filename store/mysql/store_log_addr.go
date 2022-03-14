@@ -1,8 +1,6 @@
 package mysql
 
 import (
-	"hash/fnv"
-
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
@@ -115,7 +113,7 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 			for i, v := range receipt.Logs {
 				// TODO ignore logs of big contracts
 				log := NewAddressIndexedLog(&v, bn, receiptExt.LogExts[i])
-				partition := ls.getLogPartitionByAddress(&v.Address, totalPartitions)
+				partition := ls.getPartitionByAddress(&v.Address, totalPartitions)
 				partition2Logs[partition] = append(partition2Logs[partition], log)
 			}
 		}
@@ -132,13 +130,6 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 	}
 
 	return nil
-}
-
-func (ls *AddressIndexedLogStore) getLogPartitionByAddress(contract *cfxaddress.Address, totalPartitions uint32) uint32 {
-	hasher := fnv.New32()
-	hasher.Write(contract.MustGetCommonAddress().Bytes())
-	// Use consistent hashing if repartition supported
-	return hasher.Sum32() % totalPartitions
 }
 
 // TODO getLogs by address and optional block number

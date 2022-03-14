@@ -2,7 +2,9 @@ package mysql
 
 import (
 	"fmt"
+	"hash/fnv"
 
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
@@ -63,4 +65,11 @@ func (ps *partitionedStore) deletePartitionedTable(db *gorm.DB, modelPtr schema.
 	}
 
 	return true, nil
+}
+
+func (*partitionedStore) getPartitionByAddress(contract *cfxaddress.Address, totalPartitions uint32) uint32 {
+	hasher := fnv.New32()
+	hasher.Write(contract.MustGetCommonAddress().Bytes())
+	// Use consistent hashing if repartition supported
+	return hasher.Sum32() % totalPartitions
 }
