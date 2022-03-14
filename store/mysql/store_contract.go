@@ -19,7 +19,10 @@ func (Contract) TableName() string {
 
 type ContractStore struct {
 	*baseStore
-	cache *lru.Cache // generally, active contracts are limited
+
+	// generally, active contracts are limited
+	cacheById      *lru.Cache // id => contract
+	cacheByAddress *lru.Cache // address => contract
 }
 
 func NewContractStore(db *gorm.DB, cacheSize ...int) *ContractStore {
@@ -28,28 +31,73 @@ func NewContractStore(db *gorm.DB, cacheSize ...int) *ContractStore {
 		size = cacheSize[0]
 	}
 
-	cache, _ := lru.New(size)
+	cacheById, _ := lru.New(size)
+	cacheByAddress, _ := lru.New(size)
 
 	return &ContractStore{
-		baseStore: newBaseStore(db),
-		cache:     cache,
+		baseStore:      newBaseStore(db),
+		cacheById:      cacheById,
+		cacheByAddress: cacheByAddress,
 	}
+}
+
+func (cs *ContractStore) updateCache(contract *Contract) {
+	cs.cacheById.Add(contract.ID, contract)
+	cs.cacheByAddress.Add(contract.Address, contract)
+}
+
+func (cs *ContractStore) GetContractById(id uint64) (*Contract, bool, error) {
+	// check cache at first
+	if val, ok := cs.cacheById.Get(id); ok {
+		return val.(*Contract), true, nil
+	}
+
+	var contract Contract
+	exists, err := cs.exists(&contract, "id = ?", id)
+	if err == nil && exists {
+		cs.updateCache(&contract)
+	}
+
+	return &contract, exists, err
 }
 
 func (cs *ContractStore) GetContractByAddress(address string) (*Contract, bool, error) {
 	// check cache at first
-	if val, ok := cs.cache.Get(address); ok {
+	if val, ok := cs.cacheByAddress.Get(address); ok {
 		return val.(*Contract), true, nil
 	}
 
 	var contract Contract
 	exists, err := cs.exists(&contract, "address = ?", address)
 	if err == nil && exists {
-		// update cache if exists
-		cs.cache.Add(address, &contract)
+		cs.updateCache(&contract)
 	}
 
 	return &contract, exists, err
+}
+
+func (cs *ContractStore) AddContractIfAbsent(address string) (*Contract, bool, error) {
+	existing, ok, err := cs.GetContractByAddress(address)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if ok {
+		return existing, false, nil
+	}
+
+	// Thread unsafe
+	contract := Contract{
+		Address: address,
+	}
+
+	if err := cs.db.Create(&contract).Error; err != nil {
+		return nil, false, err
+	}
+
+	cs.updateCache(&contract)
+
+	return &contract, true, nil
 }
 
 // AddContract adds contract in batch and return the number of new added contracts.
@@ -81,8 +129,7 @@ func (cs *ContractStore) AddContract(contracts map[string]bool) (int, error) {
 
 	// update cache
 	for i := range newContracts {
-		contract := newContracts[i]
-		cs.cache.Add(contract.Address, &contract)
+		cs.updateCache(&newContracts[i])
 	}
 
 	return len(newContracts), nil
