@@ -230,8 +230,8 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	var prefind func()
 	switch filter.Type {
 	case store.LogFilterTypeBlockHashes:
-		db = ls.applyVariadicFilter(db, "block_hash_id", filter.BlockHashIds)
-		db = ls.applyVariadicFilter(db, "block_hash", filter.BlockHashes)
+		db = applyVariadicFilter(db, "block_hash_id", filter.BlockHashIds)
+		db = applyVariadicFilter(db, "block_hash", filter.BlockHashes)
 		prefind = func() {
 			db = db.Order("block_hash_id DESC")
 		}
@@ -243,25 +243,8 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 		db = db.Order("epoch DESC")
 	}
 
-	db = ls.applyVariadicFilter(db, "contract_address", filter.Contracts)
-
-	numTopics := len(filter.Topics)
-
-	if numTopics > 0 {
-		db = ls.applyVariadicFilter(db, "topic0", filter.Topics[0])
-	}
-
-	if numTopics > 1 {
-		db = ls.applyVariadicFilter(db, "topic1", filter.Topics[1])
-	}
-
-	if numTopics > 2 {
-		db = ls.applyVariadicFilter(db, "topic2", filter.Topics[2])
-	}
-
-	if numTopics > 3 {
-		db = ls.applyVariadicFilter(db, "topic3", filter.Topics[3])
-	}
+	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
+	db = applyTopicsFilter(db, filter.Topics)
 
 	if len(partitions) > 0 {
 		db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
@@ -299,18 +282,6 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	return result, nil
 }
 
-func (*logStore) applyVariadicFilter(db *gorm.DB, column string, value store.VariadicValue) *gorm.DB {
-	if single, ok := value.Single(); ok {
-		return db.Where(fmt.Sprintf("%v = ?", column), single)
-	}
-
-	if multiple, ok := value.FlatMultiple(); ok {
-		return db.Where(fmt.Sprintf("%v IN (?)", column), multiple)
-	}
-
-	return db
-}
-
 // logsRelBlockPart logs relative data part of block model, it can be used to calcuate the epoch range for log filters
 // of type block number range or block hashes.
 type logsRelBlockPart struct {
@@ -325,8 +296,8 @@ func (ls *logStore) getLogsRelBlockInfoWithinStore(filter *store.LogFilter) ([]l
 
 	switch filter.Type {
 	case store.LogFilterTypeBlockHashes:
-		db = ls.applyVariadicFilter(db, "hash_id", filter.BlockHashIds)
-		db = ls.applyVariadicFilter(db, "hash", filter.BlockHashes)
+		db = applyVariadicFilter(db, "hash_id", filter.BlockHashIds)
+		db = applyVariadicFilter(db, "hash", filter.BlockHashes)
 
 		if err := db.Select("hash", "epoch").Find(&res).Error; err != nil {
 			err = errors.WithMessage(err, "failed to get logs relative block info by hash")

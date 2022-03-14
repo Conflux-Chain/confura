@@ -143,7 +143,29 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 	return nil
 }
 
-// TODO getLogs by address and optional block number
+func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLogFilter) ([]types.Log, []*store.LogExtra, error) {
+	db := filter.Apply(ls.db)
+
+	var addrIndexedLogs []AddressIndexedLog
+	if err := db.Find(&addrIndexedLogs).Error; err != nil {
+		return nil, nil, err
+	}
+
+	logs := make([]types.Log, 0, len(addrIndexedLogs))
+	exts := make([]*store.LogExtra, 0, len(addrIndexedLogs))
+
+	for i := len(addrIndexedLogs) - 1; i >= 0; i-- {
+		log, ext, err := addrIndexedLogs[i].ToRpcLog(ls.cs)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		logs = append(logs, *log)
+		exts = append(exts, ext)
+	}
+
+	return logs, exts, nil
+}
 
 // TODO estimate result set size for specified log filter
 
