@@ -14,7 +14,7 @@ require (
 	github.com/montanaflynn/stats v0.6.6
 	github.com/nsf/jsondiff v0.0.0-20210303162244-6ea32392771e
 	github.com/openweb3/go-rpc-provider v0.1.2
-	github.com/openweb3/web3go v0.0.0-20220309031534-11e27000eb3d
+	github.com/openweb3/web3go v0.0.0-20220314084236-cf21c7abed96
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
 	github.com/selvatico/go-mocket v1.0.7

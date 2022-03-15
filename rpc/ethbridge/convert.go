@@ -143,6 +143,7 @@ func ConvertBlockHeader(value *cfxtypes.BlockHeader, blockExt *store.BlockExtra)
 	}
 
 	ethBlock := &types.Block{
+		Author:           &minerAddr,
 		Difficulty:       (*big.Int)(value.Difficulty),
 		ExtraData:        extraData,
 		GasLimit:         value.GasLimit.ToInt().Uint64(),
