@@ -3,6 +3,7 @@ package mysql
 import (
 	"fmt"
 
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
 	"gorm.io/gorm"
 )
@@ -47,7 +48,7 @@ type BaseLogFilter struct {
 	Limit  uint64
 }
 
-func (filter *BaseLogFilter) Apply(db *gorm.DB) *gorm.DB {
+func (filter *BaseLogFilter) apply(db *gorm.DB) *gorm.DB {
 	db = applyTopicsFilter(db, filter.Topics)
 
 	if filter.OffSet > 0 {
@@ -64,15 +65,70 @@ func (filter *BaseLogFilter) Apply(db *gorm.DB) *gorm.DB {
 	return db.Order("id DESC")
 }
 
+func (filter *BaseLogFilter) validateCount(total int64) (uint64, error) {
+	totalU64 := uint64(total)
+	if totalU64 <= filter.OffSet {
+		// skip all
+		return 0, nil
+	}
+
+	limit := filter.Limit
+	if limit == 0 || limit > store.MaxLogLimit {
+		limit = store.MaxLogLimit
+	}
+
+	if count := totalU64 - filter.OffSet; limit >= count {
+		return count, nil
+	}
+
+	return 0, errTooManyLogs
+}
+
 type AddressIndexedLogFilter struct {
 	BaseLogFilter
-	ContractId uint64
-	BlockFrom  uint64
-	BlockTo    uint64
+	Contract  cfxaddress.Address
+	BlockFrom uint64
+	BlockTo   uint64
+
+	contractId uint64
+	tableName  string
+}
+
+func (filter *AddressIndexedLogFilter) normalize(cs *ContractStore, partitionedTableName string) (bool, error) {
+	contract, ok, err := cs.GetContractByAddress(filter.Contract.MustGetBase32Address())
+	if err != nil {
+		return false, err
+	}
+
+	if !ok {
+		return false, nil
+	}
+
+	filter.contractId = contract.ID
+	filter.tableName = partitionedTableName
+
+	return true, nil
+}
+
+func (filter *AddressIndexedLogFilter) apply(db *gorm.DB) *gorm.DB {
+	return db.Table(filter.tableName).
+		Where("cid = ?", filter.contractId).
+		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
 }
 
 func (filter *AddressIndexedLogFilter) Apply(db *gorm.DB) *gorm.DB {
-	db = db.Where("cid = ?", filter.ContractId)
-	db = db.Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
-	return filter.BaseLogFilter.Apply(db)
+	db = filter.apply(db)
+	return filter.BaseLogFilter.apply(db)
+}
+
+func (filter *AddressIndexedLogFilter) ValidateCount(db *gorm.DB) (uint64, error) {
+	db = filter.apply(db)
+	db = applyTopicsFilter(db, filter.Topics)
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return 0, err
+	}
+
+	return filter.validateCount(total)
 }

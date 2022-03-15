@@ -52,20 +52,20 @@ func (ps *partitionedStore) createPartitionedTables(db *gorm.DB, modelPtr schema
 	return numCreated, nil
 }
 
-func (ps *partitionedStore) deletePartitionedTable(db *gorm.DB, modelPtr schema.Tabler, partition uint32) (bool, error) {
-	tableName := ps.getPartitionedTableName(modelPtr, partition)
-	migrator := db.Migrator()
+// func (ps *partitionedStore) deletePartitionedTable(db *gorm.DB, modelPtr schema.Tabler, partition uint32) (bool, error) {
+// 	tableName := ps.getPartitionedTableName(modelPtr, partition)
+// 	migrator := db.Migrator()
 
-	if !migrator.HasTable(tableName) {
-		return false, nil
-	}
+// 	if !migrator.HasTable(tableName) {
+// 		return false, nil
+// 	}
 
-	if err := migrator.DropTable(tableName); err != nil {
-		return false, err
-	}
+// 	if err := migrator.DropTable(tableName); err != nil {
+// 		return false, err
+// 	}
 
-	return true, nil
-}
+// 	return true, nil
+// }
 
 func (*partitionedStore) getPartitionByAddress(contract *cfxaddress.Address, totalPartitions uint32) uint32 {
 	hasher := fnv.New32()

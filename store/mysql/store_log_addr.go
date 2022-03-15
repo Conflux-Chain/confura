@@ -72,14 +72,17 @@ func (l *AddressIndexedLog) ToRpcLog(cs *ContractStore) (*types.Log, *store.LogE
 
 type AddressIndexedLogStore struct {
 	partitionedStore
-	db *gorm.DB
-	cs *ContractStore
+	db         *gorm.DB
+	cs         *ContractStore
+	model      AddressIndexedLog
+	partitions uint32
 }
 
-func NewAddressIndexedLogStore(db *gorm.DB, cs *ContractStore) *AddressIndexedLogStore {
+func NewAddressIndexedLogStore(db *gorm.DB, cs *ContractStore, partitions uint32) *AddressIndexedLogStore {
 	return &AddressIndexedLogStore{
-		db: db,
-		cs: cs,
+		db:         db,
+		cs:         cs,
+		partitions: partitions,
 	}
 }
 
@@ -87,11 +90,7 @@ func (ls *AddressIndexedLogStore) CreateAddressIndexedLogTable(partitionFrom, co
 	return ls.createPartitionedTables(ls.db, &AddressIndexedLog{}, partitionFrom, count)
 }
 
-func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogTable(partition uint32) (bool, error) {
-	return ls.deletePartitionedTable(ls.db, &AddressIndexedLog{}, partition)
-}
-
-func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *store.EpochData, totalPartitions uint32) error {
+func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *store.EpochData) error {
 	partition2Logs := make(map[uint32][]*AddressIndexedLog)
 
 	for _, block := range data.Blocks {
@@ -124,17 +123,15 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 				}
 
 				log := NewAddressIndexedLog(&v, contract.ID, bn, receiptExt.LogExts[i])
-				partition := ls.getPartitionByAddress(&v.Address, totalPartitions)
+				partition := ls.getPartitionByAddress(&v.Address, ls.partitions)
 				partition2Logs[partition] = append(partition2Logs[partition], log)
 			}
 		}
 	}
 
-	var model AddressIndexedLog
-
 	// Insert address indexed logs into different partitions.
 	for partition, logs := range partition2Logs {
-		tableName := ls.getPartitionedTableName(&model, partition)
+		tableName := ls.getPartitionedTableName(&ls.model, partition)
 		if err := dbTx.Table(tableName).CreateInBatches(&logs, defaultBatchSizeLogInsert).Error; err != nil {
 			return err
 		}
@@ -144,6 +141,29 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 }
 
 func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLogFilter) ([]types.Log, []*store.LogExtra, error) {
+	// Normalzie log filter at first
+	partition := ls.getPartitionByAddress(&filter.Contract, ls.partitions)
+	tableName := ls.getPartitionedTableName(ls.model, partition)
+	ok, err := filter.normalize(ls.cs, tableName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if !ok {
+		return emptyLogs, emptyLogExts, nil
+	}
+
+	// Check the number of returned logs
+	count, err := filter.ValidateCount(ls.db)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if count == 0 {
+		return emptyLogs, emptyLogExts, nil
+	}
+
+	// Query database
 	db := filter.Apply(ls.db)
 
 	var addrIndexedLogs []AddressIndexedLog
@@ -151,6 +171,7 @@ func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLog
 		return nil, nil, err
 	}
 
+	// Convert to RPC data type
 	logs := make([]types.Log, 0, len(addrIndexedLogs))
 	exts := make([]*store.LogExtra, 0, len(addrIndexedLogs))
 
@@ -166,7 +187,5 @@ func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLog
 
 	return logs, exts, nil
 }
-
-// TODO estimate result set size for specified log filter
 
 // TODO supports repartition with consistent hashing and data migration.

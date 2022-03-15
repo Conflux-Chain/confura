@@ -78,7 +78,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
 			logrus.WithError(err).Fatal("Failed to init logs table partitions")
 		}
 
-		ls := NewAddressIndexedLogStore(db, NewContractStore(db))
+		ls := NewAddressIndexedLogStore(db, NewContractStore(db), config.AddressIndexedLogPartitions)
 		if _, err := ls.CreateAddressIndexedLogTable(0, config.AddressIndexedLogPartitions); err != nil {
 			logrus.WithError(err).
 				WithField("partitions", config.AddressIndexedLogPartitions).
