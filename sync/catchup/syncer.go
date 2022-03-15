@@ -32,6 +32,8 @@ type Syncer struct {
 	adaptive bool
 	// min num of db rows per batch persistence
 	minBatchDbRows int
+	// benchmark catch-up sync performance
+	bmarker *benchmarker
 }
 
 // functional options for syncer
@@ -64,6 +66,16 @@ func WithMinBatchDbRows(dbRows int) SyncOption {
 func WithWorkers(workers []*worker) SyncOption {
 	return func(s *Syncer) {
 		s.workers = workers
+	}
+}
+
+func WithBenchmark(benchmark bool) SyncOption {
+	return func(s *Syncer) {
+		if benchmark {
+			s.bmarker = newBenchmarker()
+		} else {
+			s.bmarker = nil
+		}
 	}
 }
 
@@ -120,10 +132,19 @@ func (s *Syncer) Sync(ctx context.Context) {
 		return
 	}
 
+	if s.bmarker != nil {
+		start := s.syncRange.EpochFrom
+
+		s.bmarker.markStart()
+		defer func() {
+			s.bmarker.report(start, s.syncRange.EpochFrom)
+		}()
+	}
+
 	for {
 		start, end := s.syncRange.EpochFrom, s.syncRange.EpochTo
-		if start > end {
-			break
+		if start > end || s.interrupted(ctx) {
+			return
 		}
 
 		s.syncOnce(ctx, start, end)
@@ -163,12 +184,16 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 
 	for eno := start; eno <= end; {
 		for i := 0; i < len(s.workers) && eno <= end; i++ {
-			w := s.workers[i]
+			w, startTime := s.workers[i], time.Now()
 
 			select {
 			case <-ctx.Done():
 				return
 			case epochData = <-w.Data():
+				if s.bmarker != nil {
+					s.bmarker.metricFetchPerEpochDuration(startTime)
+				}
+
 				// collect epoch data
 				eno++
 			}
@@ -218,7 +243,15 @@ func (s *Syncer) persist(state *persistState) {
 		return
 	}
 
-	defer state.reset()
+	start := time.Now()
+	defer func() {
+		if s.bmarker != nil {
+			s.bmarker.metricPersistDbRows(int64(state.dbRows))
+			s.bmarker.metricPersistDuration(start)
+		}
+
+		state.reset()
+	}()
 
 	for {
 		err := s.db.Pushn(state.epochs)
@@ -243,10 +276,8 @@ func (s *Syncer) logger() *logrus.Entry {
 // updateEpochTo repeatedly try to update the target epoch number
 func (s *Syncer) updateEpochTo(ctx context.Context) bool {
 	for try := 1; ; try++ {
-		select {
-		case <-ctx.Done():
+		if s.interrupted(ctx) {
 			return false
-		default:
 		}
 
 		err := s.doUpdateEpochTo()
@@ -281,4 +312,14 @@ func (s *Syncer) doUpdateEpochTo() error {
 	)
 
 	return nil
+}
+
+func (s *Syncer) interrupted(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+	}
+
+	return false
 }

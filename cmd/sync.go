@@ -21,6 +21,7 @@ type syncOption struct {
 type catchupSetting struct {
 	epochFrom, epochTo uint64
 	adaptive           bool
+	benchmark          bool
 }
 
 var (
@@ -52,6 +53,10 @@ func init() {
 	syncCmd.Flags().BoolVar(
 		&cuSet.adaptive, "adaptive", false,
 		"automatically adjust target epoch number to the latest stable epoch",
+	)
+	syncCmd.Flags().BoolVar(
+		&cuSet.benchmark, "benchmark", true,
+		"benchmarking the fast sync performance during catch-up",
 	)
 
 	rootCmd.AddCommand(syncCmd)
@@ -180,6 +185,7 @@ func startFastSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx s
 
 	syncer := catchup.MustNewSyncer(
 		syncCtx.syncCfx, syncCtx.cfxDB,
+		catchup.WithBenchmark(cuSet.benchmark),
 		catchup.WithAdaptive(cuSet.adaptive),
 		catchup.WithEpochFrom(cuSet.epochFrom),
 		catchup.WithEpochTo(cuSet.epochTo),
