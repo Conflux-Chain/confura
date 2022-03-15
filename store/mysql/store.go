@@ -505,6 +505,12 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			txOpAffects.NumAlters[store.EpochTransaction] -= db.RowsAffected
 		}
 
+		if ms.config.AddressIndexedLogEnabled {
+			if err := ms.DeleteAddressIndexedLogs(dbTx, epochFrom, epochTo); err != nil {
+				return txOpAffects, err
+			}
+		}
+
 		// Remove logs
 		if option&store.EpochRemoveLog != 0 {
 			partitions, err := ms.findLogsPartitionsEpochRangeWithinStoreTx(dbTx, epochFrom, epochTo)

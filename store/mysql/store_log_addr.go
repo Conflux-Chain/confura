@@ -1,6 +1,8 @@
 package mysql
 
 import (
+	"fmt"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
@@ -140,10 +142,23 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 	return nil
 }
 
+func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
+	// Delete logs for all partitions in batch
+	for i := uint32(0); i < ls.partitions; i++ {
+		tableName := ls.getPartitionedTableName(&ls.model, i)
+		sql := fmt.Sprintf("DELETE FROM %v WHERE epoch BETWEEN ? AND ?", tableName)
+		if err := dbTx.Exec(sql, epochFrom, epochTo).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLogFilter) ([]types.Log, []*store.LogExtra, error) {
 	// Normalzie log filter at first
 	partition := ls.getPartitionByAddress(&filter.Contract, ls.partitions)
-	tableName := ls.getPartitionedTableName(ls.model, partition)
+	tableName := ls.getPartitionedTableName(&ls.model, partition)
 	ok, err := filter.normalize(ls.cs, tableName)
 	if err != nil {
 		return nil, nil, err
