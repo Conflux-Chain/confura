@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	sdkerr "github.com/Conflux-Chain/go-conflux-sdk/types/errors"
 	"github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -129,6 +130,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 	})
 
 	// Fetch epoch block summary one by one.
+	anyBlockExecuted := false
 	for _, hash := range blockHashes {
 		block, err := cfx.GetBlockByHashWithPivotAssumption(hash, pivotHash, hexutil.Uint64(epochNumber))
 		if err == nil { // validate block first if no error
@@ -150,11 +152,15 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 			return emptyEpochData, errors.WithMessagef(err, "failed to get block by hash %v", hash)
 		}
 
+		if !anyBlockExecuted && !util.IsEmptyBlock(&block) {
+			anyBlockExecuted = true
+		}
+
 		blocks = append(blocks, &block)
 	}
 
 	var epochReceipts [][]types.TransactionReceipt
-	if useBatch {
+	if anyBlockExecuted && useBatch {
 		// Batch get epoch receipts.
 		epochReceipts, err = cfx.GetEpochReceiptsByPivotBlockHash(pivotHash)
 		if checkPivotSwitchWithError(err) {
@@ -188,7 +194,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 			// skip unexecuted transaction, e.g.
 			// 1) already executed in previous block
 			// 2) never executed, e.g. nonce mismatch
-			if tx.Status == nil || tx.BlockHash == nil {
+			if !util.IsTxExecutedInBlock(&tx) {
 				logger.Debug("Transaction not executed in block")
 				continue
 			}

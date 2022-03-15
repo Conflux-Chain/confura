@@ -378,7 +378,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 			// Skip transactions that unexecuted in block.
 			// !!! Still need to check BlockHash and Status in case more than one transactions
 			// of the same hash appeared in the same epoch.
-			if receipt == nil || tx.BlockHash == nil || tx.Status == nil {
+			if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
 				continue
 			}
 

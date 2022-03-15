@@ -84,3 +84,14 @@ func callRpcMetricsMiddleware(handler middleware.CallRpcHandler) middleware.Call
 func IsTxExecutedInBlock(tx *types.Transaction) bool {
 	return tx != nil && tx.BlockHash != nil && tx.Status != nil && *tx.Status < 2
 }
+
+// IsEmptyBlock checks if block contains any executed transaction(s)
+func IsEmptyBlock(block *types.Block) bool {
+	for _, tx := range block.Transactions {
+		if IsTxExecutedInBlock(&tx) {
+			return false
+		}
+	}
+
+	return true
+}
