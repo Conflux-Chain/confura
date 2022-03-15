@@ -64,6 +64,7 @@ type mysqlStore struct {
 	*txStore
 	*blockStore
 	*logStore
+	*AddressIndexedLogStore
 	*confStore
 	*UserStore
 	*ContractStore
@@ -86,21 +87,24 @@ type mysqlStore struct {
 }
 
 func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
+	cs := NewContractStore(db)
+
 	ms := mysqlStore{
-		baseStore:     newBaseStore(db),
-		txStore:       newTxStore(db),
-		blockStore:    newBlockStore(db),
-		logStore:      newLogStore(db),
-		confStore:     newConfStore(db),
-		UserStore:     newUserStore(db),
-		ContractStore: NewContractStore(db),
-		db:            db,
-		config:        config,
-		minEpoch:      citypes.EpochNumberNil,
-		maxEpoch:      citypes.EpochNumberNil,
-		epochRanges:   make(map[store.EpochDataType]*citypes.EpochRange),
-		epochTotals:   make(map[store.EpochDataType]*uint64),
-		disabler:      option.Disabler,
+		baseStore:              newBaseStore(db),
+		txStore:                newTxStore(db),
+		blockStore:             newBlockStore(db),
+		logStore:               newLogStore(db),
+		AddressIndexedLogStore: NewAddressIndexedLogStore(db, cs, config.AddressIndexedLogPartitions),
+		confStore:              newConfStore(db),
+		UserStore:              newUserStore(db),
+		ContractStore:          cs,
+		db:                     db,
+		config:                 config,
+		minEpoch:               citypes.EpochNumberNil,
+		maxEpoch:               citypes.EpochNumberNil,
+		epochRanges:            make(map[store.EpochDataType]*citypes.EpochRange),
+		epochTotals:            make(map[store.EpochDataType]*uint64),
+		disabler:               option.Disabler,
 	}
 
 	if option.CalibrateEpochStats {
@@ -156,25 +160,13 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		return nil
 	}
 
-	lastEpoch := atomic.LoadUint64(&ms.maxEpoch)
-	pushFromEpoch := lastEpoch + 1
+	if err := ms.requireContinuous(dataSlice, atomic.LoadUint64(&ms.maxEpoch)); err != nil {
+		return err
+	}
+
 	insertLogs := false // if need to insert logs
 
 	for _, data := range dataSlice {
-		if lastEpoch == citypes.EpochNumberNil { // initial loading?
-			lastEpoch = data.Number
-			pushFromEpoch = data.Number
-		} else {
-			lastEpoch++
-		}
-
-		if data.Number != lastEpoch { // ensure continous epoch
-			return errors.WithMessagef(
-				store.ErrContinousEpochRequired,
-				"expected epoch #%v, but #%v got", lastEpoch, data.Number,
-			)
-		}
-
 		if ms.disabler.IsChainLogDisabled() || insertLogs || len(data.Receipts) == 0 {
 			continue
 		}
@@ -203,7 +195,7 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		}
 	}
 
-	opAffects := store.NewEpochDataOpAffects(store.EpochOpPush, pushFromEpoch, lastEpoch)
+	opAffects := store.NewEpochDataOpAffects(store.EpochOpPush, dataSlice[0].Number, dataSlice[len(dataSlice)-1].Number)
 	txOpAffects := newMysqlEpochDataOpAffects(opAffects)
 	insertLogsIDSpan := [2]uint64{citypes.EpochNumberNil, 0}
 
@@ -258,6 +250,31 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 	})
 
 	return err
+}
+
+func (*mysqlStore) requireContinuous(slice []*store.EpochData, currentEpoch uint64) error {
+	if len(slice) == 0 {
+		return nil
+	}
+
+	var nextEpoch uint64
+	if currentEpoch == citypes.EpochNumberNil {
+		nextEpoch = slice[0].Number
+	} else {
+		nextEpoch = currentEpoch + 1
+	}
+
+	for _, v := range slice {
+		if v.Number != nextEpoch {
+			return errors.WithMessagef(store.ErrContinousEpochRequired,
+				"Epoch not continuous, expected %v, but got %v",
+				nextEpoch, v.Number)
+		}
+
+		nextEpoch++
+	}
+
+	return nil
 }
 
 func (ms *mysqlStore) Pop() error {
@@ -439,6 +456,12 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 		insertLogIdSpan[1] = util.MaxUint64(trxlogs[len(trxlogs)-1].ID, insertLogIdSpan[1])
 
 		opHistory[store.EpochLog] += int64(len(trxlogs))
+	}
+
+	if ms.config.AddressIndexedLogEnabled {
+		if err := ms.AddAddressIndexedLogs(dbTx, data); err != nil {
+			return insertLogIdSpan, opHistory, err
+		}
 	}
 
 	return insertLogIdSpan, opHistory, nil
