@@ -72,7 +72,7 @@ nearhead:
   #   enabled: false
   #   cacheTime: 12h
   #   url: redis://<user>:<pass>@localhost:6379/<db>
-  # disables: [] # disabled chain data types within store, available options are: `block`, `transaction`, `receipt` and `log`
+  # disables: [block,transaction,receipt] # disabled chain data types within store, available options are: `block`, `transaction`, `receipt` and `log`
 # ethstore:
   # mysql:
     # enabled: false
@@ -80,7 +80,7 @@ nearhead:
     # connMaxLifeTime: 3m
     # maxOpenConns: 10
     # maxIdleConns: 10
-  # disables: [] # disabled chain data types within store, available options are: `block`, `transaction`, `receipt` and `log`
+  # disables: [block,transaction,receipt] # disabled chain data types within store, available options are: `block`, `transaction`, `receipt` and `log`
 # alert:
 #   customTags: [testnet,dev]
 #   dingtalk:

@@ -92,7 +92,7 @@ type StoreDisabler interface {
 type storeConfig struct {
 	// disabled store chain data types, available options are:
 	// `block`, `transaction`, `receipt` and `log`
-	Disables []string
+	Disables []string `default:"[block,transaction,receipt]"`
 
 	disabledDataTypeMapping map[string]bool
 }
