@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"math"
 	"time"
 
 	"github.com/conflux-chain/conflux-infura/store"
@@ -139,4 +140,39 @@ func (*EpochStatStore) updateEntityCount(dbTx *gorm.DB, dt store.EpochDataType, 
 	}
 
 	return db.UpdateColumn("epoch1", gorm.Expr("GREATEST(0, CAST(epoch1 AS SIGNED) - ?)", -delta)).Error
+}
+
+func (ess *EpochStatStore) getEntityEpochRange(dt store.EpochDataType, errIfEmpty bool) (uint64, uint64, error) {
+	var stat epochStats
+
+	exists, err := ess.exists(&stat, "key = ? AND type = ?", getEpochRangeStatsKey(dt), epochStatsEpochRange)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if exists {
+		return stat.Epoch1, stat.Epoch2, nil
+	}
+
+	if errIfEmpty {
+		return 0, 0, gorm.ErrRecordNotFound
+	}
+
+	return math.MaxUint64, math.MaxUint64, nil
+}
+
+func (ess *EpochStatStore) GetBlockEpochRange() (uint64, uint64, error) {
+	return ess.getEntityEpochRange(store.EpochBlock, true)
+}
+
+func (ess *EpochStatStore) GetTransactionEpochRange() (uint64, uint64, error) {
+	return ess.getEntityEpochRange(store.EpochTransaction, true)
+}
+
+func (ess *EpochStatStore) GetLogEpochRange() (uint64, uint64, error) {
+	return ess.getEntityEpochRange(store.EpochLog, true)
+}
+
+func (ess *EpochStatStore) GetGlobalEpochRange() (uint64, uint64, error) {
+	return ess.getEntityEpochRange(store.EpochDataNil, true)
 }

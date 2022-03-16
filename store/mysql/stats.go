@@ -43,17 +43,3 @@ func getEpochDataTypeByEpochRangeStatsKey(key string) store.EpochDataType {
 func getEpochTotalStatsKey(dt store.EpochDataType) (s string) {
 	return epochDataType2EpochTotalStatsKey[dt]
 }
-
-func getEpochDataTypeByEpochTotalStatsKey(key string) store.EpochDataType {
-	switch key {
-	case epochDataType2EpochTotalStatsKey[store.EpochBlock]:
-		return store.EpochBlock
-	case epochDataType2EpochTotalStatsKey[store.EpochTransaction]:
-		return store.EpochTransaction
-	case epochDataType2EpochTotalStatsKey[store.EpochLog]:
-		return store.EpochLog
-	}
-
-	logrus.WithField("key", key).Fatal("Unsupported epoch total stats key to get epoch data type")
-	return store.EpochDataNil
-}

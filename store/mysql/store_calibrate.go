@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
-	"strings"
 	"sync/atomic"
 
 	"github.com/conflux-chain/conflux-infura/store"
@@ -26,6 +25,8 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 		return ms.loadCalibratedEpochStats()
 	}
 
+	epochRanges := make(map[store.EpochDataType]*citypes.EpochRange)
+
 	for _, t := range store.OpEpochDataTypes {
 		// load epoch range
 		minEpoch, maxEpoch, err := ms.loadEpochRange(t)
@@ -44,7 +45,7 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 				ms.maxEpoch = maxEpoch
 			}
 		}
-		ms.epochRanges[t] = &er
+		epochRanges[t] = &er
 	}
 
 	// store epoch statistics to epoch_stats table
@@ -68,7 +69,7 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 	}
 
 	for _, dt := range store.OpEpochDataTypes {
-		epr := ms.epochRanges[dt]
+		epr := epochRanges[dt]
 		if err := ms.initOrUpdateEpochRangeStats(dbTx, dt, *epr); err != nil {
 			return rollback(errors.WithMessage(err, "failed to update local epoch range stats"))
 		}
@@ -130,11 +131,7 @@ func (ms *mysqlStore) loadCalibratedEpochStats() error {
 		if edt == store.EpochDataNil {
 			atomic.StoreUint64(&ms.minEpoch, stats.Epoch1)
 			atomic.StoreUint64(&ms.maxEpoch, stats.Epoch2)
-			continue
-		}
-
-		ms.epochRanges[edt] = &citypes.EpochRange{
-			EpochFrom: stats.Epoch1, EpochTo: stats.Epoch2,
+			break
 		}
 	}
 
@@ -202,16 +199,4 @@ func (ms *mysqlStore) loadEpochTotal(t store.EpochDataType) (uint64, error) {
 	err := row.Scan(&total)
 
 	return total, err
-}
-
-func (ms *mysqlStore) dumpEpochRanges() string {
-	strBuilder := &strings.Builder{}
-	strBuilder.Grow(len(ms.epochRanges) * 30)
-
-	for t, er := range ms.epochRanges {
-		minEpoch, maxEpoch := atomic.LoadUint64(&er.EpochFrom), atomic.LoadUint64(&er.EpochTo)
-		strBuilder.WriteString(fmt.Sprintf("%v:[%v,%v]; ", EpochDataTypeTableMap[t], minEpoch, maxEpoch))
-	}
-
-	return strBuilder.String()
 }

@@ -76,9 +76,6 @@ type mysqlStore struct {
 	minEpoch uint64 // minimum epoch number in database (historical data may be pruned)
 	maxEpoch uint64 // maximum epoch number in database
 
-	// Epoch range for block/transaction/log table in db
-	epochRanges map[store.EpochDataType]*citypes.EpochRange
-
 	maxUsedLogsTblPartIdx uint64 // the maximum used partition index for logs table
 	minUsedLogsTblPartIdx uint64 // the minimum used partition index for logs table
 
@@ -102,7 +99,6 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 		config:                 config,
 		minEpoch:               citypes.EpochNumberNil,
 		maxEpoch:               citypes.EpochNumberNil,
-		epochRanges:            make(map[store.EpochDataType]*citypes.EpochRange),
 		disabler:               option.Disabler,
 	}
 
@@ -113,28 +109,11 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 
 		logrus.WithFields(logrus.Fields{
 			"globalEpochRange":         citypes.EpochRange{EpochFrom: ms.minEpoch, EpochTo: ms.maxEpoch},
-			"epochRanges":              ms.dumpEpochRanges(),
 			"usedLogsTblPartitionIdxs": citypes.EpochRange{EpochFrom: ms.minUsedLogsTblPartIdx, EpochTo: ms.maxUsedLogsTblPartIdx},
 		}).Debug("New mysql store loaded with epoch stats")
 	}
 
 	return &ms
-}
-
-func (ms *mysqlStore) GetBlockEpochRange() (uint64, uint64, error) {
-	return ms.getEpochRange(store.EpochBlock)
-}
-
-func (ms *mysqlStore) GetTransactionEpochRange() (uint64, uint64, error) {
-	return ms.getEpochRange(store.EpochTransaction)
-}
-
-func (ms *mysqlStore) GetLogEpochRange() (uint64, uint64, error) {
-	return ms.getEpochRange(store.EpochLog)
-}
-
-func (ms *mysqlStore) GetGlobalEpochRange() (uint64, uint64, error) {
-	return ms.getEpochRange(store.EpochDataNil)
 }
 
 func (ms *mysqlStore) Push(data *store.EpochData) error {
@@ -530,8 +509,11 @@ func (ms *mysqlStore) dequeueEpochRangeData(dt store.EpochDataType, epochUntil u
 	// Genesis block will never be dequeued
 	epochUntil = util.MaxUint64(epochUntil, 1)
 
-	// Get local epoch range for block/tx/log
-	epochFrom := atomic.LoadUint64(&ms.epochRanges[dt].EpochFrom)
+	epochFrom, _, err := ms.getEntityEpochRange(dt, false)
+	if err != nil {
+		return err
+	}
+
 	if epochUntil < epochFrom {
 		return nil
 	}
@@ -539,30 +521,9 @@ func (ms *mysqlStore) dequeueEpochRangeData(dt store.EpochDataType, epochUntil u
 	opAffects := store.NewEpochDataOpAffects(dt.ToDequeOption(), epochUntil)
 	txOpAffects := newMysqlEpochDataOpAffects(opAffects)
 
-	err := ms.remove(epochFrom, epochUntil, dt.ToRemoveOption(), func() *mysqlEpochDataOpAffects {
+	return ms.remove(epochFrom, epochUntil, dt.ToRemoveOption(), func() *mysqlEpochDataOpAffects {
 		return txOpAffects
 	})
-
-	return err
-}
-
-func (ms *mysqlStore) getEpochRange(dt store.EpochDataType) (uint64, uint64, error) {
-	validate := func(minEpoch uint64, maxEpoch uint64) (uint64, uint64, error) {
-		if minEpoch == math.MaxUint64 || maxEpoch == math.MaxUint64 {
-			return 0, 0, gorm.ErrRecordNotFound
-		}
-		return minEpoch, maxEpoch, nil
-	}
-
-	if dt == store.EpochDataNil { // return global epoch range
-		return validate(atomic.LoadUint64(&ms.minEpoch), atomic.LoadUint64(&ms.maxEpoch))
-	}
-
-	if er, ok := ms.epochRanges[dt]; ok { // get local epoch range for block/tx/log
-		return validate(atomic.LoadUint64(&er.EpochFrom), atomic.LoadUint64(&er.EpochTo))
-	}
-
-	return validate(citypes.EpochNumberNil, citypes.EpochNumberNil)
 }
 
 func (ms *mysqlStore) updateEpochStats(opAffects *mysqlEpochDataOpAffects) {
@@ -571,51 +532,24 @@ func (ms *mysqlStore) updateEpochStats(opAffects *mysqlEpochDataOpAffects) {
 		ms.updateMaxEpoch(opAffects.PushUpToEpoch, opAffects.PushUpFromEpoch)
 	case store.EpochOpPop: // for pop
 		ms.updateMaxEpoch(opAffects.PopUntilEpoch - 1)
-	case store.EpochOpDequeueBlock: // for dequeue...
-		ms.updateMinEpoch(store.EpochBlock, opAffects.DequeueUntilEpoch+1)
-	case store.EpochOpDequeueTx:
-		ms.updateMinEpoch(store.EpochTransaction, opAffects.DequeueUntilEpoch+1)
-	case store.EpochOpDequeueLog:
-		ms.updateMinEpoch(store.EpochLog, opAffects.DequeueUntilEpoch+1)
+	case store.EpochOpDequeueBlock, store.EpochOpDequeueTx, store.EpochOpDequeueLog: // for dequeue...
+		newMinEpoch := opAffects.DequeueUntilEpoch + 1
+		if minEpoch := atomic.LoadUint64(&ms.minEpoch); minEpoch < newMinEpoch {
+			atomic.StoreUint64(&ms.minEpoch, newMinEpoch)
+		}
 	}
 
 	// update logs table partitions
 	ms.updateLogsTablePartitions(opAffects)
 }
 
-func (ms *mysqlStore) updateMinEpoch(dt store.EpochDataType, newMinEpoch uint64) {
-	// Update min epoch for local epoch range
-	atomic.StoreUint64(&ms.epochRanges[dt].EpochFrom, newMinEpoch)
-
-	// Update global epoch ranges
-	minEpoch := atomic.LoadUint64(&ms.minEpoch)
-	for _, t := range store.OpEpochDataTypes {
-		minEpoch = util.MinUint64(minEpoch, atomic.LoadUint64(&ms.epochRanges[t].EpochFrom))
-	}
-	atomic.StoreUint64(&ms.minEpoch, minEpoch)
-}
-
 func (ms *mysqlStore) updateMaxEpoch(newMaxEpoch uint64, growFrom ...uint64) {
 	// Update global epoch range
 	atomic.StoreUint64(&ms.maxEpoch, newMaxEpoch)
 
-	// Update local epoch ranges
-	for _, t := range store.OpEpochDataTypes {
-		if !ms.disabler.IsDisabledForType(t) {
-			atomic.StoreUint64(&ms.epochRanges[t].EpochTo, newMaxEpoch)
-		}
-	}
-
 	// Update global min epoch range if necessary (only when initial loading)
-	if len(growFrom) == 0 || !atomic.CompareAndSwapUint64(&ms.minEpoch, math.MaxUint64, growFrom[0]) {
-		return
-	}
-
-	// Update all local min epoch ranges
-	for _, t := range store.OpEpochDataTypes {
-		if !ms.disabler.IsDisabledForType(t) {
-			atomic.CompareAndSwapUint64(&ms.epochRanges[t].EpochFrom, math.MaxUint64, growFrom[0])
-		}
+	if len(growFrom) > 0 {
+		atomic.CompareAndSwapUint64(&ms.minEpoch, math.MaxUint64, growFrom[0])
 	}
 }
 
