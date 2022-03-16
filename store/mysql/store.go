@@ -415,26 +415,14 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 			continue
 		}
 
-		// According to statistics, some epoch block even has more than 2200 event logs (eg. epoch #13329688).
-		// It would be better to insert limited event logs per time for good performance. With some testing, the
-		// limited number set to 800 is ok for the momemt with slow sql statements hardly found in our log files.
-		// TODO more benchmarks are needed for optimization.
-		maxInsertLogs := 800
-		rounds := len(trxlogs) / maxInsertLogs
-		if len(trxlogs)%maxInsertLogs != 0 {
-			rounds++
-		}
+		if err := dbTx.CreateInBatches(trxlogs, defaultBatchSizeLogInsert).Error; err != nil {
+			logrus.WithField("blockHash", block.Hash).Error(
+				"Failed to insert transaction event logs to database",
+			)
 
-		for m, start := 1, 0; m <= rounds; m++ {
-			end := util.MinInt(m*maxInsertLogs, len(trxlogs))
-			if err := dbTx.Create(trxlogs[start:end]).Error; err != nil {
-				logrus.WithError(err).WithFields(logrus.Fields{
-					"start": start, "end": end, "blockHash": block.Hash,
-				}).Error("Failed to insert transaction event logs part to database")
-
-				return insertLogIdSpan, opHistory, errors.WithMessagef(err, "Failed to batch write event logs for block #%v", block.Hash)
-			}
-			start = end
+			return insertLogIdSpan, opHistory, errors.WithMessagef(
+				err, "failed to batch write event logs for block #%v", block.Hash,
+			)
 		}
 
 		// accumulate inserted logs id span
