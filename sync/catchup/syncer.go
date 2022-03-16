@@ -32,6 +32,8 @@ type Syncer struct {
 	adaptive bool
 	// min num of db rows per batch persistence
 	minBatchDbRows int
+	// max num of epochs per batch persistence
+	maxNumEpochs int
 	// benchmark catch-up sync performance
 	bmarker *benchmarker
 }
@@ -60,6 +62,12 @@ func WithEpochTo(epochTo uint64) SyncOption {
 func WithMinBatchDbRows(dbRows int) SyncOption {
 	return func(s *Syncer) {
 		s.minBatchDbRows = dbRows
+	}
+}
+
+func WithMaxNumEpochs(maxNumEpochs int) SyncOption {
+	return func(s *Syncer) {
+		s.maxNumEpochs = maxNumEpochs
 	}
 }
 
@@ -93,6 +101,7 @@ func MustNewSyncer(cfx sdk.ClientOperator, db store.Store, opts ...SyncOption) *
 	var newOpts []SyncOption
 	newOpts = append(newOpts,
 		WithMinBatchDbRows(conf.DbRowsThreshold),
+		WithMaxNumEpochs(conf.epochsThreshold),
 		WithWorkers(workers),
 	)
 
@@ -206,8 +215,8 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 				"epochDbRows": epochDbRows,
 			}).Debug("Catch-up syncer collects new epoch data from worker")
 
-			// bath insert into db if enough db rows collected
-			if state.dbRows >= s.minBatchDbRows {
+			// bath insert into db if enough db rows or num of epochs collected
+			if state.dbRows >= s.minBatchDbRows || state.numEpochs() >= s.maxNumEpochs {
 				s.persist(&state)
 			}
 		}
@@ -224,8 +233,8 @@ func (s *persistState) reset() {
 	s.epochs = []*store.EpochData{}
 }
 
-func (s *persistState) numNewEpochs() uint64 {
-	return uint64(len(s.epochs))
+func (s *persistState) numEpochs() int {
+	return len(s.epochs)
 }
 
 func (s *persistState) update(epochData *store.EpochData) int {
@@ -238,7 +247,7 @@ func (s *persistState) update(epochData *store.EpochData) int {
 }
 
 func (s *Syncer) persist(state *persistState) {
-	numEpochs := state.numNewEpochs()
+	numEpochs := state.numEpochs()
 	if numEpochs == 0 {
 		return
 	}
@@ -263,7 +272,7 @@ func (s *Syncer) persist(state *persistState) {
 		time.Sleep(time.Second)
 	}
 
-	s.syncRange.EpochFrom += numEpochs
+	s.syncRange.EpochFrom += uint64(numEpochs)
 	s.logger().WithField("numEpochs", numEpochs).Debug("Catch-up syncer persisted epoch data")
 }
 
