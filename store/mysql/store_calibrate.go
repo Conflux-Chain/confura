@@ -71,18 +71,18 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 
 	// store epoch ranges
 	er := citypes.EpochRange{EpochFrom: ms.minEpoch, EpochTo: ms.maxEpoch}
-	if err := initOrUpdateEpochRangeStats(dbTx, store.EpochDataNil, er); err != nil {
+	if err := ms.initOrUpdateEpochRangeStats(dbTx, store.EpochDataNil, er); err != nil {
 		return rollback(errors.WithMessage(err, "failed to update global epoch range stats"))
 	}
 
 	for _, dt := range store.OpEpochDataTypes {
 		epr := ms.epochRanges[dt]
-		if err := initOrUpdateEpochRangeStats(dbTx, dt, *epr); err != nil {
+		if err := ms.initOrUpdateEpochRangeStats(dbTx, dt, *epr); err != nil {
 			return rollback(errors.WithMessage(err, "failed to update local epoch range stats"))
 		}
 
 		ept := ms.epochTotals[dt]
-		if err := initOrUpdateEpochTotalsStats(dbTx, dt, *ept); err != nil {
+		if err := ms.initOrUpdateEpochTotalsStats(dbTx, dt, *ept); err != nil {
 			return rollback(errors.WithMessage(err, "failed to update epoch total stats"))
 		}
 	}
@@ -106,7 +106,7 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 			maxUsedPart = util.MaxUint64(maxUsedPart, uint64(i))
 		}
 
-		if err := initOrUpdateLogsPartitionEpochRangeStats(dbTx, partName, partEpochRange); err != nil {
+		if err := ms.initOrUpdateLogsPartitionEpochRangeStats(dbTx, partName, partEpochRange); err != nil {
 			return rollback(errors.WithMessagef(err, "failed to write epoch range for logs partition %v to epoch stats", partName))
 		}
 	}
@@ -125,7 +125,7 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 
 func (ms *mysqlStore) loadCalibratedEpochStats() error {
 	// load epoch range statistics from epoch_stats table
-	erStats, err := loadEpochStats(ms.db, epochStatsEpochRange)
+	erStats, err := ms.loadEpochStats(epochStatsEpochRange)
 	if err != nil {
 		return errors.WithMessage(err, "failed to load calibrated epoch range stats")
 	}
@@ -144,7 +144,7 @@ func (ms *mysqlStore) loadCalibratedEpochStats() error {
 	}
 
 	// load epoch total statistics from epoch_stats table
-	etStats, err := loadEpochStats(ms.db, epochStatsEpochTotal)
+	etStats, err := ms.loadEpochStats(epochStatsEpochTotal)
 	if err != nil {
 		return errors.WithMessage(err, "failed to load calibrated epoch total stats")
 	}

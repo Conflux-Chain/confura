@@ -65,6 +65,7 @@ type mysqlStore struct {
 	*blockStore
 	*logStore
 	*AddressIndexedLogStore
+	*EpochStatStore
 	*confStore
 	*UserStore
 	*ContractStore
@@ -95,6 +96,7 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 		blockStore:             newBlockStore(db),
 		logStore:               newLogStore(db),
 		AddressIndexedLogStore: NewAddressIndexedLogStore(db, cs, config.AddressIndexedLogPartitions),
+		EpochStatStore:         NewEpochStatStore(db),
 		confStore:              newConfStore(db),
 		UserStore:              newUserStore(db),
 		ContractStore:          cs,
