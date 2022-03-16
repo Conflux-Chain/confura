@@ -49,6 +49,8 @@ type KVCacheSyncer struct {
 	checkPointCh chan bool
 	// timer channel received to trigger sync task
 	syncTimerCh <-chan time.Time
+	// window to cache epoch pivot info
+	epochPivotWin *epochPivotWindow
 }
 
 // MustNewKVCacheSyncer creates an instance of KVCacheSyncer to sync
@@ -68,6 +70,7 @@ func MustNewKVCacheSyncer(cfx sdk.ClientOperator, cache store.CacheStore) *KVCac
 		lastSubEpochNo:      citypes.EpochNumberNil,
 		subEpochCh:          make(chan uint64, conf.Sub.Buffer),
 		checkPointCh:        make(chan bool, 2),
+		epochPivotWin:       newEpochPivotWindow(dbSyncEpochPivotWinCapacity),
 	}
 
 	// Ensure epoch data validity in redis
@@ -169,6 +172,8 @@ func (syncer *KVCacheSyncer) doCheckPoint() error {
 		return errors.WithMessage(err, "failed to reload last sync point")
 	}
 
+	syncer.epochPivotWin.popn(syncer.latestStoreEpoch())
+
 	return nil
 }
 
@@ -194,6 +199,8 @@ func (syncer *KVCacheSyncer) pivotSwitchRevert(revertTo uint64) error {
 		return errors.WithMessage(err, "failed to pop epoch data from redis")
 	}
 
+	// remove pivot data of reverted epoch from cache window
+	syncer.epochPivotWin.popn(revertTo)
 	// reset sync window to start from the revert point again
 	syncer.syncWindow.reset(revertTo, revertTo)
 
@@ -339,6 +346,18 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 		return errors.WithMessage(err, "failed to push epoch data to redis store")
 	}
 
+	for _, epdata := range epochDataSlice { // cache epoch pivot info for late use
+		err := syncer.epochPivotWin.push(epdata.GetPivotBlock())
+		if err != nil {
+			logger.WithField("pivotBlockEpoch", epdata.Number).WithError(err).Info(
+				"Cache syncer failed to push pivot block into epoch cache window",
+			)
+
+			syncer.epochPivotWin.reset()
+			break
+		}
+	}
+
 	syncFrom, syncSize = syncer.syncWindow.shrinkFrom(uint32(len(epochDataSlice)))
 
 	logger.WithFields(logrus.Fields{
@@ -386,7 +405,12 @@ func (syncer *KVCacheSyncer) getStoreLatestPivotHash() (types.Hash, error) {
 		return types.Hash(""), nil
 	}
 
-	latestEpochNo := syncer.syncWindow.epochFrom - 1
+	latestEpochNo := syncer.latestStoreEpoch()
+
+	// load from in-memory cache first
+	if pivotHash, ok := syncer.epochPivotWin.getPivotHash(latestEpochNo); ok {
+		return pivotHash, nil
+	}
 
 	// load from cache store
 	pivotBlock, err := syncer.cache.GetBlockSummaryByEpoch(latestEpochNo)
@@ -453,4 +477,12 @@ func (syncer *KVCacheSyncer) onEpochSubStart() {
 	// reset lastSubEpochNo
 	atomic.StoreUint64(&(syncer.lastSubEpochNo), citypes.EpochNumberNil)
 	syncer.triggerCheckpoint()
+}
+
+func (syncer *KVCacheSyncer) latestStoreEpoch() uint64 {
+	if syncer.syncWindow.epochFrom > 0 {
+		return syncer.syncWindow.epochFrom - 1
+	}
+
+	return 0
 }

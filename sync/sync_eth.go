@@ -42,6 +42,8 @@ type EthSyncer struct {
 	syncIntervalNormal time.Duration
 	// interval to sync data in catching up mode
 	syncIntervalCatchUp time.Duration
+	// window to cache block info
+	epochPivotWin *epochPivotWindow
 }
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
@@ -62,6 +64,7 @@ func MustNewEthSyncer(ethC *web3go.Client, db store.Store) *EthSyncer {
 		maxSyncBlocks:       ethConf.MaxBlocks,
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
+		epochPivotWin:       newEpochPivotWindow(dbSyncEpochPivotWinCapacity),
 	}
 
 	// Load last sync block information
@@ -180,7 +183,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 			}
 
 			if len(latestBlockHash) > 0 && data.Block.ParentHash.Hex() != latestBlockHash {
-				if err := syncer.reorgRevert(syncer.fromBlock - 1); err != nil {
+				if err := syncer.reorgRevert(syncer.latestStoreBlock()); err != nil {
 					parentBlockHash := data.Block.ParentHash.Hex()
 
 					blogger.WithFields(logrus.Fields{
@@ -232,6 +235,19 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 		return false, errors.WithMessage(err, "failed to save eth data")
 	}
 
+	for _, edata := range ethDataSlice { // cache eth block info for late use
+		cfxbh := cfxbridge.ConvertBlockHeader(edata.Block, syncer.chainId)
+		err := syncer.epochPivotWin.push(&cfxtypes.Block{BlockHeader: *cfxbh})
+		if err != nil {
+			logger.WithField("blockNumber", edata.Number).WithError(err).Info(
+				"ETH syncer failed to push block into cache window",
+			)
+
+			syncer.epochPivotWin.reset()
+			break
+		}
+	}
+
 	syncer.fromBlock += uint64(len(ethDataSlice))
 
 	logger.WithFields(logrus.Fields{
@@ -248,7 +264,7 @@ func (syncer *EthSyncer) reorgRevert(revertTo uint64) error {
 	}
 
 	logger := logrus.WithFields(logrus.Fields{
-		"revertTo": revertTo, "revertFrom": syncer.fromBlock - 1,
+		"revertTo": revertTo, "revertFrom": syncer.latestStoreBlock(),
 	})
 
 	if revertTo >= syncer.fromBlock {
@@ -267,6 +283,8 @@ func (syncer *EthSyncer) reorgRevert(revertTo uint64) error {
 		return errors.WithMessage(err, "failed to pop eth data from ethdb")
 	}
 
+	// remove block hash of reverted block from cache window
+	syncer.epochPivotWin.popn(revertTo)
 	// update syncer start block
 	syncer.fromBlock = revertTo
 
@@ -306,9 +324,12 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 		return "", nil
 	}
 
-	latestBlockNo := syncer.fromBlock - 1
+	latestBlockNo := syncer.latestStoreBlock()
 
-	// TODO load in-memory cache first to improve performance.
+	// load from in-memory cache first
+	if blockHash, ok := syncer.epochPivotWin.getPivotHash(latestBlockNo); ok {
+		return string(blockHash), nil
+	}
 
 	// load from db store
 	block, err := syncer.db.GetBlockSummaryByEpoch(latestBlockNo)
@@ -347,4 +368,12 @@ func (syncer *EthSyncer) convertToEpochData(ethData *store.EthData) *store.Epoch
 	}
 
 	return epochData
+}
+
+func (syncer *EthSyncer) latestStoreBlock() uint64 {
+	if syncer.fromBlock > 0 {
+		return syncer.fromBlock - 1
+	}
+
+	return 0
 }

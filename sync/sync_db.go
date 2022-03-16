@@ -21,7 +21,7 @@ import (
 
 const (
 	// default capacity setting for pivot info window
-	dbSyncEpochPivotWinCapacity = 100
+	dbSyncEpochPivotWinCapacity = 400
 )
 
 // TODO: extract more sync config items
@@ -243,12 +243,13 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 			}
 
 			if len(latestPivotHash) > 0 && data.GetPivotBlock().ParentHash != latestPivotHash {
+				latestStoreEpochNo := syncer.latestStoreEpoch()
 				eplogger.WithFields(logrus.Fields{
-					"latestStoreEpoch": syncer.epochFrom - 1,
+					"latestStoreEpoch": latestStoreEpochNo,
 					"latestPivotHash":  latestPivotHash,
 				}).Info("Db syncer popping latest epoch from db store due to parent hash mismatched")
 
-				if err := syncer.pivotSwitchRevert(syncer.epochFrom - 1); err != nil {
+				if err := syncer.pivotSwitchRevert(latestStoreEpochNo); err != nil {
 					eplogger.WithError(err).Error(
 						"Db syncer failed to pop latest epoch from db store due to parent hash mismatched",
 					)
@@ -334,7 +335,7 @@ func (syncer *DatabaseSyncer) doCheckPoint() error {
 		return errors.WithMessage(err, "failed to reload last sync point")
 	}
 
-	syncer.epochPivotWin.reset() // reset epoch pivot info window to clear cache
+	syncer.epochPivotWin.popn(syncer.latestStoreEpoch())
 
 	return nil
 }
@@ -451,7 +452,7 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
 
 	logger := logrus.WithFields(logrus.Fields{
 		"epochFrom": revertTo,
-		"epochTo":   syncer.epochFrom - 1,
+		"epochTo":   syncer.latestStoreEpoch(),
 	})
 
 	if revertTo >= syncer.epochFrom {
@@ -525,7 +526,7 @@ func (syncer *DatabaseSyncer) detectPivotSwitchFromPubsub(epoch *types.Websocket
 }
 
 func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
-	latestEpochNo := syncer.epochFrom - 1
+	latestEpochNo := syncer.latestStoreEpoch()
 
 	// load from in-memory cache first
 	if pivotHash, ok := syncer.epochPivotWin.getPivotHash(latestEpochNo); ok {
@@ -545,4 +546,12 @@ func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
 	return types.Hash(""), errors.WithMessagef(
 		err, "failed to get block by epoch %v", latestEpochNo,
 	)
+}
+
+func (syncer *DatabaseSyncer) latestStoreEpoch() uint64 {
+	if syncer.epochFrom > 0 {
+		return syncer.epochFrom - 1
+	}
+
+	return 0
 }
