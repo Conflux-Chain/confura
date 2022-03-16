@@ -45,14 +45,6 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 			}
 		}
 		ms.epochRanges[t] = &er
-
-		// load epoch total
-		total, err := ms.loadEpochTotal(t)
-		if err != nil {
-			return errors.WithMessage(err, "failed to load epoch total")
-		}
-
-		ms.epochTotals[t] = &total
 	}
 
 	// store epoch statistics to epoch_stats table
@@ -81,8 +73,11 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 			return rollback(errors.WithMessage(err, "failed to update local epoch range stats"))
 		}
 
-		ept := ms.epochTotals[dt]
-		if err := ms.initOrUpdateEpochTotalsStats(dbTx, dt, *ept); err != nil {
+		total, err := ms.loadEpochTotal(dt)
+		if err != nil {
+			return errors.WithMessage(err, "failed to load epoch total")
+		}
+		if err := ms.initOrUpdateEpochTotalsStats(dbTx, dt, total); err != nil {
 			return rollback(errors.WithMessage(err, "failed to update epoch total stats"))
 		}
 	}
@@ -141,18 +136,6 @@ func (ms *mysqlStore) loadCalibratedEpochStats() error {
 		ms.epochRanges[edt] = &citypes.EpochRange{
 			EpochFrom: stats.Epoch1, EpochTo: stats.Epoch2,
 		}
-	}
-
-	// load epoch total statistics from epoch_stats table
-	etStats, err := ms.loadEpochStats(epochStatsEpochTotal)
-	if err != nil {
-		return errors.WithMessage(err, "failed to load calibrated epoch total stats")
-	}
-
-	for _, stats := range etStats {
-		edt := getEpochDataTypeByEpochTotalStatsKey(stats.Key)
-		totalNum := stats.Epoch1
-		ms.epochTotals[edt] = &totalNum
 	}
 
 	// also calculate used logs table partition indexes
@@ -228,17 +211,6 @@ func (ms *mysqlStore) dumpEpochRanges() string {
 	for t, er := range ms.epochRanges {
 		minEpoch, maxEpoch := atomic.LoadUint64(&er.EpochFrom), atomic.LoadUint64(&er.EpochTo)
 		strBuilder.WriteString(fmt.Sprintf("%v:[%v,%v]; ", EpochDataTypeTableMap[t], minEpoch, maxEpoch))
-	}
-
-	return strBuilder.String()
-}
-
-func (ms *mysqlStore) dumpEpochTotals() string {
-	strBuilder := &strings.Builder{}
-	strBuilder.Grow(len(ms.epochRanges) * 30)
-
-	for t, v := range ms.epochTotals {
-		strBuilder.WriteString(fmt.Sprintf("%v:%v; ", EpochDataTypeTableMap[t], *v))
 	}
 
 	return strBuilder.String()

@@ -78,8 +78,6 @@ type mysqlStore struct {
 
 	// Epoch range for block/transaction/log table in db
 	epochRanges map[store.EpochDataType]*citypes.EpochRange
-	// Total rows for block/transaction/log table in db
-	epochTotals map[store.EpochDataType]*uint64
 
 	maxUsedLogsTblPartIdx uint64 // the maximum used partition index for logs table
 	minUsedLogsTblPartIdx uint64 // the minimum used partition index for logs table
@@ -105,7 +103,6 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 		minEpoch:               citypes.EpochNumberNil,
 		maxEpoch:               citypes.EpochNumberNil,
 		epochRanges:            make(map[store.EpochDataType]*citypes.EpochRange),
-		epochTotals:            make(map[store.EpochDataType]*uint64),
 		disabler:               option.Disabler,
 	}
 
@@ -117,7 +114,6 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 		logrus.WithFields(logrus.Fields{
 			"globalEpochRange":         citypes.EpochRange{EpochFrom: ms.minEpoch, EpochTo: ms.maxEpoch},
 			"epochRanges":              ms.dumpEpochRanges(),
-			"epochTotals":              ms.dumpEpochTotals(),
 			"usedLogsTblPartitionIdxs": citypes.EpochRange{EpochFrom: ms.minUsedLogsTblPartIdx, EpochTo: ms.maxUsedLogsTblPartIdx},
 		}).Debug("New mysql store loaded with epoch stats")
 	}
@@ -139,18 +135,6 @@ func (ms *mysqlStore) GetLogEpochRange() (uint64, uint64, error) {
 
 func (ms *mysqlStore) GetGlobalEpochRange() (uint64, uint64, error) {
 	return ms.getEpochRange(store.EpochDataNil)
-}
-
-func (ms *mysqlStore) GetNumBlocks() (uint64, error) {
-	return atomic.LoadUint64(ms.epochTotals[store.EpochBlock]), nil
-}
-
-func (ms *mysqlStore) GetNumTransactions() (uint64, error) {
-	return atomic.LoadUint64(ms.epochTotals[store.EpochTransaction]), nil
-}
-
-func (ms *mysqlStore) GetNumLogs() (uint64, error) {
-	return atomic.LoadUint64(ms.epochTotals[store.EpochLog]), nil
 }
 
 func (ms *mysqlStore) Push(data *store.EpochData) error {
@@ -607,9 +591,6 @@ func (ms *mysqlStore) updateEpochStats(opAffects *mysqlEpochDataOpAffects) {
 		ms.updateMinEpoch(store.EpochLog, opAffects.DequeueUntilEpoch+1)
 	}
 
-	// Update epoch totals
-	ms.updateEpochTotals(opAffects.NumAlters)
-
 	// update logs table partitions
 	ms.updateLogsTablePartitions(opAffects)
 }
@@ -646,37 +627,6 @@ func (ms *mysqlStore) updateMaxEpoch(newMaxEpoch uint64, growFrom ...uint64) {
 	for _, t := range store.OpEpochDataTypes {
 		if !ms.disabler.IsDisabledForType(t) {
 			atomic.CompareAndSwapUint64(&ms.epochRanges[t].EpochFrom, math.MaxUint64, growFrom[0])
-		}
-	}
-}
-
-func (ms *mysqlStore) updateEpochTotals(opHistory store.EpochDataOpNumAlters) {
-	safeDecrement := func(k store.EpochDataType, v int64) {
-		for { // optimistic spin lock for concurrency safe
-			oldTotal, newTotal := atomic.LoadUint64(ms.epochTotals[k]), uint64(0)
-			absV := -v
-
-			if oldTotal < uint64(absV) {
-				logrus.Warn("DB store epoch totals decremented underflow")
-			} else {
-				newTotal = oldTotal - uint64(absV)
-			}
-
-			if atomic.CompareAndSwapUint64(ms.epochTotals[k], oldTotal, newTotal) {
-				break
-			}
-		}
-	}
-
-	// Update epoch totals
-	for k, v := range opHistory {
-		switch {
-		case v == 0:
-			continue
-		case v > 0: // increase
-			atomic.AddUint64(ms.epochTotals[k], uint64(v))
-		case v < 0: // decrease
-			safeDecrement(k, v)
 		}
 	}
 }
@@ -729,9 +679,10 @@ func (ms *mysqlStore) updateEpochStatsWithTx(dbTx *gorm.DB, opAffects *mysqlEpoc
 		return err
 	}
 
-	if err = ms.updateEpochTotalsTx(dbTx, opAffects.NumAlters); err != nil {
-		logrus.WithError(err).Error("Failed to update epoch total statistics")
-		return err
+	for dt, cnt := range opAffects.NumAlters {
+		if err := ms.updateEntityCount(dbTx, dt, cnt); err != nil {
+			return errors.WithMessage(err, "Failed to update epoch total statistics")
+		}
 	}
 
 	if err = ms.updateLogsTablePartitionsTx(dbTx, opAffects); err != nil {
@@ -790,29 +741,6 @@ func (ms *mysqlStore) updateMinEpochTx(dbTx *gorm.DB, dt store.EpochDataType, ne
 		"epoch1": newMinEpoch,
 	}
 	return dbTx.Model(epochStats{}).Where(cond).Updates(updates).Error
-}
-
-func (ms *mysqlStore) updateEpochTotalsTx(dbTx *gorm.DB, opHistory store.EpochDataOpNumAlters) (err error) {
-	for t, cnt := range opHistory {
-		cond := map[string]interface{}{
-			"type": epochStatsEpochTotal, "key": getEpochTotalStatsKey(t),
-		}
-
-		switch {
-		case cnt == 0:
-			continue
-		case cnt > 0: // increase
-			err = dbTx.Model(epochStats{}).Where(cond).UpdateColumn("epoch1", gorm.Expr("epoch1 + ?", cnt)).Error
-		case cnt < 0: // decrease
-			err = dbTx.Model(epochStats{}).Where(cond).UpdateColumn("epoch1", gorm.Expr("GREATEST(0, CAST(epoch1 AS SIGNED) - ?)", -cnt)).Error
-		}
-
-		if err != nil {
-			break
-		}
-	}
-
-	return
 }
 
 func (ms *mysqlStore) updateLogsTablePartitionsTx(dbTx *gorm.DB, opAffects *mysqlEpochDataOpAffects) (err error) {
