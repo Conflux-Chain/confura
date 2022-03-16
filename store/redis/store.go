@@ -68,31 +68,31 @@ func (rs *redisStore) GetGlobalEpochRange() (uint64, uint64, error) {
 	return loadEpochRange(rs.ctx, rs.rdb, store.EpochDataNil)
 }
 
-func (rs *redisStore) GetNumBlocks() uint64 {
+func (rs *redisStore) GetNumBlocks() (uint64, error) {
 	cnt, err := loadEpochDataCount(rs.ctx, rs.rdb, store.EpochBlock)
 	if err != nil && !rs.IsRecordNotFound(err) {
-		logrus.WithError(err).Error("Failed to get statistics (num of blocks) from redis")
+		return 0, err
 	}
 
-	return cnt
+	return cnt, nil
 }
 
-func (rs *redisStore) GetNumTransactions() uint64 {
+func (rs *redisStore) GetNumTransactions() (uint64, error) {
 	cnt, err := loadEpochDataCount(rs.ctx, rs.rdb, store.EpochTransaction)
 	if err != nil && !rs.IsRecordNotFound(err) {
-		logrus.WithError(err).Error("Failed to get statistics (num of transactions) from redis")
+		return 0, err
 	}
 
-	return cnt
+	return cnt, nil
 }
 
-func (rs *redisStore) GetNumLogs() uint64 {
+func (rs *redisStore) GetNumLogs() (uint64, error) {
 	cnt, err := loadEpochDataCount(rs.ctx, rs.rdb, store.EpochLog)
 	if err != nil && !rs.IsRecordNotFound(err) {
-		logrus.WithError(err).Error("Failed to get statistics (num of logs)  from redis")
+		return 0, err
 	}
 
-	return cnt
+	return cnt, nil
 }
 
 func (rs *redisStore) GetLogs(filter store.LogFilter) (logs []store.Log, err error) {

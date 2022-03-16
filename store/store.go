@@ -20,9 +20,9 @@ type Prunable interface {
 	GetTransactionEpochRange() (uint64, uint64, error)
 	GetLogEpochRange() (uint64, uint64, error)
 
-	GetNumBlocks() uint64
-	GetNumTransactions() uint64
-	GetNumLogs() uint64
+	GetNumBlocks() (uint64, error)
+	GetNumTransactions() (uint64, error)
+	GetNumLogs() (uint64, error)
 
 	// DequeueBlocks removes epoch blocks from the store like dequeuing a queue,
 	// which is deleting data from the oldest epoch to some new epoch

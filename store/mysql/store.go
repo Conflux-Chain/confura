@@ -141,16 +141,16 @@ func (ms *mysqlStore) GetGlobalEpochRange() (uint64, uint64, error) {
 	return ms.getEpochRange(store.EpochDataNil)
 }
 
-func (ms *mysqlStore) GetNumBlocks() uint64 {
-	return atomic.LoadUint64(ms.epochTotals[store.EpochBlock])
+func (ms *mysqlStore) GetNumBlocks() (uint64, error) {
+	return atomic.LoadUint64(ms.epochTotals[store.EpochBlock]), nil
 }
 
-func (ms *mysqlStore) GetNumTransactions() uint64 {
-	return atomic.LoadUint64(ms.epochTotals[store.EpochTransaction])
+func (ms *mysqlStore) GetNumTransactions() (uint64, error) {
+	return atomic.LoadUint64(ms.epochTotals[store.EpochTransaction]), nil
 }
 
-func (ms *mysqlStore) GetNumLogs() uint64 {
-	return atomic.LoadUint64(ms.epochTotals[store.EpochLog])
+func (ms *mysqlStore) GetNumLogs() (uint64, error) {
+	return atomic.LoadUint64(ms.epochTotals[store.EpochLog]), nil
 }
 
 func (ms *mysqlStore) Push(data *store.EpochData) error {

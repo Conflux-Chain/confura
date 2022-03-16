@@ -88,7 +88,7 @@ func (pruner *Pruner) doTicker() error {
 }
 
 func (pruner *Pruner) pruneEpochData(dt store.EpochDataType) error {
-	var getNumEpochData func() uint64
+	var getNumEpochData func() (uint64, error)
 	var threshold uint64
 
 	switch dt {
@@ -105,7 +105,10 @@ func (pruner *Pruner) pruneEpochData(dt store.EpochDataType) error {
 		return unexpectedEpochDataType
 	}
 
-	numData := getNumEpochData()
+	numData, err := getNumEpochData()
+	if err != nil {
+		return err
+	}
 
 	for numData > threshold {
 		logrus.WithFields(logrus.Fields{
@@ -116,7 +119,9 @@ func (pruner *Pruner) pruneEpochData(dt store.EpochDataType) error {
 			return err
 		}
 
-		numData = getNumEpochData()
+		if numData, err = getNumEpochData(); err != nil {
+			return err
+		}
 	}
 
 	return nil
