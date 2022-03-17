@@ -32,8 +32,6 @@ type Syncer struct {
 	adaptive bool
 	// min num of db rows per batch persistence
 	minBatchDbRows int
-	// max num of epochs per batch persistence
-	maxNumEpochs int
 	// benchmark catch-up sync performance
 	bmarker *benchmarker
 }
@@ -62,12 +60,6 @@ func WithEpochTo(epochTo uint64) SyncOption {
 func WithMinBatchDbRows(dbRows int) SyncOption {
 	return func(s *Syncer) {
 		s.minBatchDbRows = dbRows
-	}
-}
-
-func WithMaxNumEpochs(maxNumEpochs int) SyncOption {
-	return func(s *Syncer) {
-		s.maxNumEpochs = maxNumEpochs
 	}
 }
 
@@ -101,7 +93,6 @@ func MustNewSyncer(cfx sdk.ClientOperator, db store.Store, opts ...SyncOption) *
 	var newOpts []SyncOption
 	newOpts = append(newOpts,
 		WithMinBatchDbRows(conf.DbRowsThreshold),
-		WithMaxNumEpochs(conf.EpochsThreshold),
 		WithWorkers(workers),
 	)
 
@@ -215,8 +206,8 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 				"epochDbRows": epochDbRows,
 			}).Debug("Catch-up syncer collects new epoch data from worker")
 
-			// bath insert into db if enough db rows or num of epochs collected
-			if state.dbRows >= s.minBatchDbRows || state.numEpochs() >= s.maxNumEpochs {
+			// bath insert into db if enough db rows collected
+			if state.dbRows >= s.minBatchDbRows {
 				s.persist(&state)
 			}
 		}

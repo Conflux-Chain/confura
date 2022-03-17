@@ -49,19 +49,22 @@ type EpochData struct {
 }
 
 // CalculateDbRows calculates to be inserted db rows
-func (epoch *EpochData) CalculateDbRows() int {
-	dbRows := 0
+func (epoch *EpochData) CalculateDbRows(disables ...bool) int {
+	dbRows, disable := 0, false
+	if len(disables) > 0 {
+		disable = disables[0]
+	}
 
 	storeDisabler := StoreConfig()
-	if !storeDisabler.IsChainBlockDisabled() {
+	if !disable || !storeDisabler.IsChainBlockDisabled() {
 		dbRows += len(epoch.Blocks)
 	}
 
-	if !storeDisabler.IsChainReceiptDisabled() || !storeDisabler.IsChainTxnDisabled() {
+	if !disable || !storeDisabler.IsChainReceiptDisabled() || !storeDisabler.IsChainTxnDisabled() {
 		dbRows += len(epoch.Receipts)
 	}
 
-	if !storeDisabler.IsChainLogDisabled() {
+	if !disable || !storeDisabler.IsChainLogDisabled() {
 		for _, rcpt := range epoch.Receipts {
 			dbRows += len(rcpt.Logs)
 		}
