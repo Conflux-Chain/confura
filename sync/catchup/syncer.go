@@ -198,16 +198,19 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 				eno++
 			}
 
-			epochDbRows := state.update(epochData)
+			numStoreDbRows := state.update(epochData)
 
 			logrus.WithFields(logrus.Fields{
-				"workerName":  w.name,
-				"epochNo":     epochData.Number,
-				"epochDbRows": epochDbRows,
+				"workerName":         w.name,
+				"epochNo":            epochData.Number,
+				"numStoreDbRows":     numStoreDbRows,
+				"state.insertDbRows": state.insertDbRows,
+				"state.totalDbRows":  state.totalDbRows,
 			}).Debug("Catch-up syncer collects new epoch data from worker")
 
-			// bath insert into db if enough db rows collected
-			if state.dbRows >= s.minBatchDbRows {
+			// Batch insert into db if enough db rows collected, use total db rows here to
+			// restrict memory usage.
+			if state.totalDbRows >= s.minBatchDbRows {
 				s.persist(&state)
 			}
 		}
@@ -215,12 +218,14 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 }
 
 type persistState struct {
-	dbRows int
-	epochs []*store.EpochData
+	totalDbRows  int                // total db rows for collected epochs
+	insertDbRows int                // total db rows to be inserted for collected epochs
+	epochs       []*store.EpochData // all collected epochs
 }
 
 func (s *persistState) reset() {
-	s.dbRows = 0
+	s.totalDbRows = 0
+	s.insertDbRows = 0
 	s.epochs = []*store.EpochData{}
 }
 
@@ -229,12 +234,13 @@ func (s *persistState) numEpochs() int {
 }
 
 func (s *persistState) update(epochData *store.EpochData) int {
-	epochDbRows := epochData.CalculateDbRows()
+	totalDbRows, storeDbRows := epochData.CalculateDbRows()
 
 	s.epochs = append(s.epochs, epochData)
-	s.dbRows += epochDbRows
+	s.totalDbRows += totalDbRows
+	s.insertDbRows += storeDbRows
 
-	return epochDbRows
+	return storeDbRows
 }
 
 func (s *Syncer) persist(state *persistState) {
@@ -246,7 +252,7 @@ func (s *Syncer) persist(state *persistState) {
 	start := time.Now()
 	defer func() {
 		if s.bmarker != nil {
-			s.bmarker.metricPersistDbRows(int64(state.dbRows))
+			s.bmarker.metricPersistDbRows(int64(state.insertDbRows))
 			s.bmarker.metricPersistDuration(start)
 		}
 

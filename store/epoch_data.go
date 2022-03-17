@@ -48,29 +48,34 @@ type EpochData struct {
 	ReceiptExts map[types.Hash]*ReceiptExtra
 }
 
-// CalculateDbRows calculates to be inserted db rows
-func (epoch *EpochData) CalculateDbRows(disables ...bool) int {
-	dbRows, disable := 0, false
-	if len(disables) > 0 {
-		disable = disables[0]
-	}
-
+// CalculateDbRows calculates total db rows and to be stored db rows
+func (epoch *EpochData) CalculateDbRows() (totalDbRows int, storeDbRows int) {
 	storeDisabler := StoreConfig()
-	if !disable || !storeDisabler.IsChainBlockDisabled() {
-		dbRows += len(epoch.Blocks)
+
+	// db rows for block
+	totalDbRows += len(epoch.Blocks)
+	if !storeDisabler.IsChainBlockDisabled() {
+		storeDbRows += len(epoch.Blocks)
 	}
 
-	if !disable || !storeDisabler.IsChainReceiptDisabled() || !storeDisabler.IsChainTxnDisabled() {
-		dbRows += len(epoch.Receipts)
+	// db rows for txs
+	totalDbRows += len(epoch.Receipts)
+	if !storeDisabler.IsChainReceiptDisabled() || !storeDisabler.IsChainTxnDisabled() {
+		storeDbRows += len(epoch.Receipts)
 	}
 
-	if !disable || !storeDisabler.IsChainLogDisabled() {
-		for _, rcpt := range epoch.Receipts {
-			dbRows += len(rcpt.Logs)
-		}
+	numLogs := 0
+	for _, rcpt := range epoch.Receipts {
+		numLogs += len(rcpt.Logs)
 	}
 
-	return dbRows
+	// db rows for logs
+	totalDbRows += numLogs
+	if !storeDisabler.IsChainLogDisabled() {
+		storeDbRows += numLogs
+	}
+
+	return
 }
 
 func (epoch *EpochData) GetPivotBlock() *types.Block {
