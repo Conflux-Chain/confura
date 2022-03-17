@@ -101,7 +101,7 @@ func MustNewSyncer(cfx sdk.ClientOperator, db store.Store, opts ...SyncOption) *
 	var newOpts []SyncOption
 	newOpts = append(newOpts,
 		WithMinBatchDbRows(conf.DbRowsThreshold),
-		WithMaxNumEpochs(conf.epochsThreshold),
+		WithMaxNumEpochs(conf.EpochsThreshold),
 		WithWorkers(workers),
 	)
 

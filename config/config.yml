@@ -41,7 +41,7 @@ sync:
 #    # the catch up will be disabled if none configured.
 #    cfxPool: [http://test.confluxrpc.com]
 #    dbRowsThreshold: 1000 # Threshold for number of db rows per batch persistence
-#    epochsThreshold: 1000 # Threshold for number of epochs per batch persistence
+#    epochsThreshold: 5000 # Threshold for number of epochs per batch persistence
 #    workerChanSize: 5     # Capacity of channel per worker to buffer queried epoch data
 nearhead:
   cap: 100000
