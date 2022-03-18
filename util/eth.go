@@ -25,9 +25,9 @@ func MustNewEthClientFromViper() *web3go.Client {
 
 // MustNewEthClient creates an instance of ETH client or panic on error.
 func MustNewEthClient(url string) *web3go.Client {
-	retryCount := viper.GetInt("cfx.retry")
-	retryInterval := viper.GetDuration("cfx.retryInterval")
-	requestTimeout := viper.GetDuration("cfx.requestTimeout")
+	retryCount := viper.GetInt("eth.retry")
+	retryInterval := viper.GetDuration("eth.retryInterval")
+	requestTimeout := viper.GetDuration("eth.requestTimeout")
 
 	return MustNewEthClientWithRetry(url, retryCount, retryInterval, requestTimeout)
 }

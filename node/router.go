@@ -20,6 +20,7 @@ const (
 	GroupCfxHttp     = "cfxhttp"
 	GroupCfxWs       = "cfxws"
 	GroupCfxArchives = "cfxarchives"
+	GroupEthHttp     = "ethhttp"
 )
 
 // Router is used to route RPC requests to multiple full nodes.
