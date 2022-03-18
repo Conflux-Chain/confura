@@ -169,13 +169,8 @@ func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLog
 	}
 
 	// Check the number of returned logs
-	count, err := filter.ValidateCount(ls.db)
-	if err != nil {
+	if err = filter.ValidateCount(ls.db); err != nil {
 		return nil, nil, err
-	}
-
-	if count == 0 {
-		return emptyLogs, emptyLogExts, nil
 	}
 
 	// Query database

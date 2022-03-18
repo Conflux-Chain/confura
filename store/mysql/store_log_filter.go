@@ -65,25 +65,6 @@ func (filter *BaseLogFilter) apply(db *gorm.DB) *gorm.DB {
 	return db.Order("id DESC")
 }
 
-func (filter *BaseLogFilter) validateCount(total int64) (uint64, error) {
-	totalU64 := uint64(total)
-	if totalU64 <= filter.OffSet {
-		// skip all
-		return 0, nil
-	}
-
-	limit := filter.Limit
-	if limit == 0 || limit > store.MaxLogLimit {
-		limit = store.MaxLogLimit
-	}
-
-	if count := totalU64 - filter.OffSet; limit >= count {
-		return count, nil
-	}
-
-	return 0, errTooManyLogs
-}
-
 type AddressIndexedLogFilter struct {
 	BaseLogFilter
 	Contract  cfxaddress.Address
@@ -121,14 +102,24 @@ func (filter *AddressIndexedLogFilter) Apply(db *gorm.DB) *gorm.DB {
 	return filter.BaseLogFilter.apply(db)
 }
 
-func (filter *AddressIndexedLogFilter) ValidateCount(db *gorm.DB) (uint64, error) {
+func (filter *AddressIndexedLogFilter) ValidateCount(db *gorm.DB) error {
 	db = filter.apply(db)
 	db = applyTopicsFilter(db, filter.Topics)
 
+	limit := filter.Limit
+	if limit == 0 || limit > store.MaxLogLimit {
+		limit = store.MaxLogLimit
+	}
+	db = db.Offset(int(limit + filter.OffSet)).Limit(1)
+
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
-		return 0, err
+		return err
 	}
 
-	return filter.validateCount(total)
+	if total > 0 {
+		return errTooManyLogs
+	}
+
+	return nil
 }
