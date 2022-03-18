@@ -8,10 +8,10 @@ import (
 )
 
 type traceAPI struct {
-	provider *node.ClientProvider
+	provider *node.CfxClientProvider
 }
 
-func newTraceAPI(provider *node.ClientProvider) *traceAPI {
+func newTraceAPI(provider *node.CfxClientProvider) *traceAPI {
 	return &traceAPI{provider}
 }
 

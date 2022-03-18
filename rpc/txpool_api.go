@@ -9,7 +9,7 @@ import (
 )
 
 type txPoolAPI struct {
-	provider *node.ClientProvider
+	provider *node.CfxClientProvider
 }
 
 func (api *txPoolAPI) NextNonce(ctx context.Context, address types.Address) (

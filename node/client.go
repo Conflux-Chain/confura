@@ -3,48 +3,49 @@ package node
 import (
 	"context"
 	"strings"
+	"sync"
 
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 var ErrClientUnavailable = errors.New("No full node available")
 
-// ClientProvider provides different RPC client based on user IP to achieve load balance.
+// clientFactory factory methods to create RPC client
+type clientFactory func(url string) (interface{}, error)
+
+// clientProvider provides different RPC client based on user IP to achieve load balance.
 // Generally, it is used by RPC server to delegate RPC requests to full node cluster.
-type ClientProvider struct {
+type clientProvider struct {
 	router  Router
 	clients map[Group]*util.ConcurrentMap // group => node name => RPC client
+	factory clientFactory
+	mutex   sync.Mutex
 }
 
-func NewClientProvider(router Router) *ClientProvider {
-	clients := make(map[Group]*util.ConcurrentMap)
-	for k := range urlCfg {
-		clients[k] = &util.ConcurrentMap{}
+func newClientProvider(router Router, factory clientFactory) *clientProvider {
+	return &clientProvider{
+		router: router, factory: factory,
+		clients: make(map[Group]*util.ConcurrentMap),
+	}
+}
+
+func (p *clientProvider) registerGroup(group Group) *util.ConcurrentMap {
+	if _, ok := p.clients[group]; !ok {
+		p.mutex.Lock()
+		defer p.mutex.Unlock()
+
+		if _, ok := p.clients[group]; !ok { // double check
+			p.clients[group] = &util.ConcurrentMap{}
+		}
 	}
 
-	return &ClientProvider{router, clients}
+	return p.clients[group]
 }
 
-func (p *ClientProvider) GetClientByIP(ctx context.Context) (sdk.ClientOperator, error) {
-	remoteAddr := remoteAddrFromContext(ctx)
-	return p.GetClient(remoteAddr, GroupCfxHttp)
-}
-
-func (p *ClientProvider) GetClientByIPGroup(ctx context.Context, group Group) (sdk.ClientOperator, error) {
-	remoteAddr := remoteAddrFromContext(ctx)
-	return p.GetClient(remoteAddr, group)
-}
-
-func (p *ClientProvider) GetClient(key string, group Group) (sdk.ClientOperator, error) {
-	clients, ok := p.clients[group]
-	if !ok {
-		return nil, errors.Errorf("Unknown group %v", group)
-	}
-
+func (p *clientProvider) getClient(key string, group Group) (interface{}, error) {
+	clients := p.registerGroup(group)
 	url := p.router.Route(group, []byte(key))
 
 	logger := logrus.WithFields(logrus.Fields{
@@ -69,16 +70,7 @@ func (p *ClientProvider) GetClient(key string, group Group) (sdk.ClientOperator,
 		// TODO improvements required
 		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
 		// 2. Different metrics for different full nodes.
-
-		requestTimeout := viper.GetDuration("cfx.requestTimeout")
-		cfx, err := sdk.NewClient(url, sdk.ClientOption{
-			RequestTimeout: requestTimeout,
-		})
-		if err == nil {
-			util.HookCfxRpcMetricsMiddleware(cfx)
-		}
-
-		return cfx, err
+		return p.factory(url)
 	})
 
 	if err != nil {
@@ -92,7 +84,7 @@ func (p *ClientProvider) GetClient(key string, group Group) (sdk.ClientOperator,
 		logger.Info("Succeeded to connect to full node")
 	}
 
-	return client.(sdk.ClientOperator), nil
+	return client, nil
 }
 
 func remoteAddrFromContext(ctx context.Context) string {

@@ -84,7 +84,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	if storeCtx.cfxDB != nil {
 		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
 			logApi = rpc.NewCfxLogApi(
-				node.NewClientProvider(router),
+				node.NewCfxClientProvider(router),
 				mysql.MustConvert(storeCtx.cfxDB).UserStore,
 				util.MustNewRedisClient(redisUrl),
 			)

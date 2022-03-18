@@ -16,10 +16,10 @@ var (
 )
 
 type posAPI struct {
-	provider *node.ClientProvider
+	provider *node.CfxClientProvider
 }
 
-func newPosAPI(provider *node.ClientProvider) *posAPI {
+func newPosAPI(provider *node.CfxClientProvider) *posAPI {
 	return &posAPI{provider: provider}
 }
 

@@ -54,7 +54,7 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 func nativeSpaceApis(
 	router infuraNode.Router, gashandler *GasStationHandler, option ...CfxAPIOption,
 ) []API {
-	clientProvider := infuraNode.NewClientProvider(router)
+	clientProvider := infuraNode.NewCfxClientProvider(router)
 
 	return []API{
 		{

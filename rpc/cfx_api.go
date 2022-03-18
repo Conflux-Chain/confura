@@ -43,11 +43,11 @@ type CfxAPIOption struct {
 
 type cfxAPI struct {
 	CfxAPIOption
-	provider         *node.ClientProvider
+	provider         *node.CfxClientProvider
 	inputEpochMetric cimetrics.InputEpochMetric
 }
 
-func newCfxAPI(provider *node.ClientProvider, option ...CfxAPIOption) *cfxAPI {
+func newCfxAPI(provider *node.CfxClientProvider, option ...CfxAPIOption) *cfxAPI {
 	var opt CfxAPIOption
 	if len(option) > 0 {
 		opt = option[0]
