@@ -105,12 +105,7 @@ func (filter *AddressIndexedLogFilter) Apply(db *gorm.DB) *gorm.DB {
 func (filter *AddressIndexedLogFilter) ValidateCount(db *gorm.DB) error {
 	db = filter.apply(db)
 	db = applyTopicsFilter(db, filter.Topics)
-
-	limit := filter.Limit
-	if limit == 0 || limit > store.MaxLogLimit {
-		limit = store.MaxLogLimit
-	}
-	db = db.Offset(int(limit + filter.OffSet)).Limit(1)
+	db = db.Offset(int(store.MaxLogLimit + filter.OffSet)).Limit(1)
 
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
