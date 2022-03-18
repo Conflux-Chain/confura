@@ -107,6 +107,12 @@ func NormalizeEthBlockNumber(w3c *web3go.Client, blockNum *rpc.BlockNumber) (*rp
 		return nil, errors.WithMessage(err, "failed to normalize block number")
 	}
 
+	// !!! eth rpc may return nil for `pending` and `earlist` block number
+	if block == nil {
+		blockText, _ := blockNum.MarshalText()
+		return nil, errors.Errorf("unknown block number (%v)", string(blockText))
+	}
+
 	blockNo := block.Number.Int64()
 	return (*rpc.BlockNumber)(&blockNo), nil
 }
