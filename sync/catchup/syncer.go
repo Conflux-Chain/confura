@@ -262,8 +262,7 @@ func (s *Syncer) persist(state *persistState) {
 	start := time.Now()
 	defer func() {
 		if s.bmarker != nil {
-			s.bmarker.metricPersistDbRows(int64(state.insertDbRows))
-			s.bmarker.metricPersistDuration(start)
+			s.bmarker.metricPersistDb(start, state)
 		}
 
 		state.reset()
