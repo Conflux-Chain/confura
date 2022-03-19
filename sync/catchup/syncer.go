@@ -32,6 +32,8 @@ type Syncer struct {
 	adaptive bool
 	// min num of db rows per batch persistence
 	minBatchDbRows int
+	// max num of db rows collected before persistence
+	maxDbRows int
 	// benchmark catch-up sync performance
 	bmarker *benchmarker
 }
@@ -60,6 +62,12 @@ func WithEpochTo(epochTo uint64) SyncOption {
 func WithMinBatchDbRows(dbRows int) SyncOption {
 	return func(s *Syncer) {
 		s.minBatchDbRows = dbRows
+	}
+}
+
+func WithMaxDbRows(dbRows int) SyncOption {
+	return func(s *Syncer) {
+		s.maxDbRows = dbRows
 	}
 }
 
@@ -92,6 +100,7 @@ func MustNewSyncer(cfx sdk.ClientOperator, db store.Store, opts ...SyncOption) *
 
 	var newOpts []SyncOption
 	newOpts = append(newOpts,
+		WithMaxDbRows(conf.MaxDbRows),
 		WithMinBatchDbRows(conf.DbRowsThreshold),
 		WithWorkers(workers),
 	)
@@ -198,19 +207,20 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 				eno++
 			}
 
-			numStoreDbRows := state.update(epochData)
+			epochDbRows, storeDbRows := state.update(epochData)
 
 			logrus.WithFields(logrus.Fields{
 				"workerName":         w.name,
 				"epochNo":            epochData.Number,
-				"numStoreDbRows":     numStoreDbRows,
+				"epochDbRows":        epochDbRows,
+				"storeDbRows":        storeDbRows,
 				"state.insertDbRows": state.insertDbRows,
 				"state.totalDbRows":  state.totalDbRows,
 			}).Debug("Catch-up syncer collects new epoch data from worker")
 
-			// Batch insert into db if enough db rows collected, use total db rows here to
+			// Batch insert into db if enough db rows collected, also use total db rows here to
 			// restrict memory usage.
-			if state.totalDbRows >= s.minBatchDbRows {
+			if state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
 				s.persist(&state)
 			}
 		}
@@ -233,14 +243,14 @@ func (s *persistState) numEpochs() int {
 	return len(s.epochs)
 }
 
-func (s *persistState) update(epochData *store.EpochData) int {
+func (s *persistState) update(epochData *store.EpochData) (int, int) {
 	totalDbRows, storeDbRows := epochData.CalculateDbRows()
 
 	s.epochs = append(s.epochs, epochData)
 	s.totalDbRows += totalDbRows
 	s.insertDbRows += storeDbRows
 
-	return storeDbRows
+	return totalDbRows, storeDbRows
 }
 
 func (s *Syncer) persist(state *persistState) {
