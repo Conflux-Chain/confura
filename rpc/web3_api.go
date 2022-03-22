@@ -3,18 +3,23 @@ package rpc
 import (
 	"context"
 
-	"github.com/openweb3/web3go"
+	"github.com/conflux-chain/conflux-infura/node"
 )
 
 type web3API struct {
-	w3c *web3go.Client
+	provider *node.EthClientProvider
 }
 
-func newWeb3API(eth *web3go.Client) *web3API {
-	return &web3API{w3c: eth}
+func newWeb3API(provider *node.EthClientProvider) *web3API {
+	return &web3API{provider: provider}
 }
 
 // ClientVersion returns the current client version.
 func (api *web3API) ClientVersion(ctx context.Context) (string, error) {
-	return api.w3c.Eth.ClientVersion()
+	w3c, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return w3c.Eth.ClientVersion()
 }

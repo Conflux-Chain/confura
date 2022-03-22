@@ -108,16 +108,16 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 }
 
 func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx storeContext) {
+	router := node.EthFactory().CreateRouter()
+
 	// Add empty store tolerance
 	var ethhandler *rpc.EthStoreHandler
 	if !util.IsInterfaceValNil(storeCtx.ethDB) {
 		ethhandler = rpc.NewEthStoreHandler(storeCtx.ethDB, ethhandler)
 	}
 
-	// TODO: add support for ETH client pool from node cluster
-	ethNodeURL := viper.GetString("eth.http")
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
-	server := rpc.MustNewEvmSpaceServer(ethhandler, ethNodeURL, exposedModules)
+	server := rpc.MustNewEvmSpaceServer(router, ethhandler, exposedModules)
 
 	httpEndpoint := viper.GetString("ethrpc.endpoint")
 	go server.MustServeGraceful(ctx, wg, httpEndpoint, util.RpcProtocolHttp)

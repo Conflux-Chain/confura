@@ -3,18 +3,23 @@ package rpc
 import (
 	"context"
 
-	"github.com/openweb3/web3go"
+	"github.com/conflux-chain/conflux-infura/node"
 )
 
 type netAPI struct {
-	w3c *web3go.Client
+	provider *node.EthClientProvider
 }
 
-func newNetAPI(eth *web3go.Client) *netAPI {
-	return &netAPI{w3c: eth}
+func newNetAPI(provider *node.EthClientProvider) *netAPI {
+	return &netAPI{provider: provider}
 }
 
 // Version returns the current network id.
 func (api *netAPI) Version(ctx context.Context) (string, error) {
-	return api.w3c.Eth.NetVersion()
+	w3c, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return w3c.Eth.NetVersion()
 }

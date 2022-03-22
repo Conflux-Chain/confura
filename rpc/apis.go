@@ -3,7 +3,6 @@ package rpc
 import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 )
 
@@ -92,34 +91,34 @@ func nativeSpaceApis(
 }
 
 // evmSpaceApis returns the collection of built-in RPC APIs for EVM space.
-func evmSpaceApis(ethNodeURL string, handler ethHandler) ([]API, error) {
-	w3c := util.MustNewEthClient(ethNodeURL)
+func evmSpaceApis(router infuraNode.Router, handler ethHandler) ([]API, error) {
+	clientProvider := infuraNode.NewEthClientProvider(router)
 
 	return []API{
 		{
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   newEthAPI(w3c, handler),
+			Service:   newEthAPI(clientProvider, handler),
 			Public:    true,
 		}, {
 			Namespace: "web3",
 			Version:   "1.0",
-			Service:   newWeb3API(w3c),
+			Service:   newWeb3API(clientProvider),
 			Public:    true,
 		}, {
 			Namespace: "net",
 			Version:   "1.0",
-			Service:   newNetAPI(w3c),
+			Service:   newNetAPI(clientProvider),
 			Public:    true,
 		}, {
 			Namespace: "trace",
 			Version:   "1.0",
-			Service:   newEthTraceAPI(w3c),
+			Service:   newEthTraceAPI(clientProvider),
 			Public:    false,
 		}, {
 			Namespace: "parity",
 			Version:   "1.0",
-			Service:   newParityAPI(w3c),
+			Service:   newParityAPI(clientProvider),
 			Public:    false,
 		},
 	}, nil

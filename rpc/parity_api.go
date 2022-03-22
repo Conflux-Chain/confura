@@ -1,18 +1,25 @@
 package rpc
 
 import (
-	"github.com/openweb3/web3go"
+	"context"
+
+	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/openweb3/web3go/types"
 )
 
 type parityAPI struct {
-	w3c *web3go.Client
+	provider *node.EthClientProvider
 }
 
-func newParityAPI(eth *web3go.Client) *parityAPI {
-	return &parityAPI{w3c: eth}
+func newParityAPI(provider *node.EthClientProvider) *parityAPI {
+	return &parityAPI{provider: provider}
 }
 
-func (api *parityAPI) GetBlockReceipts(blockNumOrHash *types.BlockNumberOrHash) (val []types.Receipt, err error) {
-	return api.w3c.Parity.BlockReceipts(blockNumOrHash)
+func (api *parityAPI) GetBlockReceipts(ctx context.Context, blockNumOrHash *types.BlockNumberOrHash) (val []types.Receipt, err error) {
+	w3c, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return w3c.Parity.BlockReceipts(blockNumOrHash)
 }
