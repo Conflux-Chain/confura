@@ -7,7 +7,6 @@ import (
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/pkg/errors"
 )
 
 const defaultBatchSizeLogInsert = 500
@@ -15,8 +14,6 @@ const defaultBatchSizeLogInsert = 500
 var (
 	emptyLogs    = []types.Log{}
 	emptyLogExts = []*store.LogExtra{}
-
-	errTooManyLogs = errors.New("too many logs")
 )
 
 // convertLogTopic converts RPC log topic to store topic.

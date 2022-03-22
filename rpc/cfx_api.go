@@ -3,6 +3,8 @@ package rpc
 import (
 	"context"
 	"math/bits"
+	"sort"
+	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -352,11 +354,9 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 }
 
 func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
-	logger := logrus.WithField("filter", filter)
-
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
-		logger.WithError(err).Debug("Failed to get available cfx client for cfx_getLogs rpc request")
+		logrus.WithError(err).WithField("filter", filter).Debug("Failed to get available cfx client for cfx_getLogs rpc request")
 		return emptyLogs, err
 	}
 
@@ -373,10 +373,18 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	}
 
 	if err := api.validateLogFilter(cfx, &filter); err != nil {
-		logger.WithError(err).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
+		logrus.WithError(err).WithField("filter", filter).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
 		return emptyLogs, err
 	}
 
+	if len(filter.BlockHashes) > 1 {
+		return api.getLogsByBlockHashes(ctx, cfx, &filter)
+	}
+
+	return api.getLogs(ctx, cfx, filter)
+}
+
+func (api *cfxAPI) getLogs(ctx context.Context, cfx sdk.ClientOperator, filter types.LogFilter) ([]types.Log, error) {
 	if !store.StoreConfig().IsChainLogDisabled() && !util.IsInterfaceValNil(api.Handler) {
 		if sfilter, ok := store.ParseLogFilter(cfx, &filter); ok {
 			isStoreHit := false
@@ -384,24 +392,25 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 				hitStatsCollector.CollectHitStats("infura/rpc/call/cfx_getLogs/store/hitratio", *isHit)
 			}(&isStoreHit)
 
-			if logs, err := api.Handler.GetLogs(ctx, *sfilter); err == nil {
+			logs, err := api.Handler.GetLogs(ctx, *sfilter)
+			if err == nil {
 				// return empty slice rather than nil to comply with fullnode
 				if logs == nil {
 					logs = emptyLogs
 				}
 
-				logger.Debug("Loading epoch data for cfx_getLogs hit in the store")
+				logrus.WithField("filter", filter).Debug("Loading epoch data for cfx_getLogs hit in the store")
 
 				isStoreHit = true
 				return logs, nil
 			}
 
-			logger.WithError(err).Debug("Loading epoch data for cfx_getLogs hit missed from the store")
+			logrus.WithError(err).WithField("filter", filter).Debug("Loading epoch data for cfx_getLogs hit missed from the store")
 
 			// Logs already pruned from database? If so, we'd rather not delegate this request to
 			// the fullnode, as it might crush our fullnode.
 			if errors.Is(err, store.ErrAlreadyPruned) {
-				logger.Debug("Epoch log data already pruned for cfx_getLogs to return")
+				logrus.WithField("filter", filter).Debug("Epoch log data already pruned for cfx_getLogs to return")
 
 				if api.LogApi != nil {
 					return api.LogApi.GetLogs(ctx, filter)
@@ -412,12 +421,92 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		}
 	}
 
-	logger.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getLogs rpc request to fullnode")
+	logrus.WithField("fullnode", cfx.GetNodeURL()).Debug("Delegating cfx_getLogs rpc request to fullnode")
 
 	// for any error, delegate request to full node, including:
 	// 1. database level error
 	// 2. record not found (log range mismatch)
 	return cfx.GetLogs(filter)
+}
+
+func (api *cfxAPI) getLogsByBlockHashes(ctx context.Context, cfx sdk.ClientOperator, originFilter *types.LogFilter) ([]types.Log, error) {
+	var blockNumbers []int
+	blockNumber2HashCache := make(map[int]types.Hash)
+
+	// Get block numbers to query event logs in order
+	for _, hash := range originFilter.BlockHashes {
+		block, err := cfx.GetBlockSummaryByHash(hash)
+		if err != nil {
+			return nil, err
+		}
+
+		if block == nil {
+			continue
+		}
+
+		bn := int(block.BlockNumber.ToInt().Uint64())
+
+		if _, ok := blockNumber2HashCache[bn]; !ok {
+			blockNumber2HashCache[bn] = hash
+			blockNumbers = append(blockNumbers, bn)
+		}
+	}
+
+	// Blocks not found
+	if len(blockNumbers) == 0 {
+		return emptyLogs, nil
+	}
+
+	// To query event logs in order
+	sort.Ints(blockNumbers)
+
+	var maxLogs uint64
+	if originFilter.Offset != nil {
+		maxLogs += uint64(*originFilter.Offset)
+	}
+	if originFilter.Limit != nil {
+		maxLogs += uint64(*originFilter.Limit)
+	}
+
+	var result []types.Log
+	start := time.Now()
+
+	// Query in DESC
+	for i := len(blockNumbers) - 1; i >= 0; i-- {
+		blockHash := blockNumber2HashCache[blockNumbers[i]]
+		filter := types.LogFilter{
+			BlockHashes: []types.Hash{blockHash},
+			Address:     originFilter.Address,
+			Topics:      originFilter.Topics,
+			// ignore offset and limit
+		}
+
+		// Query event logs for a single block
+		logs, err := api.getLogs(ctx, cfx, filter)
+		if err != nil {
+			return nil, err
+		}
+
+		// Check timeout in each iteration
+		if time.Since(start) > store.TimeoutGetLogs {
+			return nil, store.ErrGetLogsTimeout
+		}
+
+		result = append(logs, result...)
+
+		// Check returned number of event logs
+		if maxLogs > 0 && maxLogs < uint64(len(result)) {
+			return nil, store.ErrGetLogsTooMany
+		}
+	}
+
+	// Skip the last N logs
+	if originFilter.Offset != nil {
+		endIndex := len(result) - int(*originFilter.Offset)
+		result = result[0:endIndex]
+	}
+
+	return result, nil
 }
 
 func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) error {
@@ -432,7 +521,7 @@ func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFi
 	}
 
 	if len(filter.BlockHashes) != 0 { // check if block hashes provided
-		filterFlag |= store.LogFilterTypeBlockHashes
+		filterFlag |= store.LogFilterTypeBlockHash
 	}
 
 	if bits.OnesCount(uint(filterFlag)) > 1 { // different types of log filters are mutual exclusion
@@ -440,7 +529,7 @@ func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFi
 	}
 
 	switch {
-	case filterFlag&store.LogFilterTypeBlockHashes != 0: // validate block hash log filter
+	case filterFlag&store.LogFilterTypeBlockHash != 0: // validate block hash log filter
 		if len(filter.BlockHashes) > store.MaxLogBlockHashesSize {
 			return errExceedLogFilterBlockHashLimit(len(filter.BlockHashes))
 		}

@@ -1,8 +1,8 @@
 package store
 
 import (
-	"fmt"
 	"math"
+	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -28,14 +28,21 @@ const (
 	MaxLogLimit           uint64 = 5000 // TODO adjust max log limit accordingly
 
 	// Log filter types
-	LogFilterTypeBlockHashes LogFilterType = 1 << iota // 0001
-	LogFilterTypeEpochRange                            // 0010
-	LogFilterTypeBlockRange                            // 0100
+	LogFilterTypeBlockHash  LogFilterType = 1 << iota // 0001
+	LogFilterTypeEpochRange                           // 0010
+	LogFilterTypeBlockRange                           // 0100
+)
+
+var (
+	TimeoutGetLogs = 3 * time.Second
+
+	ErrGetLogsTooMany = errors.Errorf("query returned more than %v results", MaxLogLimit)
+	ErrGetLogsTimeout = errors.Errorf("query duration exceed %v", TimeoutGetLogs)
 )
 
 type logFilterRangeFetcher interface {
-	// fetchs epoch range from fullnode by blockhashes but excluding the provided hashes.
-	FetchEpochRangeByBlockHashes(filter *LogFilter, excludeHashes ...string) (citypes.EpochRange, error)
+	// fetchs epoch from fullnode by block hash.
+	FetchEpochByBlockHash(blockHash string) (uint64, bool, error)
 	// fetchs epoch range from fullnode by from and to block number.
 	FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.EpochRange, error)
 }
@@ -50,35 +57,17 @@ func newCfxRangeFetcher(cfx sdk.ClientOperator) *cfxRangeFetcher {
 
 // implements logFilterRangeFetcher
 
-func (fetcher *cfxRangeFetcher) FetchEpochRangeByBlockHashes(filter *LogFilter, excludeHashes ...string) (citypes.EpochRange, error) {
-	res := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0} // default return an invalid epoch range
-
-	fblockHashes := filter.BlockHashes.toSlice()
-	diffBlockHashes := util.DiffStrSlices(fblockHashes, excludeHashes)
-
-	if len(diffBlockHashes) == 0 {
-		return res, nil
-	}
-
-	batchBlockHashes := util.ConvertToHashSlice(diffBlockHashes)
-	blockSummarys, err := fetcher.cfx.BatchGetBlockSummarys(batchBlockHashes)
+func (fetcher *cfxRangeFetcher) FetchEpochByBlockHash(blockHash string) (uint64, bool, error) {
+	block, err := fetcher.cfx.GetBlockSummaryByHash(types.Hash(blockHash))
 	if err != nil {
-		logrus.WithError(err).WithField("blockhashes", diffBlockHashes).Error("Failed to batch get blocksummarys by diff blockhashes")
-		return res, errors.WithMessage(err, "failed to batch get block summarys by diff blockhashes")
+		return 0, false, err
 	}
 
-	for _, bs := range blockSummarys {
-		epochNo := bs.EpochNumber.ToInt().Uint64()
-		res.EpochFrom = util.MinUint64(res.EpochFrom, epochNo)
-		res.EpochTo = util.MaxUint64(res.EpochTo, epochNo)
+	if block == nil {
+		return 0, false, nil
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"blockSummarys": blockSummarys, "filterBlockHashes": fblockHashes,
-		"excludeHashes": excludeHashes, "epochRange": res,
-	}).Debug("Fetched epoch range from fullnode by log filter")
-
-	return res, nil
+	return block.EpochNumber.ToInt().Uint64(), true, nil
 }
 
 func (fetcher *cfxRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.EpochRange, error) {
@@ -129,32 +118,18 @@ func newEthRangeFetcher(w3c *web3go.Client) *ethRangeFetcher {
 
 // implements logFilterRangeFetcher
 
-func (fetcher *ethRangeFetcher) FetchEpochRangeByBlockHashes(filter *LogFilter, excludeHashes ...string) (citypes.EpochRange, error) {
-	res := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0} // default return an invalid epoch range
-
-	fblockHashes := filter.BlockHashes.toSlice()
-	diffBlockHashes := util.DiffStrSlices(fblockHashes, excludeHashes)
-
-	if len(diffBlockHashes) == 0 {
-		return res, nil
-	}
-
-	cfxBlockHash := common.HexToHash(diffBlockHashes[0])
-	blockSummary, err := fetcher.w3c.Eth.BlockByHash(cfxBlockHash, false)
+func (fetcher *ethRangeFetcher) FetchEpochByBlockHash(blockHash string) (uint64, bool, error) {
+	ethBlockHash := common.HexToHash(blockHash)
+	block, err := fetcher.w3c.Eth.BlockByHash(ethBlockHash, false)
 	if err != nil {
-		logrus.WithError(err).WithField("blockhashes", diffBlockHashes).Error("Failed to get block summary by hash")
-		return res, errors.WithMessage(err, "failed to get block summary by hash")
+		return 0, false, err
 	}
 
-	res.EpochFrom = blockSummary.Number.Uint64()
-	res.EpochTo = res.EpochFrom
+	if block == nil {
+		return 0, false, nil
+	}
 
-	logrus.WithFields(logrus.Fields{
-		"blockSummary": blockSummary, "filterBlockHashes": fblockHashes,
-		"excludeHashes": excludeHashes, "epochRange": res,
-	}).Debug("Fetched ETH epoch range from fullnode by log filter")
-
-	return res, nil
+	return block.Number.Uint64(), true, nil
 }
 
 func (fetcher *ethRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.EpochRange, error) {
@@ -174,8 +149,8 @@ type LogFilter struct {
 	EpochRange   *citypes.EpochRange
 	BlockRange   *citypes.EpochRange
 	Contracts    VariadicValue
-	BlockHashIds VariadicValue
-	BlockHashes  VariadicValue
+	BlockHashId  uint64
+	BlockHash    string
 	Topics       []VariadicValue // event hash and indexed data 1, 2, 3
 	OffSet       uint64
 	Limit        uint64
@@ -194,8 +169,8 @@ func ParseLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) (result *Lo
 		result, ok = NewLogFilter(LogFilterTypeEpochRange, filter), true
 	case filter.FromBlock != nil && filter.ToBlock != nil:
 		result, ok = NewLogFilter(LogFilterTypeBlockRange, filter), true
-	case len(filter.BlockHashes) > 0:
-		result, ok = NewLogFilter(LogFilterTypeBlockHashes, filter), true
+	case len(filter.BlockHashes) == 1:
+		result, ok = NewLogFilter(LogFilterTypeBlockHash, filter), true
 	}
 
 	if ok {
@@ -209,7 +184,7 @@ func ParseLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) (result *Lo
 func ParseEthLogFilter(w3c *web3go.Client, ethNetworkId uint32, filter *web3Types.FilterQuery) (result *LogFilter, ok bool) {
 	switch {
 	case filter.BlockHash != nil:
-		result, ok = NewEthLogFilter(LogFilterTypeBlockHashes, ethNetworkId, filter), true
+		result, ok = NewEthLogFilter(LogFilterTypeBlockHash, ethNetworkId, filter), true
 	case filter.FromBlock != nil && filter.ToBlock != nil:
 		result, ok = NewEthLogFilter(LogFilterTypeBlockRange, ethNetworkId, filter), true
 	}
@@ -246,15 +221,9 @@ func NewLogFilter(filterType LogFilterType, filter *types.LogFilter) *LogFilter 
 			EpochFrom: filter.FromBlock.ToInt().Uint64(),
 			EpochTo:   filter.ToBlock.ToInt().Uint64(),
 		}
-	case LogFilterTypeBlockHashes:
-		result.BlockHashes = newVariadicValueByHashes(filter.BlockHashes)
-
-		blockHashIds := make([]string, 0, len(filter.BlockHashes))
-		for _, bh := range filter.BlockHashes {
-			hashId := util.GetShortIdOfHash(bh.String())
-			blockHashIds = append(blockHashIds, fmt.Sprintf("%v", hashId))
-		}
-		result.BlockHashIds = NewVariadicValue(blockHashIds...)
+	case LogFilterTypeBlockHash:
+		result.BlockHash = filter.BlockHashes[0].String()
+		result.BlockHashId = util.GetShortIdOfHash(result.BlockHash)
 	}
 
 	// init topics filter
@@ -286,134 +255,12 @@ func NewEthLogFilter(filterType LogFilterType, ethNetworkId uint32, filter *web3
 	return NewLogFilter(filterType, cfxLogFilter)
 }
 
-// FetchEpochRangeByBlockHashes fetchs epoch range from fullnode by blockhashes but excluding the provided hashes.
-func (filter *LogFilter) FetchEpochRangeByBlockHashes(excludeHashes ...string) (citypes.EpochRange, error) {
-	return filter.rangeFetcher.FetchEpochRangeByBlockHashes(filter, excludeHashes...)
+// FetchEpochByBlockHash fetchs epoch from fullnode by blockhash.
+func (filter *LogFilter) FetchEpochByBlockHash() (uint64, bool, error) {
+	return filter.rangeFetcher.FetchEpochByBlockHash(filter.BlockHash)
 }
 
 // FetchEpochRangeByBlockNumber fetchs epoch range from fullnode by from and to block number.
 func (filter *LogFilter) FetchEpochRangeByBlockNumber() (citypes.EpochRange, error) {
 	return filter.rangeFetcher.FetchEpochRangeByBlockNumber(filter)
-}
-
-// VariadicValue represents an union value, including null, single value or multiple values.
-type VariadicValue struct {
-	count    int
-	single   string
-	multiple map[string]bool
-}
-
-func NewVariadicValue(values ...string) VariadicValue {
-	count := len(values)
-	if count == 0 {
-		return VariadicValue{0, "", nil}
-	}
-
-	if count == 1 {
-		return VariadicValue{1, values[0], nil}
-	}
-
-	multiple := make(map[string]bool)
-
-	for _, v := range values {
-		multiple[v] = true
-	}
-
-	count = len(multiple)
-	if count == 1 {
-		return VariadicValue{1, values[0], nil}
-	}
-
-	return VariadicValue{count, "", multiple}
-}
-
-func newVariadicValueByHashes(hashes []types.Hash) VariadicValue {
-	count := len(hashes)
-	if count == 0 {
-		return VariadicValue{0, "", nil}
-	}
-
-	if count == 1 {
-		return VariadicValue{1, hashes[0].String(), nil}
-	}
-
-	values := make(map[string]bool)
-
-	for _, v := range hashes {
-		values[v.String()] = true
-	}
-
-	count = len(values)
-	if count == 1 {
-		return VariadicValue{1, hashes[0].String(), nil}
-	}
-
-	return VariadicValue{count, "", values}
-}
-
-func newVariadicValueByAddress(addresses []types.Address) VariadicValue {
-	count := len(addresses)
-	if count == 0 {
-		return VariadicValue{0, "", nil}
-	}
-
-	if count == 1 {
-		return VariadicValue{1, addresses[0].MustGetBase32Address(), nil}
-	}
-
-	values := make(map[string]bool)
-
-	for _, v := range addresses {
-		values[v.MustGetBase32Address()] = true
-	}
-
-	count = len(values)
-	if count == 1 {
-		return VariadicValue{1, addresses[0].MustGetBase32Address(), nil}
-	}
-
-	return VariadicValue{count, "", values}
-}
-
-func (vv *VariadicValue) toSlice() []string {
-	if vv.count == 1 {
-		return []string{vv.single}
-	}
-
-	result := make([]string, 0, vv.count)
-	for k := range vv.multiple {
-		result = append(result, k)
-	}
-
-	return result
-}
-
-func (vv *VariadicValue) Count() int {
-	return vv.count
-}
-
-func (vv *VariadicValue) IsNull() bool {
-	return vv.count == 0
-}
-
-func (vv *VariadicValue) Single() (string, bool) {
-	if vv.count == 1 {
-		return vv.single, true
-	}
-
-	return "", false
-}
-
-func (vv *VariadicValue) FlatMultiple() ([]string, bool) {
-	if vv.count < 2 {
-		return nil, false
-	}
-
-	result := make([]string, 0, vv.count)
-
-	for k := range vv.multiple {
-		result = append(result, k)
-	}
-
-	return result, true
 }

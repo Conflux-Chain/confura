@@ -113,7 +113,7 @@ func (filter *AddressIndexedLogFilter) ValidateCount(db *gorm.DB) error {
 	}
 
 	if total > 0 {
-		return errTooManyLogs
+		return store.ErrGetLogsTooMany
 	}
 
 	return nil

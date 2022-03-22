@@ -118,13 +118,13 @@ func (log *log) parseLogExtra() *store.LogExtra {
 }
 
 type logStore struct {
+	*baseStore
 	logPartitioner
-	db *gorm.DB
 }
 
 func newLogStore(db *gorm.DB) *logStore {
 	return &logStore{
-		db: db,
+		baseStore: newBaseStore(db),
 	}
 }
 
@@ -137,37 +137,32 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	epochRange := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0}
 
 	switch filter.Type {
-	case store.LogFilterTypeBlockHashes:
-		blockParts, err := ls.getLogsRelBlockInfoWithinStore(&filter)
+	case store.LogFilterTypeBlockHash:
+		blockPart, ok, err := ls.getLogsRelBlockInfoByBlockHash(&filter)
 		if err != nil {
-			logrus.WithField("filter", filter).WithError(err).Error("Failed to calculate epoch range for log filter of type block hashes")
+			logrus.WithField("filter", filter).WithError(err).Error("Failed to calculate epoch range for log filter of type block hash")
 			return nil, err
 		}
 
-		foundHashes := make([]string, 0, len(blockParts))
-		for i := 0; i < len(blockParts); i++ {
-			foundHashes = append(foundHashes, blockParts[i].Hash)
-
-			// update epoch range from store
-			epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, blockParts[i].Epoch)
-			epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, blockParts[i].Epoch)
-		}
-
-		if len(foundHashes) == filter.BlockHashes.Count() { // already have all block hashes in store
+		// found in database
+		if ok {
+			epochRange.EpochFrom = blockPart.Epoch
+			epochRange.EpochTo = blockPart.Epoch
 			break
 		}
 
-		fer, err := filter.FetchEpochRangeByBlockHashes(foundHashes...) // fetch epoch range from fullnode
+		// otherwise, query from fullnode
+		epoch, ok, err := filter.FetchEpochByBlockHash()
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to fetch epoch range from fullnode for log filter of type block hashes")
 		}
 
-		// update epoch range from fullnode
-		epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, fer.EpochFrom)
-		epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, fer.EpochTo)
-
+		if ok {
+			epochRange.EpochFrom = epoch
+			epochRange.EpochTo = epoch
+		}
 	case store.LogFilterTypeBlockRange:
-		blockParts, err := ls.getLogsRelBlockInfoWithinStore(&filter)
+		blockParts, err := ls.getLogsRelBlockInfoByBlockRange(&filter)
 		if err != nil {
 			logrus.WithField("filter", filter).WithError(err).Error("Failed to calculate epoch range for log filter of type block range")
 			return nil, err
@@ -229,9 +224,8 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	db := ls.db
 	var prefind func()
 	switch filter.Type {
-	case store.LogFilterTypeBlockHashes:
-		db = applyVariadicFilter(db, "block_hash_id", filter.BlockHashIds)
-		db = applyVariadicFilter(db, "block_hash", filter.BlockHashes)
+	case store.LogFilterTypeBlockHash:
+		db = db.Where("hash_id = ? AND hash = ?", filter.BlockHashId, filter.BlockHash)
 		prefind = func() {
 			db = db.Order("block_hash_id DESC")
 		}
@@ -290,27 +284,35 @@ type logsRelBlockPart struct {
 	BlockNumber string // for block number
 }
 
-func (ls *logStore) getLogsRelBlockInfoWithinStore(filter *store.LogFilter) ([]logsRelBlockPart, error) {
+func (ls *logStore) getLogsRelBlockInfoByBlockHash(filter *store.LogFilter) (logsRelBlockPart, bool, error) {
+	var result logsRelBlockPart
+
+	db := ls.db.Model(&block{}).
+		Where("hash_id = ? AND hash = ?", filter.BlockHashId, filter.BlockHash).
+		Select("hash", "epoch")
+
+	err := db.First(&result).Error
+	if ls.IsRecordNotFound(err) {
+		return logsRelBlockPart{}, false, nil
+	}
+
+	if err != nil {
+		return logsRelBlockPart{}, false, err
+	}
+
+	return result, true, nil
+}
+
+func (ls *logStore) getLogsRelBlockInfoByBlockRange(filter *store.LogFilter) ([]logsRelBlockPart, error) {
 	var res []logsRelBlockPart
-	db := ls.db.Model(&block{})
 
-	switch filter.Type {
-	case store.LogFilterTypeBlockHashes:
-		db = applyVariadicFilter(db, "hash_id", filter.BlockHashIds)
-		db = applyVariadicFilter(db, "hash", filter.BlockHashes)
+	db := ls.db.Model(&block{}).
+		Where("block_number IN (?)", filter.BlockRange.ToSlice()).
+		Select("block_number", "epoch")
 
-		if err := db.Select("hash", "epoch").Find(&res).Error; err != nil {
-			err = errors.WithMessage(err, "failed to get logs relative block info by hash")
-			return res, err
-		}
-	case store.LogFilterTypeBlockRange:
-		blockNums := filter.BlockRange.ToSlice()
-		db.Where("block_number IN (?)", blockNums)
-
-		if err := db.Select("block_number", "epoch").Find(&res).Error; err != nil {
-			err = errors.WithMessage(err, "failed to get logs relative block info by number")
-			return res, err
-		}
+	if err := db.Find(&res).Error; err != nil {
+		err = errors.WithMessage(err, "failed to get logs relative block info by number")
+		return res, err
 	}
 
 	return res, nil

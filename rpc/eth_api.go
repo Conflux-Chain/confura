@@ -424,7 +424,7 @@ func (api *ethAPI) validateEthLogFilter(filter *web3Types.FilterQuery) error {
 	}
 
 	if filter.BlockHash != nil { // check if block hash provided
-		filterFlag |= store.LogFilterTypeBlockHashes
+		filterFlag |= store.LogFilterTypeBlockHash
 	}
 
 	if bits.OnesCount(uint(filterFlag)) > 1 { // different types of log filters are mutual exclusion
