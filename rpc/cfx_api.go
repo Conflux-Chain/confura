@@ -377,6 +377,10 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		return emptyLogs, err
 	}
 
+	if filter.Limit != nil && *filter.Limit == 0 {
+		return emptyLogs, nil
+	}
+
 	if len(filter.BlockHashes) > 1 {
 		return api.getLogsByBlockHashes(ctx, cfx, &filter)
 	}
@@ -460,12 +464,9 @@ func (api *cfxAPI) getLogsByBlockHashes(ctx context.Context, cfx sdk.ClientOpera
 	// To query event logs in order
 	sort.Ints(blockNumbers)
 
-	var maxLogs uint64
+	maxLogs := store.MaxLogLimit
 	if originFilter.Offset != nil {
 		maxLogs += uint64(*originFilter.Offset)
-	}
-	if originFilter.Limit != nil {
-		maxLogs += uint64(*originFilter.Limit)
 	}
 
 	var result []types.Log
@@ -495,15 +496,33 @@ func (api *cfxAPI) getLogsByBlockHashes(ctx context.Context, cfx sdk.ClientOpera
 		result = append(logs, result...)
 
 		// Check returned number of event logs
-		if maxLogs > 0 && maxLogs < uint64(len(result)) {
+		if uint64(len(result)) > maxLogs {
 			return nil, store.ErrGetLogsTooMany
 		}
 	}
 
-	// Skip the last N logs
-	if originFilter.Offset != nil {
-		endIndex := len(result) - int(*originFilter.Offset)
-		result = result[0:endIndex]
+	// Offset: skip the last N logs
+	if originFilter.Offset != nil && *originFilter.Offset > 0 {
+		offset := int(*originFilter.Offset)
+		total := len(result)
+
+		if offset >= total {
+			return emptyLogs, nil
+		}
+
+		result = result[0 : total-offset]
+	}
+
+	// Limit: return the last N logs
+	if originFilter.Limit != nil && *originFilter.Limit > 0 {
+		limit := int(*originFilter.Limit)
+		total := len(result)
+
+		if limit >= total {
+			return result, nil
+		}
+
+		result = result[total-limit:]
 	}
 
 	return result, nil
