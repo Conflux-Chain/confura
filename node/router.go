@@ -29,14 +29,14 @@ type Router interface {
 	Route(group Group, key []byte) string
 }
 
-// MustNewRouterFromViper creates an instance of Router based on viper.
-func MustNewRouterFromViper() Router {
+// MustNewRouter creates an instance of Router.
+func MustNewRouter(redisURL string, nodeRPCURL string, groupConf map[Group]UrlConfig) Router {
 	var routers []Router
 
 	// Add redis router if configured
-	if url := cfg.Router.RedisURL; len(url) > 0 {
+	if len(redisURL) > 0 {
 		// redis://<user>:<password>@<host>:<port>/<db_number>
-		opt, err := redis.ParseURL(url)
+		opt, err := redis.ParseURL(redisURL)
 		if err != nil {
 			logrus.WithError(err).Fatal("Failed to parse redis URL")
 		}
@@ -46,9 +46,9 @@ func MustNewRouterFromViper() Router {
 	}
 
 	// Add node rpc router if configured
-	if url := cfg.Router.NodeRPCURL; len(url) > 0 {
+	if len(nodeRPCURL) > 0 {
 		// http://127.0.0.1:22530
-		client, err := rpc.DialHTTP(url)
+		client, err := rpc.DialHTTP(nodeRPCURL)
 		if err != nil {
 			logrus.WithError(err).Fatal("Failed to create rpc client")
 		}
@@ -56,29 +56,35 @@ func MustNewRouterFromViper() Router {
 		routers = append(routers, NewNodeRpcRouter(client))
 
 		// Also add local router in case node rpc temporary unavailable
-		localRouter, err := NewLocalRouterFromNodeRPC(client)
+		localRouter, err := NewLocalRouterFromNodeRPC(client, groupConf)
 		if err != nil {
 			logrus.WithError(err).Fatal("Failed to new local router with node rpc")
 		}
 		routers = append(routers, localRouter)
 	}
 
-	// If redis and node rpc not configured, add local router from viper.
-	if len(routers) == 0 {
-		routers = append(routers, NewLocalRouterFromViper())
+	// If redis and node rpc not configured, add local router for failover.
+	if len(routers) == 0 && len(groupConf) > 0 {
+		group2Urls := make(map[Group][]string)
+		for k, v := range groupConf {
+			group2Urls[k] = v.Nodes
+		}
+
+		routers = append(routers, NewLocalRouter(group2Urls))
 	}
 
-	return NewChainedRouter(routers...)
+	return NewChainedRouter(groupConf, routers...)
 }
 
 // chainedRouter routes RPC requests in chained responsibility pattern.
 type chainedRouter struct {
-	routers []Router
+	groupConf map[Group]UrlConfig
+	routers   []Router
 }
 
-func NewChainedRouter(routers ...Router) Router {
+func NewChainedRouter(groupConf map[Group]UrlConfig, routers ...Router) Router {
 	return &chainedRouter{
-		routers: routers,
+		groupConf: groupConf, routers: routers,
 	}
 }
 
@@ -90,7 +96,7 @@ func (r *chainedRouter) Route(group Group, key []byte) string {
 	}
 
 	// Failover if configured
-	config, ok := urlCfg[group]
+	config, ok := r.groupConf[group]
 	if !ok {
 		return ""
 	}
@@ -203,15 +209,6 @@ func NewLocalRouter(group2Urls map[Group][]string) *LocalRouter {
 	return &LocalRouter{groups}
 }
 
-func NewLocalRouterFromViper() *LocalRouter {
-	group2Urls := make(map[Group][]string)
-	for k, v := range urlCfg {
-		group2Urls[k] = v.Nodes
-	}
-
-	return NewLocalRouter(group2Urls)
-}
-
 func (r *LocalRouter) Route(group Group, key []byte) string {
 	item, ok := r.groups[group]
 	if !ok {
@@ -225,10 +222,10 @@ func (r *LocalRouter) Route(group Group, key []byte) string {
 	return ""
 }
 
-func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
+func NewLocalRouterFromNodeRPC(client *rpc.Client, groupConf map[Group]UrlConfig) (*LocalRouter, error) {
 	group2Urls := make(map[Group][]string)
 
-	for key := range urlCfg {
+	for key := range groupConf {
 		var urls []string
 		if err := client.Call(&urls, "node_list", key); err != nil {
 			logrus.WithError(err).WithField("group", key).Error("Failed to get nodes from node manager RPC")
@@ -251,14 +248,14 @@ func (r *LocalRouter) update(client *rpc.Client) {
 
 	// could update nodes periodically all the time
 	for range ticker.C {
-		for key := range urlCfg {
+		for grp := range r.groups {
 			var urls []string
-			if err := client.Call(&urls, "node_list", key); err != nil {
-				logrus.WithError(err).WithField("group", key).Debug("Failed to get nodes from node manager RPC periodically")
+			if err := client.Call(&urls, "node_list", grp); err != nil {
+				logrus.WithError(err).WithField("group", grp).Debug("Failed to get nodes from node manager RPC periodically")
 				continue
 			}
 
-			r.updateOnce(urls, key)
+			r.updateOnce(urls, grp)
 		}
 	}
 }

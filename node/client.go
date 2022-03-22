@@ -45,7 +45,11 @@ func (p *clientProvider) registerGroup(group Group) *util.ConcurrentMap {
 }
 
 func (p *clientProvider) getClient(key string, group Group) (interface{}, error) {
-	clients := p.registerGroup(group)
+	clients, ok := p.clients[group]
+	if !ok {
+		return nil, errors.Errorf("Unknown node group %v", group)
+	}
+
 	url := p.router.Route(group, []byte(key))
 
 	logger := logrus.WithFields(logrus.Fields{

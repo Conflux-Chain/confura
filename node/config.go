@@ -12,6 +12,7 @@ import (
 var cfg config
 
 var urlCfg map[Group]UrlConfig
+var ethUrlCfg map[Group]UrlConfig
 
 func init() {
 	viper.MustUnmarshalKey("node", &cfg)
@@ -30,16 +31,20 @@ func init() {
 			Nodes: cfg.ArchiveNodes,
 		},
 	}
-}
 
-// Config returns the configuration from viper.
-func Config() config {
-	return cfg
+	ethUrlCfg = map[Group]UrlConfig{
+		GroupEthHttp: {
+			Nodes:    cfg.EthURLs,
+			Failover: cfg.Router.ChainedFailover.EthURL,
+		},
+	}
 }
 
 type config struct {
 	Endpoint     string `default:":22530"`
+	EthEndpoint  string `default:":28530"`
 	URLs         []string
+	EthURLs      []string
 	WSURLs       []string
 	ArchiveNodes []string
 	HashRing     struct {
@@ -63,9 +68,11 @@ type config struct {
 	Router struct {
 		RedisURL        string
 		NodeRPCURL      string
+		EthNodeRPCURL   string
 		ChainedFailover struct {
-			URL   string
-			WSURL string
+			URL    string
+			WSURL  string
+			EthURL string
 		}
 	}
 }

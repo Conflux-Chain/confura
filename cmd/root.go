@@ -8,7 +8,6 @@ import (
 
 	"github.com/conflux-chain/conflux-infura/cmd/test"
 	"github.com/conflux-chain/conflux-infura/config"
-	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -66,16 +65,11 @@ func start(cmd *cobra.Command, args []string) {
 	}
 
 	if nodeServerEnabled {
-		startNodeServer(ctx, wg)
+		startNativeSpaceNodeServer(ctx, wg)
+		startEvmSpaceNodeServer(ctx, wg)
 	}
 
 	util.GracefulShutdown(wg, cancel)
-}
-
-func startNodeServer(ctx context.Context, wg *sync.WaitGroup) {
-	server := node.NewServer()
-	endpoint := node.Config().Endpoint
-	go server.MustServeGraceful(ctx, wg, endpoint, util.RpcProtocolHttp)
 }
 
 // Execute is the command line entrypoint.

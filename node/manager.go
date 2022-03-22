@@ -9,27 +9,32 @@ import (
 	"github.com/conflux-chain/conflux-infura/util"
 )
 
+// nodeFactory factory methods to create node instance
+type nodeFactory func(name, url string, hm HealthMonitor) (Node, error)
+
 // Manager manages full node cluster, including:
 // 1. Monitor node health and disable/enable full node automatically.
 // 2. Implements Router interface to route RPC requests to different full nodes
 // in manner of consistent hashing.
 type Manager struct {
-	nodes    map[string]*Node       // node name => Node
+	nodes    map[string]Node        // node name => Node
 	hashRing *consistent.Consistent // consistent hashing algorithm
 	resolver RepartitionResolver    // support repartition for hash ring
 	mu       sync.RWMutex
 
+	nodeFactory     nodeFactory       // factory method to create node instance
 	nodeName2Epochs map[string]uint64 // node name => epoch
 	midEpoch        uint64            // middle epoch of managed full nodes.
 }
 
-func NewManager(urls []string) *Manager {
-	return NewManagerWithRepartition(urls, &noopRepartitionResolver{})
+func NewManager(nf nodeFactory, urls []string) *Manager {
+	return NewManagerWithRepartition(nf, urls, &noopRepartitionResolver{})
 }
 
-func NewManagerWithRepartition(urls []string, resolver RepartitionResolver) *Manager {
+func NewManagerWithRepartition(nf nodeFactory, urls []string, resolver RepartitionResolver) *Manager {
 	manager := Manager{
-		nodes:           make(map[string]*Node),
+		nodeFactory:     nf,
+		nodes:           make(map[string]Node),
 		resolver:        resolver,
 		nodeName2Epochs: make(map[string]uint64),
 	}
@@ -39,7 +44,7 @@ func NewManagerWithRepartition(urls []string, resolver RepartitionResolver) *Man
 	for _, url := range urls {
 		nodeName := util.Url2NodeName(url)
 		if _, ok := manager.nodes[nodeName]; !ok {
-			node := NewNode(nodeName, url, &manager)
+			node, _ := nf(nodeName, url, &manager)
 			manager.nodes[nodeName] = node
 			members = append(members, node)
 		}
@@ -56,7 +61,7 @@ func (m *Manager) Add(url string) {
 
 	nodeName := util.Url2NodeName(url)
 	if _, ok := m.nodes[nodeName]; !ok {
-		node := NewNode(nodeName, url, m)
+		node, _ := m.nodeFactory(nodeName, url, m)
 		m.nodes[nodeName] = node
 		m.hashRing.Add(node)
 	}
@@ -75,7 +80,7 @@ func (m *Manager) Remove(url string) {
 	}
 }
 
-func (m *Manager) Get(url string) *Node {
+func (m *Manager) Get(url string) Node {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -83,11 +88,11 @@ func (m *Manager) Get(url string) *Node {
 	return m.nodes[nodeName]
 }
 
-func (m *Manager) List() []*Node {
+func (m *Manager) List() []Node {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var nodes []*Node
+	var nodes []Node
 
 	for _, v := range m.nodes {
 		nodes = append(nodes, v)
@@ -110,7 +115,7 @@ func (m *Manager) String() string {
 }
 
 // Distribute distributes a full node by specified key.
-func (m *Manager) Distribute(key []byte) *Node {
+func (m *Manager) Distribute(key []byte) Node {
 	k := xxhash.Sum64(key)
 
 	m.mu.RLock()
@@ -126,7 +131,7 @@ func (m *Manager) Distribute(key []byte) *Node {
 		return nil
 	}
 
-	node := member.(*Node)
+	node := member.(Node)
 	m.resolver.Put(k, node.Name())
 
 	return node
@@ -135,7 +140,7 @@ func (m *Manager) Distribute(key []byte) *Node {
 // Route implements the Router interface.
 func (m *Manager) Route(key []byte) string {
 	if n := m.Distribute(key); n != nil {
-		return n.GetNodeURL()
+		return n.Url()
 	}
 
 	return ""

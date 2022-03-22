@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	infuraMetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
@@ -43,7 +41,15 @@ type Status struct {
 
 func NewStatus(nodeName string) Status {
 	metricName := fmt.Sprintf("infura/nodes/latency/%v", nodeName)
+	return newStatus(metricName, nodeName)
+}
 
+func NewEthStatus(nodeName string) Status {
+	metricName := fmt.Sprintf("infura/ethnodes/latency/%v", nodeName)
+	return newStatus(metricName, nodeName)
+}
+
+func newStatus(metricName, nodeName string) Status {
 	return Status{
 		nodeName:      nodeName,
 		metricName:    metricName,
@@ -51,20 +57,20 @@ func NewStatus(nodeName string) Status {
 	}
 }
 
-func (s *Status) Update(cfx sdk.ClientOperator, monitor HealthMonitor) {
-	s.heartbeat(cfx)
+func (s *Status) Update(n Node, monitor HealthMonitor) {
+	s.heartbeat(n)
 	s.updateHealth(monitor)
 }
 
-func (s *Status) heartbeat(cfx sdk.ClientOperator) {
+func (s *Status) heartbeat(n Node) {
 	start := time.Now()
-	epoch, err := cfx.GetEpochNumber(types.EpochLatestState)
+	epoch, err := n.LatestEpochNumber()
 	if err != nil {
 		s.failureCounter++
 		s.successCounter = 0
 	} else {
 		s.latencyMetric.Update(time.Since(start).Nanoseconds())
-		s.latestStateEpoch = epoch.ToInt().Uint64()
+		s.latestStateEpoch = epoch
 		s.failureCounter = 0
 		s.successCounter++
 	}

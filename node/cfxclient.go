@@ -13,7 +13,7 @@ type CfxClientProvider struct {
 }
 
 func NewCfxClientProvider(router Router) *CfxClientProvider {
-	return &CfxClientProvider{
+	cp := &CfxClientProvider{
 		clientProvider: newClientProvider(router, func(url string) (interface{}, error) {
 			requestTimeout := viper.GetDuration("cfx.requestTimeout")
 
@@ -26,6 +26,12 @@ func NewCfxClientProvider(router Router) *CfxClientProvider {
 			return cfx, err
 		}),
 	}
+
+	for grp := range urlCfg {
+		cp.registerGroup(grp)
+	}
+
+	return cp
 }
 
 func (p *CfxClientProvider) GetClientByIP(ctx context.Context) (sdk.ClientOperator, error) {

@@ -5,10 +5,10 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-func NewServer() *util.RpcServer {
+func NewServer(nf nodeFactory, groupConf map[Group]UrlConfig) *util.RpcServer {
 	managers := make(map[Group]*Manager)
-	for k, v := range urlCfg {
-		managers[k] = NewManager(v.Nodes)
+	for k, v := range groupConf {
+		managers[k] = NewManager(nf, v.Nodes)
 	}
 
 	return util.MustNewRpcServer("node", map[string]interface{}{
@@ -42,7 +42,7 @@ func (api *api) List(group Group) []string {
 	var nodes []string
 
 	for _, n := range m.List() {
-		nodes = append(nodes, n.GetNodeURL())
+		nodes = append(nodes, n.Url())
 	}
 
 	return nodes

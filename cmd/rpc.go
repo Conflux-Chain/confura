@@ -67,7 +67,7 @@ func startRpcService(*cobra.Command, []string) {
 }
 
 func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx storeContext) {
-	router := node.MustNewRouterFromViper()
+	router := node.Factory().CreateRouter()
 
 	// Add empty store tolerance
 	var cfxHandler *rpc.CfxStoreHandler

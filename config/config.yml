@@ -107,6 +107,7 @@ prune:
       maxLogs: 100000
 node:
   urls: [http://test.confluxrpc.com,http://portal-test.confluxrpc.com]
+  ethurls: [http://evmtestnet.confluxrpc.com]
   # wsUrls: [ws://test.confluxrpc.com/ws]
   # archiveNodes: []
   # hashRing:
@@ -124,12 +125,15 @@ node:
   #     remindInterval: 5m
   #     successCounter: 60
   # endpoint: ":22530"
+  # ethEndpoint: ":28530"
   # router:
   #   redisUrl: ''
   #   nodeRpcUrl: ''
+  #   ethNodeRpcUrl: ''
   #   chainedFailover:
   #     url: ''
   #     wsUrl: ''
+  #     ethUrl: ''
 # relay:
 #   bufferSize: 2000
 #   concurrency: 1

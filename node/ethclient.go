@@ -13,7 +13,7 @@ type EthClientProvider struct {
 }
 
 func NewEthClientProvider(router Router) *EthClientProvider {
-	return &EthClientProvider{
+	cp := &EthClientProvider{
 		clientProvider: newClientProvider(router, func(url string) (interface{}, error) {
 			requestTimeout := viper.GetDuration("eth.requestTimeout")
 
@@ -27,6 +27,12 @@ func NewEthClientProvider(router Router) *EthClientProvider {
 			return eth, err
 		}),
 	}
+
+	for grp := range ethUrlCfg {
+		cp.registerGroup(grp)
+	}
+
+	return cp
 }
 
 func (p *EthClientProvider) GetClientByIP(ctx context.Context) (*web3go.Client, error) {
