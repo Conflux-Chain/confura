@@ -55,7 +55,7 @@ func (ess *EpochStatStore) loadEpochStats(est epochStatsType, keys ...string) ([
 
 	db := ess.db.Where("type = ?", est)
 	if len(keys) > 0 {
-		db = db.Where("key = ?", keys)
+		db = db.Where("`key` = ?", keys)
 	}
 
 	if err := db.Find(&result).Error; err != nil {
@@ -109,7 +109,7 @@ func (*EpochStatStore) initOrUpdateLogsPartitionEpochRangeStats(dbTx *gorm.DB, p
 func (ess *EpochStatStore) getEntityCount(dt store.EpochDataType) (uint64, error) {
 	var stat epochStats
 
-	if _, err := ess.exists(&stat, "key = ? AND type = ?", getEpochTotalStatsKey(dt), epochStatsEpochTotal); err != nil {
+	if _, err := ess.exists(&stat, "`key` = ? AND type = ?", getEpochTotalStatsKey(dt), epochStatsEpochTotal); err != nil {
 		return 0, err
 	}
 
@@ -133,7 +133,7 @@ func (*EpochStatStore) updateEntityCount(dbTx *gorm.DB, dt store.EpochDataType, 
 		return nil
 	}
 
-	db := dbTx.Model(epochStats{}).Where("key = ? AND type = ?", getEpochTotalStatsKey(dt), epochStatsEpochTotal)
+	db := dbTx.Model(epochStats{}).Where("`key` = ? AND type = ?", getEpochTotalStatsKey(dt), epochStatsEpochTotal)
 
 	if delta > 0 {
 		return db.UpdateColumn("epoch1", gorm.Expr("epoch1 + ?", delta)).Error
@@ -145,7 +145,7 @@ func (*EpochStatStore) updateEntityCount(dbTx *gorm.DB, dt store.EpochDataType, 
 func (ess *EpochStatStore) getEntityEpochRange(dt store.EpochDataType, errIfEmpty bool) (uint64, uint64, error) {
 	var stat epochStats
 
-	exists, err := ess.exists(&stat, "key = ? AND type = ?", getEpochRangeStatsKey(dt), epochStatsEpochRange)
+	exists, err := ess.exists(&stat, "`key` = ? AND type = ?", getEpochRangeStatsKey(dt), epochStatsEpochRange)
 	if err != nil {
 		return 0, 0, err
 	}
