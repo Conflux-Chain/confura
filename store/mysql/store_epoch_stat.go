@@ -174,5 +174,12 @@ func (ess *EpochStatStore) GetLogEpochRange() (uint64, uint64, error) {
 }
 
 func (ess *EpochStatStore) GetGlobalEpochRange() (uint64, uint64, error) {
-	return ess.getEntityEpochRange(store.EpochDataNil, true)
+	minEpoch, maxEpoch, err := ess.getEntityEpochRange(store.EpochDataNil, true)
+
+	// both epoch number are uninitialized
+	if err == nil && (minEpoch == types.EpochNumberNil || maxEpoch == types.EpochNumberNil) {
+		err = store.ErrNotFound
+	}
+
+	return minEpoch, maxEpoch, err
 }
