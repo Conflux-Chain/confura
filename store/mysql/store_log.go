@@ -225,7 +225,7 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	var prefind func()
 	switch filter.Type {
 	case store.LogFilterTypeBlockHash:
-		db = db.Where("hash_id = ? AND hash = ?", filter.BlockHashId, filter.BlockHash)
+		db = db.Where("block_hash_id = ? AND hash = ?", filter.BlockHashId, filter.BlockHash)
 		prefind = func() {
 			db = db.Order("block_hash_id DESC")
 		}
