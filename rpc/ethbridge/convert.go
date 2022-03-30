@@ -5,6 +5,7 @@ import (
 
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethTypes "github.com/ethereum/go-ethereum/core/types"
@@ -83,6 +84,10 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 		TransactionIndex: (*uint64)(tx.TransactionIndex),
 		V:                tx.V.ToInt(),
 		Value:            tx.Value.ToInt(),
+	}
+
+	if !util.IsNormalEthTx(ethTxn) { // only return chainID for normal tx
+		tx.ChainID = nil
 	}
 
 	// fill missed data field `Accesses`, `BlockNumber`, `MaxFeePerGas`, `MaxPriorityFeePerGas`, `type`, `StandardV`

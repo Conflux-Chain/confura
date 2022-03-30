@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/web3go"
 	providers "github.com/openweb3/web3go/provider_wrapper"
+	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -88,4 +89,22 @@ func callEthRpcMetricsMiddleware(f providers.CallFunc) providers.CallFunc {
 	}
 
 	return providers.CallFunc(metricFn)
+}
+
+// IsNormalEthTx check if the Ethereum transaction is normal
+func IsNormalEthTx(tx *types.Transaction) bool {
+	if tx.V != nil && tx.V.Uint64() >= 35 {
+		return true
+	}
+
+	return false
+}
+
+// IsLegacyEthTx check if the Ethereum transaction is legacy (pre EIP 155)
+func IsLegacyEthTx(tx *types.Transaction) bool {
+	if tx.V != nil && tx.V.Uint64() == 27 || tx.V.Uint64() == 28 {
+		return true
+	}
+
+	return false
 }
