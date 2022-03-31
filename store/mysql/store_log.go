@@ -331,7 +331,8 @@ func (ls *logStore) checkLogsEpochRangeWithinStore(epochFrom, epochTo uint64) (b
 	}
 
 	// Check if epoch logs already pruned or not.
-	if stats.Epoch1 > (epochFrom + minNumEpochsLeftToBePruned) {
+	// Add store.Epoch1 with 1 in case of math.MaxUint64
+	if (stats.Epoch1 + 1) > (epochFrom + minNumEpochsLeftToBePruned) {
 		return false, store.ErrAlreadyPruned
 	}
 
