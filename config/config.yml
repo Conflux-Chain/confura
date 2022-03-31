@@ -69,6 +69,8 @@ nearhead:
     # connMaxLifeTime: 3m
     # maxOpenConns: 10
     # maxIdleConns: 10
+    # addressIndexedLogEnabled: false
+    # addressIndexedLogPartitions: 10
   # redis:
   #   enabled: false
   #   cacheTime: 12h
