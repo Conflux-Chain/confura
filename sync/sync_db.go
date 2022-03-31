@@ -152,6 +152,9 @@ func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
 	defer catchUpSyncer.Close()
 
 	catchUpSyncer.Sync(ctx)
+
+	// start to sync from new start epoch after fast catch-up
+	syncer.epochFrom = catchUpSyncer.Range().EpochFrom
 }
 
 // Load last sync epoch from databse to continue synchronization.

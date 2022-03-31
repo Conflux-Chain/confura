@@ -164,6 +164,10 @@ func (s *Syncer) Sync(ctx context.Context) {
 	}
 }
 
+func (s *Syncer) Range() types.EpochRange {
+	return s.syncRange
+}
+
 func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 	var wg sync.WaitGroup
 
