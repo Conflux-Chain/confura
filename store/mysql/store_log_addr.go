@@ -124,7 +124,12 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 					return err
 				}
 
-				log := NewAddressIndexedLog(&v, contract.ID, bn, receiptExt.LogExts[i])
+				var logext *store.LogExtra
+				if receiptExt != nil {
+					logext = receiptExt.LogExts[i]
+				}
+
+				log := NewAddressIndexedLog(&v, contract.ID, bn, logext)
 				partition := ls.getPartitionByAddress(&v.Address, ls.partitions)
 				partition2Logs[partition] = append(partition2Logs[partition], log)
 			}
