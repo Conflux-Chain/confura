@@ -91,8 +91,8 @@ func callEthRpcMetricsMiddleware(f providers.CallFunc) providers.CallFunc {
 	return providers.CallFunc(metricFn)
 }
 
-// IsNormalEthTx check if the Ethereum transaction is normal
-func IsNormalEthTx(tx *types.Transaction) bool {
+// IsEip155Tx check if the EVM transaction is compliant to EIP155
+func IsEip155Tx(tx *types.Transaction) bool {
 	if tx.V != nil && tx.V.Uint64() >= 35 {
 		return true
 	}
@@ -100,7 +100,7 @@ func IsNormalEthTx(tx *types.Transaction) bool {
 	return false
 }
 
-// IsLegacyEthTx check if the Ethereum transaction is legacy (pre EIP 155)
+// IsLegacyEthTx check if the EVM transaction is legacy (pre EIP155)
 func IsLegacyEthTx(tx *types.Transaction) bool {
 	if tx.V != nil && tx.V.Uint64() == 27 || tx.V.Uint64() == 28 {
 		return true

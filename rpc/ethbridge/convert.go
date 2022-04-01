@@ -86,7 +86,7 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 		Value:            tx.Value.ToInt(),
 	}
 
-	if !util.IsNormalEthTx(ethTxn) { // only return chainID for normal tx
+	if !util.IsEip155Tx(ethTxn) { // only return chainID for EIP155 tx
 		tx.ChainID = nil
 	}
 
