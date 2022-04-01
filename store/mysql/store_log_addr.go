@@ -25,7 +25,7 @@ type AddressIndexedLog struct {
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	Extra       []byte `gorm:"type:text"` // extra data in JSON format
+	Extra       []byte `gorm:"type:mediumText"` // extra data in JSON format
 }
 
 func (AddressIndexedLog) TableName() string {
