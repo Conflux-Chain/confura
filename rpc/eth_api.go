@@ -130,7 +130,7 @@ func (api *ethAPI) GetBalance(
 // * When fullTx is true all transactions in the block are returned, otherwise
 //   only the transaction hash is returned.
 func (api *ethAPI) GetBlockByNumber(
-	ctx context.Context, blockNum *web3Types.BlockNumber, fullTx bool,
+	ctx context.Context, blockNum web3Types.BlockNumber, fullTx bool,
 ) (*web3Types.Block, error) {
 	logger := logrus.WithFields(logrus.Fields{
 		"blockNum": blockNum, "includeTxs": fullTx,
@@ -143,7 +143,7 @@ func (api *ethAPI) GetBlockByNumber(
 			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
 		}(&isStoreHit)
 
-		block, err := api.handler.GetBlockByNumber(ctx, blockNum, fullTx)
+		block, err := api.handler.GetBlockByNumber(ctx, &blockNum, fullTx)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getBlockByNumber hit in the store")
 
@@ -161,21 +161,21 @@ func (api *ethAPI) GetBlockByNumber(
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update1(blockNum, "eth_getBlockByNumber", w3c)
-	return w3c.Eth.BlockByNumber(*blockNum, fullTx)
+	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c)
+	return w3c.Eth.BlockByNumber(blockNum, fullTx)
 }
 
 // GetUncleByBlockNumberAndIndex returns the uncle block for the given block hash and index.
 func (api *ethAPI) GetUncleByBlockNumberAndIndex(
-	ctx context.Context, blockNr *web3Types.BlockNumber, index hexutil.Uint,
+	ctx context.Context, blockNr web3Types.BlockNumber, index hexutil.Uint,
 ) (*web3Types.Block, error) {
 	w3c, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update1(blockNr, "eth_getUncleByBlockNumberAndIndex", w3c)
-	return w3c.Eth.UncleByBlockNumberAndIndex(*blockNr, uint(index))
+	api.inputBlockMetric.Update1(&blockNr, "eth_getUncleByBlockNumberAndIndex", w3c)
+	return w3c.Eth.UncleByBlockNumberAndIndex(blockNr, uint(index))
 }
 
 // GetUncleCountByBlockHash returns the number of uncles in a block from a block matching
@@ -443,7 +443,7 @@ func (api *ethAPI) GetBlockTransactionCountByHash(ctx context.Context, blockHash
 
 // GetBlockTransactionCountByNumber returns the number of transactions in the block with the given
 // block number.
-func (api *ethAPI) GetBlockTransactionCountByNumber(ctx context.Context, blockNum *web3Types.BlockNumber) (
+func (api *ethAPI) GetBlockTransactionCountByNumber(ctx context.Context, blockNum web3Types.BlockNumber) (
 	*hexutil.Big, error,
 ) {
 	w3c, err := api.provider.GetClientByIP(ctx)
@@ -451,8 +451,8 @@ func (api *ethAPI) GetBlockTransactionCountByNumber(ctx context.Context, blockNu
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update1(blockNum, "eth_getBlockTransactionCountByNumber", w3c)
-	count, err := w3c.Eth.BlockTransactionCountByNumber(*blockNum)
+	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockTransactionCountByNumber", w3c)
+	count, err := w3c.Eth.BlockTransactionCountByNumber(blockNum)
 	return (*hexutil.Big)(count), err
 }
 
