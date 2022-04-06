@@ -8,6 +8,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/rpc"
+	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/util"
@@ -70,14 +71,14 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	router := node.Factory().CreateRouter()
 
 	// Add empty store tolerance
-	var cfxHandler *rpc.CfxStoreHandler
+	var cfxHandler *handler.CfxStoreHandler
 	for _, s := range []store.Store{storeCtx.cfxDB, storeCtx.cfxCache} {
 		if !util.IsInterfaceValNil(s) {
-			cfxHandler = rpc.NewCfxStoreHandler(s, cfxHandler)
+			cfxHandler = handler.NewCfxStoreHandler(s, cfxHandler)
 		}
 	}
 
-	gasHandler := rpc.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
+	gasHandler := handler.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
 
 	var logApi *rpc.CfxLogApi
@@ -111,9 +112,9 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx st
 	router := node.EthFactory().CreateRouter()
 
 	// Add empty store tolerance
-	var ethhandler *rpc.EthStoreHandler
+	var ethhandler *handler.EthStoreHandler
 	if !util.IsInterfaceValNil(storeCtx.ethDB) {
-		ethhandler = rpc.NewEthStoreHandler(storeCtx.ethDB, ethhandler)
+		ethhandler = handler.NewEthStoreHandler(storeCtx.ethDB, ethhandler)
 	}
 
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")

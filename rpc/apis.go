@@ -3,6 +3,7 @@ package rpc
 import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
+	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/pkg/errors"
 )
 
@@ -51,7 +52,7 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 
 // nativeSpaceApis returns the collection of built-in RPC APIs for native space.
 func nativeSpaceApis(
-	router infuraNode.Router, gashandler *GasStationHandler, option ...CfxAPIOption,
+	router infuraNode.Router, gashandler *handler.GasStationHandler, option ...CfxAPIOption,
 ) []API {
 	clientProvider := infuraNode.NewCfxClientProvider(router)
 
@@ -91,7 +92,7 @@ func nativeSpaceApis(
 }
 
 // evmSpaceApis returns the collection of built-in RPC APIs for EVM space.
-func evmSpaceApis(router infuraNode.Router, handler ethHandler) ([]API, error) {
+func evmSpaceApis(router infuraNode.Router, handler handler.EthHandler) ([]API, error) {
 	clientProvider := infuraNode.NewEthClientProvider(router)
 
 	return []API{

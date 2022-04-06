@@ -1,4 +1,4 @@
-package rpc
+package handler
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ethHandler interface delegated to handle eth rpc request
-type ethHandler interface {
+// EthHandler interface delegated to handle eth rpc request
+type EthHandler interface {
 	GetBlockByHash(ctx context.Context, blockHash common.Hash, includeTxs bool) (*web3Types.Block, error)
 	GetBlockByNumber(ctx context.Context, blockNum *web3Types.BlockNumber, includeTxs bool) (*web3Types.Block, error)
 	GetLogs(ctx context.Context, filter store.LogFilter) ([]web3Types.Log, error)
@@ -26,10 +26,10 @@ type ethHandler interface {
 // loading ETH blockchain data from store
 type EthStoreHandler struct {
 	store store.Store
-	next  ethHandler
+	next  EthHandler
 }
 
-func NewEthStoreHandler(store store.Store, next ethHandler) *EthStoreHandler {
+func NewEthStoreHandler(store store.Store, next EthHandler) *EthStoreHandler {
 	return &EthStoreHandler{store: store, next: next}
 }
 

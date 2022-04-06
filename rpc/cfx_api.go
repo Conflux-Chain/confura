@@ -11,6 +11,7 @@ import (
 	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
+	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -38,7 +39,7 @@ var (
 )
 
 type CfxAPIOption struct {
-	Handler cfxHandler
+	Handler handler.CfxHandler
 	Relayer *relay.TxnRelayer
 	LogApi  *CfxLogApi // used to query event logs that already pruned
 }

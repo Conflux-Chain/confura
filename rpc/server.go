@@ -2,6 +2,7 @@ package rpc
 
 import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
+	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 )
@@ -18,7 +19,7 @@ const (
 // via the RPC interface. If the module list is empty, all RPC API endpoints designated
 // public will be exposed.
 func MustNewNativeSpaceServer(
-	router infuraNode.Router, gashandler *GasStationHandler,
+	router infuraNode.Router, gashandler *handler.GasStationHandler,
 	exposedModules []string, option ...CfxAPIOption,
 ) *util.RpcServer {
 	// retrieve all available native space rpc apis
@@ -38,7 +39,7 @@ func MustNewNativeSpaceServer(
 // `exposedModules` is a list of API modules to expose via the RPC interface. If the module
 // list is empty, all RPC API endpoints designated public will be exposed.
 func MustNewEvmSpaceServer(
-	router infuraNode.Router, handler ethHandler, exposedModules []string,
+	router infuraNode.Router, handler handler.EthHandler, exposedModules []string,
 ) *util.RpcServer {
 	// retrieve all available EVM space rpc apis
 	allApis, err := evmSpaceApis(router, handler)

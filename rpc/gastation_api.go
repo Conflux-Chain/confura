@@ -3,14 +3,15 @@ package rpc
 import (
 	"context"
 
+	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/types"
 )
 
 type gasStationAPI struct {
-	handler *GasStationHandler
+	handler *handler.GasStationHandler
 }
 
-func newGasStationAPI(handler *GasStationHandler) *gasStationAPI {
+func newGasStationAPI(handler *handler.GasStationHandler) *gasStationAPI {
 	return &gasStationAPI{handler: handler}
 }
 

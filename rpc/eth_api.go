@@ -8,6 +8,7 @@ import (
 
 	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
+	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -32,12 +33,12 @@ func getEthStoreHitRatioMetricKey(method string) string {
 type ethAPI struct {
 	provider *node.EthClientProvider
 
-	handler          ethHandler // eth rpc handler
-	chainId          *uint64    // eth chain ID
+	handler          handler.EthHandler // eth rpc handler
+	chainId          *uint64            // eth chain ID
 	inputBlockMetric cimetrics.InputBlockMetric
 }
 
-func newEthAPI(provider *node.EthClientProvider, handler ethHandler) *ethAPI {
+func newEthAPI(provider *node.EthClientProvider, handler handler.EthHandler) *ethAPI {
 	return &ethAPI{provider: provider, handler: handler}
 }
 
