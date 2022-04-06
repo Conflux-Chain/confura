@@ -384,6 +384,12 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 		return nil, err
 	}
 
+	// Set `limit` parameter to default max value if not specified or exceeds max limit size
+	if filter.Limit == nil || uint64(*filter.Limit) > store.MaxLogLimit {
+		defaultLimit := uint(*defaultLogLimit)
+		filter.Limit = &defaultLimit
+	}
+
 	if err := api.validateEthLogFilter(w3c, &filter); err != nil {
 		logger.WithError(err).Debug("Invalid log filter parameter for eth_getLogs rpc request")
 		return emptyLogs, err
@@ -612,12 +618,7 @@ func (api *ethAPI) validateEthLogFilter(w3c *web3go.Client, filter *web3Types.Fi
 		}
 	}
 
-	if filter.Limit != nil && uint64(*filter.Limit) > store.MaxLogLimit {
-		return errors.Errorf("limit field exceed the maximum value %v", store.MaxLogLimit)
-	}
-
 	return nil
-
 }
 
 // The following RPC methods are not supported yet by the fullnode:

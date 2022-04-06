@@ -247,7 +247,7 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	// IMPORTANT: full node returns the last N logs.
 	// To limit the number of records fetched for better performance,  we'd better retrieve
 	// the logs in reverse order first, and then reverse them for the final order.
-	db = db.Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit))
+	db = db.Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit) + 1)
 	if prefind != nil {
 		prefind()
 	}
@@ -255,6 +255,10 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	var logs []log
 	if err := db.Find(&logs).Error; err != nil {
 		return nil, err
+	}
+
+	if len(logs) > int(filter.Limit) {
+		return nil, store.ErrGetLogsTooMany
 	}
 
 	result := make([]store.Log, 0, len(logs))

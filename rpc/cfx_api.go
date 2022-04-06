@@ -367,8 +367,8 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		api.inputEpochMetric.Update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 	}
 
-	// Set `limit` parameter to default max value if not specified.
-	if filter.Limit == nil {
+	// Set `limit` parameter to default max value if not specified or exceeds max limit size
+	if filter.Limit == nil || uint64(*filter.Limit) > store.MaxLogLimit {
 		filter.Limit = defaultLogLimit
 	}
 
@@ -584,10 +584,6 @@ func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFi
 				return errors.Errorf("epoch range exceeds maximum value %v", store.MaxLogEpochRange)
 			}
 		}
-	}
-
-	if filter.Limit != nil && uint64(*filter.Limit) > store.MaxLogLimit {
-		return errors.Errorf("limit field exceed the maximum value %v", store.MaxLogLimit)
 	}
 
 	return nil
