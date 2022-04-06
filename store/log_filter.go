@@ -2,6 +2,7 @@ package store
 
 import (
 	"math"
+	"math/bits"
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -17,8 +18,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
-
-type LogFilterType int
 
 const (
 	// Log filter constants
@@ -39,6 +38,67 @@ var (
 	ErrGetLogsTooMany = errors.Errorf("query returned more than %v results", MaxLogLimit)
 	ErrGetLogsTimeout = errors.Errorf("query duration exceed %v", TimeoutGetLogs)
 )
+
+type LogFilterType int
+
+func ParseLogFilterType(filter *types.LogFilter) (LogFilterType, bool) {
+	// filter type set flag bitwise
+	var flag LogFilterType
+
+	// check if epoch range provided
+	if filter.FromEpoch != nil || filter.ToEpoch != nil {
+		flag |= LogFilterTypeEpochRange
+	}
+
+	// check if block range provided
+	if filter.FromBlock != nil || filter.ToBlock != nil {
+		flag |= LogFilterTypeBlockRange
+	}
+
+	// check if block hashes provided
+	if len(filter.BlockHashes) != 0 {
+		flag |= LogFilterTypeBlockHash
+	}
+
+	// different types of log filters are mutual exclusion
+	if bits.OnesCount(uint(flag)) > 1 {
+		return flag, false
+	}
+
+	// if no explicit filter type detected, use epoch range filter type as default
+	if flag == 0 {
+		flag |= LogFilterTypeEpochRange
+	}
+
+	return flag, true
+}
+
+func ParseEthLogFilterType(filter *web3Types.FilterQuery) (LogFilterType, bool) {
+	// filter type set flag bitwise
+	var flag LogFilterType
+
+	// check if block range provided
+	if filter.FromBlock != nil || filter.ToBlock != nil {
+		flag |= LogFilterTypeBlockRange
+	}
+
+	// check if block hash provided
+	if filter.BlockHash != nil {
+		flag |= LogFilterTypeBlockHash
+	}
+
+	// different types of log filters are mutual exclusion
+	if bits.OnesCount(uint(flag)) > 1 {
+		return flag, false
+	}
+
+	// if no explicit filter type detected, use block range filter type as default
+	if flag == 0 {
+		flag |= LogFilterTypeBlockRange
+	}
+
+	return flag, true
+}
 
 type logFilterRangeFetcher interface {
 	// fetchs epoch from fullnode by block hash.

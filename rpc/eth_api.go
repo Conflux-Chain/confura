@@ -384,14 +384,20 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 		return nil, err
 	}
 
-	// Set `limit` parameter to default max value if not specified or exceeds max limit size
-	if filter.Limit == nil || uint64(*filter.Limit) > store.MaxLogLimit {
-		defaultLimit := uint(*defaultLogLimit)
-		filter.Limit = &defaultLimit
+	flag, ok := store.ParseEthLogFilterType(&filter)
+	if !ok {
+		return emptyLogs, errInvalidEthLogFilter
 	}
 
-	if err := api.validateEthLogFilter(w3c, &filter); err != nil {
-		logger.WithError(err).Debug("Invalid log filter parameter for eth_getLogs rpc request")
+	if err := api.normalizeLogFilter(w3c, flag, &filter); err != nil {
+		return emptyLogs, err
+	}
+
+	if err := api.validateLogFilter(flag, &filter); err != nil {
+		logrus.WithError(err).WithField("filter", filter).Debug(
+			"Invalid log filter parameter for eth_getLogs rpc request",
+		)
+
 		return emptyLogs, err
 	}
 
@@ -579,42 +585,56 @@ func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 	return w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))
 }
 
-func (api *ethAPI) validateEthLogFilter(w3c *web3go.Client, filter *web3Types.FilterQuery) error {
-	var filterFlag store.LogFilterType // filter type set flag bitwise
-
-	if filter.FromBlock != nil || filter.ToBlock != nil { // check if block range provided
-		filterFlag |= store.LogFilterTypeBlockRange
-	}
-
-	if filter.BlockHash != nil { // check if block hash provided
-		filterFlag |= store.LogFilterTypeBlockHash
-	}
-
-	if bits.OnesCount(uint(filterFlag)) > 1 { // different types of log filters are mutual exclusion
-		return errInvalidLogFilter
-	}
-
-	if filter.BlockHash == nil { // normalize block number only if block hash not provided
+func (api *ethAPI) normalizeLogFilter(w3c *web3go.Client, flag store.LogFilterType, filter *web3Types.FilterQuery) error {
+	// set default block range if not set and normalize block number if necessary
+	if flag&store.LogFilterTypeBlockRange != 0 {
 		defaultBlockNo := rpc.LatestBlockNumber
 
-		for _, ptrBlockNum := range []**rpc.BlockNumber{&filter.FromBlock, &filter.ToBlock} {
-			if *ptrBlockNum == nil {
-				*ptrBlockNum = &defaultBlockNo
-			}
+		// if no from block provided, set latest block number as default
+		if filter.FromBlock == nil {
+			filter.FromBlock = &defaultBlockNo
+		}
 
-			blockNum, err := util.NormalizeEthBlockNumber(w3c, *ptrBlockNum)
+		// if no to block provided, set latest block number as default
+		if filter.ToBlock == nil {
+			filter.ToBlock = &defaultBlockNo
+		}
+
+		var blocks [2]*rpc.BlockNumber
+		for i, b := range []*rpc.BlockNumber{filter.FromBlock, filter.ToBlock} {
+			block, err := util.NormalizeEthBlockNumber(w3c, b)
 			if err != nil {
 				return errors.WithMessage(err, "failed to normalize block number")
 			}
-			*ptrBlockNum = blockNum
+
+			blocks[i] = block
 		}
 
+		filter.FromBlock, filter.ToBlock = blocks[0], blocks[1]
+	}
+
+	// Set `limit` parameter to default max value if not specified or exceeds max limit size
+	if filter.Limit == nil || uint64(*filter.Limit) > store.MaxLogLimit {
+		defaultLogLimitSize := uint(store.MaxLogLimit)
+		filter.Limit = &defaultLogLimitSize
+	}
+
+	return nil
+}
+
+func (api *ethAPI) validateLogFilter(flag store.LogFilterType, filter *web3Types.FilterQuery) error {
+	// different types of log filters are mutual exclusion
+	if bits.OnesCount(uint(flag)) > 1 {
+		return errInvalidEthLogFilter
+	}
+
+	if flag&store.LogFilterTypeBlockRange != 0 {
 		if *filter.FromBlock > *filter.ToBlock {
-			return errors.New("invalid block range (from block larger than to block)")
+			return errInvalidLogFilterBlockRange
 		}
 
-		if count := *filter.ToBlock - *filter.FromBlock + 1; uint64(count) > store.MaxLogBlockRange {
-			return errors.Errorf("block range exceeds maximum value %v", store.MaxLogBlockRange)
+		if count := *filter.ToBlock - *filter.FromBlock + 1; uint64(count) > store.MaxLogEpochRange {
+			return errExceedLogFilterBlockRangeSize(store.MaxLogEpochRange)
 		}
 	}
 

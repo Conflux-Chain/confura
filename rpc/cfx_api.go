@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"math/bits"
 	"sort"
 	"time"
 
@@ -34,7 +33,8 @@ var (
 
 	hitStatsCollector = cimetrics.NewHitStatsCollector()
 
-	defaultLogLimit = types.NewUint64(store.MaxLogLimit)
+	defaultLogLimit  = types.NewUint64(store.MaxLogLimit)
+	defaultLogOffset = types.NewUint64(0)
 )
 
 type CfxAPIOption struct {
@@ -367,13 +367,20 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		api.inputEpochMetric.Update(filter.ToEpoch, "cfx_getLogs/to", cfx)
 	}
 
-	// Set `limit` parameter to default max value if not specified or exceeds max limit size
-	if filter.Limit == nil || uint64(*filter.Limit) > store.MaxLogLimit {
-		filter.Limit = defaultLogLimit
+	flag, ok := store.ParseLogFilterType(&filter)
+	if !ok {
+		return emptyLogs, errInvalidLogFilter
 	}
 
-	if err := api.validateLogFilter(cfx, &filter); err != nil {
-		logrus.WithError(err).WithField("filter", filter).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
+	if err := api.normalizeLogFilter(cfx, flag, &filter); err != nil {
+		return emptyLogs, err
+	}
+
+	if err := api.validateLogFilter(flag, &filter); err != nil {
+		logrus.WithError(err).WithField("filter", filter).Debug(
+			"Invalid log filter parameter for cfx_getLogs rpc request",
+		)
+
 		return emptyLogs, err
 	}
 
@@ -528,32 +535,53 @@ func (api *cfxAPI) getLogsByBlockHashes(ctx context.Context, cfx sdk.ClientOpera
 	return result, nil
 }
 
-func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) error {
-	var filterFlag store.LogFilterType // filter type set flag bitwise
+func (api *cfxAPI) normalizeLogFilter(cfx sdk.ClientOperator, flag store.LogFilterType, filter *types.LogFilter) error {
+	// set default epoch range if not set and convert to numbered epoch if necessary
+	if flag&store.LogFilterTypeEpochRange != 0 {
+		// if no from epoch provided, set latest checkpoint epoch as default
+		if filter.FromEpoch == nil {
+			filter.FromEpoch = types.EpochLatestCheckpoint
+		}
 
-	if filter.FromEpoch != nil || filter.ToEpoch != nil { // check if epoch range provided
-		filterFlag |= store.LogFilterTypeEpochRange
+		// if no to epoch provided, set latest state epoch as default
+		if filter.ToEpoch == nil {
+			filter.ToEpoch = types.EpochLatestState
+		}
+
+		var epochs [2]*types.Epoch
+		for i, e := range []*types.Epoch{filter.FromEpoch, filter.ToEpoch} {
+			epoch, err := util.ConvertToNumberedEpoch(cfx, e)
+			if err != nil {
+				return errors.WithMessagef(err, "failed to convert numbered epoch for %v", e)
+			}
+
+			epochs[i] = epoch
+		}
+
+		filter.FromEpoch, filter.ToEpoch = epochs[0], epochs[1]
 	}
 
-	if filter.FromBlock != nil || filter.ToBlock != nil { // check if block range provided
-		filterFlag |= store.LogFilterTypeBlockRange
+	if filter.Offset == nil {
+		filter.Offset = defaultLogOffset
 	}
 
-	if len(filter.BlockHashes) != 0 { // check if block hashes provided
-		filterFlag |= store.LogFilterTypeBlockHash
+	// Set `limit` parameter to default max value if not specified or exceeds max limit size
+	if filter.Limit == nil || uint64(*filter.Limit) > store.MaxLogLimit {
+		filter.Limit = defaultLogLimit
 	}
 
-	if bits.OnesCount(uint(filterFlag)) > 1 { // different types of log filters are mutual exclusion
-		return errInvalidLogFilter
-	}
+	return nil
+}
 
+func (api *cfxAPI) validateLogFilter(flag store.LogFilterType, filter *types.LogFilter) error {
 	switch {
-	case filterFlag&store.LogFilterTypeBlockHash != 0: // validate block hash log filter
+	case flag&store.LogFilterTypeBlockHash != 0: // validate block hash log filter
 		if len(filter.BlockHashes) > store.MaxLogBlockHashesSize {
 			return errExceedLogFilterBlockHashLimit(len(filter.BlockHashes))
 		}
-	case filterFlag&store.LogFilterTypeBlockRange != 0: // validate block range log filter
-		if filter.FromBlock == nil || filter.ToBlock == nil { // both fromBlock and toBlock must be provided
+	case flag&store.LogFilterTypeBlockRange != 0: // validate block range log filter
+		// both fromBlock and toBlock must be provided
+		if filter.FromBlock == nil || filter.ToBlock == nil {
 			return errInvalidLogFilter
 		}
 
@@ -561,51 +589,29 @@ func (api *cfxAPI) validateLogFilter(cfx sdk.ClientOperator, filter *types.LogFi
 		toBlock := filter.ToBlock.ToInt().Uint64()
 
 		if fromBlock > toBlock {
-			return errors.New("invalid block range (from block larger than to block)")
+			return errInvalidLogFilterBlockRange
 		}
 
 		if count := toBlock - fromBlock + 1; count > store.MaxLogBlockRange {
-			return errors.Errorf("block range exceeds maximum value %v", store.MaxLogBlockRange)
+			return errExceedLogFilterBlockRangeLimit
 		}
-	default: // validate epoch range log filter as default
-		uniformLogFilterEpochRange(cfx, filter)
+	case flag&store.LogFilterTypeEpochRange != 0: // validate epoch range log filter
+		epochFrom, _ := filter.FromEpoch.ToInt()
+		epochTo, _ := filter.ToEpoch.ToInt()
 
-		epochFrom, ok1 := filter.FromEpoch.ToInt()
-		epochTo, ok2 := filter.ToEpoch.ToInt()
-		if ok1 && ok2 {
-			epochFrom := epochFrom.Uint64()
-			epochTo := epochTo.Uint64()
+		ef := epochFrom.Uint64()
+		et := epochTo.Uint64()
 
-			if epochFrom > epochTo {
-				return errors.New("invalid epoch range (from epoch larger than to epoch)")
-			}
+		if ef > et {
+			return errInvalidLogFilterEpochRange
+		}
 
-			if count := epochTo - epochFrom + 1; count > store.MaxLogEpochRange {
-				return errors.Errorf("epoch range exceeds maximum value %v", store.MaxLogEpochRange)
-			}
+		if count := et - ef + 1; count > store.MaxLogEpochRange {
+			return errExceedLogFilterEpochRangeLimit
 		}
 	}
 
 	return nil
-}
-
-// uniformLogFilterEpochRange sets default epoch range if not set and convert to numbered epoch if necessary
-func uniformLogFilterEpochRange(cfx sdk.ClientOperator, filter *types.LogFilter) {
-	if filter.FromEpoch == nil { // if no from epoch provided, set latest checkpoint epoch as default
-		filter.FromEpoch = types.EpochLatestCheckpoint
-	}
-
-	if epoch, err := util.ConvertToNumberedEpoch(cfx, filter.FromEpoch); err == nil {
-		filter.FromEpoch = epoch
-	}
-
-	if filter.ToEpoch == nil { // if no to epoch provided, set latest state epoch as default
-		filter.ToEpoch = types.EpochLatestState
-	}
-
-	if epoch, err := util.ConvertToNumberedEpoch(cfx, filter.ToEpoch); err == nil {
-		filter.ToEpoch = epoch
-	}
 }
 
 func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
