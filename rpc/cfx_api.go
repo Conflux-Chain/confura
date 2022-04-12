@@ -429,6 +429,8 @@ func (api *cfxAPI) getLogs(ctx context.Context, cfx sdk.ClientOperator, filter t
 				}
 
 				return emptyLogs, errors.New("failed to get stale epoch logs (data too old)")
+			} else if errors.Is(err, store.ErrGetLogsTooMany) || errors.Is(err, store.ErrGetLogsTimeout) {
+				return emptyLogs, err
 			}
 		}
 	}
