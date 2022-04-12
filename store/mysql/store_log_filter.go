@@ -50,6 +50,7 @@ type BaseLogFilter struct {
 
 func (filter *BaseLogFilter) apply(db *gorm.DB) *gorm.DB {
 	db = applyTopicsFilter(db, filter.Topics)
+	db = db.Scopes(clearOffsetLimit)
 
 	if filter.OffSet > 0 {
 		db = db.Offset(int(filter.OffSet))
@@ -113,7 +114,7 @@ func (filter *AddressIndexedLogFilter) ValidateCount(db *gorm.DB) error {
 	}
 
 	if total > 0 {
-		return store.ErrGetLogsTooMany
+		return store.ErrGetLogsResultSetTooLarge
 	}
 
 	return nil

@@ -38,7 +38,7 @@ const (
 )
 
 var (
-	maxLogsLimit = hexutil.Uint64(5000) // max logs limit to fetch from fullnode && infura
+	maxLogsLimit = hexutil.Uint64(50) // max logs limit to fetch from fullnode && infura
 
 	validEpochFromNoFilePath = ".evno" // file path to read/write epoch number from where the validation will start
 

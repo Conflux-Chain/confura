@@ -429,7 +429,7 @@ func (api *cfxAPI) getLogs(ctx context.Context, cfx sdk.ClientOperator, filter t
 				}
 
 				return emptyLogs, errors.New("failed to get stale epoch logs (data too old)")
-			} else if errors.Is(err, store.ErrGetLogsTooMany) || errors.Is(err, store.ErrGetLogsTimeout) {
+			} else if errors.Is(err, store.ErrGetLogsResultSetTooLarge) || errors.Is(err, store.ErrGetLogsTimeout) {
 				return emptyLogs, err
 			}
 		}
@@ -507,7 +507,7 @@ func (api *cfxAPI) getLogsByBlockHashes(ctx context.Context, cfx sdk.ClientOpera
 
 		// Check returned number of event logs
 		if uint64(len(result)) > maxLogs {
-			return nil, store.ErrGetLogsTooMany
+			return nil, store.ErrGetLogsResultSetTooLarge
 		}
 	}
 

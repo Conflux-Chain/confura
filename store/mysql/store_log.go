@@ -244,10 +244,14 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 		db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
 	}
 
+	if err := ls.validateCount(db, &filter); err != nil {
+		return nil, err
+	}
+
 	// IMPORTANT: full node returns the last N logs.
 	// To limit the number of records fetched for better performance,  we'd better retrieve
 	// the logs in reverse order first, and then reverse them for the final order.
-	db = db.Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit) + 1)
+	db = db.Scopes(clearOffsetLimit).Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit))
 	if prefind != nil {
 		prefind()
 	}
@@ -255,10 +259,6 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	var logs []log
 	if err := db.Find(&logs).Error; err != nil {
 		return nil, err
-	}
-
-	if len(logs) > int(filter.Limit) {
-		return nil, store.ErrGetLogsTooMany
 	}
 
 	result := make([]store.Log, 0, len(logs))
@@ -278,6 +278,21 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	}
 
 	return result, nil
+}
+
+func (ls *logStore) validateCount(db *gorm.DB, filter *store.LogFilter) error {
+	db = db.Offset(int(store.MaxLogLimit + filter.OffSet)).Limit(1)
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return err
+	}
+
+	if total > 0 {
+		return store.ErrGetLogsResultSetTooLarge
+	}
+
+	return nil
 }
 
 // logsRelBlockPart logs relative data part of block model, it can be used to calcuate the epoch range for log filters

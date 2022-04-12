@@ -35,8 +35,13 @@ const (
 var (
 	TimeoutGetLogs = 3 * time.Second
 
-	ErrGetLogsTooMany = errors.Errorf("query returned more than %v results", MaxLogLimit)
-	ErrGetLogsTimeout = errors.Errorf("query duration exceed %v", TimeoutGetLogs)
+	ErrGetLogsResultSetTooLarge = errors.Errorf(
+		"result set to be queried is too large with more than %v logs, %v",
+		MaxLogLimit, "please narrow down your filter condition",
+	)
+	ErrGetLogsTimeout = errors.Errorf(
+		"query timeout with duration exceeds %v(s)", TimeoutGetLogs,
+	)
 )
 
 type LogFilterType int

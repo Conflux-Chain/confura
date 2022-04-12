@@ -434,7 +434,7 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 			if errors.Is(err, store.ErrAlreadyPruned) {
 				logger.Info("Event logs data already pruned for eth_getLogs to return")
 				return emptyLogs, errors.New("failed to get stale event logs (data too old)")
-			} else if errors.Is(err, store.ErrGetLogsTooMany) || errors.Is(err, store.ErrGetLogsTimeout) {
+			} else if errors.Is(err, store.ErrGetLogsResultSetTooLarge) || errors.Is(err, store.ErrGetLogsTimeout) {
 				return emptyLogs, err
 			}
 		}
