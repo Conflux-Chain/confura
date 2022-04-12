@@ -31,10 +31,6 @@ import (
 const (
 	// random block diff to latest block for sampling validation
 	samplingRandomBlockDiff = 100
-
-	// Random block diff for getting logs, better keep this span small,
-	// otherwise fullnode maybe exhausted by low performance "eth_getLogs" call.
-	randomGetLogsBlockDiff = 20
 )
 
 var (
@@ -504,19 +500,12 @@ func (validator *EthValidator) validateGetBlockSummaryByHash(blockHash common.Ha
 
 // Validate eth_getLogs
 func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.Hash) error {
-	randomDiff := util.RandUint64(randomGetLogsBlockDiff)
-	if blockNo < randomDiff {
-		randomDiff = 0
-	}
-	fromBlockNo := blockNo - randomDiff
-
 	logger := logrus.WithFields(logrus.Fields{
-		"blockNo": blockNo, "randomDiff": randomDiff,
-		"fromBlockNo": fromBlockNo, "blockHash": blockHash.Hex(),
+		"blockNo": blockNo, "blockHash": blockHash.Hex(),
 	})
 
 	// filter: blocknumbers
-	fromBn, toBn, limitSize := int64(fromBlockNo), int64(blockNo), uint(maxLogsLimit)
+	fromBn, toBn, limitSize := int64(blockNo), int64(blockNo), uint(maxLogsLimit)
 	filterByBlockNums := types.FilterQuery{
 		FromBlock: (*rpc.BlockNumber)(&fromBn),
 		ToBlock:   (*rpc.BlockNumber)(&toBn),

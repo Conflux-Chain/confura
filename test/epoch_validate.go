@@ -35,18 +35,10 @@ const (
 	samplingValidationSleepDuration = time.Millisecond * 300
 	// random epoch diff to latest epoch for sampling validation
 	samplingRandomEpochDiff = 100
-
-	// Random epoch diff for getting logs, better keep this span small,
-	// otherwise fullnode maybe exhausted by low performance "cfx_getLogs" call.
-	randomGetLogsEpochDiff = 20
-	// max number of block hashes for log filter
-	maxNumOfLogFilterBlockHashes = 5
-	// max number of block numbers for log filter, ensure less than store.MaxLogBlockRange
-	maxNumOfLogFilterBlockNumbers = 10
 )
 
 var (
-	maxLogsLimit = hexutil.Uint64(50) // max logs limit to fetch from fullnode && infura
+	maxLogsLimit = hexutil.Uint64(5000) // max logs limit to fetch from fullnode && infura
 
 	validEpochFromNoFilePath = ".evno" // file path to read/write epoch number from where the validation will start
 
@@ -690,20 +682,13 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	epochBigInt, _ := epoch.ToInt()
 	epochNo := epochBigInt.Uint64()
 
-	randomDiff := util.RandUint64(randomGetLogsEpochDiff)
-	if epochNo < randomDiff {
-		randomDiff = 0
-	}
-	fromEpochNo := epochNo - randomDiff
-
 	logger := logrus.WithFields(logrus.Fields{
-		"epochNo": epochNo, "randomDiff": randomDiff, "fromEpochNo": fromEpochNo,
+		"epochNo": epochNo, "fromEpochNo": epochNo,
 	})
 
 	// filter: epoch range
-	fromEpoch := types.NewEpochNumberUint64(fromEpochNo)
 	filterByEpoch := types.LogFilter{
-		FromEpoch: fromEpoch, ToEpoch: epoch, Limit: &maxLogsLimit,
+		FromEpoch: epoch, ToEpoch: epoch, Limit: &maxLogsLimit,
 	}
 
 	if err := validator.doValidateGetLogs(filterByEpoch); err != nil {
@@ -712,24 +697,15 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	}
 
 	// filter: blockhashes
-	var fromBlockHashes, toBlockHashes []types.Hash
-	fromBlockHashes, err := validator.cfx.GetBlocksByEpoch(fromEpoch)
-	if err == nil && randomDiff != 0 {
-		toBlockHashes, err = validator.cfx.GetBlocksByEpoch(epoch)
-	}
-
+	blockHashes, err := validator.cfx.GetBlocksByEpoch(epoch)
 	if err != nil {
 		logger.WithError(err).Info("Epoch validator failed to query epoch block hashes for validating cfx_getLogs")
 		return errors.WithMessage(err, "failed to query epoch block hashes for validating cfx_getLogs")
 	}
 
-	toBlockHashes = append(toBlockHashes, fromBlockHashes...)
-	if len(toBlockHashes) > maxNumOfLogFilterBlockHashes {
-		toBlockHashes = toBlockHashes[:maxNumOfLogFilterBlockHashes]
-	}
-
+	blockHashes = blockHashes[len(blockHashes)-1:]
 	filterByBlockHashes := types.LogFilter{
-		BlockHashes: toBlockHashes,
+		BlockHashes: blockHashes,
 		Limit:       &maxLogsLimit,
 	}
 
@@ -739,34 +715,16 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	}
 
 	// filter: blocknumbers
-	var fromBlock, toBlock *types.BlockSummary
-	fromBlock, err = validator.cfx.GetBlockSummaryByEpoch(fromEpoch)
-	if err == nil {
-		toBlock = fromBlock
-		if randomDiff != 0 {
-			toBlock, err = validator.cfx.GetBlockSummaryByEpoch(epoch)
-		}
-	}
-
+	block, err := validator.cfx.GetBlockSummaryByEpoch(epoch)
 	if err != nil {
 		logger.WithError(err).Info("Epoch validator failed to query epoch pivot block for validating cfx_getLogs")
 		return errors.WithMessage(err, "failed to query epoch pivot block for validating cfx_getLogs")
 	}
 
-	fromBlockNo := fromBlock.BlockNumber.ToInt().Uint64()
-	toBlockNo := toBlock.BlockNumber.ToInt().Uint64()
-
-	// TODO: Bug with fullnode which doesn't accept genesis block number (0) for log filter
-	// of type block number, hacky code here to skip validation to avoid unnecessary error.
-	if fromBlockNo == 0 || toBlockNo == 0 {
-		return nil
-	}
-
 	// ensure test block number range within bound
-	toBlockNo = util.MinUint64(toBlockNo, fromBlockNo+maxNumOfLogFilterBlockNumbers-1)
 	filterByBlockNumbers := types.LogFilter{
-		FromBlock: fromBlock.BlockNumber,
-		ToBlock:   types.NewBigInt(toBlockNo),
+		FromBlock: block.BlockNumber,
+		ToBlock:   block.BlockNumber,
 		Limit:     &maxLogsLimit,
 	}
 
