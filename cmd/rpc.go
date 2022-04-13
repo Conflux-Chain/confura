@@ -122,6 +122,10 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx st
 
 	httpEndpoint := viper.GetString("ethrpc.endpoint")
 	go server.MustServeGraceful(ctx, wg, httpEndpoint, util.RpcProtocolHttp)
+
+	if wsEndpoint := viper.GetString("ethrpc.wsEndpoint"); len(wsEndpoint) > 0 {
+		go server.MustServeGraceful(ctx, wg, wsEndpoint, util.RpcProtocolWS)
+	}
 }
 
 func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup) {

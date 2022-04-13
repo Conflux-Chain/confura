@@ -12,6 +12,7 @@ rpc:
 ethrpc:
   exposedModules: []
   endpoint: ":28545"
+  #wsEndpoint: ":28535"
 cfx:
   ws: ws://test.confluxrpc.com/ws
   http: http://test.confluxrpc.com
