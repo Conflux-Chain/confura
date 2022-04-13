@@ -50,7 +50,7 @@ type BaseLogFilter struct {
 
 func (filter *BaseLogFilter) apply(db *gorm.DB) *gorm.DB {
 	db = applyTopicsFilter(db, filter.Topics)
-	db = db.Scopes(clearOffsetLimit)
+	db = clearOffsetLimit(db)
 
 	if filter.OffSet > 0 {
 		db = db.Offset(int(filter.OffSet))

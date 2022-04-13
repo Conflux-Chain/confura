@@ -56,7 +56,7 @@ func ensureEpochRangeNotRerverted(cfx sdk.ClientOperator, s store.Store, epochRa
 		if err != nil {
 			logrus.WithField("epochRange", citypes.EpochRange{
 				EpochFrom: winStart, EpochTo: winEnd,
-			}).Error("Failed to find the first reverted epoch within range")
+			}).WithError(err).Error("Failed to find the first reverted epoch within range")
 
 			return err
 		} else if firstRevertedEpoch != 0 { // updated matched reverted epoch

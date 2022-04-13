@@ -251,7 +251,7 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	// IMPORTANT: full node returns the last N logs.
 	// To limit the number of records fetched for better performance,  we'd better retrieve
 	// the logs in reverse order first, and then reverse them for the final order.
-	db = db.Scopes(clearOffsetLimit).Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit))
+	db = clearOffsetLimit(db).Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit))
 	if prefind != nil {
 		prefind()
 	}
