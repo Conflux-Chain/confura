@@ -71,31 +71,36 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	router := node.Factory().CreateRouter()
 
 	// Add empty store tolerance
-	var cfxHandler *handler.CfxStoreHandler
-	for _, s := range []store.Store{storeCtx.cfxDB, storeCtx.cfxCache} {
+	var storeHandler handler.CfxStoreHandler
+	storeNames := []string{"db", "cache"}
+
+	for i, s := range []store.Store{storeCtx.cfxDB, storeCtx.cfxCache} {
 		if !util.IsInterfaceValNil(s) {
-			cfxHandler = handler.NewCfxStoreHandler(s, cfxHandler)
+			storeHandler = handler.NewCfxCommonStoreHandler(storeNames[i], s, storeHandler)
 		}
 	}
 
 	gasHandler := handler.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
 
-	var logApi *rpc.CfxLogApi
+	var logsApiHandler *handler.CfxLogsApiHandler
 	if storeCtx.cfxDB != nil {
+		var prunedHandler *handler.CfxPrunedLogsHandler
 		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
-			logApi = rpc.NewCfxLogApi(
+			prunedHandler = handler.NewCfxPrunedLogsHandler(
 				node.NewCfxClientProvider(router),
 				mysql.MustConvert(storeCtx.cfxDB).UserStore,
 				util.MustNewRedisClient(redisUrl),
 			)
 		}
+
+		logsApiHandler = handler.NewCfxLogsApiHandler(storeHandler, prunedHandler)
 	}
 
 	option := rpc.CfxAPIOption{
-		Handler: cfxHandler,
-		Relayer: relay.MustNewTxnRelayerFromViper(),
-		LogApi:  logApi,
+		StoreHandler:  storeHandler,
+		LogApiHandler: logsApiHandler,
+		Relayer:       relay.MustNewTxnRelayerFromViper(),
 	}
 
 	server := rpc.MustNewNativeSpaceServer(router, gasHandler, exposedModules, option)

@@ -1,4 +1,4 @@
-package rpc
+package handler
 
 import (
 	"context"
@@ -21,31 +21,32 @@ const thresholdGetLogs = 1
 
 var errQuotaNotEnough = errors.New("quota not enough")
 
-type CfxLogApi struct {
+type CfxPrunedLogsHandler struct {
 	pool       *node.CfxClientProvider
 	store      *mysql.UserStore
 	throttling *throttle.RefCounter
 }
 
-func NewCfxLogApi(pool *node.CfxClientProvider, store *mysql.UserStore, client *redis.Client) *CfxLogApi {
-	return &CfxLogApi{
+func NewCfxPrunedLogsHandler(
+	pool *node.CfxClientProvider, store *mysql.UserStore, client *redis.Client) *CfxPrunedLogsHandler {
+	return &CfxPrunedLogsHandler{
 		pool:       pool,
 		store:      store,
 		throttling: throttle.NewRefCounter(client, thresholdGetLogs),
 	}
 }
 
-func (api *CfxLogApi) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
-	logs, ok, err := api.getLogsByUser(ctx, filter)
+func (h *CfxPrunedLogsHandler) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
+	logs, ok, err := h.getLogsByUser(ctx, filter)
 	if err != nil {
-		return emptyLogs, err
+		return nil, err
 	}
 
 	if ok {
 		return logs, nil
 	}
 
-	client, err := api.pool.GetClientByIPGroup(ctx, node.GroupCfxArchives)
+	client, err := h.pool.GetClientByIPGroup(ctx, node.GroupCfxArchives)
 	if err == node.ErrClientUnavailable {
 		return nil, errQuotaNotEnough
 	}
@@ -54,10 +55,10 @@ func (api *CfxLogApi) GetLogs(ctx context.Context, filter types.LogFilter) ([]ty
 		return nil, err
 	}
 
-	return api.getLogsThrottled(client, filter)
+	return h.getLogsThrottled(client, filter)
 }
 
-func (api *CfxLogApi) getLogsByUser(ctx context.Context, filter types.LogFilter) ([]types.Log, bool, error) {
+func (h *CfxPrunedLogsHandler) getLogsByUser(ctx context.Context, filter types.LogFilter) ([]types.Log, bool, error) {
 	request, ok := ctx.Value("request").(*http.Request)
 	if !ok {
 		logrus.Error("HTTP request instance not found in RPC context")
@@ -74,7 +75,7 @@ func (api *CfxLogApi) getLogsByUser(ctx context.Context, filter types.LogFilter)
 		key = key[:idx]
 	}
 
-	user, ok, err := api.store.GetUserByKey(key)
+	user, ok, err := h.store.GetUserByKey(key)
 	if err != nil {
 		logrus.WithError(err).WithField("key", key).Warn("Failed to get user by key")
 		return nil, false, err
@@ -95,7 +96,7 @@ func (api *CfxLogApi) getLogsByUser(ctx context.Context, filter types.LogFilter)
 	}
 	defer client.Close()
 
-	logs, err := api.getLogsThrottled(client, filter)
+	logs, err := h.getLogsThrottled(client, filter)
 	if err != nil {
 		return nil, false, err
 	}
@@ -103,13 +104,13 @@ func (api *CfxLogApi) getLogsByUser(ctx context.Context, filter types.LogFilter)
 	return logs, true, nil
 }
 
-func (api *CfxLogApi) getLogsThrottled(cfx sdk.ClientOperator, filter types.LogFilter) ([]types.Log, error) {
+func (h *CfxPrunedLogsHandler) getLogsThrottled(cfx sdk.ClientOperator, filter types.LogFilter) ([]types.Log, error) {
 	nodeName := util.Url2NodeName(cfx.GetNodeURL())
 	key := fmt.Sprintf("rpc:throttle:cfx_getLogs:%v", nodeName)
-	if !api.throttling.Ref(key) {
+	if !h.throttling.Ref(key) {
 		return nil, errQuotaNotEnough
 	}
-	defer api.throttling.UnrefAsync(key)
+	defer h.throttling.UnrefAsync(key)
 
 	return cfx.GetLogs(filter)
 }
