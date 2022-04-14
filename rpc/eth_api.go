@@ -402,6 +402,10 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 		return emptyLogs, err
 	}
 
+	if filter.Limit != nil && *filter.Limit == 0 {
+		return emptyLogs, nil
+	}
+
 	if !store.EthStoreConfig().IsChainLogDisabled() && !util.IsInterfaceValNil(api.handler) {
 		chainId, err := api.ChainId(ctx)
 		if err != nil {
