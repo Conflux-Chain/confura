@@ -140,7 +140,9 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	case store.LogFilterTypeBlockHash:
 		blockPart, ok, err := ls.getLogsRelBlockInfoByBlockHash(&filter)
 		if err != nil {
-			logrus.WithField("filter", filter).WithError(err).Error("Failed to calculate epoch range for log filter of type block hash")
+			logrus.WithField("filter", filter).WithError(err).Error(
+				"Failed to calculate epoch range for log filter of type block hash",
+			)
 			return nil, err
 		}
 
@@ -154,7 +156,10 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 		// otherwise, query from fullnode
 		epoch, ok, err := filter.FetchEpochByBlockHash()
 		if err != nil {
-			return nil, errors.WithMessage(err, "failed to fetch epoch range from fullnode for log filter of type block hashes")
+			logrus.WithField("filter", filter).WithError(err).Error(
+				"Failed to fetch epoch range from fullnode for log filter of type block hashes",
+			)
+			return nil, err
 		}
 
 		if ok {
@@ -164,7 +169,9 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	case store.LogFilterTypeBlockRange:
 		blockParts, err := ls.getLogsRelBlockInfoByBlockRange(&filter)
 		if err != nil {
-			logrus.WithField("filter", filter).WithError(err).Error("Failed to calculate epoch range for log filter of type block range")
+			logrus.WithField("filter", filter).WithError(err).Error(
+				"Failed to calculate epoch range for log filter of type block range",
+			)
 			return nil, err
 		}
 
@@ -180,7 +187,10 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 
 		fer, err := filter.FetchEpochRangeByBlockNumber() // fetch epoch range from fullnode
 		if err != nil {
-			return nil, errors.WithMessage(err, "failed to fetch epoch range from fullnode for log filter of type block range")
+			logrus.WithField("filter", filter).WithError(err).Error(
+				"Failed to fetch epoch range from fullnode for log filter of type block range",
+			)
+			return nil, err
 		}
 
 		// update epoch range from fullnode
@@ -194,19 +204,33 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	}
 
 	if err := citypes.ValidateEpochRange(&epochRange); err != nil {
-		return nil, errors.WithMessage(err, "failed to calculate a valid epoch range for logs partitions")
+		logrus.WithFields(logrus.Fields{
+			"filter": filter, "epochRange": epochRange,
+		}).WithError(err).Error("Failed to calculate a valid epoch range for logs partitions")
+		return nil, err
 	}
 
 	// Check if epoch ranges of the log filter are within the store.
 	// TODO add a cache layer for better performance if necessary
 	if _, err := ls.checkLogsEpochRangeWithinStore(epochRange.EpochFrom, epochRange.EpochTo); err != nil {
-		return nil, errors.WithMessage(err, "failed to check filter epoch range within store")
+		logger := logrus.WithFields(logrus.Fields{"filter": filter, "epochRange": epochRange})
+
+		logf := logger.WithError(err).Error
+		if ls.IsRecordNotFound(err) || errors.Is(err, store.ErrAlreadyPruned) {
+			logf = logger.WithError(err).Info
+		}
+		logf("Failed to check filter epoch range within store")
+
+		return nil, err
 	}
 
 	// calcuate logs table partitions to get logs within the filter epoch range
 	logsTblPartitions, err := ls.findLogsPartitionsEpochRangeWithinStoreTx(ls.db, epochRange.EpochFrom, epochRange.EpochTo)
 	if err != nil {
-		return nil, errors.WithMessage(err, "failed to get logs partitions for filter epoch range")
+		logrus.WithFields(logrus.Fields{
+			"filter": filter, "epochRange": epochRange,
+		}).WithError(err).Error("Failed to get logs partitions for filter epoch range")
+		return nil, err
 	}
 
 	if len(logsTblPartitions) == 0 { // must be empty if no logs table partition(s) found
@@ -258,6 +282,9 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 
 	var logs []log
 	if err := db.Find(&logs).Error; err != nil {
+		logrus.WithFields(logrus.Fields{
+			"filter": filter, "partitions": partitions,
+		}).Error("Failed to get logs from database")
 		return nil, err
 	}
 
@@ -285,6 +312,9 @@ func (ls *logStore) validateCount(db *gorm.DB, filter *store.LogFilter) error {
 
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
+		logrus.WithField("filter", filter).WithError(err).Error(
+			"Failed to validate size of result set for event logs",
+		)
 		return err
 	}
 

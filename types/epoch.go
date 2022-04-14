@@ -2,6 +2,7 @@ package types
 
 import (
 	"errors"
+	"fmt"
 	"math"
 )
 
@@ -15,6 +16,10 @@ var EpochRangeNil EpochRange = EpochRange{
 type EpochRange struct {
 	EpochFrom uint64
 	EpochTo   uint64
+}
+
+func (er EpochRange) String() string {
+	return fmt.Sprintf("{%v, %v}", er.EpochFrom, er.EpochTo)
 }
 
 func (e *EpochRange) ToSlice() []uint64 {
