@@ -381,11 +381,11 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 // TODO: remove this when fullnode deprecates offset/limit support on eth log filter
 type ethLogFilter struct {
 	web3Types.FilterQuery
-	Offset *hexutil.Uint `json:"offset"` // not supported yet, due to web3go sdk limitation
-	Limit  *hexutil.Uint `json:"limit"`
-	// to print variable value for debug
-	FromBlockV *hexutil.Uint64 `json:"-"`
-	ToBlockV   *hexutil.Uint64 `json:"-"`
+	// to print variable value for debuging
+	OffsetV    *hexutil.Uint
+	LimitV     *hexutil.Uint
+	FromBlockV *hexutil.Uint64
+	ToBlockV   *hexutil.Uint64
 }
 
 func (args *ethLogFilter) UnmarshalJSON(data []byte) error {
@@ -393,6 +393,18 @@ func (args *ethLogFilter) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &fq); err != nil {
 		return errors.WithMessage(err, "failed to unmarshal query filter")
 	}
+
+	var olfilter struct {
+		Offset *uint `json:"offset"`
+		Limit  *uint `json:"limit"`
+	}
+	if err := json.Unmarshal(data, &olfilter); err != nil {
+		return errors.WithMessage(err, "failed to unmarshal query offset/limit")
+	}
+
+	fq.Limit = olfilter.Limit
+
+	args.FilterQuery = fq
 
 	if fq.FromBlock != nil {
 		fromBlock := (hexutil.Uint64)(*fq.FromBlock)
@@ -404,21 +416,8 @@ func (args *ethLogFilter) UnmarshalJSON(data []byte) error {
 		args.ToBlockV = &toBlock
 	}
 
-	var olfilter struct {
-		Offset *hexutil.Uint `json:"offset"`
-		Limit  *hexutil.Uint `json:"limit"`
-	}
-	if err := json.Unmarshal(data, &olfilter); err != nil {
-		return errors.WithMessage(err, "failed to unmarshal query offset/limit")
-	}
-
-	if olfilter.Limit != nil {
-		fq.Limit = (*uint)(olfilter.Limit)
-	}
-
-	args.FilterQuery = fq
-	args.Limit = olfilter.Limit
-	args.Offset = olfilter.Offset
+	args.LimitV = (*hexutil.Uint)(olfilter.Limit)
+	args.OffsetV = (*hexutil.Uint)(olfilter.Offset)
 
 	return nil
 }
@@ -495,9 +494,7 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 		}
 	}
 
-	logrus.WithError(err).WithField("filter", filter).Debug(
-		"Delegating eth_getLogs rpc request to fullnode",
-	)
+	logrus.WithError(err).WithField("filter", filter).Debug("Delegating eth_getLogs rpc request to fullnode")
 
 	return w3c.Eth.Logs(filter.FilterQuery)
 }
