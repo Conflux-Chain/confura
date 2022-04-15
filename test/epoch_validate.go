@@ -697,13 +697,28 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	}
 
 	// filter: blockhashes
-	blockHashes, err := validator.cfx.GetBlocksByEpoch(epoch)
-	if err != nil {
-		logger.WithError(err).Info("Epoch validator failed to query epoch block hashes for validating cfx_getLogs")
-		return errors.WithMessage(err, "failed to query epoch block hashes for validating cfx_getLogs")
+	epochs := []*types.Epoch{epoch}
+	if epochNo > 1 {
+		epochs = append(epochs, types.NewEpochNumberUint64(epochNo-1))
 	}
 
-	blockHashes = blockHashes[len(blockHashes)-1:]
+	var blockHashes []types.Hash
+	for _, epoch := range epochs {
+		bhs, err := validator.cfx.GetBlocksByEpoch(epoch)
+		if err == nil && len(bhs) == 0 { // sanity check even though it should never happen
+			err = errors.Errorf("epoch %v has no blocks", epoch)
+		}
+
+		if err != nil {
+			logrus.WithField("epoch", epoch).WithError(err).Info(
+				"Epoch validator failed to query epoch block hashes for validating cfx_getLogs",
+			)
+			return errors.WithMessage(err, "failed to query epoch block hashes for validating cfx_getLogs")
+		}
+
+		blockHashes = append(blockHashes, bhs[len(bhs)-1])
+	}
+
 	filterByBlockHashes := types.LogFilter{
 		BlockHashes: blockHashes,
 		Limit:       &maxLogsLimit,
