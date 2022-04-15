@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"math/bits"
@@ -22,6 +23,8 @@ import (
 
 var (
 	ethHitStatsCollector = cimetrics.NewHitStatsCollector()
+
+	ethEmptyLogs = []web3Types.Log{}
 )
 
 func getEthStoreHitRatioMetricKey(method string) string {
@@ -374,45 +377,87 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	return w3c.Eth.TransactionReceipt(txHash)
 }
 
-// GetLogs returns an array of all logs matching a given filter object.
-// TODO: add offset/limit support
-func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([]web3Types.Log, error) {
-	logger := logrus.WithField("filter", filter)
-	emptyLogs := []web3Types.Log{}
+// ethLogFilter temporary offset/limit support on eth log filter
+// TODO: remove this when fullnode deprecates offset/limit support on eth log filter
+type ethLogFilter struct {
+	web3Types.FilterQuery
+	Offset *hexutil.Uint `json:"offset"` // not supported yet, due to web3go sdk limitation
+	Limit  *hexutil.Uint `json:"limit"`
+	// to print variable value for debug
+	FromBlockV *hexutil.Uint64 `json:"-"`
+	ToBlockV   *hexutil.Uint64 `json:"-"`
+}
 
+func (args *ethLogFilter) UnmarshalJSON(data []byte) error {
+	var fq web3Types.FilterQuery
+	if err := json.Unmarshal(data, &fq); err != nil {
+		return errors.WithMessage(err, "failed to unmarshal query filter")
+	}
+
+	if fq.FromBlock != nil {
+		fromBlock := (hexutil.Uint64)(*fq.FromBlock)
+		args.FromBlockV = &fromBlock
+	}
+
+	if fq.ToBlock != nil {
+		toBlock := (hexutil.Uint64)(*fq.ToBlock)
+		args.ToBlockV = &toBlock
+	}
+
+	var olfilter struct {
+		Offset *hexutil.Uint `json:"offset"`
+		Limit  *hexutil.Uint `json:"limit"`
+	}
+	if err := json.Unmarshal(data, &olfilter); err != nil {
+		return errors.WithMessage(err, "failed to unmarshal query offset/limit")
+	}
+
+	if olfilter.Limit != nil {
+		fq.Limit = (*uint)(olfilter.Limit)
+	}
+
+	args.FilterQuery = fq
+	args.Limit = olfilter.Limit
+	args.Offset = olfilter.Offset
+
+	return nil
+}
+
+// GetLogs returns an array of all logs matching a given filter object.
+func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Types.Log, error) {
 	w3c, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	flag, ok := store.ParseEthLogFilterType(&filter)
+	flag, ok := store.ParseEthLogFilterType(&filter.FilterQuery)
 	if !ok {
-		return emptyLogs, errInvalidEthLogFilter
+		return ethEmptyLogs, errInvalidEthLogFilter
 	}
 
-	if err := api.normalizeLogFilter(w3c, flag, &filter); err != nil {
-		return emptyLogs, err
+	if err := api.normalizeLogFilter(w3c, flag, &filter.FilterQuery); err != nil {
+		return ethEmptyLogs, err
 	}
 
-	if err := api.validateLogFilter(flag, &filter); err != nil {
+	if err := api.validateLogFilter(flag, &filter.FilterQuery); err != nil {
 		logrus.WithError(err).WithField("filter", filter).Debug(
 			"Invalid log filter parameter for eth_getLogs rpc request",
 		)
 
-		return emptyLogs, err
+		return ethEmptyLogs, err
 	}
 
 	if filter.Limit != nil && *filter.Limit == 0 {
-		return emptyLogs, nil
+		return ethEmptyLogs, nil
 	}
 
 	if !store.EthStoreConfig().IsChainLogDisabled() && !util.IsInterfaceValNil(api.handler) {
 		chainId, err := api.ChainId(ctx)
 		if err != nil {
-			return emptyLogs, errors.WithMessage(err, "failed to get ETH chain id")
+			return ethEmptyLogs, errors.WithMessage(err, "failed to get ETH chain id")
 		}
 
-		if sfilter, ok := store.ParseEthLogFilter(w3c, uint32(*chainId), &filter); ok {
+		if sfilter, ok := store.ParseEthLogFilter(w3c, uint32(*chainId), &filter.FilterQuery); ok {
 			isStoreHit := false
 			defer func(isHit *bool) {
 				metricKey := getEthStoreHitRatioMetricKey("eth_getLogs")
@@ -422,31 +467,39 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 			if logs, err := api.handler.GetLogs(ctx, *sfilter); err == nil {
 				// return empty slice rather than nil to comply with fullnode
 				if logs == nil {
-					logs = emptyLogs
+					logs = ethEmptyLogs
 				}
 
-				logger.Debug("Loading eth data for eth_getLogs hit in the ethstore")
+				logrus.WithError(err).WithField("filter", filter).Debug(
+					"Loading eth data for eth_getLogs hit in the ethstore",
+				)
 
 				isStoreHit = true
 				return logs, nil
 			}
 
-			logger.WithError(err).Debug("Loading eth data for eth_getLogs hit missed from the ethstore")
+			logrus.WithError(err).WithField("filter", filter).WithError(err).Debug(
+				"Loading eth data for eth_getLogs hit missed from the ethstore",
+			)
 
 			// Logs already pruned from database? If so, we'd rather not delegate this request to
 			// the fullnode, as it might crush our fullnode.
 			if errors.Is(err, store.ErrAlreadyPruned) {
-				logger.Info("Event logs data already pruned for eth_getLogs to return")
-				return emptyLogs, errors.New("failed to get stale event logs (data too old)")
+				logrus.WithError(err).WithField("filter", filter).Info(
+					"Event logs data already pruned for eth_getLogs to return",
+				)
+				return ethEmptyLogs, errors.New("failed to get stale event logs (data too old)")
 			} else if errors.Is(err, store.ErrGetLogsResultSetTooLarge) || errors.Is(err, store.ErrGetLogsTimeout) {
-				return emptyLogs, err
+				return ethEmptyLogs, err
 			}
 		}
 	}
 
-	logger.Debug("Delegating eth_getLogs rpc request to fullnode")
+	logrus.WithError(err).WithField("filter", filter).Debug(
+		"Delegating eth_getLogs rpc request to fullnode",
+	)
 
-	return w3c.Eth.Logs(filter)
+	return w3c.Eth.Logs(filter.FilterQuery)
 }
 
 // GetBlockTransactionCountByHash returns the total number of transactions in the given block.

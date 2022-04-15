@@ -295,5 +295,11 @@ func ConvertLogFilter(fq *ethTypes.FilterQuery, ethNetworkId uint32) *types.LogF
 		lf.ToBlock = (*hexutil.Big)(big.NewInt(fq.ToBlock.Int64()))
 	}
 
+	// convert offset/limit
+	if fq.Limit != nil {
+		limit := uint64(*fq.Limit)
+		lf.Limit = (*hexutil.Uint64)(&limit)
+	}
+
 	return lf
 }
