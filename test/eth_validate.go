@@ -513,9 +513,7 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 	}
 
 	if err := validator.doValidateGetLogs(&filterByBlockNums); err != nil {
-		logger.WithField(
-			"filterByBlockNums", filterByBlockNums,
-		).WithError(err).Info("ETH validator failed to validate eth_getLogs")
+		logger.WithError(err).Info("ETH validator failed to validate eth_getLogs (filterByBlockNums)")
 		return errors.WithMessagef(err, "failed to validate eth_getLogs")
 	}
 
@@ -526,9 +524,7 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 	}
 
 	if err := validator.doValidateGetLogs(&filterByBlockHash); err != nil {
-		logger.WithField(
-			"filterByBlockHash", filterByBlockHash,
-		).WithError(err).Info("ETH validator failed to validate eth_getLogs")
+		logger.WithError(err).Info("ETH validator failed to validate eth_getLogs (filterByBlockHash)")
 		return errors.WithMessagef(err, "failed to validate eth_getLogs")
 	}
 
