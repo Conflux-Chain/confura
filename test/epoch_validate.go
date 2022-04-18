@@ -778,6 +778,10 @@ func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error
 
 					return logs, errValidationSkipped
 				}
+
+				// skip `log.TransactionIndex` field validation due to fullnode bug
+				// TODO: remove this if fullnode bug fixed
+				log.TransactionIndex = nil
 			}
 
 			return logs, nil
