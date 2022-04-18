@@ -765,7 +765,7 @@ func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error
 				return logs, errors.WithMessagef(err, "failed to query logs from %v", src)
 			}
 
-			for _, log := range logs {
+			for i, log := range logs {
 				// skip validation due to log of blacklisted address found
 				if store.IsAddressBlacklisted(&log.Address) {
 					logrus.WithFields(logrus.Fields{
@@ -781,7 +781,7 @@ func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error
 
 				// skip `log.TransactionIndex` field validation due to fullnode bug
 				// TODO: remove this if fullnode bug fixed
-				log.TransactionIndex = nil
+				logs[i].TransactionIndex = nil
 			}
 
 			return logs, nil
