@@ -463,7 +463,8 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 				ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
 			}(&isStoreHit)
 
-			if logs, err := api.handler.GetLogs(ctx, *sfilter); err == nil {
+			logs, err := api.handler.GetLogs(ctx, *sfilter)
+			if err == nil {
 				// return empty slice rather than nil to comply with fullnode
 				if logs == nil {
 					logs = ethEmptyLogs
@@ -477,7 +478,7 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 				return logs, nil
 			}
 
-			logrus.WithError(err).WithField("filter", filter).WithError(err).Debug(
+			logrus.WithField("filter", filter).WithError(err).Debug(
 				"Loading eth data for eth_getLogs hit missed from the ethstore",
 			)
 
