@@ -19,14 +19,14 @@ const ( // gas station price configs
 
 var (
 	defaultGasStationPriceFastest = big.NewInt(1_000_000_000) // (1G)
-	defaultGasStationPriceFast    = big.NewInt(100_000_000)   // (100M)
-	defaultGasStationPriceAverage = big.NewInt(10_000_000)    // (10M)
-	defaultGasStationPriceSafeLow = big.NewInt(1_000_000)     // (1M)
+	defaultGasStationPriceFast    = big.NewInt(1_000_000_000) // (1G)
+	defaultGasStationPriceAverage = big.NewInt(1_000_000_000) // (1G)
+	defaultGasStationPriceSafeLow = big.NewInt(1_000_000_000) // (1G)
 
-	maxGasStationPriceFastest = big.NewInt(100_000_000_000) // (100G)
-	maxGasStationPriceFast    = big.NewInt(10_000_000_000)  // (10G)
-	maxGasStationPriceAverage = big.NewInt(1_000_000_000)   // (1G)
-	maxGasStationPriceSafeLow = big.NewInt(100_000_000)     // (100M)
+	maxGasStationPriceFastest = big.NewInt(10_000_000_000) // (10G)
+	maxGasStationPriceFast    = big.NewInt(10_000_000_000) // (10G)
+	maxGasStationPriceAverage = big.NewInt(10_000_000_000) // (10G)
+	maxGasStationPriceSafeLow = big.NewInt(10_000_000_000) // (10G)
 )
 
 // GasStationHandler gas station handler for gas price estimation etc.,
