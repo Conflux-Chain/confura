@@ -4,7 +4,6 @@ import (
 	"fmt"
 	stdLog "log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
@@ -16,51 +15,67 @@ import (
 	gormLogger "gorm.io/gorm/logger"
 )
 
+var allModels = []interface{}{
+	&transaction{},
+	&block{},
+	&log{},
+	&epochStats{},
+	&conf{},
+	&User{},
+	&Contract{},
+}
+
 // Config represents the mysql configurations to open a database instance.
 type Config struct {
+	Enabled bool
+
 	Host     string `default:"127.0.0.1:3306"`
 	Username string
 	Password string
 	Database string
-	Dsn      string
+
+	Dsn string // to support one line config
 
 	ConnMaxLifetime time.Duration `default:"3m"`
 	MaxOpenConns    int           `default:"10"`
 	MaxIdleConns    int           `default:"10"`
 
-	Enabled bool
-
 	AddressIndexedLogEnabled    bool
 	AddressIndexedLogPartitions uint32 `default:"10"`
 }
 
-// MustNewConfigFromViper creates an instance of Config from Viper or panic on error.
-func MustNewConfigFromViper() *Config {
+func mustNewConfigFromViper(key string) *Config {
 	var cfg Config
+	viper.MustUnmarshalKey(key, &cfg)
 
-	viper.MustUnmarshalKey("store.mysql", &cfg)
-	return &cfg
-}
-
-func MustNewEthStoreConfigFromViper() *Config {
-	var cfg Config
-
-	viper.MustUnmarshalKey("ethstore.mysql", &cfg)
 	if !cfg.Enabled {
 		return &Config{}
 	}
 
-	gsconf, err := gosql.ParseDSN(cfg.Dsn)
-	if err != nil {
-		logrus.WithField("ethStoreDsn", cfg.Dsn).Fatal("Failed to parse db DSN for eth store")
+	if len(cfg.Dsn) == 0 {
+		return &cfg
 	}
 
-	cfg.Host = gsconf.Addr
-	cfg.Username = gsconf.User
-	cfg.Password = gsconf.Passwd
-	cfg.Database = gsconf.DBName
+	dsnCfg, err := gosql.ParseDSN(cfg.Dsn)
+	if err != nil {
+		logrus.WithError(err).WithField("dsn", cfg.Dsn).Fatal("Failed to parse db DSN")
+	}
+
+	cfg.Host = dsnCfg.Addr
+	cfg.Username = dsnCfg.User
+	cfg.Password = dsnCfg.Passwd
+	cfg.Database = dsnCfg.DBName
 
 	return &cfg
+}
+
+// MustNewConfigFromViper creates an instance of Config from Viper or panic on error.
+func MustNewConfigFromViper() *Config {
+	return mustNewConfigFromViper("store.mysql")
+}
+
+func MustNewEthStoreConfigFromViper() *Config {
+	return mustNewConfigFromViper("ethstore.mysql")
 }
 
 // MustOpenOrCreate creates an instance of store or exits on any erorr.
@@ -172,21 +187,4 @@ func (config *Config) mustCreateDatabaseIfAbsent() bool {
 	logrus.Info("Create database for the first time")
 
 	return true
-}
-
-func initLogsPartitions(db *gorm.DB) error {
-	sqlLines := make([]string, 0, 120)
-	sqlLines = append(sqlLines, "ALTER TABLE logs PARTITION BY RANGE (id)(")
-
-	for i := uint64(0); i < uint64(LogsTablePartitionsNum); i++ {
-		lineStr := fmt.Sprintf("PARTITION logs%v VALUES LESS THAN (%v),", i, (i+1)*LogsTablePartitionRangeSize)
-		sqlLines = append(sqlLines, lineStr)
-	}
-
-	sqlLines = append(sqlLines, "PARTITION logsow VALUES LESS THAN MAXVALUE);")
-
-	logsPartitionSql := strings.Join(sqlLines, "\n")
-	logrus.WithField("logsPartitionSql", logsPartitionSql).Debug("Init logs db table partitions")
-
-	return db.Exec(logsPartitionSql).Error
 }

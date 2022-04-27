@@ -8,6 +8,7 @@ import (
 
 	"github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -18,6 +19,23 @@ const (
 	// an extra partition to hold any data beyond the range.
 	LogsTablePartitionsNum = 100
 )
+
+func initLogsPartitions(db *gorm.DB) error {
+	sqlLines := make([]string, 0, 120)
+	sqlLines = append(sqlLines, "ALTER TABLE logs PARTITION BY RANGE (id)(")
+
+	for i := uint64(0); i < uint64(LogsTablePartitionsNum); i++ {
+		lineStr := fmt.Sprintf("PARTITION logs%v VALUES LESS THAN (%v),", i, (i+1)*LogsTablePartitionRangeSize)
+		sqlLines = append(sqlLines, lineStr)
+	}
+
+	sqlLines = append(sqlLines, "PARTITION logsow VALUES LESS THAN MAXVALUE);")
+
+	logsPartitionSql := strings.Join(sqlLines, "\n")
+	logrus.WithField("logsPartitionSql", logsPartitionSql).Debug("Init logs db table partitions")
+
+	return db.Exec(logsPartitionSql).Error
+}
 
 type logPartitioner struct{}
 

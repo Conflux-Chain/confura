@@ -52,6 +52,9 @@ func (cs *ContractStore) GetContractById(id uint64) (*Contract, bool, error) {
 		return val.(*Contract), true, nil
 	}
 
+	// Could improve when QPS is very high:
+	// 1. Use mutex lock to allow only 1 thread to read from db.
+	// 2. Cache non-existent address.
 	var contract Contract
 	exists, err := cs.exists(&contract, "id = ?", id)
 	if err == nil && exists {
@@ -76,6 +79,8 @@ func (cs *ContractStore) GetContractByAddress(address string) (*Contract, bool, 
 	return &contract, exists, err
 }
 
+// AddContractIfAbsent add new contract if absent. Note, this method is thread unsafe.
+// Generally, it is used by data sync thread.
 func (cs *ContractStore) AddContractIfAbsent(address string) (*Contract, bool, error) {
 	existing, ok, err := cs.GetContractByAddress(address)
 	if err != nil {
