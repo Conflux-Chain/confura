@@ -50,7 +50,6 @@ type BaseLogFilter struct {
 
 func (filter *BaseLogFilter) apply(db *gorm.DB) *gorm.DB {
 	db = applyTopicsFilter(db, filter.Topics)
-	db = clearOffsetLimit(db)
 
 	if filter.OffSet > 0 {
 		db = db.Offset(int(filter.OffSet))
@@ -106,14 +105,14 @@ func (filter *AddressIndexedLogFilter) Apply(db *gorm.DB) *gorm.DB {
 func (filter *AddressIndexedLogFilter) ValidateCount(db *gorm.DB) error {
 	db = filter.apply(db)
 	db = applyTopicsFilter(db, filter.Topics)
-	db = db.Offset(int(store.MaxLogLimit + filter.OffSet)).Limit(1)
+	db = db.Session(&gorm.Session{}).Offset(int(store.MaxLogLimit + filter.OffSet)).Limit(1)
 
-	var total int64
-	if err := db.Count(&total).Error; err != nil {
+	var hasMore int64
+	if err := db.Select("1").Find(&hasMore).Error; err != nil {
 		return err
 	}
 
-	if total > 0 {
+	if hasMore > 0 {
 		return store.ErrGetLogsResultSetTooLarge
 	}
 

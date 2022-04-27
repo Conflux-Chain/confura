@@ -744,7 +744,3 @@ func (ms *mysqlStore) loadLikelyActionLogsPartEpochRangesTx(dbTx *gorm.DB, opTyp
 
 	return partLogsEpochRanges, nil
 }
-
-func clearOffsetLimit(db *gorm.DB) *gorm.DB {
-	return db.Offset(-1).Limit(-1)
-}

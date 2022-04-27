@@ -275,7 +275,7 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 	// IMPORTANT: full node returns the last N logs.
 	// To limit the number of records fetched for better performance,  we'd better retrieve
 	// the logs in reverse order first, and then reverse them for the final order.
-	db = clearOffsetLimit(db).Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit))
+	db = db.Order("id DESC").Offset(int(filter.OffSet)).Limit(int(filter.Limit))
 	if prefind != nil {
 		prefind()
 	}
@@ -308,17 +308,17 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 }
 
 func (ls *logStore) validateCount(db *gorm.DB, filter *store.LogFilter) error {
-	db = db.Offset(int(store.MaxLogLimit + filter.OffSet)).Limit(1)
+	db = db.Session(&gorm.Session{}).Offset(int(store.MaxLogLimit + filter.OffSet)).Limit(1)
 
-	var total int64
-	if err := db.Count(&total).Error; err != nil {
+	var hasMore int64
+	if err := db.Select("1").Find(&hasMore).Error; err != nil {
 		logrus.WithField("filter", filter).WithError(err).Error(
 			"Failed to validate size of result set for event logs",
 		)
 		return err
 	}
 
-	if total > 0 {
+	if hasMore > 0 {
 		return store.ErrGetLogsResultSetTooLarge
 	}
 
