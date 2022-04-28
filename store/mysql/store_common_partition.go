@@ -2,9 +2,7 @@ package mysql
 
 import (
 	"fmt"
-	"hash/fnv"
 
-	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
@@ -52,24 +50,17 @@ func (ps *partitionedStore) createPartitionedTables(db *gorm.DB, modelPtr schema
 	return numCreated, nil
 }
 
-// func (ps *partitionedStore) deletePartitionedTable(db *gorm.DB, modelPtr schema.Tabler, partition uint32) (bool, error) {
-// 	tableName := ps.getPartitionedTableName(modelPtr, partition)
-// 	migrator := db.Migrator()
+func (ps *partitionedStore) deletePartitionedTable(db *gorm.DB, modelPtr schema.Tabler, partition uint32) (bool, error) {
+	tableName := ps.getPartitionedTableName(modelPtr, partition)
+	migrator := db.Migrator()
 
-// 	if !migrator.HasTable(tableName) {
-// 		return false, nil
-// 	}
+	if !migrator.HasTable(tableName) {
+		return false, nil
+	}
 
-// 	if err := migrator.DropTable(tableName); err != nil {
-// 		return false, err
-// 	}
+	if err := migrator.DropTable(tableName); err != nil {
+		return false, err
+	}
 
-// 	return true, nil
-// }
-
-func (*partitionedStore) getPartitionByAddress(contract *cfxaddress.Address, totalPartitions uint32) uint32 {
-	hasher := fnv.New32()
-	hasher.Write(contract.MustGetCommonAddress().Bytes())
-	// Use consistent hashing if repartition supported
-	return hasher.Sum32() % totalPartitions
+	return true, nil
 }

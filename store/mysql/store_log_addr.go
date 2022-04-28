@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"fmt"
+	"hash/fnv"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
@@ -201,6 +202,13 @@ func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLog
 	}
 
 	return logs, exts, nil
+}
+
+func (ls *AddressIndexedLogStore) getPartitionByAddress(contract *cfxaddress.Address, totalPartitions uint32) uint32 {
+	hasher := fnv.New32()
+	hasher.Write(contract.MustGetCommonAddress().Bytes())
+	// Use consistent hashing if repartition supported
+	return hasher.Sum32() % totalPartitions
 }
 
 // TODO supports repartition with consistent hashing and data migration.
