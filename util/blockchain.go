@@ -93,15 +93,27 @@ func ConvertToHashSlice(ss []string) []types.Hash {
 }
 
 // NormalizeEthBlockNumber normalizes ETH block number to be positive if necessary
-func NormalizeEthBlockNumber(w3c *web3go.Client, blockNum *rpc.BlockNumber) (*rpc.BlockNumber, error) {
+func NormalizeEthBlockNumber(w3c *web3go.Client, blockNum *rpc.BlockNumber, hardforkBlockNumber rpc.BlockNumber) (*rpc.BlockNumber, error) {
 	if blockNum == nil {
 		return nil, errors.New("block number must be provided")
 	}
 
-	if *blockNum > 0 { // already positive block number
+	// after eSpace hardfork
+	if *blockNum > hardforkBlockNumber {
 		return blockNum, nil
 	}
 
+	// before eSpace hardfork => hardfork
+	if *blockNum > 0 {
+		return &hardforkBlockNumber, nil
+	}
+
+	// earliest => hardfork
+	if *blockNum == rpc.EarliestBlockNumber {
+		return &hardforkBlockNumber, nil
+	}
+
+	// pending or latest => latest_mined or latest_state
 	block, err := w3c.Eth.BlockByNumber(*blockNum, false)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to normalize block number")
@@ -113,8 +125,8 @@ func NormalizeEthBlockNumber(w3c *web3go.Client, blockNum *rpc.BlockNumber) (*rp
 		return nil, errors.Errorf("unknown block number (%v)", string(blockText))
 	}
 
-	blockNo := block.Number.Int64()
-	return (*rpc.BlockNumber)(&blockNo), nil
+	blockNo := rpc.BlockNumber(block.Number.Int64())
+	return &blockNo, nil
 }
 
 func IsZeroHash(hash *common.Hash) bool {

@@ -25,6 +25,12 @@ var (
 	ethHitStatsCollector = cimetrics.NewHitStatsCollector()
 
 	ethEmptyLogs = []web3Types.Log{}
+
+	ethHardforkBlockNumberDevnet    = rpc.BlockNumber(1)
+	ethChainId2HardforkBlockNumbers = map[uint64]rpc.BlockNumber{
+		1030: 36935000, //mainnet
+		71:   61465000, // testnet
+	}
 )
 
 func getEthStoreHitRatioMetricKey(method string) string {
@@ -39,10 +45,35 @@ type ethAPI struct {
 	handler          handler.EthHandler // eth rpc handler
 	chainId          *uint64            // eth chain ID
 	inputBlockMetric cimetrics.InputBlockMetric
+
+	hardforkBlockNumber *rpc.BlockNumber // return default value before eSpace hardfork
 }
 
-func newEthAPI(provider *node.EthClientProvider, handler handler.EthHandler) *ethAPI {
-	return &ethAPI{provider: provider, handler: handler}
+func mustNewEthAPI(provider *node.EthClientProvider, handler handler.EthHandler) *ethAPI {
+	client, err := provider.GetClientRandom()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to get eth client randomly")
+	}
+
+	chainId, err := client.Eth.ChainId()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to get eth chain id")
+	}
+
+	if chainId == nil {
+		logrus.Fatal("chain id on eSpace is nil")
+	}
+
+	hardforkBlockNumber := &ethHardforkBlockNumberDevnet
+	if bn, ok := ethChainId2HardforkBlockNumbers[*chainId]; ok {
+		hardforkBlockNumber = &bn
+	}
+
+	return &ethAPI{
+		provider:            provider,
+		handler:             handler,
+		hardforkBlockNumber: hardforkBlockNumber,
+	}
 }
 
 // GetBlockByHash returns the requested block. When fullTx is true all transactions in
@@ -438,6 +469,11 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 		return ethEmptyLogs, err
 	}
 
+	// return empty directly before eSpace hardfork
+	if *filter.ToBlock <= *api.hardforkBlockNumber {
+		return ethEmptyLogs, nil
+	}
+
 	if err := api.validateLogFilter(flag, &filter.FilterQuery); err != nil {
 		logrus.WithError(err).WithField("filter", filter).Debug(
 			"Invalid log filter parameter for eth_getLogs rpc request",
@@ -660,7 +696,7 @@ func (api *ethAPI) normalizeLogFilter(w3c *web3go.Client, flag store.LogFilterTy
 
 		var blocks [2]*rpc.BlockNumber
 		for i, b := range []*rpc.BlockNumber{filter.FromBlock, filter.ToBlock} {
-			block, err := util.NormalizeEthBlockNumber(w3c, b)
+			block, err := util.NormalizeEthBlockNumber(w3c, b, *api.hardforkBlockNumber)
 			if err != nil {
 				return errors.WithMessage(err, "failed to normalize block number")
 			}

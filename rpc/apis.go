@@ -99,7 +99,7 @@ func evmSpaceApis(router infuraNode.Router, handler handler.EthHandler) ([]API, 
 		{
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   newEthAPI(clientProvider, handler),
+			Service:   mustNewEthAPI(clientProvider, handler),
 			Public:    true,
 		}, {
 			Namespace: "web3",

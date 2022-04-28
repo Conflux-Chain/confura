@@ -2,6 +2,8 @@ package node
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/openweb3/web3go"
@@ -46,5 +48,11 @@ func (p *EthClientProvider) GetClientByIPGroup(ctx context.Context, group Group)
 	remoteAddr := remoteAddrFromContext(ctx)
 	client, err := p.getClient(remoteAddr, group)
 
+	return client.(*web3go.Client), err
+}
+
+func (p *EthClientProvider) GetClientRandom() (*web3go.Client, error) {
+	key := fmt.Sprintf("random_key_%v", rand.Int())
+	client, err := p.getClient(key, GroupEthHttp)
 	return client.(*web3go.Client), err
 }
