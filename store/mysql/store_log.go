@@ -259,7 +259,7 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 		db = db.Order("epoch DESC")
 	}
 
-	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
+	db = applyVariadicFilter(db, logColumnTypeContract, filter.Contracts)
 	db = applyTopicsFilter(db, filter.Topics)
 
 	if len(partitions) > 0 {

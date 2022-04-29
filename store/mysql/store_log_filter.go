@@ -1,20 +1,36 @@
 package mysql
 
 import (
-	"fmt"
-
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
 	"gorm.io/gorm"
 )
 
-func applyVariadicFilter(db *gorm.DB, column string, value store.VariadicValue) *gorm.DB {
+type logColumnType int
+
+const (
+	logColumnTypeContract logColumnType = 0
+	logColumnTypeTopic0   logColumnType = 1
+	logColumnTypeTopic1   logColumnType = 2
+	logColumnTypeTopic2   logColumnType = 3
+	logColumnTypeTopic3   logColumnType = 4
+)
+
+var logWhereQueries = map[logColumnType]struct{ single, multiple string }{
+	logColumnTypeContract: {"contract_address = ?", "contract_address IN (?)"},
+	logColumnTypeTopic0:   {"topic0 = ?", "topic0 IN (?)"},
+	logColumnTypeTopic1:   {"topic1 = ?", "topic1 IN (?)"},
+	logColumnTypeTopic2:   {"topic2 = ?", "topic2 IN (?)"},
+	logColumnTypeTopic3:   {"topic3 = ?", "topic3 IN (?)"},
+}
+
+func applyVariadicFilter(db *gorm.DB, column logColumnType, value store.VariadicValue) *gorm.DB {
 	if single, ok := value.Single(); ok {
-		return db.Where(fmt.Sprintf("%v = ?", column), single)
+		return db.Where(logWhereQueries[column].single, single)
 	}
 
 	if multiple, ok := value.FlatMultiple(); ok {
-		return db.Where(fmt.Sprintf("%v IN (?)", column), multiple)
+		return db.Where(logWhereQueries[column].multiple, multiple)
 	}
 
 	return db
@@ -24,19 +40,19 @@ func applyTopicsFilter(db *gorm.DB, topics []store.VariadicValue) *gorm.DB {
 	numTopics := len(topics)
 
 	if numTopics > 0 {
-		db = applyVariadicFilter(db, "topic0", topics[0])
+		db = applyVariadicFilter(db, logColumnTypeTopic0, topics[0])
 	}
 
 	if numTopics > 1 {
-		db = applyVariadicFilter(db, "topic1", topics[1])
+		db = applyVariadicFilter(db, logColumnTypeTopic1, topics[1])
 	}
 
 	if numTopics > 2 {
-		db = applyVariadicFilter(db, "topic2", topics[2])
+		db = applyVariadicFilter(db, logColumnTypeTopic2, topics[2])
 	}
 
 	if numTopics > 3 {
-		db = applyVariadicFilter(db, "topic3", topics[3])
+		db = applyVariadicFilter(db, logColumnTypeTopic3, topics[3])
 	}
 
 	return db
