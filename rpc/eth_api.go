@@ -469,17 +469,17 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 		return ethEmptyLogs, err
 	}
 
-	// return empty directly before eSpace hardfork
-	if *filter.ToBlock <= *api.hardforkBlockNumber {
-		return ethEmptyLogs, nil
-	}
-
 	if err := api.validateLogFilter(flag, &filter.FilterQuery); err != nil {
 		logrus.WithError(err).WithField("filter", filter).Debug(
 			"Invalid log filter parameter for eth_getLogs rpc request",
 		)
 
 		return ethEmptyLogs, err
+	}
+
+	// return empty directly if filter block range before eSpace hardfork
+	if filter.ToBlock != nil && *filter.ToBlock <= *api.hardforkBlockNumber {
+		return ethEmptyLogs, nil
 	}
 
 	if filter.Limit != nil && *filter.Limit == 0 {
