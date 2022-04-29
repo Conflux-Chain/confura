@@ -134,7 +134,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	defer updater.Update()
 
 	// epoch range calculated from log filter, which can be used to help locate the logs table partitions
-	epochRange := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0}
+	epochRange := citypes.RangeUint64{math.MaxUint64, 0}
 
 	switch filter.Type {
 	case store.LogFilterTypeBlockHash:
@@ -148,8 +148,8 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 
 		// found in database
 		if ok {
-			epochRange.EpochFrom = blockPart.Epoch
-			epochRange.EpochTo = blockPart.Epoch
+			epochRange.From = blockPart.Epoch
+			epochRange.To = blockPart.Epoch
 			break
 		}
 
@@ -162,8 +162,8 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 			return nil, err
 		}
 
-		epochRange.EpochFrom = epoch
-		epochRange.EpochTo = epoch
+		epochRange.From = epoch
+		epochRange.To = epoch
 	case store.LogFilterTypeBlockRange:
 		blockParts, err := ls.getLogsRelBlockInfoByBlockRange(&filter)
 		if err != nil {
@@ -175,8 +175,8 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 
 		for i := 0; i < len(blockParts); i++ {
 			// update epoch range from store
-			epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, blockParts[i].Epoch)
-			epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, blockParts[i].Epoch)
+			epochRange.From = util.MinUint64(epochRange.From, blockParts[i].Epoch)
+			epochRange.To = util.MaxUint64(epochRange.To, blockParts[i].Epoch)
 		}
 
 		if len(blockParts) == len(filter.BlockRange.ToSlice()) { // already have all block numbers in store
@@ -192,8 +192,8 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 		}
 
 		// update epoch range from fullnode
-		epochRange.EpochFrom = util.MinUint64(epochRange.EpochFrom, fer.EpochFrom)
-		epochRange.EpochTo = util.MaxUint64(epochRange.EpochTo, fer.EpochTo)
+		epochRange.From = util.MinUint64(epochRange.From, fer.From)
+		epochRange.To = util.MaxUint64(epochRange.To, fer.To)
 
 	default:
 		if filter.EpochRange != nil { // default use epoch range of log filter
@@ -201,16 +201,16 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 		}
 	}
 
-	if err := citypes.ValidateEpochRange(&epochRange); err != nil {
+	if epochRange.From > epochRange.To {
 		logrus.WithFields(logrus.Fields{
 			"filter": filter, "epochRange": epochRange,
-		}).WithError(err).Error("Failed to calculate a valid epoch range for logs partitions")
-		return nil, err
+		}).Error("Failed to calculate a valid epoch range for logs partitions (with from > to)")
+		return nil, errors.New("invalid converted epoch range")
 	}
 
 	// Check if epoch ranges of the log filter are within the store.
 	// TODO add a cache layer for better performance if necessary
-	if _, err := ls.checkLogsEpochRangeWithinStore(epochRange.EpochFrom, epochRange.EpochTo); err != nil {
+	if _, err := ls.checkLogsEpochRangeWithinStore(epochRange.From, epochRange.To); err != nil {
 		logger := logrus.WithFields(logrus.Fields{"filter": filter, "epochRange": epochRange})
 
 		logf := logger.WithError(err).Error
@@ -223,7 +223,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	}
 
 	// calcuate logs table partitions to get logs within the filter epoch range
-	logsTblPartitions, err := ls.findLogsPartitionsEpochRangeWithinStoreTx(ls.db, epochRange.EpochFrom, epochRange.EpochTo)
+	logsTblPartitions, err := ls.findLogsPartitionsEpochRangeWithinStoreTx(ls.db, epochRange.From, epochRange.To)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"filter": filter, "epochRange": epochRange,
@@ -252,10 +252,10 @@ func (ls *logStore) loadLogs(filter store.LogFilter, partitions []string) ([]sto
 			db = db.Order("block_hash_id DESC")
 		}
 	case store.LogFilterTypeBlockRange:
-		db = db.Where("block_number BETWEEN ? AND ?", filter.BlockRange.EpochFrom, filter.BlockRange.EpochTo)
+		db = db.Where("block_number BETWEEN ? AND ?", filter.BlockRange.From, filter.BlockRange.To)
 		db = db.Order("block_number DESC")
 	case store.LogFilterTypeEpochRange:
-		db = db.Where("epoch BETWEEN ? AND ?", filter.EpochRange.EpochFrom, filter.EpochRange.EpochTo)
+		db = db.Where("epoch BETWEEN ? AND ?", filter.EpochRange.From, filter.EpochRange.To)
 		db = db.Order("epoch DESC")
 	}
 

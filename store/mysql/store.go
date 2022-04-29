@@ -108,8 +108,8 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 		}
 
 		logrus.WithFields(logrus.Fields{
-			"globalEpochRange":         citypes.EpochRange{EpochFrom: ms.minEpoch, EpochTo: ms.maxEpoch},
-			"usedLogsTblPartitionIdxs": citypes.EpochRange{EpochFrom: ms.minUsedLogsTblPartIdx, EpochTo: ms.maxUsedLogsTblPartIdx},
+			"globalEpochRange":         citypes.RangeUint64{ms.minEpoch, ms.maxEpoch},
+			"usedLogsTblPartitionIdxs": citypes.RangeUint64{ms.minUsedLogsTblPartIdx, ms.maxUsedLogsTblPartIdx},
 		}).Debug("New mysql store loaded with epoch stats")
 	}
 
@@ -165,7 +165,7 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 	insertLogsIDSpan := [2]uint64{citypes.EpochNumberNil, 0}
 
 	err := ms.execWithTx(func(dbTx *gorm.DB) (*mysqlEpochDataOpAffects, error) {
-		insertBeforeLogsPartEpochRanges, err := map[string]citypes.EpochRange{}, error(nil)
+		insertBeforeLogsPartEpochRanges, err := map[string]citypes.RangeUint64{}, error(nil)
 		if insertLogs { // get relative epoch ranges for logs table partitions before logs insert for late diff
 			insertBeforeLogsPartEpochRanges, err = ms.loadLikelyActionLogsPartEpochRangesTx(dbTx, store.EpochOpPush)
 			if err != nil {
@@ -426,7 +426,7 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 
 	txOpAffects := newOpAffects()
 	err := ms.execWithTx(func(dbTx *gorm.DB) (*mysqlEpochDataOpAffects, error) {
-		deleteBeforeLogsPartEpochRanges, err := map[string]citypes.EpochRange{}, error(nil)
+		deleteBeforeLogsPartEpochRanges, err := map[string]citypes.RangeUint64{}, error(nil)
 		if option&store.EpochRemoveLog != 0 {
 			// get relative epoch ranges for logs table partitions before deletion for diff late
 			deleteBeforeLogsPartEpochRanges, err = ms.loadLikelyActionLogsPartEpochRangesTx(dbTx, txOpAffects.OpType)
@@ -706,12 +706,12 @@ func (ms *mysqlStore) updateLogsTablePartitionsTx(dbTx *gorm.DB, opAffects *mysq
 }
 
 // Load epoch ranges of possibly active logs partitions to be operated on.
-func (ms *mysqlStore) loadLikelyActionLogsPartEpochRangesTx(dbTx *gorm.DB, opType store.EpochOpType) (map[string]citypes.EpochRange, error) {
+func (ms *mysqlStore) loadLikelyActionLogsPartEpochRangesTx(dbTx *gorm.DB, opType store.EpochOpType) (map[string]citypes.RangeUint64, error) {
 	minUsedPart := atomic.LoadUint64(&ms.minUsedLogsTblPartIdx)
 	maxUsedPart := atomic.LoadUint64(&ms.maxUsedLogsTblPartIdx)
 
 	partIdxs := make([]uint64, 0, 2)
-	partLogsEpochRanges := map[string]citypes.EpochRange{}
+	partLogsEpochRanges := map[string]citypes.RangeUint64{}
 
 	switch opType {
 	case store.EpochOpPush: // push might grow logs data to a bigger partition

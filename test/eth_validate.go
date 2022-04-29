@@ -211,10 +211,13 @@ func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
 	// Already catch up to the latest block?
 	maxBlockTo := block.Uint64()
 	if validator.conf.ScanFromBlock > maxBlockTo {
-		logrus.WithField("blockRange", citypes.EpochRange{
-			EpochFrom: validator.conf.ScanFromBlock,
-			EpochTo:   maxBlockTo,
-		}).Debug("ETH validator scaning skipped due to catched up already")
+		blockRange := citypes.RangeUint64{
+			From: validator.conf.ScanFromBlock,
+			To:   maxBlockTo,
+		}
+		logrus.WithField("blockRange", blockRange).Debug(
+			"ETH validator scaning skipped due to catched up already",
+		)
 
 		return nil
 	}

@@ -154,7 +154,7 @@ func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
 	catchUpSyncer.Sync(ctx)
 
 	// start to sync from new start epoch after fast catch-up
-	syncer.epochFrom = catchUpSyncer.Range().EpochFrom
+	syncer.epochFrom = catchUpSyncer.Range().From
 }
 
 // Load last sync epoch from databse to continue synchronization.
@@ -211,10 +211,8 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 	ssGauge.Update(int64(syncSize))
 
 	logger := logrus.WithFields(logrus.Fields{
-		"syncSize": syncSize,
-		"syncEpochRange": citypes.EpochRange{
-			EpochFrom: syncer.epochFrom, EpochTo: epochTo,
-		},
+		"syncSize":       syncSize,
+		"syncEpochRange": citypes.RangeUint64{From: syncer.epochFrom, To: epochTo},
 	})
 	logger.Debug("DB sync started to sync with epoch range")
 
@@ -423,9 +421,7 @@ func (syncer *DatabaseSyncer) checkCatchupOrReorg() (uint64, bool, bool, error) 
 	maxEpochTo := epoch.ToInt().Uint64()
 	if syncer.epochFrom > maxEpochTo { // catch-up or pivot chain reorg?
 		logger := logrus.WithFields(logrus.Fields{
-			"epochRange": citypes.EpochRange{
-				EpochFrom: syncer.epochFrom, EpochTo: maxEpochTo,
-			},
+			"epochRange": citypes.RangeUint64{From: syncer.epochFrom, To: maxEpochTo},
 		})
 
 		if syncer.epochFrom == maxEpochTo+1 { // regarded as catch-up even through maybe pivot chain reorg

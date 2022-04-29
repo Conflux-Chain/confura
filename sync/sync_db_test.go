@@ -14,32 +14,32 @@ func TestFindFirstRevertedEpochInRange(t *testing.T) {
 	syncer := &DatabaseSyncer{}
 
 	testCases := []struct {
-		epochRange    citypes.EpochRange
+		epochRange    citypes.RangeUint64
 		firstReverted uint64
 		expected      uint64
 	}{
 		{ // first reverted in middle of epoch range
-			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
+			epochRange:    citypes.RangeUint64{From: 10, To: 50},
 			firstReverted: 20,
 			expected:      20,
 		},
 		{ // first reverted in right edge of epoch range
-			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
+			epochRange:    citypes.RangeUint64{From: 10, To: 50},
 			firstReverted: 50,
 			expected:      50,
 		},
 		{ // first reverted in left edge of epoch range
-			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
+			epochRange:    citypes.RangeUint64{From: 10, To: 50},
 			firstReverted: 1,
 			expected:      10,
 		},
 		{ // first reverted out of right side of epoch range
-			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
+			epochRange:    citypes.RangeUint64{From: 10, To: 50},
 			firstReverted: 51,
 			expected:      0,
 		},
 		{ // first reverted out of left side of epoch range
-			epochRange:    citypes.EpochRange{EpochFrom: 10, EpochTo: 50},
+			epochRange:    citypes.RangeUint64{From: 10, To: 50},
 			firstReverted: 1,
 			expected:      10,
 		},
@@ -66,32 +66,32 @@ func TestEnsureEpochRangeNotRerverted(t *testing.T) {
 	syncer := &DatabaseSyncer{}
 
 	testCases := []struct {
-		epochRange              citypes.EpochRange
+		epochRange              citypes.RangeUint64
 		firstReverted           uint64
 		expectedPrunedEpochFrom uint64
 	}{
 		{ // first reverted in middle of epoch range
-			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
+			epochRange:              citypes.RangeUint64{From: 100, To: 501},
 			firstReverted:           200,
 			expectedPrunedEpochFrom: 200,
 		},
 		{ // first reverted in left edge of epoch range
-			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
+			epochRange:              citypes.RangeUint64{From: 100, To: 501},
 			firstReverted:           100,
 			expectedPrunedEpochFrom: 100,
 		},
 		{ // first reverted in right edge of epoch range
-			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
+			epochRange:              citypes.RangeUint64{From: 100, To: 501},
 			firstReverted:           501,
 			expectedPrunedEpochFrom: 501,
 		},
 		{ // first reverted out right side of epoch range
-			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
+			epochRange:              citypes.RangeUint64{From: 100, To: 501},
 			firstReverted:           600,
 			expectedPrunedEpochFrom: math.MaxUint64, // should never prune at all
 		},
 		{ // first reverted out left side of epoch range
-			epochRange:              citypes.EpochRange{EpochFrom: 100, EpochTo: 501},
+			epochRange:              citypes.RangeUint64{From: 100, To: 501},
 			firstReverted:           10,
 			expectedPrunedEpochFrom: 100,
 		},
@@ -108,11 +108,11 @@ func TestEnsureEpochRangeNotRerverted(t *testing.T) {
 			}
 			return false, nil
 		}
-		searcher := func(cfx sdk.ClientOperator, s store.Store, epochRange citypes.EpochRange) (uint64, error) {
+		searcher := func(cfx sdk.ClientOperator, s store.Store, epochRange citypes.RangeUint64) (uint64, error) {
 			return findFirstRevertedEpochInRange(syncer.cfx, syncer.db, epochRange, checker)
 		}
-		pruner := func(s store.Store, epochRange citypes.EpochRange) error {
-			assert.Equal(t, tc.expectedPrunedEpochFrom, epochRange.EpochFrom)
+		pruner := func(s store.Store, epochRange citypes.RangeUint64) error {
+			assert.Equal(t, tc.expectedPrunedEpochFrom, epochRange.From)
 			return nil
 		}
 		err := ensureEpochRangeNotRerverted(syncer.cfx, syncer.db, tc.epochRange, searcher, pruner)

@@ -26,7 +26,7 @@ type Syncer struct {
 	// db store to persist epoch data
 	db store.Store
 	// specifying the epoch range to sync
-	syncRange types.EpochRange
+	syncRange types.RangeUint64
 	// whether to automatically adjust target sync epoch number to the latest stable epoch,
 	// which is maximum between the latest finalized and the checkpoint epoch number.
 	adaptive bool
@@ -49,13 +49,13 @@ func WithAdaptive(adaptive bool) SyncOption {
 
 func WithEpochFrom(epochFrom uint64) SyncOption {
 	return func(s *Syncer) {
-		s.syncRange.EpochFrom = epochFrom
+		s.syncRange.From = epochFrom
 	}
 }
 
 func WithEpochTo(epochTo uint64) SyncOption {
 	return func(s *Syncer) {
-		s.syncRange.EpochTo = epochTo
+		s.syncRange.To = epochTo
 	}
 }
 
@@ -142,16 +142,16 @@ func (s *Syncer) Sync(ctx context.Context) {
 	}
 
 	if s.bmarker != nil {
-		start := s.syncRange.EpochFrom
+		start := s.syncRange.From
 
 		s.bmarker.markStart()
 		defer func() {
-			s.bmarker.report(start, s.syncRange.EpochFrom)
+			s.bmarker.report(start, s.syncRange.From)
 		}()
 	}
 
 	for {
-		start, end := s.syncRange.EpochFrom, s.syncRange.EpochTo
+		start, end := s.syncRange.From, s.syncRange.To
 		if start > end || s.interrupted(ctx) {
 			return
 		}
@@ -164,7 +164,7 @@ func (s *Syncer) Sync(ctx context.Context) {
 	}
 }
 
-func (s *Syncer) Range() types.EpochRange {
+func (s *Syncer) Range() types.RangeUint64 {
 	return s.syncRange
 }
 
@@ -282,13 +282,13 @@ func (s *Syncer) persist(state *persistState) {
 		time.Sleep(time.Second)
 	}
 
-	s.syncRange.EpochFrom += uint64(numEpochs)
+	s.syncRange.From += uint64(numEpochs)
 	s.logger().WithField("numEpochs", numEpochs).Debug("Catch-up syncer persisted epoch data")
 }
 
 func (s *Syncer) logger() *logrus.Entry {
 	return logrus.WithFields(logrus.Fields{
-		"epochFrom": s.syncRange.EpochFrom, "epochTo": s.syncRange.EpochTo,
+		"epochFrom": s.syncRange.From, "epochTo": s.syncRange.To,
 	})
 }
 
@@ -326,7 +326,7 @@ func (s *Syncer) doUpdateEpochTo() error {
 		return errors.WithMessage(err, "failed to get network status")
 	}
 
-	s.syncRange.EpochTo = util.MaxUint64(
+	s.syncRange.To = util.MaxUint64(
 		uint64(status.LatestFinalized), uint64(status.LatestCheckpoint),
 	)
 

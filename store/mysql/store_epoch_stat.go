@@ -65,12 +65,12 @@ func (ess *EpochStatStore) loadEpochStats(est epochStatsType, keys ...string) ([
 	return result, nil
 }
 
-func (*EpochStatStore) initOrUpdateEpochRangeStats(dbTx *gorm.DB, dt store.EpochDataType, epochRange types.EpochRange) error {
+func (*EpochStatStore) initOrUpdateEpochRangeStats(dbTx *gorm.DB, dt store.EpochDataType, epochRange types.RangeUint64) error {
 	estats := epochStats{
 		Key:    getEpochRangeStatsKey(dt),
 		Type:   epochStatsEpochRange,
-		Epoch1: epochRange.EpochFrom,
-		Epoch2: epochRange.EpochTo,
+		Epoch1: epochRange.From,
+		Epoch2: epochRange.To,
 	}
 
 	return dbTx.Clauses(clause.OnConflict{
@@ -92,12 +92,12 @@ func (*EpochStatStore) initOrUpdateEpochTotalsStats(dbTx *gorm.DB, dt store.Epoc
 	}).Create(&estats).Error
 }
 
-func (*EpochStatStore) initOrUpdateLogsPartitionEpochRangeStats(dbTx *gorm.DB, partition string, epochRange types.EpochRange) error {
+func (*EpochStatStore) initOrUpdateLogsPartitionEpochRangeStats(dbTx *gorm.DB, partition string, epochRange types.RangeUint64) error {
 	estats := epochStats{
 		Key:    partition,
 		Type:   epochStatsLogsPartEpochRange,
-		Epoch1: epochRange.EpochFrom,
-		Epoch2: epochRange.EpochTo,
+		Epoch1: epochRange.From,
+		Epoch2: epochRange.To,
 	}
 
 	return dbTx.Clauses(clause.OnConflict{

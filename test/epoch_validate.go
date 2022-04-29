@@ -252,10 +252,13 @@ func (validator *EpochValidator) scanOnce() (bool, error) {
 	// Already catch up to the latest confirmed epoch
 	maxEpochTo := epoch.ToInt().Uint64()
 	if validator.conf.EpochScanFrom > maxEpochTo {
-		logrus.WithField("epochRange", citypes.EpochRange{
-			EpochFrom: validator.conf.EpochScanFrom,
-			EpochTo:   maxEpochTo,
-		}).Debug("Epoch validator scaning skipped due to catched up already")
+		epochRange := citypes.RangeUint64{
+			From: validator.conf.EpochScanFrom,
+			To:   maxEpochTo,
+		}
+		logrus.WithField("epochRange", epochRange).Debug(
+			"Epoch validator scaning skipped due to catched up already",
+		)
 
 		return true, nil
 	}

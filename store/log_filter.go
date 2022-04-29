@@ -109,7 +109,7 @@ type logFilterRangeFetcher interface {
 	// fetchs epoch from fullnode by block hash.
 	FetchEpochByBlockHash(blockHash string) (uint64, error)
 	// fetchs epoch range from fullnode by from and to block number.
-	FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.EpochRange, error)
+	FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.RangeUint64, error)
 }
 
 type cfxRangeFetcher struct {
@@ -135,17 +135,17 @@ func (fetcher *cfxRangeFetcher) FetchEpochByBlockHash(blockHash string) (uint64,
 	return block.EpochNumber.ToInt().Uint64(), nil
 }
 
-func (fetcher *cfxRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.EpochRange, error) {
-	res := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0}
+func (fetcher *cfxRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.RangeUint64, error) {
+	res := citypes.RangeUint64{From: math.MaxUint64, To: 0}
 
 	if filter.BlockRange == nil {
 		return res, nil
 	}
 
 	blockNumbers := make([]hexutil.Uint64, 0, 2)
-	blockNumbers = append(blockNumbers, hexutil.Uint64(filter.BlockRange.EpochFrom))
-	if filter.BlockRange.EpochFrom != filter.BlockRange.EpochTo {
-		blockNumbers = append(blockNumbers, hexutil.Uint64(filter.BlockRange.EpochTo))
+	blockNumbers = append(blockNumbers, hexutil.Uint64(filter.BlockRange.From))
+	if filter.BlockRange.From != filter.BlockRange.To {
+		blockNumbers = append(blockNumbers, hexutil.Uint64(filter.BlockRange.To))
 	}
 
 	blockSummarys, err := fetcher.cfx.BatchGetBlockSummarysByNumber(blockNumbers)
@@ -162,8 +162,8 @@ func (fetcher *cfxRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) 
 
 	for _, bs := range blockSummarys {
 		epochNo := bs.EpochNumber.ToInt().Uint64()
-		res.EpochFrom = util.MinUint64(res.EpochFrom, epochNo)
-		res.EpochTo = util.MaxUint64(res.EpochTo, epochNo)
+		res.From = util.MinUint64(res.From, epochNo)
+		res.To = util.MaxUint64(res.To, epochNo)
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -197,8 +197,8 @@ func (fetcher *ethRangeFetcher) FetchEpochByBlockHash(blockHash string) (uint64,
 	return block.Number.Uint64(), nil
 }
 
-func (fetcher *ethRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.EpochRange, error) {
-	res := citypes.EpochRange{EpochFrom: math.MaxUint64, EpochTo: 0}
+func (fetcher *ethRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.RangeUint64, error) {
+	res := citypes.RangeUint64{From: math.MaxUint64, To: 0}
 
 	if filter.BlockRange == nil {
 		return res, nil
@@ -211,8 +211,8 @@ func (fetcher *ethRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) 
 type LogFilter struct {
 	rangeFetcher logFilterRangeFetcher
 	Type         LogFilterType
-	EpochRange   *citypes.EpochRange
-	BlockRange   *citypes.EpochRange
+	EpochRange   *citypes.RangeUint64
+	BlockRange   *citypes.RangeUint64
 	Contracts    VariadicValue
 	BlockHashId  uint64
 	BlockHash    string
@@ -276,15 +276,15 @@ func NewLogFilter(filterType LogFilterType, filter *types.LogFilter) *LogFilter 
 		toEpoch, ok2 := filter.ToEpoch.ToInt()
 
 		if ok1 && ok2 {
-			result.EpochRange = &citypes.EpochRange{
-				EpochFrom: fromEpoch.Uint64(),
-				EpochTo:   toEpoch.Uint64(),
+			result.EpochRange = &citypes.RangeUint64{
+				From: fromEpoch.Uint64(),
+				To:   toEpoch.Uint64(),
 			}
 		}
 	case LogFilterTypeBlockRange:
-		result.BlockRange = &citypes.EpochRange{
-			EpochFrom: filter.FromBlock.ToInt().Uint64(),
-			EpochTo:   filter.ToBlock.ToInt().Uint64(),
+		result.BlockRange = &citypes.RangeUint64{
+			From: filter.FromBlock.ToInt().Uint64(),
+			To:   filter.ToBlock.ToInt().Uint64(),
 		}
 	case LogFilterTypeBlockHash:
 		result.BlockHash = filter.BlockHashes[0].String()
@@ -326,6 +326,6 @@ func (filter *LogFilter) FetchEpochByBlockHash() (uint64, error) {
 }
 
 // FetchEpochRangeByBlockNumber fetchs epoch range from fullnode by from and to block number.
-func (filter *LogFilter) FetchEpochRangeByBlockNumber() (citypes.EpochRange, error) {
+func (filter *LogFilter) FetchEpochRangeByBlockNumber() (citypes.RangeUint64, error) {
 	return filter.rangeFetcher.FetchEpochRangeByBlockNumber(filter)
 }

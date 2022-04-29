@@ -79,7 +79,7 @@ SELECT PARTITION_NAME AS partname FROM information_schema.partitions WHERE TABLE
 // loadLogsTblPartitionEpochRanges loads epoch range for specific partition name.
 // The epoch number ranges will be used to find the right partition(s) to boost
 // the db query performance when conditioned with epoch.
-func (logPartitioner) loadLogsTblPartitionEpochRanges(db *gorm.DB, partiName string) (types.EpochRange, error) {
+func (logPartitioner) loadLogsTblPartitionEpochRanges(db *gorm.DB, partiName string) (types.RangeUint64, error) {
 	sqlStatement := fmt.Sprintf("SELECT MIN(epoch) as minEpoch, MAX(epoch) as maxEpoch FROM logs PARTITION (%v)", partiName)
 	row := db.Raw(sqlStatement).Row()
 	if err := row.Err(); err != nil {
@@ -95,9 +95,7 @@ func (logPartitioner) loadLogsTblPartitionEpochRanges(db *gorm.DB, partiName str
 		return types.EpochRangeNil, gorm.ErrRecordNotFound
 	}
 
-	return types.EpochRange{
-		EpochFrom: uint64(minEpoch.Int64), EpochTo: uint64(maxEpoch.Int64),
-	}, nil
+	return types.RangeUint64{uint64(minEpoch.Int64), uint64(maxEpoch.Int64)}, nil
 }
 
 // Find the right logs table partition(s) for the specified epoch range. It will check
@@ -111,7 +109,7 @@ func (logPartitioner) findLogsPartitionsEpochRangeWithinStoreTx(dbTx *gorm.DB, e
 	return
 }
 
-func (logPartitioner) diffLogsPartitionEpochRangeForRealSet(beforeER, afterER types.EpochRange) [2]*uint64 {
+func (logPartitioner) diffLogsPartitionEpochRangeForRealSet(beforeER, afterER types.RangeUint64) [2]*uint64 {
 	diff := func(before, after uint64) *uint64 {
 		if before == after { // no change
 			return nil
@@ -120,7 +118,7 @@ func (logPartitioner) diffLogsPartitionEpochRangeForRealSet(beforeER, afterER ty
 	}
 
 	return [2]*uint64{
-		diff(beforeER.EpochFrom, afterER.EpochFrom),
-		diff(beforeER.EpochTo, afterER.EpochTo),
+		diff(beforeER.From, afterER.From),
+		diff(beforeER.To, afterER.To),
 	}
 }
