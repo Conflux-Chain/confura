@@ -107,7 +107,7 @@ func ParseEthLogFilterType(filter *web3Types.FilterQuery) (LogFilterType, bool) 
 
 type logFilterRangeFetcher interface {
 	// fetchs epoch from fullnode by block hash.
-	FetchEpochByBlockHash(blockHash string) (uint64, bool, error)
+	FetchEpochByBlockHash(blockHash string) (uint64, error)
 	// fetchs epoch range from fullnode by from and to block number.
 	FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.EpochRange, error)
 }
@@ -122,17 +122,17 @@ func newCfxRangeFetcher(cfx sdk.ClientOperator) *cfxRangeFetcher {
 
 // implements logFilterRangeFetcher
 
-func (fetcher *cfxRangeFetcher) FetchEpochByBlockHash(blockHash string) (uint64, bool, error) {
+func (fetcher *cfxRangeFetcher) FetchEpochByBlockHash(blockHash string) (uint64, error) {
 	block, err := fetcher.cfx.GetBlockSummaryByHash(types.Hash(blockHash))
 	if err != nil {
-		return 0, false, err
+		return 0, err
 	}
 
 	if block == nil {
-		return 0, false, nil
+		return 0, errors.New("unknown block")
 	}
 
-	return block.EpochNumber.ToInt().Uint64(), true, nil
+	return block.EpochNumber.ToInt().Uint64(), nil
 }
 
 func (fetcher *cfxRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.EpochRange, error) {
@@ -183,18 +183,18 @@ func newEthRangeFetcher(w3c *web3go.Client) *ethRangeFetcher {
 
 // implements logFilterRangeFetcher
 
-func (fetcher *ethRangeFetcher) FetchEpochByBlockHash(blockHash string) (uint64, bool, error) {
+func (fetcher *ethRangeFetcher) FetchEpochByBlockHash(blockHash string) (uint64, error) {
 	ethBlockHash := common.HexToHash(blockHash)
 	block, err := fetcher.w3c.Eth.BlockByHash(ethBlockHash, false)
 	if err != nil {
-		return 0, false, err
+		return 0, err
 	}
 
 	if block == nil {
-		return 0, false, nil
+		return 0, errors.New("unknown block")
 	}
 
-	return block.Number.Uint64(), true, nil
+	return block.Number.Uint64(), nil
 }
 
 func (fetcher *ethRangeFetcher) FetchEpochRangeByBlockNumber(filter *LogFilter) (citypes.EpochRange, error) {
@@ -321,7 +321,7 @@ func NewEthLogFilter(filterType LogFilterType, ethNetworkId uint32, filter *web3
 }
 
 // FetchEpochByBlockHash fetchs epoch from fullnode by blockhash.
-func (filter *LogFilter) FetchEpochByBlockHash() (uint64, bool, error) {
+func (filter *LogFilter) FetchEpochByBlockHash() (uint64, error) {
 	return filter.rangeFetcher.FetchEpochByBlockHash(filter.BlockHash)
 }
 

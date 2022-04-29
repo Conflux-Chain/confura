@@ -154,7 +154,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 		}
 
 		// otherwise, query from fullnode
-		epoch, ok, err := filter.FetchEpochByBlockHash()
+		epoch, err := filter.FetchEpochByBlockHash()
 		if err != nil {
 			logrus.WithField("filter", filter).WithError(err).Error(
 				"Failed to fetch epoch range from fullnode for log filter of type block hashes",
@@ -162,10 +162,8 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 			return nil, err
 		}
 
-		if ok {
-			epochRange.EpochFrom = epoch
-			epochRange.EpochTo = epoch
-		}
+		epochRange.EpochFrom = epoch
+		epochRange.EpochTo = epoch
 	case store.LogFilterTypeBlockRange:
 		blockParts, err := ls.getLogsRelBlockInfoByBlockRange(&filter)
 		if err != nil {
