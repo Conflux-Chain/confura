@@ -9,7 +9,6 @@ import (
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common"
 	web3Types "github.com/openweb3/web3go/types"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -119,13 +118,7 @@ func (h *EthStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (
 		return logs, nil
 	}
 
-	switch {
-	case h.store.IsRecordNotFound(err):
-	case errors.Is(err, store.ErrUnsupported):
-	case errors.Is(err, store.ErrAlreadyPruned):
-	default: // must be something wrong with the store
-		logrus.WithError(err).Error("ethStoreHandler failed to get logs from store")
-	}
+	logrus.WithError(err).Info("ethStoreHandler failed to get logs from store")
 
 	if !util.IsInterfaceValNil(h.next) {
 		return h.next.GetLogs(ctx, filter)

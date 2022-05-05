@@ -143,7 +143,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	case store.LogFilterTypeBlockHash:
 		blockPart, ok, err := ls.getLogsRelBlockInfoByBlockHash(&filter)
 		if err != nil {
-			logrus.WithField("filter", filter).WithError(err).Error(
+			logrus.WithField("filter", filter).WithError(err).Info(
 				"Failed to calculate epoch range for log filter of type block hash",
 			)
 			return nil, err
@@ -159,7 +159,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 		// otherwise, query from fullnode
 		epoch, err := filter.FetchEpochByBlockHash()
 		if err != nil {
-			logrus.WithField("filter", filter).WithError(err).Error(
+			logrus.WithField("filter", filter).WithError(err).Info(
 				"Failed to fetch epoch range from fullnode for log filter of type block hashes",
 			)
 			return nil, err
@@ -170,7 +170,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	case store.LogFilterTypeBlockRange:
 		blockParts, err := ls.getLogsRelBlockInfoByBlockRange(&filter)
 		if err != nil {
-			logrus.WithField("filter", filter).WithError(err).Error(
+			logrus.WithField("filter", filter).WithError(err).Info(
 				"Failed to calculate epoch range for log filter of type block range",
 			)
 			return nil, err
@@ -188,7 +188,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 
 		fer, err := filter.FetchEpochRangeByBlockNumber() // fetch epoch range from fullnode
 		if err != nil {
-			logrus.WithField("filter", filter).WithError(err).Error(
+			logrus.WithField("filter", filter).WithError(err).Info(
 				"Failed to fetch epoch range from fullnode for log filter of type block range",
 			)
 			return nil, err
@@ -207,7 +207,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	if epochRange.From > epochRange.To {
 		logrus.WithFields(logrus.Fields{
 			"filter": filter, "epochRange": epochRange,
-		}).Error("Failed to calculate a valid epoch range for logs partitions (with from > to)")
+		}).Info("Failed to calculate a valid epoch range for logs partitions (with from > to)")
 		return nil, errors.New("invalid converted epoch range")
 	}
 
@@ -215,12 +215,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	// TODO add a cache layer for better performance if necessary
 	if _, err := ls.checkLogsEpochRangeWithinStore(epochRange.From, epochRange.To); err != nil {
 		logger := logrus.WithFields(logrus.Fields{"filter": filter, "epochRange": epochRange})
-
-		logf := logger.WithError(err).Error
-		if ls.IsRecordNotFound(err) || errors.Is(err, store.ErrAlreadyPruned) {
-			logf = logger.WithError(err).Info
-		}
-		logf("Failed to check filter epoch range within store")
+		logger.WithError(err).Info("Failed to check filter epoch range within store")
 
 		return nil, err
 	}
@@ -230,7 +225,7 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"filter": filter, "epochRange": epochRange,
-		}).WithError(err).Error("Failed to get logs partitions for filter epoch range")
+		}).WithError(err).Info("Failed to get logs partitions for filter epoch range")
 		return nil, err
 	}
 
