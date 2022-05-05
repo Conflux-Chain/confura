@@ -161,29 +161,12 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 	return nil
 }
 
-func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLogFilter) ([]types.Log, []*store.LogExtra, error) {
-	// Normalzie log filter at first
-	partition := ls.getPartitionByAddress(&filter.Contract, ls.partitions)
-	tableName := ls.getPartitionedTableName(&ls.model, partition)
-	ok, err := filter.normalize(ls.cs, tableName)
+func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLogFilter, contract cfxaddress.Address) ([]types.Log, []*store.LogExtra, error) {
+	partition := ls.getPartitionByAddress(&contract, ls.partitions)
+	filter.TableName = ls.getPartitionedTableName(&ls.model, partition)
+
+	addrIndexedLogs, err := filter.Find(ls.db)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	if !ok {
-		return emptyLogs, emptyLogExts, nil
-	}
-
-	// Check the number of returned logs
-	if err = filter.ValidateCount(ls.db); err != nil {
-		return nil, nil, err
-	}
-
-	// Query database
-	db := filter.Apply(ls.db)
-
-	var addrIndexedLogs []AddressIndexedLog
-	if err := db.Find(&addrIndexedLogs).Error; err != nil {
 		return nil, nil, err
 	}
 

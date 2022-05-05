@@ -35,6 +35,7 @@ const (
 var (
 	TimeoutGetLogs = 3 * time.Second
 
+	ErrGetLogsQuerySetTooLarge  = errors.New("query set is too large, please narrow down your filter condition")
 	ErrGetLogsResultSetTooLarge = errors.Errorf(
 		"result set to be queried is too large with more than %v logs, %v",
 		MaxLogLimit, "please narrow down your filter condition",
