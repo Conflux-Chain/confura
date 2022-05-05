@@ -124,23 +124,12 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	defer updater.Update()
 
 	recentBlockNo := recentBlockNumber.Uint64()
-	if syncer.fromBlock > recentBlockNo { // catched up or re-orged?
-		logger := logrus.WithFields(logrus.Fields{
+	if syncer.fromBlock > recentBlockNo { // catched up to the most recent block?
+		logrus.WithFields(logrus.Fields{
 			"syncFromBlock": syncer.fromBlock, "recentBlockNo": recentBlockNo,
-		})
+		}).Debug("ETH syncer skipped due to already catched up")
 
-		if syncer.fromBlock == recentBlockNo+1 { // regarded as catched up even through maybe re-orged
-			logger.Debug("ETH syncer skipped due to already catched up")
-			return true, nil
-		}
-
-		err := syncer.reorgRevert(recentBlockNo)
-		if err != nil {
-			err = errors.WithMessage(err, "failed to revert block(s) due to invalid block range")
-		}
-
-		logger.WithError(err).Info("ETH syncer reverted block(s) due to invalid block range")
-		return false, err
+		return true, nil
 	}
 
 	toBlock := util.MinUint64(syncer.fromBlock+syncer.maxSyncBlocks-1, recentBlockNo)

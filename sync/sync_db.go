@@ -194,15 +194,20 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 		return false, err
 	}
 
-	// Check catch-up or pivot chain reorg
-	maxEpochTo, catchup, reorg, err := syncer.checkCatchupOrReorg()
-	switch {
-	case err != nil:
-		return false, err
-	case catchup: // already catch-up
+	// Fetch latest confirmed epoch from blockchain
+	epoch, err := syncer.cfx.GetEpochNumber(types.EpochLatestConfirmed)
+	if err != nil {
+		return false, errors.WithMessage(
+			err, "failed to query the latest confirmed epoch number",
+		)
+	}
+
+	maxEpochTo := epoch.ToInt().Uint64()
+	if syncer.epochFrom > maxEpochTo { // cached up to the latest confirmed epoch?
+		logrus.WithFields(logrus.Fields{
+			"epochRange": citypes.RangeUint64{From: syncer.epochFrom, To: maxEpochTo},
+		}).Debug("Db syncer skipped due to already catch-up")
 		return true, nil
-	case reorg: // pivot chain reorg
-		return false, nil
 	}
 
 	epochTo, syncSize := syncer.nextEpochTo(maxEpochTo)
@@ -248,7 +253,7 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 				eplogger.WithFields(logrus.Fields{
 					"latestStoreEpoch": latestStoreEpochNo,
 					"latestPivotHash":  latestPivotHash,
-				}).Info("Db syncer popping latest epoch from db store due to parent hash mismatched")
+				}).Warn("Db syncer popping latest epoch from db store due to parent hash mismatched")
 
 				if err := syncer.pivotSwitchRevert(latestStoreEpochNo); err != nil {
 					eplogger.WithError(err).Error(
@@ -409,41 +414,6 @@ func (syncer *DatabaseSyncer) drainPivotReorgEvents() error {
 	}
 }
 
-func (syncer *DatabaseSyncer) checkCatchupOrReorg() (uint64, bool, bool, error) {
-	// Fetch latest confirmed epoch from blockchain
-	epoch, err := syncer.cfx.GetEpochNumber(types.EpochLatestConfirmed)
-	if err != nil {
-		return 0, false, false, errors.WithMessage(
-			err, "failed to query the latest confirmed epoch number",
-		)
-	}
-
-	maxEpochTo := epoch.ToInt().Uint64()
-	if syncer.epochFrom > maxEpochTo { // catch-up or pivot chain reorg?
-		logger := logrus.WithFields(logrus.Fields{
-			"epochRange": citypes.RangeUint64{From: syncer.epochFrom, To: maxEpochTo},
-		})
-
-		if syncer.epochFrom == maxEpochTo+1 { // regarded as catch-up even through maybe pivot chain reorg
-			logger.Debug("Db syncer skipped due to already catch-up")
-			return maxEpochTo, true, false, nil
-		}
-
-		err := syncer.pivotSwitchRevert(maxEpochTo)
-		logf := logger.WithError(err).Info
-
-		if err != nil {
-			logf = logger.WithError(err).Error
-			err = errors.WithMessage(err, "failed to revert epoch(s) due to invalid epoch range")
-		}
-
-		logf("Db syncer reverted epoch(s) due to invalid epoch range")
-		return maxEpochTo, false, true, err
-	}
-
-	return maxEpochTo, false, false, nil
-}
-
 func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
 	if revertTo == 0 {
 		return errors.New("genesis epoch must not be reverted")
@@ -509,7 +479,7 @@ func (syncer *DatabaseSyncer) detectPivotSwitchFromPubsub(epoch *types.Websocket
 
 		atomic.StoreUint64(addrPtr, newEpoch)
 	case lastSubEpochNo >= newEpoch: // pivot switch
-		logger.Info("Db syncer detected pubsub new epoch pivot switched")
+		logger.Warn("Db syncer detected pubsub new epoch pivot switched")
 
 		atomic.StoreUint64(addrPtr, newEpoch)
 		syncer.pivotSwitchEpochCh <- newEpoch
