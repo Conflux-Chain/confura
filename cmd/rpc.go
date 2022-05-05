@@ -10,7 +10,6 @@ import (
 	"github.com/conflux-chain/conflux-infura/rpc"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -89,7 +88,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
 			prunedHandler = handler.NewCfxPrunedLogsHandler(
 				node.NewCfxClientProvider(router),
-				mysql.MustConvert(storeCtx.cfxDB).UserStore,
+				storeCtx.cfxDB.UserStore,
 				util.MustNewRedisClient(redisUrl),
 			)
 		}

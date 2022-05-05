@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	_ store.Store = (*mysqlStore)(nil) // ensure mysqlStore implements Store interface
+	_ store.Store = (*MysqlStore)(nil) // ensure mysqlStore implements Store interface
 
 	// Epoch data type mapping to mysql table name
 	EpochDataTypeTableMap = map[store.EpochDataType]string{
@@ -58,7 +58,7 @@ func newMysqlEpochDataOpAffects(sea *store.EpochDataOpAffects) *mysqlEpochDataOp
 	}
 }
 
-type mysqlStore struct {
+type MysqlStore struct {
 	*baseStore
 	logPartitioner
 	*txStore
@@ -82,10 +82,10 @@ type mysqlStore struct {
 	disabler store.StoreDisabler // store chaindata disabler
 }
 
-func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
+func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 	cs := NewContractStore(db)
 
-	ms := mysqlStore{
+	ms := MysqlStore{
 		baseStore:              newBaseStore(db),
 		txStore:                newTxStore(db),
 		blockStore:             newBlockStore(db),
@@ -121,11 +121,11 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 	return &ms
 }
 
-func (ms *mysqlStore) Push(data *store.EpochData) error {
+func (ms *MysqlStore) Push(data *store.EpochData) error {
 	return ms.Pushn([]*store.EpochData{data})
 }
 
-func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
+func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
 	if len(dataSlice) == 0 {
 		return nil
 	}
@@ -222,7 +222,7 @@ func (ms *mysqlStore) Pushn(dataSlice []*store.EpochData) error {
 	return err
 }
 
-func (*mysqlStore) requireContinuous(slice []*store.EpochData, currentEpoch uint64) error {
+func (*MysqlStore) requireContinuous(slice []*store.EpochData, currentEpoch uint64) error {
 	if len(slice) == 0 {
 		return nil
 	}
@@ -247,13 +247,13 @@ func (*mysqlStore) requireContinuous(slice []*store.EpochData, currentEpoch uint
 	return nil
 }
 
-func (ms *mysqlStore) Pop() error {
+func (ms *MysqlStore) Pop() error {
 	maxEpoch := atomic.LoadUint64(&ms.maxEpoch)
 	return ms.Popn(maxEpoch)
 }
 
 // Popn pops multiple epoch data from database.
-func (ms *mysqlStore) Popn(epochUntil uint64) error {
+func (ms *MysqlStore) Popn(epochUntil uint64) error {
 	// Genesis block will never be popped
 	epochUntil = util.MaxUint64(epochUntil, 1)
 
@@ -276,19 +276,19 @@ func (ms *mysqlStore) Popn(epochUntil uint64) error {
 	return err
 }
 
-func (ms *mysqlStore) DequeueBlocks(epochUntil uint64) error {
+func (ms *MysqlStore) DequeueBlocks(epochUntil uint64) error {
 	return ms.dequeueEpochRangeData(store.EpochBlock, epochUntil)
 }
 
-func (ms *mysqlStore) DequeueTransactions(epochUntil uint64) error {
+func (ms *MysqlStore) DequeueTransactions(epochUntil uint64) error {
 	return ms.dequeueEpochRangeData(store.EpochTransaction, epochUntil)
 }
 
-func (ms *mysqlStore) DequeueLogs(epochUntil uint64) error {
+func (ms *MysqlStore) DequeueLogs(epochUntil uint64) error {
 	return ms.dequeueEpochRangeData(store.EpochLog, epochUntil)
 }
 
-func (ms *mysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) (*mysqlEpochDataOpAffects, error)) error {
+func (ms *MysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) (*mysqlEpochDataOpAffects, error)) error {
 	dbTx := ms.db.Begin()
 	if dbTx.Error != nil {
 		return errors.WithMessage(dbTx.Error, "Failed to begin db tx")
@@ -319,7 +319,7 @@ func (ms *mysqlStore) execWithTx(txConsumeFunc func(dbTx *gorm.DB) (*mysqlEpochD
 	return nil
 }
 
-func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uint64, store.EpochDataOpNumAlters, error) {
+func (ms *MysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uint64, store.EpochDataOpNumAlters, error) {
 	opHistory := store.EpochDataOpNumAlters{}
 	insertLogIdSpan := [2]uint64{citypes.EpochNumberNil, 0}
 
@@ -425,7 +425,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 	return insertLogIdSpan, opHistory, nil
 }
 
-func (ms *mysqlStore) remove(reorg bool, epochFrom, epochTo uint64, option store.EpochRemoveOption, newOpAffects func() *mysqlEpochDataOpAffects) error {
+func (ms *MysqlStore) remove(reorg bool, epochFrom, epochTo uint64, option store.EpochRemoveOption, newOpAffects func() *mysqlEpochDataOpAffects) error {
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/delete")
 	defer updater.Update()
 
@@ -515,7 +515,7 @@ func (ms *mysqlStore) remove(reorg bool, epochFrom, epochTo uint64, option store
 	return err
 }
 
-func (ms *mysqlStore) dequeueEpochRangeData(dt store.EpochDataType, epochUntil uint64) error {
+func (ms *MysqlStore) dequeueEpochRangeData(dt store.EpochDataType, epochUntil uint64) error {
 	// Genesis block will never be dequeued
 	epochUntil = util.MaxUint64(epochUntil, 1)
 
@@ -536,7 +536,7 @@ func (ms *mysqlStore) dequeueEpochRangeData(dt store.EpochDataType, epochUntil u
 	})
 }
 
-func (ms *mysqlStore) updateEpochStats(opAffects *mysqlEpochDataOpAffects) {
+func (ms *MysqlStore) updateEpochStats(opAffects *mysqlEpochDataOpAffects) {
 	switch opAffects.OpType {
 	case store.EpochOpPush: //for push
 		ms.updateMaxEpoch(opAffects.PushUpToEpoch, opAffects.PushUpFromEpoch)
@@ -553,7 +553,7 @@ func (ms *mysqlStore) updateEpochStats(opAffects *mysqlEpochDataOpAffects) {
 	ms.updateLogsTablePartitions(opAffects)
 }
 
-func (ms *mysqlStore) updateMaxEpoch(newMaxEpoch uint64, growFrom ...uint64) {
+func (ms *MysqlStore) updateMaxEpoch(newMaxEpoch uint64, growFrom ...uint64) {
 	// Update global epoch range
 	atomic.StoreUint64(&ms.maxEpoch, newMaxEpoch)
 
@@ -563,7 +563,7 @@ func (ms *mysqlStore) updateMaxEpoch(newMaxEpoch uint64, growFrom ...uint64) {
 	}
 }
 
-func (ms *mysqlStore) updateLogsTablePartitions(opAffects *mysqlEpochDataOpAffects) {
+func (ms *MysqlStore) updateLogsTablePartitions(opAffects *mysqlEpochDataOpAffects) {
 	if len(opAffects.logsPartIndexSets) == 0 {
 		return
 	}
@@ -592,7 +592,7 @@ func (ms *mysqlStore) updateLogsTablePartitions(opAffects *mysqlEpochDataOpAffec
 	}
 }
 
-func (ms *mysqlStore) updateEpochStatsWithTx(dbTx *gorm.DB, opAffects *mysqlEpochDataOpAffects) (err error) {
+func (ms *MysqlStore) updateEpochStatsWithTx(dbTx *gorm.DB, opAffects *mysqlEpochDataOpAffects) (err error) {
 	switch opAffects.OpType {
 	case store.EpochOpPush: //for push
 		err = ms.updateMaxEpochTx(dbTx, opAffects.PushUpToEpoch, opAffects.PushUpFromEpoch)
@@ -625,7 +625,7 @@ func (ms *mysqlStore) updateEpochStatsWithTx(dbTx *gorm.DB, opAffects *mysqlEpoc
 	return nil
 }
 
-func (ms *mysqlStore) updateMaxEpochTx(dbTx *gorm.DB, newMaxEpoch uint64, growFrom ...uint64) error {
+func (ms *MysqlStore) updateMaxEpochTx(dbTx *gorm.DB, newMaxEpoch uint64, growFrom ...uint64) error {
 	logrus.WithFields(logrus.Fields{
 		"newMaxEpoch": newMaxEpoch, "growFrom": growFrom,
 	}).Debug("Update max of epoch range in db store")
@@ -657,7 +657,7 @@ func (ms *mysqlStore) updateMaxEpochTx(dbTx *gorm.DB, newMaxEpoch uint64, growFr
 	return dbTx.Model(epochStats{}).Where(cond).Updates(updates).Error
 }
 
-func (ms *mysqlStore) updateMinEpochTx(dbTx *gorm.DB, dt store.EpochDataType, newMinEpoch uint64) error {
+func (ms *MysqlStore) updateMinEpochTx(dbTx *gorm.DB, dt store.EpochDataType, newMinEpoch uint64) error {
 	logrus.WithField("newMinEpoch", newMinEpoch).Debug("Update min of epoch range in db store")
 
 	keys := []string{getEpochRangeStatsKey(dt)}
@@ -675,7 +675,7 @@ func (ms *mysqlStore) updateMinEpochTx(dbTx *gorm.DB, dt store.EpochDataType, ne
 	return dbTx.Model(epochStats{}).Where(cond).Updates(updates).Error
 }
 
-func (ms *mysqlStore) updateLogsTablePartitionsTx(dbTx *gorm.DB, opAffects *mysqlEpochDataOpAffects) (err error) {
+func (ms *MysqlStore) updateLogsTablePartitionsTx(dbTx *gorm.DB, opAffects *mysqlEpochDataOpAffects) (err error) {
 	if len(opAffects.logsPartEpochRangeRealSets) == 0 {
 		return nil
 	}
@@ -716,7 +716,7 @@ func (ms *mysqlStore) updateLogsTablePartitionsTx(dbTx *gorm.DB, opAffects *mysq
 }
 
 // Load epoch ranges of possibly active logs partitions to be operated on.
-func (ms *mysqlStore) loadLikelyActionLogsPartEpochRangesTx(dbTx *gorm.DB, opType store.EpochOpType) (map[string]citypes.RangeUint64, error) {
+func (ms *MysqlStore) loadLikelyActionLogsPartEpochRangesTx(dbTx *gorm.DB, opType store.EpochOpType) (map[string]citypes.RangeUint64, error) {
 	minUsedPart := atomic.LoadUint64(&ms.minUsedLogsTblPartIdx)
 	maxUsedPart := atomic.LoadUint64(&ms.maxUsedLogsTblPartIdx)
 

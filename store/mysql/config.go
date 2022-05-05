@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
-	"github.com/conflux-chain/conflux-infura/store"
 	gosql "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/mysql"
@@ -79,7 +78,7 @@ func MustNewEthStoreConfigFromViper() *Config {
 }
 
 // MustOpenOrCreate creates an instance of store or exits on any erorr.
-func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
+func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 	newCreated := config.mustCreateDatabaseIfAbsent()
 
 	db := config.mustNewDB(config.Database)
@@ -112,15 +111,6 @@ func (config *Config) MustOpenOrCreate(option StoreOption) store.Store {
 	logrus.Info("MySQL database initialized")
 
 	return mustNewStore(db, config, option)
-}
-
-func MustConvert(store store.Store) *mysqlStore {
-	ms, ok := store.(*mysqlStore)
-	if !ok {
-		logrus.Fatal("Failed to convert store to mysqlStore instance")
-	}
-
-	return ms
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {

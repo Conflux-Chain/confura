@@ -15,7 +15,7 @@ import (
 )
 
 // calibrateEpochStats calibrates epoch statistics by running MySQL OLAP.
-func (ms *mysqlStore) calibrateEpochStats() error {
+func (ms *MysqlStore) calibrateEpochStats() error {
 	var count int64
 	if err := ms.db.Model(&epochStats{}).Count(&count).Error; err != nil {
 		return errors.WithMessage(err, "failed to count epoch stats table")
@@ -125,7 +125,7 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 	return nil
 }
 
-func (ms *mysqlStore) loadCalibratedEpochStats() error {
+func (ms *MysqlStore) loadCalibratedEpochStats() error {
 	// load epoch range statistics from epoch_stats table
 	erStats, err := ms.loadEpochStats(epochStatsEpochRange)
 	if err != nil {
@@ -171,7 +171,7 @@ func (ms *mysqlStore) loadCalibratedEpochStats() error {
 	return nil
 }
 
-func (ms *mysqlStore) loadEpochRange(t store.EpochDataType) (uint64, uint64, error) {
+func (ms *MysqlStore) loadEpochRange(t store.EpochDataType) (uint64, uint64, error) {
 	sqlStatement := fmt.Sprintf("SELECT MIN(epoch) AS min_epoch, MAX(epoch) AS max_epoch FROM %v", EpochDataTypeTableMap[t])
 
 	row := ms.db.Raw(sqlStatement).Row()
@@ -193,7 +193,7 @@ func (ms *mysqlStore) loadEpochRange(t store.EpochDataType) (uint64, uint64, err
 	return uint64(minEpoch.Int64), uint64(maxEpoch.Int64), nil
 }
 
-func (ms *mysqlStore) loadEpochTotal(t store.EpochDataType) (uint64, error) {
+func (ms *MysqlStore) loadEpochTotal(t store.EpochDataType) (uint64, error) {
 	sqlStatement := fmt.Sprintf("SELECT COUNT(*) AS total FROM %v", EpochDataTypeTableMap[t])
 
 	row := ms.db.Raw(sqlStatement).Row()
