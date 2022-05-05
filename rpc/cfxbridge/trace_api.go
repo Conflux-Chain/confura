@@ -4,10 +4,8 @@ import (
 	"context"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/openweb3/web3go"
 	ethTypes "github.com/openweb3/web3go/types"
-	"github.com/pkg/errors"
 )
 
 type TraceAPI struct {
@@ -15,22 +13,11 @@ type TraceAPI struct {
 	ethNetworkId uint32
 }
 
-func NewTraceAPI(ethNodeURL string) (*TraceAPI, error) {
-	eth, err := web3go.NewClient(ethNodeURL)
-	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to connect to eth space")
-	}
-
-	util.HookEthRpcMetricsMiddleware(eth)
-
-	ethChainId, err := eth.Eth.ChainId()
-	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to get chain ID from eth space")
-	}
+func NewTraceAPI(ethClient *web3go.Client, ethNetworkId uint32) *TraceAPI {
 	return &TraceAPI{
-		ethClient:    eth,
-		ethNetworkId: uint32(*ethChainId),
-	}, nil
+		ethClient:    ethClient,
+		ethNetworkId: ethNetworkId,
+	}
 }
 
 func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.LocalizedBlockTrace, error) {

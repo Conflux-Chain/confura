@@ -5,14 +5,12 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/client"
-	"github.com/pkg/errors"
 )
 
 type CfxAPI struct {
@@ -22,32 +20,13 @@ type CfxAPI struct {
 	ethNetworkId uint32
 }
 
-func NewCfxAPI(ethNodeURL, cfxNodeURL string) (*CfxAPI, error) {
-	eth, err := web3go.NewClient(ethNodeURL)
-	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to connect to eth space")
-	}
-
-	util.HookEthRpcMetricsMiddleware(eth)
-
-	cfx, err := sdk.NewClient(cfxNodeURL)
-	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to connect to cfx space")
-	}
-
-	util.HookCfxRpcMetricsMiddleware(cfx)
-
-	ethChainId, err := eth.Eth.ChainId()
-	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to get chain ID from eth space")
-	}
-
+func NewCfxAPI(ethClient *web3go.Client, ethNetId uint32, cfxClient *sdk.Client) *CfxAPI {
 	return &CfxAPI{
-		ethClient:    eth,
-		eth:          eth.Eth,
-		cfx:          cfx,
-		ethNetworkId: uint32(*ethChainId),
-	}, nil
+		ethClient:    ethClient,
+		eth:          ethClient.Eth,
+		cfx:          cfxClient,
+		ethNetworkId: ethNetId,
+	}
 }
 
 func (api *CfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {

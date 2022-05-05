@@ -1,9 +1,12 @@
 package rpc
 
 import (
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
+	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 )
 
@@ -128,27 +131,39 @@ func evmSpaceApis(router infuraNode.Router, handler handler.EthHandler) ([]API, 
 // nativeSpaceBridgeApis adapts EVM space RPCs to native space RPCs.
 func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 	// TODO configure cluster for CFX bridge?
-	cfxApi, err := cfxbridge.NewCfxAPI(ethNodeURL, cfxNodeURL)
+	eth, err := web3go.NewClient(ethNodeURL)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "Failed to connect to eth space")
 	}
 
-	traceApi, err := cfxbridge.NewTraceAPI(ethNodeURL)
+	ethChainId, err := eth.Eth.ChainId()
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "Failed to get chain ID from eth space")
 	}
+	util.HookEthRpcMetricsMiddleware(eth)
+
+	cfx, err := sdk.NewClient(cfxNodeURL)
+	if err != nil {
+		return nil, errors.WithMessage(err, "Failed to connect to cfx space")
+	}
+	util.HookCfxRpcMetricsMiddleware(cfx)
 
 	return []API{
 		{
 			Namespace: "cfx",
 			Version:   "1.0",
-			Service:   cfxApi,
+			Service:   cfxbridge.NewCfxAPI(eth, uint32(*ethChainId), cfx),
 			Public:    true,
 		}, {
 			Namespace: "trace",
 			Version:   "1.0",
-			Service:   traceApi,
-			Public:    true, // TODO false by default
+			Service:   cfxbridge.NewTraceAPI(eth, uint32(*ethChainId)),
+			Public:    true,
+		}, {
+			Namespace: "trace",
+			Version:   "1.0",
+			Service:   cfxbridge.NewTxpoolAPI(eth),
+			Public:    true,
 		},
 	}, nil
 }
