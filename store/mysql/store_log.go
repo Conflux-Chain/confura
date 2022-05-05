@@ -134,7 +134,10 @@ func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
 	defer updater.Update()
 
 	// epoch range calculated from log filter, which can be used to help locate the logs table partitions
-	epochRange := citypes.RangeUint64{math.MaxUint64, 0}
+	epochRange := citypes.RangeUint64{
+		From: math.MaxUint64,
+		To:   0,
+	}
 
 	switch filter.Type {
 	case store.LogFilterTypeBlockHash:

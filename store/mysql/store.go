@@ -108,8 +108,13 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *mysqlStore {
 		}
 
 		logrus.WithFields(logrus.Fields{
-			"globalEpochRange":         citypes.RangeUint64{ms.minEpoch, ms.maxEpoch},
-			"usedLogsTblPartitionIdxs": citypes.RangeUint64{ms.minUsedLogsTblPartIdx, ms.maxUsedLogsTblPartIdx},
+			"globalEpochRange": citypes.RangeUint64{
+				From: ms.minEpoch, To: ms.maxEpoch,
+			},
+			"usedLogsTblPartitionIdxs": citypes.RangeUint64{
+				From: ms.minUsedLogsTblPartIdx,
+				To:   ms.maxUsedLogsTblPartIdx,
+			},
 		}).Debug("New mysql store loaded with epoch stats")
 	}
 

@@ -95,7 +95,10 @@ func (logPartitioner) loadLogsTblPartitionEpochRanges(db *gorm.DB, partiName str
 		return types.EpochRangeNil, gorm.ErrRecordNotFound
 	}
 
-	return types.RangeUint64{uint64(minEpoch.Int64), uint64(maxEpoch.Int64)}, nil
+	return types.RangeUint64{
+		From: uint64(minEpoch.Int64),
+		To:   uint64(maxEpoch.Int64),
+	}, nil
 }
 
 // Find the right logs table partition(s) for the specified epoch range. It will check

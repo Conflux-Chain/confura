@@ -35,7 +35,10 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 			return errors.WithMessage(err, "failed to load epoch range")
 		}
 
-		er := citypes.RangeUint64{minEpoch, maxEpoch}
+		er := citypes.RangeUint64{
+			From: minEpoch,
+			To:   maxEpoch,
+		}
 		if err == nil { // update global epoch range
 			ms.minEpoch = util.MinUint64(ms.minEpoch, minEpoch)
 
@@ -63,7 +66,10 @@ func (ms *mysqlStore) calibrateEpochStats() error {
 	}
 
 	// store epoch ranges
-	er := citypes.RangeUint64{ms.minEpoch, ms.maxEpoch}
+	er := citypes.RangeUint64{
+		From: ms.minEpoch,
+		To:   ms.maxEpoch,
+	}
 	if err := ms.initOrUpdateEpochRangeStats(dbTx, store.EpochDataNil, er); err != nil {
 		return rollback(errors.WithMessage(err, "failed to update global epoch range stats"))
 	}
