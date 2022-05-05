@@ -160,7 +160,7 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 			Service:   cfxbridge.NewTraceAPI(eth, uint32(*ethChainId)),
 			Public:    true,
 		}, {
-			Namespace: "trace",
+			Namespace: "txpool",
 			Version:   "1.0",
 			Service:   cfxbridge.NewTxpoolAPI(eth),
 			Public:    true,
