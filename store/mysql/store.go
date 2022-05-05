@@ -264,7 +264,7 @@ func (ms *mysqlStore) Popn(epochUntil uint64) error {
 
 	opAffects := store.NewEpochDataOpAffects(store.EpochOpPop, epochUntil)
 	txOpAffects := newMysqlEpochDataOpAffects(opAffects)
-	err := ms.remove(epochUntil, maxEpoch, store.EpochRemoveAll, func() *mysqlEpochDataOpAffects {
+	err := ms.remove(true, epochUntil, maxEpoch, store.EpochRemoveAll, func() *mysqlEpochDataOpAffects {
 		return txOpAffects
 	})
 
@@ -425,7 +425,7 @@ func (ms *mysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 	return insertLogIdSpan, opHistory, nil
 }
 
-func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemoveOption, newOpAffects func() *mysqlEpochDataOpAffects) error {
+func (ms *mysqlStore) remove(reorg bool, epochFrom, epochTo uint64, option store.EpochRemoveOption, newOpAffects func() *mysqlEpochDataOpAffects) error {
 	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/delete")
 	defer updater.Update()
 
@@ -504,6 +504,11 @@ func (ms *mysqlStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			}
 		}
 
+		// update reorg info
+		if reorg {
+			ms.createOrUpdateReorgVersion(dbTx)
+		}
+
 		return txOpAffects, nil
 	})
 
@@ -526,7 +531,7 @@ func (ms *mysqlStore) dequeueEpochRangeData(dt store.EpochDataType, epochUntil u
 	opAffects := store.NewEpochDataOpAffects(dt.ToDequeOption(), epochUntil)
 	txOpAffects := newMysqlEpochDataOpAffects(opAffects)
 
-	return ms.remove(epochFrom, epochUntil, dt.ToRemoveOption(), func() *mysqlEpochDataOpAffects {
+	return ms.remove(false, epochFrom, epochUntil, dt.ToRemoveOption(), func() *mysqlEpochDataOpAffects {
 		return txOpAffects
 	})
 }

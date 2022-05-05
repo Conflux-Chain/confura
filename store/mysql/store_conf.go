@@ -1,10 +1,15 @@
 package mysql
 
 import (
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+)
+
+const (
+	MysqlConfKeyReorgVersion = "reorg.version"
 )
 
 // conf configuration tables
@@ -21,12 +26,12 @@ func (conf) TableName() string {
 }
 
 type confStore struct {
-	db *gorm.DB
+	*baseStore
 }
 
 func newConfStore(db *gorm.DB) *confStore {
 	return &confStore{
-		db: db,
+		baseStore: newBaseStore(db),
 	}
 }
 
@@ -53,4 +58,30 @@ func (cs *confStore) StoreConfig(confName string, confVal interface{}) error {
 		Name:  confName,
 		Value: confVal.(string),
 	}).Error
+}
+
+func (cs *confStore) GetReorgVersion() (int, error) {
+	var result conf
+	exists, err := cs.exists(&result, "name = ?", MysqlConfKeyReorgVersion)
+	if err != nil {
+		return 0, err
+	}
+
+	if !exists {
+		return 0, nil
+	}
+
+	return strconv.Atoi(result.Value)
+}
+
+// thread unsafe
+func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
+	version, err := cs.GetReorgVersion()
+	if err != nil {
+		return err
+	}
+
+	newVersion := strconv.Itoa(version + 1)
+
+	return cs.StoreConfig(MysqlConfKeyReorgVersion, newVersion)
 }
