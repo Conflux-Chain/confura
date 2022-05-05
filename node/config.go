@@ -30,12 +30,18 @@ func init() {
 		GroupCfxArchives: {
 			Nodes: cfg.ArchiveNodes,
 		},
+		GroupCfxLogs: {
+			Nodes: cfg.LogNodes,
+		},
 	}
 
 	ethUrlCfg = map[Group]UrlConfig{
 		GroupEthHttp: {
 			Nodes:    cfg.EthURLs,
 			Failover: cfg.Router.ChainedFailover.EthURL,
+		},
+		GroupEthLogs: {
+			Nodes: cfg.EthLogNodes,
 		},
 	}
 }
@@ -46,6 +52,8 @@ type config struct {
 	URLs         []string
 	EthURLs      []string
 	WSURLs       []string
+	LogNodes     []string
+	EthLogNodes  []string
 	ArchiveNodes []string
 	HashRing     struct {
 		PartitionCount    int     `default:"15739"`

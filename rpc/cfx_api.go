@@ -338,7 +338,7 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 }
 
 func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
-	cfx, err := api.provider.GetClientByIP(ctx)
+	cfx, err := api.provider.GetClientByIPGroup(ctx, node.GroupCfxLogs)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get fullnode for `cfx_getLogs` delegate")
 		return emptyLogs, err

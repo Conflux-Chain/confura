@@ -455,7 +455,7 @@ func (args *ethLogFilter) UnmarshalJSON(data []byte) error {
 
 // GetLogs returns an array of all logs matching a given filter object.
 func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Types.Log, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
+	w3c, err := api.provider.GetClientByIPGroup(ctx, node.GroupEthLogs)
 	if err != nil {
 		return nil, err
 	}

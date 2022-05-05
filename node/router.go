@@ -19,8 +19,10 @@ type Group string
 const (
 	GroupCfxHttp     = "cfxhttp"
 	GroupCfxWs       = "cfxws"
+	GroupCfxLogs     = "cfxlog"
 	GroupCfxArchives = "cfxarchives"
 	GroupEthHttp     = "ethhttp"
+	GroupEthLogs     = "ethlogs"
 )
 
 // Router is used to route RPC requests to multiple full nodes.

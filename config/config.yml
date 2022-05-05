@@ -111,6 +111,8 @@ prune:
 node:
   urls: [http://test.confluxrpc.com,http://portal-test.confluxrpc.com]
   ethurls: [http://evmtestnet.confluxrpc.com]
+  logNodes: [http://test.confluxrpc.com,http://portal-test.confluxrpc.com]
+  ethLogNodes: [http://evmtestnet.confluxrpc.com]
   # wsUrls: [ws://test.confluxrpc.com/ws]
   # archiveNodes: []
   # hashRing:
