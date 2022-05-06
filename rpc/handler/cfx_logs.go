@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 
@@ -56,8 +57,10 @@ func (h *CfxLogsApiHandler) getLogsByBlockHashes(
 			return nil, false, err
 		}
 
+		// Fullnode will return error if any block hash not found.
+		// Error processing request: Filter error: Unable to identify block 0xaaaa...
 		if block == nil {
-			continue
+			return nil, false, fmt.Errorf("unable to identify block %v", hash)
 		}
 
 		bn := int(block.BlockNumber.ToInt().Uint64())
