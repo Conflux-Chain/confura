@@ -17,6 +17,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	// num of blocks ahead of the latest block to skip sync, which can be used to prevent
+	// frequent store io operation due to chain reorg.
+	skipBlocksAheadLatest = 30
+)
+
 // TODO: extract more eth sync config items
 type syncEthConfig struct {
 	FromBlock uint64 `default:"1"`
@@ -124,9 +130,15 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	defer updater.Update()
 
 	recentBlockNo := recentBlockNumber.Uint64()
+	if recentBlockNo > skipBlocksAheadLatest {
+		recentBlockNo = recentBlockNo - skipBlocksAheadLatest
+	}
+
 	if syncer.fromBlock > recentBlockNo { // catched up to the most recent block?
 		logrus.WithFields(logrus.Fields{
-			"syncFromBlock": syncer.fromBlock, "recentBlockNo": recentBlockNo,
+			"latestBlockNo": recentBlockNumber.Uint64(),
+			"syncFromBlock": syncer.fromBlock,
+			"recentBlockNo": recentBlockNo,
 		}).Debug("ETH syncer skipped due to already catched up")
 
 		return true, nil
@@ -177,7 +189,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 
 					blogger.WithFields(logrus.Fields{
 						"parentBlockHash": parentBlockHash, "latestBlockHash": latestBlockHash,
-					}).WithError(err).Info(
+					}).WithError(err).Warn(
 						"ETH syncer failed to revert block data from ethdb store due to parent hash mismatched",
 					)
 					return false, errors.WithMessage(err, "failed to revert block data from ethdb")
@@ -220,7 +232,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	}
 
 	if err = syncer.db.Pushn(epochDataSlice); err != nil {
-		logger.WithError(err).Info("ETH syncer failed to save eth data to ethdb")
+		logger.WithError(err).Error("ETH syncer failed to save eth data to ethdb")
 		return false, errors.WithMessage(err, "failed to save eth data")
 	}
 
