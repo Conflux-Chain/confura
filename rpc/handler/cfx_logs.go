@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"sort"
 	"time"
 
@@ -332,7 +333,7 @@ func (h *CfxLogsApiHandler) splitLogFilter(cfx sdk.ClientOperator, filter *types
 	switch {
 	case sfilter.EpochRange != nil:
 		dbFilter.ToEpoch = types.NewEpochNumberUint64(maxEpoch)
-		fnFilter.FromEpoch = types.NewEpochNumberUint64(maxEpoch)
+		fnFilter.FromEpoch = types.NewEpochNumberUint64(maxEpoch + 1)
 	case sfilter.BlockRange != nil:
 		block, err := cfx.GetBlockSummaryByEpoch(types.NewEpochNumberUint64(maxEpoch))
 		if err != nil {
@@ -344,7 +345,7 @@ func (h *CfxLogsApiHandler) splitLogFilter(cfx sdk.ClientOperator, filter *types
 		}
 
 		dbFilter.ToBlock = block.BlockNumber
-		fnFilter.FromBlock = block.BlockNumber
+		fnFilter.FromBlock = (*hexutil.Big)(big.NewInt(block.BlockNumber.ToInt().Int64() + 1))
 	default:
 		return nil, nil, store.ErrUnsupported
 	}
