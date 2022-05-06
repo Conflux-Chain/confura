@@ -39,6 +39,8 @@ var errExceedLogFilterEpochRangeLimit = errors.Errorf(
 	"epoch range exceeds maximum value %v", store.MaxLogEpochRange,
 )
 
+var errLogOffsetUnsupported = errors.New("offset not supported")
+
 var errInvalidEthLogFilter = errors.Errorf(
 	"Filter must provide one of the following: %v, %v",
 	"(1) a block number range through `fromBlock` and `toBlock`",

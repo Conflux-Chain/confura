@@ -10,6 +10,8 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/store/mysql"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,14 +26,19 @@ type CfxLogsApiHandler struct {
 	// errors that are intercepted from fullnode delegation
 	// err => whether op hits in the store
 	interceptableErrMap map[error]bool
+
+	ms *mysql.MysqlStore
 }
 
-func NewCfxLogsApiHandler(sh CfxStoreHandler, ph *CfxPrunedLogsHandler) *CfxLogsApiHandler {
+func NewCfxLogsApiHandler(sh CfxStoreHandler, ph *CfxPrunedLogsHandler, ms *mysql.MysqlStore) *CfxLogsApiHandler {
 	return &CfxLogsApiHandler{
-		storeHandler: sh, prunedHandler: ph,
+		storeHandler:  sh,
+		prunedHandler: ph,
 		interceptableErrMap: map[error]bool{
-			store.ErrGetLogsResultSetTooLarge: true, store.ErrGetLogsTimeout: false,
+			store.ErrGetLogsResultSetTooLarge: true,
+			store.ErrGetLogsTimeout:           false,
 		},
+		ms: ms,
 	}
 }
 
@@ -41,7 +48,11 @@ func (h *CfxLogsApiHandler) GetLogs(
 		return h.getLogsByBlockHashes(ctx, cfx, filter)
 	}
 
-	return h.getLogs(ctx, cfx, filter)
+	if len(filter.BlockHashes) == 1 {
+		return h.getLogsBySingleBlockHash(ctx, cfx, filter)
+	}
+
+	return h.getLogsByRange(ctx, cfx, filter)
 }
 
 func (h *CfxLogsApiHandler) getLogsByBlockHashes(
@@ -98,7 +109,7 @@ func (h *CfxLogsApiHandler) getLogsByBlockHashes(
 		}
 
 		// Query event logs for a single block
-		logs, hit, err := h.getLogs(ctx, cfx, &filter)
+		logs, hit, err := h.getLogsBySingleBlockHash(ctx, cfx, &filter)
 		hitStore = hitStore || hit
 		if err != nil {
 			return nil, hitStore, err
@@ -144,7 +155,7 @@ func (h *CfxLogsApiHandler) getLogsByBlockHashes(
 	return result, hitStore, nil
 }
 
-func (h *CfxLogsApiHandler) getLogs(
+func (h *CfxLogsApiHandler) getLogsBySingleBlockHash(
 	ctx context.Context, cfx sdk.ClientOperator, filter *types.LogFilter) ([]types.Log, bool, error) {
 	sfilter, ok := store.ParseLogFilter(cfx, filter)
 	if !ok {
@@ -188,4 +199,165 @@ func (h *CfxLogsApiHandler) getLogs(
 	// TODO: add rate limit in case of fullnode being crushed by heavy workloads.
 	logs, err = cfx.GetLogs(*filter)
 	return logs, false, err
+}
+
+func (h *CfxLogsApiHandler) getLogsByRange(ctx context.Context, cfx sdk.ClientOperator, filter *types.LogFilter) ([]types.Log, bool, error) {
+	start := time.Now()
+
+	// record the reorg version before query to ensure data consistence
+	lastReorgVersion, err := h.ms.GetReorgVersion()
+	if err != nil {
+		return nil, false, err
+	}
+
+	for {
+		logs, hitStore, err := h.getLogsReorgGuard(ctx, cfx, filter)
+		if err != nil {
+			return nil, false, err
+		}
+
+		// check the reorg version after query
+		reorgVersion, err := h.ms.GetReorgVersion()
+		if err != nil {
+			return nil, false, err
+		}
+
+		if reorgVersion == lastReorgVersion {
+			return logs, hitStore, nil
+		}
+
+		// when reorg occurred, check timeout before retry.
+		if time.Since(start) > store.TimeoutGetLogs {
+			return nil, false, store.ErrGetLogsTimeout
+		}
+
+		// reorg version changed during data query and try again.
+		lastReorgVersion = reorgVersion
+	}
+}
+
+func (h *CfxLogsApiHandler) getLogsReorgGuard(ctx context.Context, cfx sdk.ClientOperator, filter *types.LogFilter) ([]types.Log, bool, error) {
+	// try to query event logs from database and fullnode
+	dbFilter, fnFilter, err := h.splitLogFilter(cfx, filter)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var logs []types.Log
+
+	// query data from database
+	if dbFilter != nil {
+		sfilter, ok := store.ParseLogFilter(cfx, filter)
+		if !ok {
+			return nil, false, store.ErrUnsupported
+		}
+
+		dbLogs, err := h.storeHandler.GetLogs(ctx, *sfilter)
+		if err != nil {
+			return nil, false, err
+		}
+
+		logs = append(logs, dbLogs...)
+	}
+
+	// query data from fullnode
+	if fnFilter != nil {
+		fnLogs, err := cfx.GetLogs(*fnFilter)
+		if err != nil {
+			return nil, false, err
+		}
+
+		logs = append(logs, fnLogs...)
+	}
+
+	// will remove Limit filter in future, and do not care about perf now.
+	if filter.Limit != nil && len(logs) > int(*filter.Limit) {
+		logs = logs[len(logs)-int(*filter.Limit):]
+	}
+
+	return logs, dbFilter != nil, nil
+}
+
+// splitLogFilter splits log filter into 2 parts to query data from database or fullnode.
+func (h *CfxLogsApiHandler) splitLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) (*types.LogFilter, *types.LogFilter, error) {
+	minEpoch, maxEpoch, err := h.ms.GetGlobalEpochRange()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sfilter, ok := store.ParseLogFilter(cfx, filter)
+	if !ok {
+		return nil, nil, store.ErrUnsupported
+	}
+
+	var epochFrom, epochTo uint64
+
+	switch {
+	case sfilter.EpochRange != nil:
+		epochFrom = sfilter.EpochRange.From
+		epochTo = sfilter.EpochRange.To
+	case sfilter.BlockRange != nil:
+		if epochFrom, err = h.blockNumber2EpochNumber(cfx, sfilter.BlockRange.From); err != nil {
+			return nil, nil, err
+		}
+
+		if epochTo, err = h.blockNumber2EpochNumber(cfx, sfilter.BlockRange.To); err != nil {
+			return nil, nil, err
+		}
+	default:
+		return nil, nil, store.ErrUnsupported
+	}
+
+	// some data pruned
+	if epochFrom < minEpoch {
+		return nil, nil, store.ErrAlreadyPruned
+	}
+
+	// all data in database
+	if epochTo <= maxEpoch {
+		return filter, nil, nil
+	}
+
+	// no data in database
+	if epochFrom > maxEpoch {
+		return nil, filter, nil
+	}
+
+	// otherwise, partial data in databse
+	dbFilter, fnFilter := *filter, *filter
+
+	switch {
+	case sfilter.EpochRange != nil:
+		dbFilter.ToEpoch = types.NewEpochNumberUint64(maxEpoch)
+		fnFilter.FromEpoch = types.NewEpochNumberUint64(maxEpoch)
+	case sfilter.BlockRange != nil:
+		block, err := cfx.GetBlockSummaryByEpoch(types.NewEpochNumberUint64(maxEpoch))
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if block == nil {
+			return nil, filter, nil
+		}
+
+		dbFilter.ToBlock = block.BlockNumber
+		fnFilter.FromBlock = block.BlockNumber
+	default:
+		return nil, nil, store.ErrUnsupported
+	}
+
+	return &dbFilter, &fnFilter, nil
+}
+
+func (h *CfxLogsApiHandler) blockNumber2EpochNumber(cfx sdk.ClientOperator, bn uint64) (uint64, error) {
+	block, err := cfx.GetBlockSummaryByBlockNumber(hexutil.Uint64(bn))
+	if err != nil {
+		return 0, err
+	}
+
+	if block == nil {
+		return 0, fmt.Errorf("unable to find block hash for block %v", bn)
+	}
+
+	return block.EpochNumber.ToInt().Uint64(), nil
 }

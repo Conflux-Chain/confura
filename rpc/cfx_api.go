@@ -465,6 +465,10 @@ func (api *cfxAPI) validateLogFilter(flag store.LogFilterType, filter *types.Log
 		}
 	}
 
+	if filter.Offset != nil && *filter.Offset > 0 {
+		return errLogOffsetUnsupported
+	}
+
 	return nil
 }
 

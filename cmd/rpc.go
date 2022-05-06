@@ -93,7 +93,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 			)
 		}
 
-		logsApiHandler = handler.NewCfxLogsApiHandler(storeHandler, prunedHandler)
+		logsApiHandler = handler.NewCfxLogsApiHandler(storeHandler, prunedHandler, storeCtx.cfxDB)
 	}
 
 	option := rpc.CfxAPIOption{
