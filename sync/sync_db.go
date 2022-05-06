@@ -405,6 +405,16 @@ func (syncer *DatabaseSyncer) drainPivotReorgEvents() error {
 	for {
 		select {
 		case rEpoch := <-syncer.pivotSwitchEpochCh:
+			if rEpoch >= syncer.epochFrom {
+				break
+			}
+
+			logrus.WithFields(logrus.Fields{
+				"revertToEpoch": rEpoch,
+				"syncFromEpoch": syncer.epochFrom,
+			}).Warn("Db syncer detected pivot chain reorg for the latest confirmed epoch from pubsub")
+
+			// pivot switch reorg for the latest confirmed epoch
 			if err := syncer.pivotSwitchRevert(rEpoch); err != nil {
 				return errors.WithMessage(err, "failed to revert epoch(s) from pivot switch reorg channel")
 			}
@@ -420,8 +430,8 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
 	}
 
 	logger := logrus.WithFields(logrus.Fields{
-		"epochFrom": revertTo,
-		"epochTo":   syncer.latestStoreEpoch(),
+		"revertToEpoch":    revertTo,
+		"latestStoreEpoch": syncer.latestStoreEpoch(),
 	})
 
 	if revertTo >= syncer.epochFrom {
@@ -479,7 +489,7 @@ func (syncer *DatabaseSyncer) detectPivotSwitchFromPubsub(epoch *types.Websocket
 
 		atomic.StoreUint64(addrPtr, newEpoch)
 	case lastSubEpochNo >= newEpoch: // pivot switch
-		logger.Warn("Db syncer detected pubsub new epoch pivot switched")
+		logger.Info("Db syncer detected pubsub new epoch pivot switched")
 
 		atomic.StoreUint64(addrPtr, newEpoch)
 		syncer.pivotSwitchEpochCh <- newEpoch
