@@ -9,6 +9,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -317,6 +318,8 @@ func (h *CfxLogsApiHandler) splitLogFilter(cfx sdk.ClientOperator, filter *types
 	if epochTo <= maxEpoch {
 		return filter, nil, nil
 	}
+
+	metrics.GetOrRegisterHistogram(nil, "rpc/cfx_getLogs/split/fn").Update(int64(epochTo - maxEpoch))
 
 	// no data in database
 	if epochFrom > maxEpoch {
