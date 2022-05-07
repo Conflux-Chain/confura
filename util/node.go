@@ -9,9 +9,5 @@ func Url2NodeName(url string) string {
 	nodeName = strings.TrimPrefix(nodeName, "https://")
 	nodeName = strings.TrimPrefix(nodeName, "ws://")
 	nodeName = strings.TrimPrefix(nodeName, "wss://")
-	nodeName = strings.TrimPrefix(nodeName, "/")
-	if idx := strings.Index(nodeName, ":"); idx != -1 {
-		nodeName = nodeName[:idx]
-	}
-	return nodeName
+	return strings.TrimPrefix(nodeName, "/")
 }
