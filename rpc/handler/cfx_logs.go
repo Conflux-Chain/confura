@@ -254,7 +254,7 @@ func (h *CfxLogsApiHandler) getLogsReorgGuard(ctx context.Context, cfx sdk.Clien
 
 	// query data from database
 	if dbFilter != nil {
-		sfilter, ok := store.ParseLogFilter(cfx, filter)
+		sfilter, ok := store.ParseLogFilter(cfx, dbFilter)
 		if !ok {
 			return nil, false, store.ErrUnsupported
 		}
@@ -264,7 +264,7 @@ func (h *CfxLogsApiHandler) getLogsReorgGuard(ctx context.Context, cfx sdk.Clien
 			return nil, false, err
 		}
 
-		logrus.WithField("filter", dbFilter).Debug("Loaded corespace event logs from store")
+		logrus.WithField("dbFilter", dbFilter).Debug("Loaded corespace event logs from store")
 
 		logs = append(logs, dbLogs...)
 	}
@@ -276,7 +276,7 @@ func (h *CfxLogsApiHandler) getLogsReorgGuard(ctx context.Context, cfx sdk.Clien
 			return nil, false, err
 		}
 
-		logrus.WithField("filter", fnFilter).Debug("Loaded corespace event logs from fullnode")
+		logrus.WithField("fnFilter", fnFilter).Debug("Loaded corespace event logs from fullnode")
 
 		logs = append(logs, fnLogs...)
 	}

@@ -102,7 +102,7 @@ func (h *EthLogsApiHandler) getLogsReorgGuard(ctx context.Context, w3c *web3go.C
 			return nil, false, errors.WithMessage(err, "failed to get chain id")
 		}
 
-		sfilter, ok := store.ParseEthLogFilter(w3c, uint32(*chainId), filter)
+		sfilter, ok := store.ParseEthLogFilter(w3c, uint32(*chainId), dbFilter)
 		if !ok {
 			return nil, false, store.ErrUnsupported
 		}
@@ -115,7 +115,7 @@ func (h *EthLogsApiHandler) getLogsReorgGuard(ctx context.Context, w3c *web3go.C
 		logrus.WithFields(logrus.Fields{
 			"fromBlock": *dbFilter.FromBlock,
 			"toBlock":   *dbFilter.ToBlock,
-			"filter":    dbFilter,
+			"dbFilter":  dbFilter,
 		}).Debug("Loaded eSpace event logs from store")
 
 		logs = append(logs, dbLogs...)
@@ -131,7 +131,7 @@ func (h *EthLogsApiHandler) getLogsReorgGuard(ctx context.Context, w3c *web3go.C
 		logrus.WithFields(logrus.Fields{
 			"fromBlock": *fnFilter.FromBlock,
 			"toBlock":   *fnFilter.ToBlock,
-			"filter":    fnFilter,
+			"fnFilter":  fnFilter,
 		}).Debug("Loaded eSpace event logs from fullnode")
 
 		logs = append(logs, fnLogs...)
