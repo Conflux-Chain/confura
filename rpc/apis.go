@@ -95,14 +95,14 @@ func nativeSpaceApis(
 }
 
 // evmSpaceApis returns the collection of built-in RPC APIs for EVM space.
-func evmSpaceApis(router infuraNode.Router, handler handler.EthHandler) ([]API, error) {
+func evmSpaceApis(router infuraNode.Router, option ...EthAPIOption) ([]API, error) {
 	clientProvider := infuraNode.NewEthClientProvider(router)
 
 	return []API{
 		{
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   mustNewEthAPI(clientProvider, handler),
+			Service:   mustNewEthAPI(clientProvider, option...),
 			Public:    true,
 		}, {
 			Namespace: "web3",

@@ -108,6 +108,10 @@ func (h *EthStoreHandler) GetBlockByNumber(ctx context.Context, blockNum *web3Ty
 }
 
 func (h *EthStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (logs []web3Types.Log, err error) {
+	if store.EthStoreConfig().IsChainLogDisabled() {
+		return nil, store.ErrUnsupported
+	}
+
 	slogs, err := h.store.GetLogs(filter)
 	if err == nil {
 		logs = make([]web3Types.Log, len(slogs))

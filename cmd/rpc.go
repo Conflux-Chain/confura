@@ -113,16 +113,17 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 }
 
 func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx storeContext) {
+	var option rpc.EthAPIOption
 	router := node.EthFactory().CreateRouter()
 
 	// Add empty store tolerance
-	var ethhandler *handler.EthStoreHandler
 	if !util.IsInterfaceValNil(storeCtx.ethDB) {
-		ethhandler = handler.NewEthStoreHandler(storeCtx.ethDB, ethhandler)
+		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.ethDB, nil)
+		option.LogApiHandler = handler.NewEthLogsApiHandler(option.StoreHandler, storeCtx.ethDB)
 	}
 
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
-	server := rpc.MustNewEvmSpaceServer(router, ethhandler, exposedModules)
+	server := rpc.MustNewEvmSpaceServer(router, exposedModules, option)
 
 	httpEndpoint := viper.GetString("ethrpc.endpoint")
 	go server.MustServeGraceful(ctx, wg, httpEndpoint, util.RpcProtocolHttp)

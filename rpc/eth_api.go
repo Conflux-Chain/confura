@@ -33,6 +33,11 @@ var (
 	}
 )
 
+type EthAPIOption struct {
+	StoreHandler  *handler.EthStoreHandler
+	LogApiHandler *handler.EthLogsApiHandler
+}
+
 func getEthStoreHitRatioMetricKey(method string) string {
 	return fmt.Sprintf("infura/rpc/call/%v/ethstore/hitratio", method)
 }
@@ -40,16 +45,16 @@ func getEthStoreHitRatioMetricKey(method string) string {
 // ethAPI provides ethereum relative API within EVM space according to:
 // https://github.com/Pana/conflux-doc/blob/master/docs/evm_space_zh.md
 type ethAPI struct {
-	provider *node.EthClientProvider
+	EthAPIOption
 
-	handler          handler.EthHandler // eth rpc handler
-	chainId          *uint64            // eth chain ID
+	provider         *node.EthClientProvider
+	chainId          *uint64 // eth chain ID
 	inputBlockMetric cimetrics.InputBlockMetric
 
 	hardforkBlockNumber *rpc.BlockNumber // return default value before eSpace hardfork
 }
 
-func mustNewEthAPI(provider *node.EthClientProvider, handler handler.EthHandler) *ethAPI {
+func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *ethAPI {
 	client, err := provider.GetClientRandom()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get eth client randomly")
@@ -69,9 +74,14 @@ func mustNewEthAPI(provider *node.EthClientProvider, handler handler.EthHandler)
 		hardforkBlockNumber = &bn
 	}
 
+	var opt EthAPIOption
+	if len(option) > 0 {
+		opt = option[0]
+	}
+
 	return &ethAPI{
+		EthAPIOption:        opt,
 		provider:            provider,
-		handler:             handler,
 		hardforkBlockNumber: hardforkBlockNumber,
 	}
 }
@@ -85,14 +95,14 @@ func (api *ethAPI) GetBlockByHash(
 		"blockHash": blockHash.Hex(), "includeTxs": fullTx,
 	})
 
-	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.handler) {
+	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			metricKey := getEthStoreHitRatioMetricKey("eth_getBlockByHash")
 			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
 		}(&isStoreHit)
 
-		block, err := api.handler.GetBlockByHash(ctx, blockHash, fullTx)
+		block, err := api.StoreHandler.GetBlockByHash(ctx, blockHash, fullTx)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getBlockByHash hit in the store")
 
@@ -171,14 +181,14 @@ func (api *ethAPI) GetBlockByNumber(
 		"blockNum": blockNum, "includeTxs": fullTx,
 	})
 
-	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.handler) {
+	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			metricKey := getEthStoreHitRatioMetricKey("eth_getBlockByNumber")
 			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
 		}(&isStoreHit)
 
-		block, err := api.handler.GetBlockByNumber(ctx, &blockNum, fullTx)
+		block, err := api.StoreHandler.GetBlockByNumber(ctx, &blockNum, fullTx)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getBlockByNumber hit in the store")
 
@@ -347,14 +357,14 @@ func (api *ethAPI) EstimateGas(
 func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.Transaction, error) {
 	logger := logrus.WithField("txHash", hash.Hex())
 
-	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.handler) {
+	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			metricKey := getEthStoreHitRatioMetricKey("eth_getTransactionByHash")
 			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
 		}(&isStoreHit)
 
-		tx, err := api.handler.GetTransactionByHash(ctx, hash)
+		tx, err := api.StoreHandler.GetTransactionByHash(ctx, hash)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getTransactionByHash hit in the store")
 
@@ -380,14 +390,14 @@ func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (
 func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error) {
 	logger := logrus.WithField("txHash", txHash.Hex())
 
-	if !store.EthStoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.handler) {
+	if !store.EthStoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		isStoreHit := false
 		defer func(isHit *bool) {
 			metricKey := getEthStoreHitRatioMetricKey("eth_getTransactionReceipt")
 			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
 		}(&isStoreHit)
 
-		tx, err := api.handler.GetTransactionReceipt(ctx, txHash)
+		tx, err := api.StoreHandler.GetTransactionReceipt(ctx, txHash)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getTransactionReceipt hit in the ethstore")
 
@@ -486,53 +496,25 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 		return ethEmptyLogs, nil
 	}
 
-	if !store.EthStoreConfig().IsChainLogDisabled() && !util.IsInterfaceValNil(api.handler) {
-		chainId, err := api.ChainId(ctx)
-		if err != nil {
-			return ethEmptyLogs, errors.WithMessage(err, "failed to get ETH chain id")
+	if api.LogApiHandler != nil {
+		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c, filter.FilterQuery)
+
+		logrus.WithFields(logrus.Fields{
+			"filter": filter, "hitStore": hitStore,
+		}).WithError(err).Debug("Delegated `eth_getLogs` to log api handler")
+
+		metricKey := getEthStoreHitRatioMetricKey("eth_getLogs")
+		ethHitStatsCollector.CollectHitStats(metricKey, hitStore)
+
+		if logs == nil { // uniform empty logs
+			logs = ethEmptyLogs
 		}
 
-		if sfilter, ok := store.ParseEthLogFilter(w3c, uint32(*chainId), &filter.FilterQuery); ok {
-			isStoreHit := false
-			defer func(isHit *bool) {
-				metricKey := getEthStoreHitRatioMetricKey("eth_getLogs")
-				ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
-			}(&isStoreHit)
-
-			logs, err := api.handler.GetLogs(ctx, *sfilter)
-			if err == nil {
-				// return empty slice rather than nil to comply with fullnode
-				if logs == nil {
-					logs = ethEmptyLogs
-				}
-
-				logrus.WithError(err).WithField("filter", filter).Debug(
-					"Loading eth data for eth_getLogs hit in the ethstore",
-				)
-
-				isStoreHit = true
-				return logs, nil
-			}
-
-			logrus.WithField("filter", filter).WithError(err).Debug(
-				"Loading eth data for eth_getLogs hit missed from the ethstore",
-			)
-
-			// Logs already pruned from database? If so, we'd rather not delegate this request to
-			// the fullnode, as it might crush our fullnode.
-			if errors.Is(err, store.ErrAlreadyPruned) {
-				logrus.WithError(err).WithField("filter", filter).Info(
-					"Event logs data already pruned for eth_getLogs to return",
-				)
-				return ethEmptyLogs, errors.New("failed to get stale event logs (data too old)")
-			} else if errors.Is(err, store.ErrGetLogsResultSetTooLarge) || errors.Is(err, store.ErrGetLogsTimeout) {
-				return ethEmptyLogs, err
-			}
-		}
+		return logs, err
 	}
 
-	logrus.WithError(err).WithField("filter", filter).Debug("Delegating eth_getLogs rpc request to fullnode")
-
+	// fail over to fullnode if no handler configured
+	logrus.WithField("filter", filter).Debug("Fail over `eth_getLogs` to fullnode due to no API handler configured")
 	return w3c.Eth.Logs(filter.FilterQuery)
 }
 

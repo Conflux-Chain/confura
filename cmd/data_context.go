@@ -12,7 +12,7 @@ import (
 
 type storeContext struct {
 	cfxDB    *mysql.MysqlStore
-	ethDB    store.Store
+	ethDB    *mysql.MysqlStore
 	cfxCache store.CacheStore
 }
 
