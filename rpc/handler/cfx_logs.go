@@ -228,6 +228,11 @@ func (h *CfxLogsApiHandler) getLogsByRange(ctx context.Context, cfx sdk.ClientOp
 			return logs, hitStore, nil
 		}
 
+		logrus.WithFields(logrus.Fields{
+			"lastReorgVersion": lastReorgVersion,
+			"reorgVersion":     reorgVersion,
+		}).Debug("Reorg detected, retry query corespace event logs")
+
 		// when reorg occurred, check timeout before retry.
 		if time.Since(start) > store.TimeoutGetLogs {
 			return nil, false, store.ErrGetLogsTimeout
@@ -259,6 +264,8 @@ func (h *CfxLogsApiHandler) getLogsReorgGuard(ctx context.Context, cfx sdk.Clien
 			return nil, false, err
 		}
 
+		logrus.WithField("filter", dbFilter).Debug("Loaded corespace event logs from store")
+
 		logs = append(logs, dbLogs...)
 	}
 
@@ -268,6 +275,8 @@ func (h *CfxLogsApiHandler) getLogsReorgGuard(ctx context.Context, cfx sdk.Clien
 		if err != nil {
 			return nil, false, err
 		}
+
+		logrus.WithField("filter", fnFilter).Debug("Loaded corespace event logs from fullnode")
 
 		logs = append(logs, fnLogs...)
 	}
@@ -310,13 +319,19 @@ func (h *CfxLogsApiHandler) splitLogFilter(cfx sdk.ClientOperator, filter *types
 		return nil, nil, store.ErrUnsupported
 	}
 
+	logger := logrus.WithFields(logrus.Fields{
+		"sfilter": sfilter, "minEpoch": minEpoch, "maxEpoch": maxEpoch,
+	})
+
 	// some data pruned
 	if epochFrom < minEpoch {
+		logger.Debug("Some corespace event logs already pruned")
 		return nil, nil, store.ErrAlreadyPruned
 	}
 
 	// all data in database
 	if epochTo <= maxEpoch {
+		logger.Debug("All coreSpace event logs in database")
 		return filter, nil, nil
 	}
 
@@ -324,6 +339,7 @@ func (h *CfxLogsApiHandler) splitLogFilter(cfx sdk.ClientOperator, filter *types
 
 	// no data in database
 	if epochFrom > maxEpoch {
+		logger.Debug("All coreSpace event logs are not in database")
 		return nil, filter, nil
 	}
 
@@ -349,6 +365,10 @@ func (h *CfxLogsApiHandler) splitLogFilter(cfx sdk.ClientOperator, filter *types
 	default:
 		return nil, nil, store.ErrUnsupported
 	}
+
+	logger.WithFields(logrus.Fields{
+		"dbFilter": dbFilter, "fnFilter": fnFilter,
+	}).Debug("Corespace event logs are partially in database")
 
 	return &dbFilter, &fnFilter, nil
 }
