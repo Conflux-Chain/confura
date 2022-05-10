@@ -3,7 +3,6 @@ package node
 import (
 	"context"
 	"net/http"
-	"strings"
 	"sync"
 
 	"github.com/conflux-chain/conflux-infura/util"
@@ -94,16 +93,7 @@ func (p *clientProvider) getClient(key string, group Group) (interface{}, error)
 
 func remoteAddrFromContext(ctx context.Context) string {
 	request := ctx.Value("request").(*http.Request)
-	remoteAddr := util.GetIPAdress(request)
-
-	if len(remoteAddr) == 0 { // failover to remote address
-		// http.Request.RemoteAddr in string type
-		remoteAddr = ctx.Value("remote").(string)
-		if idx := strings.Index(remoteAddr, ":"); idx != -1 {
-			remoteAddr = remoteAddr[:idx]
-		}
-	}
-
+	remoteAddr := util.GetIPAddress(request)
 	logrus.WithField("remoteAddr", remoteAddr).Debug("Get remote address from context")
 	return remoteAddr
 }

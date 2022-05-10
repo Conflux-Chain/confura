@@ -67,7 +67,8 @@ func isPrivateSubnet(ipAddress net.IP) bool {
 	return false
 }
 
-func GetIPAdress(r *http.Request) string {
+// GetIPAddress returns the remote IP address.
+func GetIPAddress(r *http.Request) string {
 	for _, h := range []string{"X-Forwarded-For", "X-Real-Ip"} {
 		addresses := strings.Split(r.Header.Get(h), ",")
 		// march from right to left until we get a public address
@@ -83,5 +84,10 @@ func GetIPAdress(r *http.Request) string {
 			return ip
 		}
 	}
-	return ""
+
+	if idx := strings.Index(r.RemoteAddr, ":"); idx != -1 {
+		return r.RemoteAddr[:idx]
+	}
+
+	return r.RemoteAddr
 }
