@@ -33,7 +33,7 @@ func (metric *InputEpochMetric) Update(epoch *types.Epoch, method string, cfx sd
 		name := metric.getMetricName(method, "number")
 		metrics.GetOrRegisterGauge(name, nil).Inc(1)
 
-		if latestMined, err := cfx.GetEpochNumber(types.EpochLatestMined); err == nil {
+		if latestMined, err := cfx.GetEpochNumber(types.EpochLatestMined); err == nil && latestMined != nil {
 			gap := new(big.Int).Sub(latestMined.ToInt(), num)
 			metric.getGapMetric(method).Update(gap.Int64())
 		}
