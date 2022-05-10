@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -92,11 +93,17 @@ func (p *clientProvider) getClient(key string, group Group) (interface{}, error)
 }
 
 func remoteAddrFromContext(ctx context.Context) string {
-	// http.Request.RemoteAddr in string type
-	remoteAddr := ctx.Value("remote").(string)
-	if idx := strings.Index(remoteAddr, ":"); idx != -1 {
-		remoteAddr = remoteAddr[:idx]
+	request := ctx.Value("request").(*http.Request)
+	remoteAddr := util.GetIPAdress(request)
+
+	if len(remoteAddr) == 0 { // failover to remote address
+		// http.Request.RemoteAddr in string type
+		remoteAddr = ctx.Value("remote").(string)
+		if idx := strings.Index(remoteAddr, ":"); idx != -1 {
+			remoteAddr = remoteAddr[:idx]
+		}
 	}
 
+	logrus.WithField("remoteAddr", remoteAddr).Debug("Get remote address from context")
 	return remoteAddr
 }
