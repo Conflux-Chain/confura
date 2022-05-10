@@ -60,31 +60,17 @@ func HookEthRpcMetricsMiddleware(eth *web3go.Client) {
 func callEthRpcMetricsMiddleware(f providers.CallFunc) providers.CallFunc {
 	metricFn := func(resultPtr interface{}, method string, args ...interface{}) error {
 		start := time.Now()
-		err := f(resultPtr, method, args...)
-		duration := time.Since(start)
 
-		if err != nil {
-			// Update rpc call error counter metrics
-			metricCounter, ok := ethRpcCallErrorMetricCounters.Load(method)
-			if !ok {
-				metricKey := fmt.Sprintf("infura/duration/eth/rpc/call/%v/error", method)
-				metricCounter = metrics.GetOrRegisterCounter(metricKey, nil)
-				ethRpcCallErrorMetricCounters.Store(method, metricCounter)
-			}
-
-			metricCounter.(metrics.Counter).Inc(1)
-			return err
+		var metricKey string
+		if err := f(resultPtr, method, args...); err != nil {
+			metricKey = fmt.Sprintf("infura/duration/eth/rpc/call/%v/error", method)
+		} else {
+			metricKey = fmt.Sprintf("infura/duration/eth/rpc/call/%v/success", method)
 		}
 
-		// Update rpc call success timer metrics
-		metricTimer, ok := ethRpcCallSuccessMetricTimers.Load(method)
-		if !ok {
-			metricKey := fmt.Sprintf("infura/duration/eth/rpc/call/%v/success", method)
-			metricTimer = metrics.GetOrRegisterTimer(metricKey, nil)
-			ethRpcCallSuccessMetricTimers.Store(method, metricTimer)
-		}
+		metricTimer := metrics.GetOrRegisterTimer(metricKey, nil)
+		metricTimer.UpdateSince(start)
 
-		metricTimer.(metrics.Timer).Update(duration)
 		return nil
 	}
 

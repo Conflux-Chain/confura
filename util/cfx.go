@@ -2,7 +2,6 @@ package util
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -11,11 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-)
-
-var (
-	cfxRpcCallSuccessMetricTimers sync.Map
-	cfxRpcCallErrorMetricCounters sync.Map
 )
 
 // MustNewCfxClient creates an instance of CFX client or panic on error.
@@ -50,31 +44,17 @@ func HookCfxRpcMetricsMiddleware(cfx *sdk.Client) {
 func callRpcMetricsMiddleware(handler middleware.CallRpcHandler) middleware.CallRpcHandler {
 	metricFn := func(result interface{}, method string, args ...interface{}) error {
 		start := time.Now()
-		err := handler.Handle(result, method, args...)
-		duration := time.Since(start)
 
-		if err != nil {
-			// Update rpc call error counter metrics
-			metricCounter, ok := cfxRpcCallErrorMetricCounters.Load(method)
-			if !ok {
-				metricKey := fmt.Sprintf("infura/duration/cfx/rpc/call/%v/error", method)
-				metricCounter = metrics.GetOrRegisterCounter(metricKey, nil)
-				cfxRpcCallErrorMetricCounters.Store(method, metricCounter)
-			}
-
-			metricCounter.(metrics.Counter).Inc(1)
-			return err
+		var metricKey string
+		if err := handler.Handle(result, method, args...); err != nil {
+			metricKey = fmt.Sprintf("infura/duration/cfx/rpc/call/%v/error", method)
+		} else {
+			metricKey = fmt.Sprintf("infura/duration/cfx/rpc/call/%v/success", method)
 		}
 
-		// Update rpc call success timer metrics
-		metricTimer, ok := cfxRpcCallSuccessMetricTimers.Load(method)
-		if !ok {
-			metricKey := fmt.Sprintf("infura/duration/cfx/rpc/call/%v/success", method)
-			metricTimer = metrics.GetOrRegisterTimer(metricKey, nil)
-			cfxRpcCallSuccessMetricTimers.Store(method, metricTimer)
-		}
+		metricTimer := metrics.GetOrRegisterTimer(metricKey, nil)
+		metricTimer.UpdateSince(start)
 
-		metricTimer.(metrics.Timer).Update(duration)
 		return nil
 	}
 
