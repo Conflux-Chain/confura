@@ -10,6 +10,7 @@ import (
 	"github.com/buraksezer/consistent"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/openweb3/web3go"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -113,6 +114,10 @@ func (n *EthNode) LatestEpochNumber() (uint64, error) {
 		return 0, err
 	}
 
+	if block == nil { // this should not happen, but anyway for robust
+		return 0, errors.New("invalid block number")
+	}
+
 	return block.Uint64(), nil
 }
 
@@ -144,6 +149,10 @@ func (n *CfxNode) LatestEpochNumber() (uint64, error) {
 	epoch, err := n.GetEpochNumber(types.EpochLatestMined)
 	if err != nil {
 		return 0, err
+	}
+
+	if epoch == nil { // this should not happen, but anyway for robust
+		return 0, errors.New("invalid epoch number")
 	}
 
 	return epoch.ToInt().Uint64(), nil
