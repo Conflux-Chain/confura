@@ -41,12 +41,19 @@ func HookCfxRpcMetricsMiddleware(cfx *sdk.Client) {
 	cfx.UseCallRpcMiddleware(callRpcMetricsMiddleware)
 }
 
+func HookCfxRpcConsoleLogMiddleware(cfx *sdk.Client) {
+	cfx.UseCallRpcMiddleware(middleware.CallRpcConsoleMiddleware)
+	cfx.UseBatchCallRpcMiddleware(middleware.BatchCallRpcConsoleMiddleware)
+}
+
 func callRpcMetricsMiddleware(handler middleware.CallRpcHandler) middleware.CallRpcHandler {
 	metricFn := func(result interface{}, method string, args ...interface{}) error {
 		start := time.Now()
 
 		var metricKey string
-		if err := handler.Handle(result, method, args...); err != nil {
+		err := handler.Handle(result, method, args...)
+
+		if err != nil {
 			metricKey = fmt.Sprintf("infura/duration/cfx/rpc/call/%v/error", method)
 		} else {
 			metricKey = fmt.Sprintf("infura/duration/cfx/rpc/call/%v/success", method)
@@ -55,7 +62,7 @@ func callRpcMetricsMiddleware(handler middleware.CallRpcHandler) middleware.Call
 		metricTimer := metrics.GetOrRegisterTimer(metricKey, nil)
 		metricTimer.UpdateSince(start)
 
-		return nil
+		return err
 	}
 
 	return middleware.CallRpcHandlerFunc(metricFn)

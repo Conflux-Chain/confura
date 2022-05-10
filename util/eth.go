@@ -62,7 +62,9 @@ func callEthRpcMetricsMiddleware(f providers.CallFunc) providers.CallFunc {
 		start := time.Now()
 
 		var metricKey string
-		if err := f(resultPtr, method, args...); err != nil {
+		err := f(resultPtr, method, args...)
+
+		if err != nil {
 			metricKey = fmt.Sprintf("infura/duration/eth/rpc/call/%v/error", method)
 		} else {
 			metricKey = fmt.Sprintf("infura/duration/eth/rpc/call/%v/success", method)
@@ -71,7 +73,7 @@ func callEthRpcMetricsMiddleware(f providers.CallFunc) providers.CallFunc {
 		metricTimer := metrics.GetOrRegisterTimer(metricKey, nil)
 		metricTimer.UpdateSince(start)
 
-		return nil
+		return err
 	}
 
 	return providers.CallFunc(metricFn)
