@@ -115,6 +115,7 @@ func (n *EthNode) LatestEpochNumber() (uint64, error) {
 	}
 
 	if block == nil { // this should not happen, but anyway for robust
+		logrus.WithField("node", n).Info("Failed to get latest block number (nil) from eth node")
 		return 0, errors.New("invalid block number")
 	}
 
@@ -152,6 +153,7 @@ func (n *CfxNode) LatestEpochNumber() (uint64, error) {
 	}
 
 	if epoch == nil { // this should not happen, but anyway for robust
+		logrus.WithField("node", n).Info("Failed to get latest epoch number (nil) from node")
 		return 0, errors.New("invalid epoch number")
 	}
 
