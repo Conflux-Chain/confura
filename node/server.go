@@ -48,6 +48,17 @@ func (api *api) List(group Group) []string {
 	return nodes
 }
 
+// List returns the URL list of all nodes.
+func (api *api) ListAll() map[Group][]string {
+	result := make(map[Group][]string)
+
+	for group := range api.managers {
+		result[group] = api.List(group)
+	}
+
+	return result
+}
+
 // Route implements the Router interface. It routes the specified key to any node
 // and return the node URL.
 func (api *api) Route(group Group, key hexutil.Bytes) string {
