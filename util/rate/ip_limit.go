@@ -12,6 +12,13 @@ type Option struct {
 	Burst int
 }
 
+func NewOption(r int, b int) Option {
+	return Option{
+		Rate:  rate.Limit(r),
+		Burst: b,
+	}
+}
+
 type visitor struct {
 	limiter  *rate.Limiter // token bucket
 	lastSeen time.Time     // used for GC when visitor inactive for a while
@@ -64,14 +71,20 @@ func (l *IpLimiter) GC(timeout time.Duration) {
 	}
 }
 
-func (l *IpLimiter) Update(option Option) {
+func (l *IpLimiter) Update(option Option) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if l.Rate != option.Rate || l.Burst != option.Burst {
-		for _, visitor := range l.visitors {
-			visitor.limiter.SetLimit(option.Rate)
-			visitor.limiter.SetBurst(option.Burst)
-		}
+	if l.Rate == option.Rate && l.Burst == option.Burst {
+		return false
 	}
+
+	l.Option = option
+
+	for _, visitor := range l.visitors {
+		visitor.limiter.SetLimit(option.Rate)
+		visitor.limiter.SetBurst(option.Burst)
+	}
+
+	return true
 }

@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/conflux-chain/conflux-infura/cmd/test"
 	"github.com/conflux-chain/conflux-infura/config"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rate"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +61,7 @@ func start(cmd *cobra.Command, args []string) {
 	}
 
 	if rpcServerEnabled {
+		go rate.DefaultRegistry.AutoReload(10*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
 		startNativeSpaceRpcServer(ctx, wg, storeCtx)
 		startEvmSpaceRpcServer(ctx, wg, storeCtx)
 		startNativeSpaceBridgeRpcServer(ctx, wg)

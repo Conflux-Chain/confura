@@ -35,7 +35,7 @@ func MustNewNativeSpaceServer(
 	return util.MustNewRpcServer(nativeSpaceRpcServerName, exposedApis)
 }
 
-// MustNewNativeSpaceServer new EVM space RPC server by specifying router, and exposed modules.
+// MustNewEvmSpaceServer new EVM space RPC server by specifying router, and exposed modules.
 // `exposedModules` is a list of API modules to expose via the RPC interface. If the module
 // list is empty, all RPC API endpoints designated public will be exposed.
 func MustNewEvmSpaceServer(

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"sync"
+	"time"
 
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/node"
@@ -11,6 +12,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rate"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -50,6 +52,8 @@ func startRpcService(*cobra.Command, []string) {
 
 	storeCtx := mustInitStoreContext(false)
 	defer storeCtx.Close()
+
+	go rate.DefaultRegistry.AutoReload(10*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
 
 	if rpcOpt.cfxEnabled {
 		startNativeSpaceRpcServer(ctx, &wg, storeCtx)

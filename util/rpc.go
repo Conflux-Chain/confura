@@ -60,11 +60,11 @@ func MustNewRpcServer(name string, rpcs map[string]interface{}) *RpcServer {
 }
 
 func rateLimitHandler(next http.Handler) http.Handler {
-	// TODO read from configuration file and support reload.
-	limiter := rate.DefaultRegistry.GetOrRegister("httpRequest", 5, 100)
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if ip := GetIPAddress(r); limiter.Allow(ip, 1) {
+		limiter, ok := rate.DefaultRegistry.Get("rpc.httpRequest")
+		if !ok {
+			next.ServeHTTP(w, r)
+		} else if ip := GetIPAddress(r); limiter.Allow(ip, 1) {
 			next.ServeHTTP(w, r)
 		} else {
 			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)

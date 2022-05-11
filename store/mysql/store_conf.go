@@ -2,8 +2,11 @@ package mysql
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/conflux-chain/conflux-infura/util/rate"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -84,4 +87,46 @@ func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
 	newVersion := strconv.Itoa(version + 1)
 
 	return cs.StoreConfig(MysqlConfKeyReorgVersion, newVersion)
+}
+
+func (cs *confStore) LoadRateLimitConfigs() map[string]rate.Option {
+	var cfgs []conf
+	if err := cs.db.Where("name LIKE ?", "ratelimit.%").Find(&cfgs).Error; err != nil {
+		return nil
+	}
+
+	if len(cfgs) == 0 {
+		return nil
+	}
+
+	opts := make(map[string]rate.Option)
+
+	namePrefixLen := len("ratelimit.")
+
+	for _, v := range cfgs {
+		name := v.Name[namePrefixLen:]
+		if len(name) == 0 {
+			logrus.WithField("cfg", v).Warn("Invalid rate limit config, name is too short")
+			continue
+		}
+
+		fields := strings.Split(v.Value, ",")
+		if len(fields) != 2 {
+			logrus.WithField("cfg", v).Warn("Invalid rate limit config, value fields mismatch")
+		}
+
+		r, err := strconv.Atoi(fields[0])
+		if err != nil {
+			logrus.WithField("cfg", v).Warn("Invalid rate limit config, rate is not number")
+		}
+
+		burst, err := strconv.Atoi(fields[1])
+		if err != nil {
+			logrus.WithField("cfg", v).Warn("Invalid rate limit config, burst is not number")
+		}
+
+		opts[name] = rate.NewOption(r, burst)
+	}
+
+	return opts
 }
