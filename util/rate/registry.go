@@ -24,6 +24,14 @@ func NewRegistry() *Registry {
 	}
 }
 
+func (m *Registry) Get(name string) (*IpLimiter, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	limiter, ok := m.limiters[name]
+	return limiter, ok
+}
+
 func (m *Registry) GetOrRegister(name string, rate rate.Limit, burst int) *IpLimiter {
 	m.mu.Lock()
 	defer m.mu.Unlock()
