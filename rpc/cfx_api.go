@@ -13,6 +13,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rate"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/go-rpc-provider"
@@ -301,7 +302,7 @@ func (api *cfxAPI) GetBestBlockHash(ctx context.Context) (types.Hash, error) {
 }
 
 func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoch *types.Epoch) (*hexutil.Big, error) {
-	if err := validateRateLimit(ctx, "cfx_getNextNonce"); err != nil {
+	if err := validateRateLimit(ctx, rate.DefaultRegistryCfx, "cfx_getNextNonce"); err != nil {
 		return nil, err
 	}
 
@@ -315,7 +316,7 @@ func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoc
 }
 
 func (api *cfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (types.Hash, error) {
-	if err := validateRateLimit(ctx, "cfx_sendRawTransaction"); err != nil {
+	if err := validateRateLimit(ctx, rate.DefaultRegistryCfx, "cfx_sendRawTransaction"); err != nil {
 		return "", err
 	}
 
@@ -336,7 +337,7 @@ func (api *cfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Byte
 }
 
 func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *types.Epoch) (hexutil.Bytes, error) {
-	if err := validateRateLimit(ctx, "cfx_call"); err != nil {
+	if err := validateRateLimit(ctx, rate.DefaultRegistryCfx, "cfx_call"); err != nil {
 		return nil, err
 	}
 
@@ -350,7 +351,7 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 }
 
 func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
-	if err := validateRateLimit(ctx, "cfx_getLogs"); err != nil {
+	if err := validateRateLimit(ctx, rate.DefaultRegistryCfx, "cfx_getLogs"); err != nil {
 		return emptyLogs, err
 	}
 

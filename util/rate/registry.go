@@ -7,10 +7,12 @@ import (
 	"golang.org/x/time/rate"
 )
 
-var DefaultRegistry = NewRegistry()
+var DefaultRegistryCfx = NewRegistry()
+var DefaultRegistryEth = NewRegistry()
 
 func init() {
-	go DefaultRegistry.gcPeriodically(5*time.Minute, 3*time.Minute)
+	go DefaultRegistryCfx.gcPeriodically(5*time.Minute, 3*time.Minute)
+	go DefaultRegistryEth.gcPeriodically(5*time.Minute, 3*time.Minute)
 }
 
 type Registry struct {

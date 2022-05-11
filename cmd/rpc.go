@@ -53,8 +53,6 @@ func startRpcService(*cobra.Command, []string) {
 	storeCtx := mustInitStoreContext(false)
 	defer storeCtx.Close()
 
-	go rate.DefaultRegistry.AutoReload(10*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
-
 	if rpcOpt.cfxEnabled {
 		startNativeSpaceRpcServer(ctx, &wg, storeCtx)
 	}
@@ -98,6 +96,8 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 		}
 
 		logsApiHandler = handler.NewCfxLogsApiHandler(storeHandler, prunedHandler, storeCtx.cfxDB)
+
+		go rate.DefaultRegistryCfx.AutoReload(10*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
 	}
 
 	option := rpc.CfxAPIOption{
@@ -124,6 +124,8 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx st
 	if !util.IsInterfaceValNil(storeCtx.ethDB) {
 		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.ethDB, nil)
 		option.LogApiHandler = handler.NewEthLogsApiHandler(option.StoreHandler, storeCtx.ethDB)
+
+		go rate.DefaultRegistryEth.AutoReload(10*time.Second, storeCtx.ethDB.LoadRateLimitConfigs)
 	}
 
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")

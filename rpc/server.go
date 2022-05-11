@@ -4,6 +4,7 @@ import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rate"
 	"github.com/sirupsen/logrus"
 )
 
@@ -32,7 +33,7 @@ func MustNewNativeSpaceServer(
 		)
 	}
 
-	return util.MustNewRpcServer(nativeSpaceRpcServerName, exposedApis)
+	return util.MustNewRpcServerWithRateLimit(nativeSpaceRpcServerName, exposedApis, rate.DefaultRegistryCfx)
 }
 
 // MustNewEvmSpaceServer new EVM space RPC server by specifying router, and exposed modules.
@@ -54,7 +55,7 @@ func MustNewEvmSpaceServer(
 		)
 	}
 
-	return util.MustNewRpcServer(evmSpaceRpcServerName, exposedApis)
+	return util.MustNewRpcServerWithRateLimit(evmSpaceRpcServerName, exposedApis, rate.DefaultRegistryEth)
 }
 
 type CfxBridgeServerConfig struct {

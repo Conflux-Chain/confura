@@ -15,8 +15,8 @@ var (
 	// TODO Implement rate limit in interceptor way.
 )
 
-func validateRateLimit(ctx context.Context, method string) error {
-	limiter, ok := rate.DefaultRegistry.Get(method)
+func validateRateLimit(ctx context.Context, registry *rate.Registry, method string) error {
+	limiter, ok := registry.Get(method)
 	if !ok {
 		return nil
 	}

@@ -31,6 +31,11 @@ type RpcServer struct {
 
 // MustNewRpcServer creates an instance of RpcServer with specified RPC services.
 func MustNewRpcServer(name string, rpcs map[string]interface{}) *RpcServer {
+	return MustNewRpcServerWithRateLimit(name, rpcs, nil)
+}
+
+// MustNewRpcServerWithRateLimit creates an instance of RpcServer with specified RPC services.
+func MustNewRpcServerWithRateLimit(name string, rpcs map[string]interface{}, registry *rate.Registry) *RpcServer {
 	handler := rpc.NewServer()
 	servedApis := make([]string, 0, len(rpcs))
 
@@ -50,18 +55,22 @@ func MustNewRpcServer(name string, rpcs map[string]interface{}) *RpcServer {
 		name: name,
 		servers: map[RpcProtocol]*http.Server{
 			RpcProtocolHttp: {
-				Handler: rateLimitHandler(node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"})),
+				Handler: rateLimitHandler(registry, node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"})),
 			},
 			RpcProtocolWS: {
-				Handler: rateLimitHandler(handler.WebsocketHandler([]string{"*"})),
+				Handler: rateLimitHandler(registry, handler.WebsocketHandler([]string{"*"})),
 			},
 		},
 	}
 }
 
-func rateLimitHandler(next http.Handler) http.Handler {
+func rateLimitHandler(registry *rate.Registry, next http.Handler) http.Handler {
+	if registry == nil {
+		return next
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		limiter, ok := rate.DefaultRegistry.Get("rpc.httpRequest")
+		limiter, ok := registry.Get("rpc.httpRequest")
 		if !ok {
 			next.ServeHTTP(w, r)
 		} else if ip := GetIPAddress(r); limiter.Allow(ip, 1) {
