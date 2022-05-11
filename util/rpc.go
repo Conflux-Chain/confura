@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/conflux-chain/conflux-infura/util/rate"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
@@ -49,13 +50,26 @@ func MustNewRpcServer(name string, rpcs map[string]interface{}) *RpcServer {
 		name: name,
 		servers: map[RpcProtocol]*http.Server{
 			RpcProtocolHttp: {
-				Handler: node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
+				Handler: rateLimitHandler(node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"})),
 			},
 			RpcProtocolWS: {
-				Handler: handler.WebsocketHandler([]string{"*"}),
+				Handler: rateLimitHandler(handler.WebsocketHandler([]string{"*"})),
 			},
 		},
 	}
+}
+
+func rateLimitHandler(next http.Handler) http.Handler {
+	// TODO read from configuration file and support reload.
+	limiter := rate.DefaultRegistry.GetOrRegister("httpRequest", 5, 100)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ip := GetIPAddress(r); limiter.Allow(ip, 1) {
+			next.ServeHTTP(w, r)
+		} else {
+			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+		}
+	})
 }
 
 // MustServe serves RPC server in blocking way or panics if failed.

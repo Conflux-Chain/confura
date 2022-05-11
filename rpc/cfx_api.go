@@ -301,6 +301,10 @@ func (api *cfxAPI) GetBestBlockHash(ctx context.Context) (types.Hash, error) {
 }
 
 func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoch *types.Epoch) (*hexutil.Big, error) {
+	if err := validateRateLimit(ctx, rateLimitCfxNextNonce); err != nil {
+		return nil, err
+	}
+
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return nil, err
@@ -311,6 +315,10 @@ func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoc
 }
 
 func (api *cfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (types.Hash, error) {
+	if err := validateRateLimit(ctx, rateLimitCfxSendTx); err != nil {
+		return "", err
+	}
+
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return "", err
@@ -328,6 +336,10 @@ func (api *cfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Byte
 }
 
 func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *types.Epoch) (hexutil.Bytes, error) {
+	if err := validateRateLimit(ctx, rateLimitCfxCall); err != nil {
+		return nil, err
+	}
+
 	cfx, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return nil, err
@@ -338,6 +350,10 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 }
 
 func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
+	if err := validateRateLimit(ctx, rateLimitCfxLogs); err != nil {
+		return emptyLogs, err
+	}
+
 	cfx, err := api.provider.GetClientByIPGroup(ctx, node.GroupCfxLogs)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get fullnode for `cfx_getLogs` delegate")

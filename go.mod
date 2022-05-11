@@ -24,6 +24,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/zealws/golang-ring v0.0.0-20210116075443-7c86fdb43134
 	go.uber.org/multierr v1.6.0
+	golang.org/x/time v0.0.0-20220411224347-583f2d630306
 	gorm.io/driver/mysql v1.0.5
 	gorm.io/gorm v1.22.2
 	gorm.io/hints v1.1.0
