@@ -1,12 +1,14 @@
 package node
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/ethereum/go-ethereum/metrics"
 )
 
 // nodeFactory factory methods to create node instance
@@ -140,6 +142,11 @@ func (m *Manager) Distribute(key []byte) Node {
 // Route implements the Router interface.
 func (m *Manager) Route(key []byte) string {
 	if n := m.Distribute(key); n != nil {
+		// metrics overall route QPS
+		metrics.GetOrRegisterMeter("infura/nodes/manager/routes", nil).Mark(1)
+		// metrics per node route QPS
+		metrics.GetOrRegisterMeter(fmt.Sprintf("infura/nodes/routes/%s", n.Name()), nil).Mark(1)
+
 		return n.Url()
 	}
 
