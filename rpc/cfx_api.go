@@ -329,7 +329,7 @@ func (api *cfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Byte
 	if err == nil && api.Relayer != nil {
 		// relay transaction broadcasting asynchronously
 		if !api.Relayer.AsyncRelay(signedTx) {
-			logrus.Info("Transaction relay pool is full or not configured")
+			logrus.Info("Transaction relay pool is full, dropping transaction relay")
 		}
 	}
 

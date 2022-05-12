@@ -85,7 +85,7 @@ func NewTxnRelayer(relayConf *TxnRelayerConfig) (*TxnRelayer, error) {
 // AsyncRelay relays raw transaction broadcasting asynchronously.
 func (relayer *TxnRelayer) AsyncRelay(signedTx hexutil.Bytes) bool {
 	if len(relayer.poolClients) == 0 {
-		return false
+		return true
 	}
 
 	if len(relayer.txnQueue) == relayer.config.BufferSize { // queue is full?
