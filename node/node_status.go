@@ -77,7 +77,7 @@ func (s *Status) MarshalJSON() ([]byte, error) {
 		NodeName string `json:"nodeName"`
 
 		MeanLatency string `json:"meanLatency"`
-		P99Latency  string `json:"P95Latency"`
+		P99Latency  string `json:"P99Latency"`
 		P75Latency  string `json:"P75Latency"`
 
 		LatestStateEpoch uint64 `json:"latestStateEpoch"`
