@@ -26,6 +26,7 @@ type Node interface {
 
 	Name() string
 	Url() string
+	Status() Status
 
 	LatestEpochNumber() (uint64, error)
 

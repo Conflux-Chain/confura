@@ -1,12 +1,15 @@
 package node
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
 	infuraMetrics "github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	ring "github.com/zealws/golang-ring"
 )
 
 // HealthMonitor is implemented by any objects that support to monitor full node health.
@@ -30,13 +33,15 @@ type Status struct {
 	nodeName string
 
 	metricName    string
-	latencyMetric metrics.Histogram // ping latency via cfx_epochNumber
+	latencyMetric metrics.Histogram // ping latency via cfx_epochNumber/eth_blockNumber
 
 	latestStateEpoch uint64
 	successCounter   uint64
 	failureCounter   uint64
 	unhealthy        bool
 	unhealthReportAt time.Time
+
+	latestHeartBeatErrs *ring.Ring
 }
 
 func NewStatus(nodeName string) Status {
@@ -50,10 +55,14 @@ func NewEthStatus(nodeName string) Status {
 }
 
 func newStatus(metricName, nodeName string) Status {
+	hbErrRingBuf := &ring.Ring{}
+	hbErrRingBuf.SetCapacity(int(2 * cfg.Monitor.Unhealth.Failures))
+
 	return Status{
-		nodeName:      nodeName,
-		metricName:    metricName,
-		latencyMetric: infuraMetrics.GetOrRegisterHistogram(nil, metricName),
+		nodeName:            nodeName,
+		metricName:          metricName,
+		latencyMetric:       infuraMetrics.GetOrRegisterHistogram(nil, metricName),
+		latestHeartBeatErrs: hbErrRingBuf,
 	}
 }
 
@@ -62,12 +71,55 @@ func (s *Status) Update(n Node, monitor HealthMonitor) {
 	s.updateHealth(monitor)
 }
 
+// MarshalJSON marshals as JSON.
+func (s *Status) MarshalJSON() ([]byte, error) {
+	type Status struct {
+		NodeName string `json:"nodeName"`
+
+		MeanLatency string `json:"meanLatency"`
+		P99Latency  string `json:"P95Latency"`
+		P75Latency  string `json:"P75Latency"`
+
+		LatestStateEpoch uint64 `json:"latestStateEpoch"`
+		SuccessCounter   uint64 `json:"successCounter"`
+		FailureCounter   uint64 `json:"failureCounter"`
+		Unhealthy        bool   `json:"unhealthy"`
+		UnhealthReportAt string `json:"unhealthReportAt"`
+
+		LatestHeartBeatErrs []string `json:"latestHeartBeatErrs"`
+	}
+
+	scopy := Status{
+		NodeName:         s.nodeName,
+		MeanLatency:      fmt.Sprintf("%.2f(ms)", s.latencyMetric.Mean()/1e6),
+		P99Latency:       fmt.Sprintf("%.2f(ms)", s.latencyMetric.Percentile(0.99)/1e6),
+		P75Latency:       fmt.Sprintf("%.2f(ms)", s.latencyMetric.Percentile(0.75)/1e6),
+		LatestStateEpoch: s.latestStateEpoch,
+		SuccessCounter:   s.successCounter,
+		FailureCounter:   s.failureCounter,
+		Unhealthy:        s.unhealthy,
+		UnhealthReportAt: s.unhealthReportAt.Format(time.RFC3339),
+	}
+
+	hbErrors := s.latestHeartBeatErrs.Values()
+	for _, e := range hbErrors {
+		scopy.LatestHeartBeatErrs = append(scopy.LatestHeartBeatErrs, e.(error).Error())
+	}
+
+	return json.Marshal(&scopy)
+}
+
 func (s *Status) heartbeat(n Node) {
 	start := time.Now()
 	epoch, err := n.LatestEpochNumber()
 	if err != nil {
 		s.failureCounter++
 		s.successCounter = 0
+
+		logrus.WithFields(logrus.Fields{
+			"status": s, "reqTime": start,
+		}).WithError(err).Info("Failed to heartbeat with node")
+		s.latestHeartBeatErrs.Enqueue(err)
 	} else {
 		s.latencyMetric.Update(time.Since(start).Nanoseconds())
 		s.latestStateEpoch = epoch

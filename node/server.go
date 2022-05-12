@@ -48,6 +48,28 @@ func (api *api) List(group Group) []string {
 	return nodes
 }
 
+func (api *api) Status(group Group, url *string) (res []Status) {
+	mgr := api.managers[group]
+	if mgr == nil { // no group found
+		return
+	}
+
+	if url != nil { // get specific node status
+		if n := mgr.Get(*url); !util.IsInterfaceValNil(n) {
+			res = append(res, n.Status())
+		}
+
+		return
+	}
+
+	// get all group node status
+	for _, n := range mgr.List() {
+		res = append(res, n.Status())
+	}
+
+	return
+}
+
 // List returns the URL list of all nodes.
 func (api *api) ListAll() map[Group][]string {
 	result := make(map[Group][]string)
