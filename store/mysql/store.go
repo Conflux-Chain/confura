@@ -1,8 +1,10 @@
 package mysql
 
 import (
+	"context"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -753,4 +755,60 @@ func (ms *MysqlStore) loadLikelyActionLogsPartEpochRangesTx(dbTx *gorm.DB, opTyp
 	}
 
 	return partLogsEpochRanges, nil
+}
+
+// TODO how to unify the return type?
+// core space vs. eSpace
+// AddressIndexedLog vs. other models of different tables.
+func (ms *MysqlStore) GetLogsV2(ctx context.Context, storeFilter store.LogFilterV2) (interface{}, error) {
+	contracts := storeFilter.Contracts.ToSlice()
+
+	filter := LogFilter{
+		BlockFrom: storeFilter.BlockFrom,
+		BlockTo:   storeFilter.BlockTo,
+		Topics:    storeFilter.Topics,
+	}
+
+	// TODO if address not specified, query event logs from block number partitioned tables.
+	if len(contracts) == 0 {
+		return nil, nil
+	}
+
+	var result []*AddressIndexedLog
+
+	for _, addr := range contracts {
+		// convert contract address to id
+		contract, exists, err := ms.cs.GetContractByAddress(addr)
+		if err != nil {
+			return nil, err
+		}
+
+		if !exists {
+			continue
+		}
+
+		// check timeout before query
+		select {
+		case <-ctx.Done():
+			return nil, store.ErrGetLogsTimeout
+		default:
+		}
+
+		// query address indexed logs
+		addrFilter := AddressIndexedLogFilter{
+			LogFilter:  filter,
+			ContractId: contract.ID,
+		}
+
+		logs, err := ms.GetAddressIndexedLogs(addrFilter, addr)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, logs...)
+	}
+
+	sort.Sort(AddressIndexedLogSlice(result))
+
+	return result, nil
 }

@@ -26,6 +26,7 @@ type AddressIndexedLog struct {
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
+	LogIndex    uint64 `gorm:"not null"`
 	Extra       []byte `gorm:"type:mediumText"` // extra data in JSON format
 }
 
@@ -42,6 +43,7 @@ func NewAddressIndexedLog(log *types.Log, contractId, blockNumber uint64, ext *s
 		Topic1:      convertLogTopic(log, 1),
 		Topic2:      convertLogTopic(log, 2),
 		Topic3:      convertLogTopic(log, 3),
+		LogIndex:    log.LogIndex.ToInt().Uint64(),
 		Extra:       mustMarshalLogExtraData(log, ext),
 	}
 }
@@ -74,6 +76,32 @@ func (l *AddressIndexedLog) ToRpcLog(cs *ContractStore) (*types.Log, *store.LogE
 	return &log, ext, nil
 }
 
+func (log *AddressIndexedLog) cmp(other *AddressIndexedLog) int {
+	if log.BlockNumber < other.BlockNumber {
+		return -1
+	}
+
+	if log.BlockNumber > other.BlockNumber {
+		return 1
+	}
+
+	if log.LogIndex < other.LogIndex {
+		return -1
+	}
+
+	if log.LogIndex > other.LogIndex {
+		return 1
+	}
+
+	return 0
+}
+
+type AddressIndexedLogSlice []*AddressIndexedLog
+
+func (s AddressIndexedLogSlice) Len() int           { return len(s) }
+func (s AddressIndexedLogSlice) Less(i, j int) bool { return s[i].cmp(s[j]) < 0 }
+func (s AddressIndexedLogSlice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+
 // AddressIndexedLogStore is used to store address indexed event logs in N partitions, e.g. logs_1, logs_2, ..., logs_n.
 type AddressIndexedLogStore struct {
 	partitionedStore
@@ -97,9 +125,9 @@ func (ls *AddressIndexedLogStore) CreatePartitionedTables() (int, error) {
 }
 
 // getPartitionByAddress returns the partition by specified contract address.
-func (ls *AddressIndexedLogStore) getPartitionByAddress(contract *cfxaddress.Address) uint32 {
+func (ls *AddressIndexedLogStore) getPartitionByAddress(contract string) uint32 {
 	hasher := fnv.New32()
-	hasher.Write(contract.MustGetCommonAddress().Bytes())
+	hasher.Write([]byte(contract))
 	// could use consistent hashing if repartition supported
 	return hasher.Sum32() % ls.partitions
 }
@@ -144,7 +172,7 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(data *store.EpochData
 				}
 
 				log := NewAddressIndexedLog(&v, contract.ID, bn, logext)
-				partition := ls.getPartitionByAddress(&v.Address)
+				partition := ls.getPartitionByAddress(v.Address.MustGetBase32Address())
 				partition2Logs[partition] = append(partition2Logs[partition], log)
 			}
 		}
@@ -191,7 +219,7 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 // GetAddressIndexedLogs returns event logs for the specified filter.
 func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(
 	filter AddressIndexedLogFilter,
-	contract *cfxaddress.Address,
+	contract string,
 ) ([]*AddressIndexedLog, error) {
 	partition := ls.getPartitionByAddress(contract)
 	filter.TableName = ls.getPartitionedTableName(&ls.model, partition)
