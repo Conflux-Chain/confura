@@ -11,11 +11,6 @@ import (
 
 const defaultBatchSizeLogInsert = 500
 
-var (
-	emptyLogs    = []types.Log{}
-	emptyLogExts = []*store.LogExtra{}
-)
-
 // convertLogTopic converts RPC log topic to store topic.
 func convertLogTopic(log *types.Log, index int) string {
 	if index < 0 || index >= len(log.Topics) {

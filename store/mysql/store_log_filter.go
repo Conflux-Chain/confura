@@ -188,7 +188,7 @@ func (filter *AddressIndexedLogFilter) validateCount(db *gorm.DB) error {
 	return filter.LogFilter.validateCount(db)
 }
 
-func (filter *AddressIndexedLogFilter) Find(db *gorm.DB) ([]AddressIndexedLog, error) {
+func (filter *AddressIndexedLogFilter) Find(db *gorm.DB) ([]*AddressIndexedLog, error) {
 	if err := filter.validateCount(db); err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (filter *AddressIndexedLogFilter) Find(db *gorm.DB) ([]AddressIndexedLog, e
 		Limit(int(store.MaxLogLimit) + 1)
 	db = applyTopicsFilter(db, filter.Topics)
 
-	var result []AddressIndexedLog
+	var result []*AddressIndexedLog
 	if err := db.Find(&result).Error; err != nil {
 		return nil, err
 	}

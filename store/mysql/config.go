@@ -93,7 +93,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 		}
 
 		ls := NewAddressIndexedLogStore(db, NewContractStore(db), config.AddressIndexedLogPartitions)
-		if _, err := ls.CreateAddressIndexedLogTable(0, config.AddressIndexedLogPartitions); err != nil {
+		if _, err := ls.CreatePartitionedTables(); err != nil {
 			logrus.WithError(err).
 				WithField("partitions", config.AddressIndexedLogPartitions).
 				Fatal("Failed to create address indexed log tables")

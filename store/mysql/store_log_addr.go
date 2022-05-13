@@ -46,6 +46,7 @@ func NewAddressIndexedLog(log *types.Log, contractId, blockNumber uint64, ext *s
 	}
 }
 
+// TODO delete me once integrated with RPC
 func (l *AddressIndexedLog) ToRpcLog(cs *ContractStore) (*types.Log, *store.LogExtra, error) {
 	log, ext, err := silentUnmarshalLogExtraData(l.Extra)
 	if err != nil {
@@ -73,6 +74,7 @@ func (l *AddressIndexedLog) ToRpcLog(cs *ContractStore) (*types.Log, *store.LogE
 	return &log, ext, nil
 }
 
+// AddressIndexedLogStore is used to store address indexed event logs in N partitions, e.g. logs_1, logs_2, ..., logs_n.
 type AddressIndexedLogStore struct {
 	partitionedStore
 	db         *gorm.DB
@@ -89,13 +91,24 @@ func NewAddressIndexedLogStore(db *gorm.DB, cs *ContractStore, partitions uint32
 	}
 }
 
-func (ls *AddressIndexedLogStore) CreateAddressIndexedLogTable(partitionFrom, count uint32) (int, error) {
-	return ls.createPartitionedTables(ls.db, &AddressIndexedLog{}, partitionFrom, count)
+// CreatePartitionedTables initializes partitioned tables.
+func (ls *AddressIndexedLogStore) CreatePartitionedTables() (int, error) {
+	return ls.createPartitionedTables(ls.db, &ls.model, 0, ls.partitions)
 }
 
-func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *store.EpochData) error {
+// getPartitionByAddress returns the partition by specified contract address.
+func (ls *AddressIndexedLogStore) getPartitionByAddress(contract *cfxaddress.Address) uint32 {
+	hasher := fnv.New32()
+	hasher.Write(contract.MustGetCommonAddress().Bytes())
+	// could use consistent hashing if repartition supported
+	return hasher.Sum32() % ls.partitions
+}
+
+// convertToPartitionedLogs converts the specified epoch data into partitioned event logs.
+func (ls *AddressIndexedLogStore) convertToPartitionedLogs(data *store.EpochData) (map[uint32][]*AddressIndexedLog, error) {
 	partition2Logs := make(map[uint32][]*AddressIndexedLog)
 
+	// divide event logs into different partitions by address
 	for _, block := range data.Blocks {
 		bn := block.BlockNumber.ToInt().Uint64()
 
@@ -118,11 +131,11 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 			receiptExt := data.ReceiptExts[tx.Hash]
 
 			for i, v := range receipt.Logs {
-				// TODO ignore logs of big contracts
+				// TODO ignore event logs of big contracts, which will be stored in separate tables.
 
 				contract, _, err := ls.cs.AddContractIfAbsent(v.Address.MustGetBase32Address())
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				var logext *store.LogExtra
@@ -131,10 +144,21 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 				}
 
 				log := NewAddressIndexedLog(&v, contract.ID, bn, logext)
-				partition := ls.getPartitionByAddress(&v.Address, ls.partitions)
+				partition := ls.getPartitionByAddress(&v.Address)
 				partition2Logs[partition] = append(partition2Logs[partition], log)
 			}
 		}
+	}
+
+	return partition2Logs, nil
+}
+
+// AddAddressIndexedLogs adds event logs of specified epoch into different partitioned tables.
+func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *store.EpochData) error {
+	// divide event logs into different partitions by address
+	partition2Logs, err := ls.convertToPartitionedLogs(data)
+	if err != nil {
+		return err
 	}
 
 	// Insert address indexed logs into different partitions.
@@ -148,6 +172,9 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 	return nil
 }
 
+// DeleteAddressIndexedLogs removes event logs of specified epoch number range.
+//
+// Generally, this is used when pivot chain switched for confirmed blocks.
 func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
 	// Delete logs for all partitions in batch
 	for i := uint32(0); i < ls.partitions; i++ {
@@ -161,37 +188,12 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 	return nil
 }
 
-func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(filter AddressIndexedLogFilter, contract cfxaddress.Address) ([]types.Log, []*store.LogExtra, error) {
-	partition := ls.getPartitionByAddress(&contract, ls.partitions)
+// GetAddressIndexedLogs returns event logs for the specified filter.
+func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(
+	filter AddressIndexedLogFilter,
+	contract *cfxaddress.Address,
+) ([]*AddressIndexedLog, error) {
+	partition := ls.getPartitionByAddress(contract)
 	filter.TableName = ls.getPartitionedTableName(&ls.model, partition)
-
-	addrIndexedLogs, err := filter.Find(ls.db)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Convert to RPC data type
-	logs := make([]types.Log, 0, len(addrIndexedLogs))
-	exts := make([]*store.LogExtra, 0, len(addrIndexedLogs))
-
-	for i := len(addrIndexedLogs) - 1; i >= 0; i-- {
-		log, ext, err := addrIndexedLogs[i].ToRpcLog(ls.cs)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		logs = append(logs, *log)
-		exts = append(exts, ext)
-	}
-
-	return logs, exts, nil
+	return filter.Find(ls.db)
 }
-
-func (ls *AddressIndexedLogStore) getPartitionByAddress(contract *cfxaddress.Address, totalPartitions uint32) uint32 {
-	hasher := fnv.New32()
-	hasher.Write(contract.MustGetCommonAddress().Bytes())
-	// Use consistent hashing if repartition supported
-	return hasher.Sum32() % totalPartitions
-}
-
-// TODO supports repartition with consistent hashing and data migration.
