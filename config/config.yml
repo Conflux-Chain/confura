@@ -19,11 +19,13 @@ cfx:
   retry: 3
   retryInterval: 1s
   requestTimeout: 3s
+  maxConnsPerHost: 1024 # optionally limits the total number of connections per host
 eth:
   http: http://evmtestnet.confluxrpc.com
   retry: 3
   retryInterval: 1s
   requestTimeout: 3s
+  maxConnsPerHost: 1024 # optionally limits the total number of connections per host
 sync:
   poll:
     interval: 300ms

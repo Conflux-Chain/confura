@@ -9,32 +9,66 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
-// MustNewCfxClient creates an instance of CFX client or panic on error.
-func MustNewCfxClient(url string) *sdk.Client {
-	retryCount := viper.GetInt("cfx.retry")
-	retryInterval := viper.GetDuration("cfx.retryInterval")
-	requestTimeout := viper.GetDuration("cfx.requestTimeout")
-
-	return MustNewCfxClientWithRetry(url, retryCount, retryInterval, requestTimeout)
+type cfxClientOption struct {
+	baseClientOption
+	*sdk.ClientOption
 }
 
-func MustNewCfxClientWithRetry(url string, retry int, retryInterval, requestTimeout time.Duration) *sdk.Client {
-	cfx, err := sdk.NewClient(url, sdk.ClientOption{
-		RetryCount:     retry,
-		RetryInterval:  retryInterval,
-		RequestTimeout: requestTimeout,
-	})
+func (o *cfxClientOption) SetRetryCount(retry int) {
+	o.RetryCount = retry
+}
 
+func (o *cfxClientOption) SetRetryInterval(retryInterval time.Duration) {
+	o.RetryInterval = retryInterval
+}
+
+func (o *cfxClientOption) SetRequestTimeout(reqTimeout time.Duration) {
+	o.RequestTimeout = reqTimeout
+}
+
+func (o *cfxClientOption) SetMaxConnsPerHost(maxConns int) {
+	o.MaxConnectionNum = maxConns
+}
+
+func MustNewCfxClientFromViper(options ...ClientOption) *sdk.Client {
+	return MustNewCfxClient(cfxClientCfg.Http, options...)
+}
+
+func MustNewCfxWsClientFromViper(options ...ClientOption) *sdk.Client {
+	return MustNewCfxClient(cfxClientCfg.WS, options...)
+}
+
+func MustNewCfxClient(url string, options ...ClientOption) *sdk.Client {
+	cfx, err := NewCfxClient(url, options...)
 	if err != nil {
-		logrus.WithError(err).Fatalf("Failed to create CFX client to %v", url)
+		logrus.WithField("url", url).WithError(err).Fatal("Failed to create CFX client")
 	}
 
-	HookCfxRpcMetricsMiddleware(cfx)
-
 	return cfx
+}
+
+func NewCfxClient(url string, options ...ClientOption) (*sdk.Client, error) {
+	opt := &cfxClientOption{
+		ClientOption: &sdk.ClientOption{
+			RetryCount:       cfxClientCfg.Retry,
+			RetryInterval:    cfxClientCfg.RetryInterval,
+			RequestTimeout:   cfxClientCfg.RequestTimeout,
+			MaxConnectionNum: cfxClientCfg.MaxConnsPerHost,
+		},
+	}
+
+	for _, o := range options {
+		o(opt)
+	}
+
+	cfx, err := sdk.NewClient(url, *opt.ClientOption)
+	if err == nil && opt.hookMetrics {
+		HookCfxRpcMetricsMiddleware(cfx)
+	}
+
+	return cfx, err
 }
 
 func HookCfxRpcMetricsMiddleware(cfx *sdk.Client) {

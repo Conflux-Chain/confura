@@ -7,7 +7,6 @@ import (
 	"github.com/conflux-chain/conflux-infura/store/redis"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/openweb3/web3go"
-	"github.com/spf13/viper"
 )
 
 type storeContext struct {
@@ -65,12 +64,12 @@ func mustInitSyncContext(storeCtx storeContext) syncContext {
 	sc := syncContext{storeContext: storeCtx}
 
 	if storeCtx.cfxDB != nil || storeCtx.cfxCache != nil {
-		sc.syncCfx = util.MustNewCfxClient(viper.GetString("cfx.http"))
-		sc.subCfx = util.MustNewCfxClient(viper.GetString("cfx.ws"))
+		sc.syncCfx = util.MustNewCfxClientFromViper(util.WithClientHookMetrics(true))
+		sc.subCfx = util.MustNewCfxWsClientFromViper()
 	}
 
 	if storeCtx.ethDB != nil {
-		sc.syncEth = util.MustNewEthClientFromViper()
+		sc.syncEth = util.MustNewEthClientFromViper(util.WithClientHookMetrics(true))
 	}
 
 	return sc

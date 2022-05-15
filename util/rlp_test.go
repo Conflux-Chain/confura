@@ -15,8 +15,18 @@ import (
 )
 
 var (
-	mFullnode = MustNewCfxClientWithRetry("http://main.confluxrpc.com", 3, time.Second, time.Second*5)
-	tFullnode = MustNewCfxClientWithRetry("http://test.confluxrpc.com", 3, time.Second, time.Second*5)
+	mFullnode = MustNewCfxClient(
+		"http://main.confluxrpc.com",
+		WithClientRetryCount(3),
+		WithClientRetryInterval(time.Second),
+		WithClientRequestTimeout(5*time.Second),
+	)
+	tFullnode = MustNewCfxClient(
+		"http://test.confluxrpc.com",
+		WithClientRetryCount(3),
+		WithClientRetryInterval(time.Second),
+		WithClientRequestTimeout(5*time.Second),
+	)
 )
 
 func TestTransactionRLPMarshal(t *testing.T) {

@@ -2,7 +2,6 @@ package util
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/metrics"
@@ -10,45 +9,62 @@ import (
 	providers "github.com/openweb3/web3go/provider_wrapper"
 	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
-var (
-	ethRpcCallSuccessMetricTimers sync.Map
-	ethRpcCallErrorMetricCounters sync.Map
-)
-
-// MustNewEthClientFromViper creates an instance of ETH client or panic on error.
-func MustNewEthClientFromViper() *web3go.Client {
-	nodeUrl := viper.GetString("eth.http")
-	return MustNewEthClient(nodeUrl)
+type ethClientOption struct {
+	baseClientOption
+	*web3go.ClientOption
 }
 
-// MustNewEthClient creates an instance of ETH client or panic on error.
-func MustNewEthClient(url string) *web3go.Client {
-	retryCount := viper.GetInt("eth.retry")
-	retryInterval := viper.GetDuration("eth.retryInterval")
-	requestTimeout := viper.GetDuration("eth.requestTimeout")
-
-	return MustNewEthClientWithRetry(url, retryCount, retryInterval, requestTimeout)
+func (o *ethClientOption) SetRetryCount(retry int) {
+	o.RetryCount = retry
 }
 
-func MustNewEthClientWithRetry(
-	url string, retry int, retryInterval, requestTimeout time.Duration,
-) *web3go.Client {
-	eth, err := web3go.NewClientWithOption(url, &web3go.ClientOption{
-		RetryCount:     retry,
-		RetryInterval:  retryInterval,
-		RequestTimeout: requestTimeout,
-	})
+func (o *ethClientOption) SetRetryInterval(retryInterval time.Duration) {
+	o.RetryInterval = retryInterval
+}
 
+func (o *ethClientOption) SetRequestTimeout(reqTimeout time.Duration) {
+	o.RequestTimeout = reqTimeout
+}
+
+func (o *ethClientOption) SetMaxConnsPerHost(maxConns int) {
+	o.MaxConnectionNum = maxConns
+}
+
+func MustNewEthClientFromViper(options ...ClientOption) *web3go.Client {
+	return MustNewEthClient(ethClientCfg.Http, options...)
+}
+
+func MustNewEthClient(url string, options ...ClientOption) *web3go.Client {
+	eth, err := NewEthClient(url, options...)
 	if err != nil {
-		logrus.WithError(err).Fatalf("Failed to create ETH client to %v", url)
+		logrus.WithField("url", url).WithError(err).Fatal("Failed to create ETH client")
 	}
 
-	HookEthRpcMetricsMiddleware(eth)
-
 	return eth
+}
+
+func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
+	opt := ethClientOption{
+		ClientOption: &web3go.ClientOption{
+			RetryCount:       ethClientCfg.Retry,
+			RetryInterval:    ethClientCfg.RetryInterval,
+			RequestTimeout:   ethClientCfg.RequestTimeout,
+			MaxConnectionNum: ethClientCfg.MaxConnsPerHost,
+		},
+	}
+
+	for _, o := range options {
+		o(&opt)
+	}
+
+	eth, err := web3go.NewClientWithOption(url, opt.ClientOption)
+	if err == nil && opt.hookMetrics {
+		HookEthRpcMetricsMiddleware(eth)
+	}
+
+	return eth, err
 }
 
 func HookEthRpcMetricsMiddleware(eth *web3go.Client) {

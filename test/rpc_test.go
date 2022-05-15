@@ -14,9 +14,19 @@ import (
 )
 
 var (
-	fullnode = util.MustNewCfxClientWithRetry("http://main.confluxrpc.org/v2", 3, time.Second, time.Second)
+	fullnode = util.MustNewCfxClient(
+		"http://main.confluxrpc.org/v2",
+		util.WithClientRetryCount(3),
+		util.WithClientRetryInterval(time.Second),
+		util.WithClientRequestTimeout(time.Second),
+	)
 	// CHANGE TO INFURA URL BELOW TO TEST
-	infura = util.MustNewCfxClientWithRetry("http://main.confluxrpc.org/v2", 3, time.Second, time.Second)
+	infura = util.MustNewCfxClient(
+		"http://main.confluxrpc.org/v2",
+		util.WithClientRetryCount(3),
+		util.WithClientRetryInterval(time.Second),
+		util.WithClientRequestTimeout(time.Second),
+	)
 
 	wcfx     = cfxaddress.MustNewFromBase32("cfx:acg158kvr8zanb1bs048ryb6rtrhr283ma70vz70tx")
 	wcfxTest = cfxaddress.MustNewFromBase32("cfxtest:achs3nehae0j6ksvy1bhrffsh1rtfrw1f6w1kzv46t")

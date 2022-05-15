@@ -6,6 +6,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/alert"
 	"github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -26,6 +27,7 @@ func init() {
 	initLogger()
 	metrics.Init()
 	alert.InitDingRobot()
+	util.Init()
 }
 
 func initLogger() {

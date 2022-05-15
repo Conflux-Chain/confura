@@ -7,7 +7,6 @@ import (
 
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/openweb3/web3go"
-	"github.com/spf13/viper"
 )
 
 type EthClientProvider struct {
@@ -17,16 +16,7 @@ type EthClientProvider struct {
 func NewEthClientProvider(router Router) *EthClientProvider {
 	cp := &EthClientProvider{
 		clientProvider: newClientProvider(router, func(url string) (interface{}, error) {
-			requestTimeout := viper.GetDuration("eth.requestTimeout")
-
-			eth, err := web3go.NewClientWithOption(url, &web3go.ClientOption{
-				RequestTimeout: requestTimeout,
-			})
-
-			if err == nil {
-				util.HookEthRpcMetricsMiddleware(eth)
-			}
-			return eth, err
+			return util.NewEthClient(url, util.WithClientHookMetrics(true))
 		}),
 	}
 

@@ -12,7 +12,6 @@ import (
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 var (
@@ -95,11 +94,10 @@ type EthNode struct {
 // node health in a separate goroutine until node closed.
 func NewEthNode(name, url string, hm HealthMonitor) *EthNode {
 	ctx, cancel := context.WithCancel(context.Background())
-	requestTimeout := viper.GetDuration("eth.requestTimeout")
 
 	n := &EthNode{
 		baseNode: newBaseNode(name, url, cancel),
-		Client:   util.MustNewEthClientWithRetry(url, 0, time.Millisecond, requestTimeout),
+		Client:   util.MustNewEthClient(url, util.WithClientRetryCount(0)),
 	}
 
 	n.atomicStatus.Store(NewEthStatus(name))
@@ -133,11 +131,10 @@ type CfxNode struct {
 // node health in a separate goroutine until node closed.
 func NewCfxNode(name, url string, hm HealthMonitor) *CfxNode {
 	ctx, cancel := context.WithCancel(context.Background())
-	requestTimeout := viper.GetDuration("cfx.requestTimeout")
 
 	n := &CfxNode{
 		baseNode:       newBaseNode(name, url, cancel),
-		ClientOperator: util.MustNewCfxClientWithRetry(url, 0, time.Millisecond, requestTimeout),
+		ClientOperator: util.MustNewCfxClient(url, util.WithClientRetryCount(0)),
 	}
 
 	n.atomicStatus.Store(NewStatus(name))
