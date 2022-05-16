@@ -757,10 +757,7 @@ func (ms *MysqlStore) loadLikelyActionLogsPartEpochRangesTx(dbTx *gorm.DB, opTyp
 	return partLogsEpochRanges, nil
 }
 
-// TODO how to unify the return type?
-// core space vs. eSpace
-// AddressIndexedLog vs. other models of different tables.
-func (ms *MysqlStore) GetLogsV2(ctx context.Context, storeFilter store.LogFilterV2) (interface{}, error) {
+func (ms *MysqlStore) GetLogsV2(ctx context.Context, storeFilter store.LogFilterV2) ([]*store.LogV2, error) {
 	contracts := storeFilter.Contracts.ToSlice()
 
 	filter := LogFilter{
@@ -774,7 +771,7 @@ func (ms *MysqlStore) GetLogsV2(ctx context.Context, storeFilter store.LogFilter
 		return nil, nil
 	}
 
-	var result []*AddressIndexedLog
+	var result []*store.LogV2
 
 	for _, addr := range contracts {
 		// convert contract address to id
@@ -805,10 +802,18 @@ func (ms *MysqlStore) GetLogsV2(ctx context.Context, storeFilter store.LogFilter
 			return nil, err
 		}
 
-		result = append(result, logs...)
+		// convert to common store log
+		for _, v := range logs {
+			result = append(result, (*store.LogV2)(v))
+		}
+
+		// check log count
+		if len(logs) > int(store.MaxLogLimit) {
+			return nil, store.ErrGetLogsResultSetTooLarge
+		}
 	}
 
-	sort.Sort(AddressIndexedLogSlice(result))
+	sort.Sort(store.LogSlice(result))
 
 	return result, nil
 }

@@ -76,32 +76,6 @@ func (l *AddressIndexedLog) ToRpcLog(cs *ContractStore) (*types.Log, *store.LogE
 	return &log, ext, nil
 }
 
-func (log *AddressIndexedLog) cmp(other *AddressIndexedLog) int {
-	if log.BlockNumber < other.BlockNumber {
-		return -1
-	}
-
-	if log.BlockNumber > other.BlockNumber {
-		return 1
-	}
-
-	if log.LogIndex < other.LogIndex {
-		return -1
-	}
-
-	if log.LogIndex > other.LogIndex {
-		return 1
-	}
-
-	return 0
-}
-
-type AddressIndexedLogSlice []*AddressIndexedLog
-
-func (s AddressIndexedLogSlice) Len() int           { return len(s) }
-func (s AddressIndexedLogSlice) Less(i, j int) bool { return s[i].cmp(s[j]) < 0 }
-func (s AddressIndexedLogSlice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-
 // AddressIndexedLogStore is used to store address indexed event logs in N partitions, e.g. logs_1, logs_2, ..., logs_n.
 type AddressIndexedLogStore struct {
 	partitionedStore
