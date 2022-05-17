@@ -132,7 +132,7 @@ func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		return nil
 	}
 
-	if err := ms.requireContinuous(dataSlice, atomic.LoadUint64(&ms.maxEpoch)); err != nil {
+	if err := store.RequireContinuous(dataSlice, atomic.LoadUint64(&ms.maxEpoch)); err != nil {
 		return err
 	}
 
@@ -222,31 +222,6 @@ func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
 	})
 
 	return err
-}
-
-func (*MysqlStore) requireContinuous(slice []*store.EpochData, currentEpoch uint64) error {
-	if len(slice) == 0 {
-		return nil
-	}
-
-	var nextEpoch uint64
-	if currentEpoch == citypes.EpochNumberNil {
-		nextEpoch = slice[0].Number
-	} else {
-		nextEpoch = currentEpoch + 1
-	}
-
-	for _, v := range slice {
-		if v.Number != nextEpoch {
-			return errors.WithMessagef(store.ErrContinousEpochRequired,
-				"Epoch not continuous, expected %v, but got %v",
-				nextEpoch, v.Number)
-		}
-
-		nextEpoch++
-	}
-
-	return nil
 }
 
 func (ms *MysqlStore) Pop() error {

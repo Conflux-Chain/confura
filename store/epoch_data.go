@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	sdkerr "github.com/Conflux-Chain/go-conflux-sdk/types/errors"
 	"github.com/conflux-chain/conflux-infura/metrics"
+	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
@@ -35,6 +36,31 @@ func init() {
 			blacklistedAddressSet[strings.ToLower(addr)] = struct{}{}
 		}
 	}
+}
+
+func RequireContinuous(slice []*EpochData, currentEpoch uint64) error {
+	if len(slice) == 0 {
+		return nil
+	}
+
+	var nextEpoch uint64
+	if currentEpoch == citypes.EpochNumberNil {
+		nextEpoch = slice[0].Number
+	} else {
+		nextEpoch = currentEpoch + 1
+	}
+
+	for _, v := range slice {
+		if v.Number != nextEpoch {
+			return errors.WithMessagef(ErrContinousEpochRequired,
+				"Epoch not continuous, expected %v, but got %v",
+				nextEpoch, v.Number)
+		}
+
+		nextEpoch++
+	}
+
+	return nil
 }
 
 // EpochData wraps the blockchain data of an epoch.

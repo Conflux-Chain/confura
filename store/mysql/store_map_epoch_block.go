@@ -1,6 +1,8 @@
 package mysql
 
 import (
+	"database/sql"
+
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"gorm.io/gorm"
 )
@@ -32,6 +34,22 @@ func newEochBlockMapStore(db *gorm.DB) *epochBlockMapStore {
 	return &epochBlockMapStore{
 		baseStore: newBaseStore(db),
 	}
+}
+
+// epochRange returns the max epoch within the map store.
+func (e2bms *epochBlockMapStore) maxEpoch() (uint64, bool, error) {
+	var maxEpoch sql.NullInt64
+
+	db := e2bms.db.Model(&epochBlockMap{}).Select("MAX(epoch)")
+	if err := db.Find(&maxEpoch).Error; err != nil {
+		return 0, false, err
+	}
+
+	if maxEpoch.Valid {
+		return uint64(maxEpoch.Int64), true, nil
+	}
+
+	return 0, false, nil
 }
 
 // blockRange returns the spanning block range for the give epoch.
