@@ -30,6 +30,8 @@ type CfxLogsApiHandler struct {
 	interceptableErrMap map[error]bool
 
 	ms *mysql.MysqlStore
+
+	V2 *CfxLogsApiHandlerV2
 }
 
 func NewCfxLogsApiHandler(sh CfxStoreHandler, ph *CfxPrunedLogsHandler, ms *mysql.MysqlStore) *CfxLogsApiHandler {
@@ -46,6 +48,10 @@ func NewCfxLogsApiHandler(sh CfxStoreHandler, ph *CfxPrunedLogsHandler, ms *mysq
 
 func (h *CfxLogsApiHandler) GetLogs(
 	ctx context.Context, cfx sdk.ClientOperator, filter *types.LogFilter) ([]types.Log, bool, error) {
+	if h.V2 != nil {
+		return h.V2.GetLogs(ctx, cfx, filter)
+	}
+
 	if len(filter.BlockHashes) > 1 {
 		return h.getLogsByBlockHashes(ctx, cfx, filter)
 	}

@@ -96,6 +96,9 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 		}
 
 		logsApiHandler = handler.NewCfxLogsApiHandler(storeHandler, prunedHandler, storeCtx.cfxDB)
+		if storeCtx.cfxDB.Config().AddressIndexedLogEnabled {
+			logsApiHandler.V2 = handler.NewCfxLogsApiHandlerV2(storeCtx.cfxDB, prunedHandler)
+		}
 
 		go rate.DefaultRegistryCfx.AutoReload(10*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
 	}
@@ -124,6 +127,9 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx st
 	if !util.IsInterfaceValNil(storeCtx.ethDB) {
 		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.ethDB, nil)
 		option.LogApiHandler = handler.NewEthLogsApiHandler(option.StoreHandler, storeCtx.ethDB)
+		if storeCtx.ethDB.Config().AddressIndexedLogEnabled {
+			option.LogApiHandler.V2 = handler.NewEthLogsApiHandlerV2(storeCtx.ethDB)
+		}
 
 		go rate.DefaultRegistryEth.AutoReload(10*time.Second, storeCtx.ethDB.LoadRateLimitConfigs)
 	}

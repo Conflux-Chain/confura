@@ -16,6 +16,8 @@ import (
 type EthLogsApiHandler struct {
 	storeHandler *EthStoreHandler // chained store handlers
 	ms           *mysql.MysqlStore
+
+	V2 *EthLogsApiHandlerV2
 }
 
 func NewEthLogsApiHandler(sh *EthStoreHandler, ms *mysql.MysqlStore) *EthLogsApiHandler {
@@ -26,6 +28,10 @@ func NewEthLogsApiHandler(sh *EthStoreHandler, ms *mysql.MysqlStore) *EthLogsApi
 
 func (h *EthLogsApiHandler) GetLogs(
 	ctx context.Context, w3c *web3go.Client, filter web3Types.FilterQuery) ([]web3Types.Log, bool, error) {
+	if h.V2 != nil {
+		return h.V2.GetLogs(ctx, w3c.Eth, &filter)
+	}
+
 	if filter.BlockHash != nil { // convert block hash to block number
 		block, err := w3c.Eth.BlockByHash(*filter.BlockHash, false)
 		if err == nil && block == nil {

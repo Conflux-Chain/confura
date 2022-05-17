@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 
 	"github.com/conflux-chain/conflux-infura/rpc/ethbridge"
 	"github.com/conflux-chain/conflux-infura/store"
@@ -14,7 +15,11 @@ import (
 type EthLogsApiHandlerV2 struct {
 	ms *mysql.MysqlStore
 
-	networkId uint32
+	networkId atomic.Value
+}
+
+func NewEthLogsApiHandlerV2(ms *mysql.MysqlStore) *EthLogsApiHandlerV2 {
+	return &EthLogsApiHandlerV2{ms: ms}
 }
 
 func (handler *EthLogsApiHandlerV2) GetLogs(
@@ -139,7 +144,12 @@ func (handler *EthLogsApiHandlerV2) splitLogFilterByBlockHash(
 		return nil, filter, nil
 	}
 
-	dbFilter := store.ParseEthLogFilterV2(bn, bn, filter, handler.networkId)
+	networkId, err := handler.getNetworkId(eth)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	dbFilter := store.ParseEthLogFilterV2(bn, bn, filter, networkId)
 	return &dbFilter, nil, err
 }
 
@@ -163,14 +173,19 @@ func (handler *EthLogsApiHandlerV2) splitLogFilterByBlockRange(
 		return nil, filter, nil
 	}
 
+	networkId, err := handler.getNetworkId(eth)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	// all data in database
 	if blockTo <= maxBlock {
-		dbFilter := store.ParseEthLogFilterV2(blockFrom, blockTo, filter, handler.networkId)
+		dbFilter := store.ParseEthLogFilterV2(blockFrom, blockTo, filter, networkId)
 		return &dbFilter, nil, nil
 	}
 
 	// otherwise, partial data in databse
-	dbFilter := store.ParseEthLogFilterV2(blockFrom, maxBlock, filter, handler.networkId)
+	dbFilter := store.ParseEthLogFilterV2(blockFrom, maxBlock, filter, networkId)
 	fnBlockFrom := types.BlockNumber(maxBlock + 1)
 	fnFilter := types.FilterQuery{
 		FromBlock: &fnBlockFrom,
@@ -180,4 +195,20 @@ func (handler *EthLogsApiHandlerV2) splitLogFilterByBlockRange(
 	}
 
 	return &dbFilter, &fnFilter, nil
+}
+
+func (handler *EthLogsApiHandlerV2) getNetworkId(eth *client.RpcEthClient) (uint32, error) {
+	if val := handler.networkId.Load(); val != nil {
+		return val.(uint32), nil
+	}
+
+	chainId, err := eth.ChainId()
+	if err != nil {
+		return 0, err
+	}
+
+	networkId := uint32(*chainId)
+	handler.networkId.Store(networkId)
+
+	return networkId, nil
 }

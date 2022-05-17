@@ -17,6 +17,10 @@ type CfxLogsApiHandlerV2 struct {
 	prunedHandler *CfxPrunedLogsHandler // optional
 }
 
+func NewCfxLogsApiHandlerV2(ms *mysql.MysqlStore, prunedHandler *CfxPrunedLogsHandler) *CfxLogsApiHandlerV2 {
+	return &CfxLogsApiHandlerV2{ms, prunedHandler}
+}
+
 func (handler *CfxLogsApiHandlerV2) GetLogs(
 	ctx context.Context,
 	cfx sdk.ClientOperator,

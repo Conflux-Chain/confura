@@ -125,6 +125,10 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 	return &ms
 }
 
+func (ms *MysqlStore) Config() Config {
+	return *ms.config
+}
+
 func (ms *MysqlStore) Push(data *store.EpochData) error {
 	return ms.Pushn([]*store.EpochData{data})
 }
