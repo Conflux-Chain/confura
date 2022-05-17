@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -10,10 +11,10 @@ import (
 	"github.com/conflux-chain/conflux-infura/store/mysql"
 )
 
-// TODO handle ErrPrunedAlready when split log filter
-
 type CfxLogsApiHandlerV2 struct {
 	ms *mysql.MysqlStore
+
+	prunedHandler *CfxPrunedLogsHandler // optional
 }
 
 func (handler *CfxLogsApiHandlerV2) GetLogs(
@@ -76,14 +77,32 @@ func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
 	// query data from database
 	for i := range dbFilters {
 		dbLogs, err := handler.ms.GetLogsV2(ctx, dbFilters[i])
+
+		// succeeded to get logs from database
+		if err == nil {
+			for _, v := range dbLogs {
+				log, _ := v.ToCfxLog()
+				logs = append(logs, *log)
+			}
+
+			continue
+		}
+
+		if !errors.Is(err, store.ErrAlreadyPruned) {
+			return nil, false, err
+		}
+
+		// data already pruned
+		if handler.prunedHandler == nil {
+			return nil, false, errEventLogsTooStale
+		}
+
+		fnLogs, err := handler.prunedHandler.GetLogs(ctx, *filter)
 		if err != nil {
 			return nil, false, err
 		}
 
-		for _, v := range dbLogs {
-			log, _ := v.ToCfxLog()
-			logs = append(logs, *log)
-		}
+		logs = append(logs, fnLogs...)
 	}
 
 	// query data from fullnode
