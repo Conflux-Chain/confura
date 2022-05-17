@@ -30,14 +30,14 @@ type epochBlockMapStore struct {
 	*baseStore
 }
 
-func newEochBlockMapStore(db *gorm.DB) *epochBlockMapStore {
+func newEpochBlockMapStore(db *gorm.DB) *epochBlockMapStore {
 	return &epochBlockMapStore{
 		baseStore: newBaseStore(db),
 	}
 }
 
 // epochRange returns the max epoch within the map store.
-func (e2bms *epochBlockMapStore) maxEpoch() (uint64, bool, error) {
+func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
 	var maxEpoch sql.NullInt64
 
 	db := e2bms.db.Model(&epochBlockMap{}).Select("MAX(epoch)")
@@ -53,7 +53,7 @@ func (e2bms *epochBlockMapStore) maxEpoch() (uint64, bool, error) {
 }
 
 // blockRange returns the spanning block range for the give epoch.
-func (e2bms *epochBlockMapStore) blockRange(epoch uint64) (citypes.RangeUint64, bool, error) {
+func (e2bms *epochBlockMapStore) BlockRange(epoch uint64) (citypes.RangeUint64, bool, error) {
 	var e2bmap epochBlockMap
 	var bnr citypes.RangeUint64
 

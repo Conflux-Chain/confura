@@ -63,6 +63,7 @@ func newMysqlEpochDataOpAffects(sea *store.EpochDataOpAffects) *mysqlEpochDataOp
 type MysqlStore struct {
 	*baseStore
 	logPartitioner
+	*epochBlockMapStore
 	*txStore
 	*blockStore
 	*logStore
@@ -89,6 +90,7 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 
 	ms := MysqlStore{
 		baseStore:              newBaseStore(db),
+		epochBlockMapStore:     newEpochBlockMapStore(db),
 		txStore:                newTxStore(db),
 		blockStore:             newBlockStore(db),
 		logStore:               newLogStore(db),

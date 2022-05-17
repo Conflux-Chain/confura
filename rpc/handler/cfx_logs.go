@@ -84,11 +84,6 @@ func (h *CfxLogsApiHandler) getLogsByBlockHashes(
 		}
 	}
 
-	// Blocks not found
-	if len(blockNumbers) == 0 {
-		return nil, true, nil
-	}
-
 	// To query event logs in order
 	sort.Ints(blockNumbers)
 

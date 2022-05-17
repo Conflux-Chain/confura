@@ -38,7 +38,7 @@ func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStore
 		ess:       NewEpochStatStore(db),
 		cfs:       newConfStore(db),
 		us:        newUserStore(db),
-		ebms:      newEochBlockMapStore(db),
+		ebms:      newEpochBlockMapStore(db),
 		cs:        cs,
 		config:    config,
 		disabler:  option.Disabler,
