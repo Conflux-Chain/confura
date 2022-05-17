@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"hash/fnv"
 
-	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
+
+const defaultBatchSizeLogInsert = 500
 
 // Address indexed logs are used to filter event logs by contract address and optional block number.
 // Generally, most contracts have limited event logs and need not to specify the epoch/block range filter.
@@ -32,48 +31,6 @@ type AddressIndexedLog struct {
 
 func (AddressIndexedLog) TableName() string {
 	return "addr_logs"
-}
-
-func NewAddressIndexedLog(log *types.Log, contractId, blockNumber uint64, ext *store.LogExtra) *AddressIndexedLog {
-	return &AddressIndexedLog{
-		ContractID:  contractId,
-		BlockNumber: blockNumber,
-		Epoch:       log.EpochNumber.ToInt().Uint64(),
-		Topic0:      convertLogTopic(log, 0),
-		Topic1:      convertLogTopic(log, 1),
-		Topic2:      convertLogTopic(log, 2),
-		Topic3:      convertLogTopic(log, 3),
-		LogIndex:    log.LogIndex.ToInt().Uint64(),
-		Extra:       mustMarshalLogExtraData(log, ext),
-	}
-}
-
-// TODO delete me once integrated with RPC
-func (l *AddressIndexedLog) ToRpcLog(cs *ContractStore) (*types.Log, *store.LogExtra, error) {
-	log, ext, err := silentUnmarshalLogExtraData(l.Extra)
-	if err != nil {
-		return nil, nil, errors.WithMessage(err, "Failed to unmarshal extra data for address indexed log")
-	}
-
-	contract, ok, err := cs.GetContractById(l.ContractID)
-	if err != nil {
-		return nil, nil, errors.WithMessage(err, "Failed to get contract by id")
-	}
-
-	if !ok {
-		return nil, nil, errors.New("Contract not found")
-	}
-
-	address, err := cfxaddress.NewFromBase32(contract.Address)
-	if err != nil {
-		return nil, nil, errors.WithMessage(err, "Failed to parse contract address")
-	}
-
-	log.Address = address
-	log.EpochNumber = types.NewBigInt(l.Epoch)
-	log.Topics = constructLogTopics(l.Topic0, l.Topic1, l.Topic2, l.Topic3)
-
-	return &log, ext, nil
 }
 
 // AddressIndexedLogStore is used to store address indexed event logs in N partitions, e.g. logs_1, logs_2, ..., logs_n.
@@ -145,9 +102,9 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(data *store.EpochData
 					logext = receiptExt.LogExts[i]
 				}
 
-				log := NewAddressIndexedLog(&v, contract.ID, bn, logext)
+				log := store.ParseCfxLog(&v, contract.ID, bn, logext)
 				partition := ls.getPartitionByAddress(v.Address.MustGetBase32Address())
-				partition2Logs[partition] = append(partition2Logs[partition], log)
+				partition2Logs[partition] = append(partition2Logs[partition], (*AddressIndexedLog)(log))
 			}
 		}
 	}
