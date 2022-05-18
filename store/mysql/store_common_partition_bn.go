@@ -153,15 +153,55 @@ func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange type
 	return
 }
 
-// expandBnRange expands block number range of the latest entity partition.
-func (bnps *bnPartitionedStore) expandBnRange(entity string, from, to uint64) error {
-	lastPart, existed, err := bnps.latestPartition(entity)
-	if err != nil {
-		return err
+// deltaUpdateCount delta updates the accumulated data size for the latest entity partition.
+// If the passed in `partitionIndex` parameter is non-negative, it will do sanity check to ensure the latest partition index
+// is equal to the passed in `partitionIndex`.
+func (bnps *bnPartitionedStore) deltaUpdateCount(dbTx *gorm.DB, entity string, partitionIndex, delta int) error {
+	if delta == 0 {
+		return nil
 	}
 
-	if !existed {
+	lastPart, existed, err := bnps.latestPartition(entity)
+	if err != nil {
+		return errors.WithMessage(err, "failed to get latest partition")
+	}
+
+	if !existed { // no availabe partition
 		return store.ErrNotFound
+	}
+
+	if partitionIndex >= 0 && lastPart.Index != uint32(partitionIndex) { // sanity check on partition index
+		return errors.WithMessagef(
+			store.ErrNotFound,
+			"expected partition index %v, got %v", partitionIndex, lastPart.Index,
+		)
+	}
+
+	if delta > 0 {
+		return dbTx.UpdateColumn("count", gorm.Expr("count + ?", delta)).Error
+	}
+
+	return dbTx.UpdateColumn("count", gorm.Expr("GREATEST(0, CAST(count AS SIGNED) - ?)", -delta)).Error
+}
+
+// expandBnRange expands block number range of the latest entity partition.
+// If the passed in `partitionIndex` parameter is non-negative, it will do sanity check to ensure the latest partition index
+// is equal to the passed in `partitionIndex`.
+func (bnps *bnPartitionedStore) expandBnRange(dbTx *gorm.DB, entity string, partitionIndex int, from, to uint64) error {
+	lastPart, existed, err := bnps.latestPartition(entity)
+	if err != nil {
+		return errors.WithMessage(err, "failed to get latest partition")
+	}
+
+	if !existed { // no availabe partition to expand
+		return store.ErrNotFound
+	}
+
+	if partitionIndex >= 0 && lastPart.Index != uint32(partitionIndex) { // sanity check on partition index
+		return errors.WithMessagef(
+			store.ErrNotFound,
+			"expected partition index %v, got %v", partitionIndex, lastPart.Index,
+		)
 	}
 
 	updates := map[string]interface{}{
@@ -169,47 +209,48 @@ func (bnps *bnPartitionedStore) expandBnRange(entity string, from, to uint64) er
 		"bn_max": to,
 	}
 
-	db := bnps.db.Model(&bnPartition{}).Where(lastPart)
-	return db.Updates(updates).Error
+	return dbTx.Model(&bnPartition{}).Where(lastPart).Updates(updates).Error
 }
 
 // shrinkBnRange shrink block number range from the latest entity partition.
-func (bnps *bnPartitionedStore) shrinkBnRange(entity string, to uint64) error {
+func (bnps *bnPartitionedStore) shrinkBnRange(dbTx *gorm.DB, entity string, to uint64) error {
 	startIdx, endIdx, err := bnps.indexRange(entity)
 	if err != nil {
-		return err
+		return errors.WithMessage(err, "failed to get index range")
 	}
 
-	return bnps.db.Transaction(func(tx *gorm.DB) error {
-		for idx := int32(endIdx); idx >= int32(startIdx); idx-- {
-			part, err := bnps.getPartitionByIndex(entity, uint32(idx))
-			if err != nil {
-				return err
-			}
-
-			if !part.BnMin.Valid || !part.BnMax.Valid {
-				// no entity data on partition
-				continue
-			}
-
-			if uint64(part.BnMax.Int64) <= to {
-				return nil
-			}
-
-			updates := make(map[string]interface{})
-
-			if uint64(part.BnMin.Int64) <= to {
-				updates["bn_max"] = to
-			} else {
-				updates["bn_max"] = gorm.Expr("NULL")
-				updates["bn_min"] = gorm.Expr("NULL")
-			}
-
-			return tx.Model(&bnPartition{}).Where(part).Updates(updates).Error
+	// shrink from the latest partition in case the shrunk range is not fully covered by any partition
+	for idx := int32(endIdx); idx >= int32(startIdx); idx-- {
+		part, err := bnps.getPartitionByIndex(entity, uint32(idx))
+		if err != nil {
+			return errors.WithMessagef(err, "failed to get partition with index %v", idx)
 		}
 
-		return nil
-	})
+		if !part.BnMin.Valid || !part.BnMax.Valid {
+			// no entity data on partition
+			continue
+		}
+
+		if uint64(part.BnMax.Int64) <= to { // shrunk over
+			break
+		}
+
+		updates := make(map[string]interface{})
+
+		if uint64(part.BnMin.Int64) <= to {
+			updates["bn_max"] = to
+		} else { // shrunk through the whole partition
+			updates["bn_max"] = gorm.Expr("NULL")
+			updates["bn_min"] = gorm.Expr("NULL")
+		}
+
+		err = dbTx.Model(&bnPartition{}).Where(part).Updates(updates).Error
+		if err != nil {
+			return errors.WithMessagef(err, "failed to shrink partition with index %v", idx)
+		}
+	}
+
+	return nil
 }
 
 // oldestPartition returns the oldest created partition (also with the min index) from
@@ -280,7 +321,7 @@ func (bnps *bnPartitionedStore) entityRange(selector string, entity string) (sta
 	}
 
 	db := bnps.db.Select(selector).Model(&bnPartition{}).Where("entity = ?", entity)
-	if err = db.Scan(&er).Error; err != nil {
+	if err = db.Find(&er).Error; err != nil {
 		return
 	}
 

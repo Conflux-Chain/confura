@@ -69,42 +69,43 @@ func (ls *logStoreV2) preparePartition(dataSlice []*store.EpochData) (bnPartitio
 	return *partition, nil
 }
 
-// AddLogs adds event logs of specified epoch into partitioned tables.
-func (ls *logStoreV2) AddLogs(dbTx *gorm.DB, data *store.EpochData, logPartition bnPartition) error {
-	// Containers to collect event logs for batch inserting
+func (ls *logStoreV2) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartition bnPartition) error {
+	// containers to collect event logs for batch inserting
 	var logs []*logV2
 
-	for _, block := range data.Blocks {
-		bn := block.BlockNumber.ToInt().Uint64()
+	for _, data := range dataSlice {
+		for _, block := range data.Blocks {
+			bn := block.BlockNumber.ToInt().Uint64()
 
-		for _, tx := range block.Transactions {
-			receipt := data.Receipts[tx.Hash]
+			for _, tx := range block.Transactions {
+				receipt := data.Receipts[tx.Hash]
 
-			// Skip transactions that unexecuted in block.
-			// !!! Still need to check BlockHash and Status in case more than one transactions
-			// of the same hash appeared in the same epoch.
-			if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
-				continue
-			}
-
-			var rcptExt *store.ReceiptExtra
-			if len(data.ReceiptExts) > 0 {
-				rcptExt = data.ReceiptExts[tx.Hash]
-			}
-
-			for k, log := range receipt.Logs {
-				contract, _, err := ls.cs.AddContractIfAbsent(log.Address.MustGetBase32Address())
-				if err != nil {
-					return errors.WithMessage(err, "failed to add contract")
+				// Skip transactions that unexecuted in block.
+				// !!! Still need to check BlockHash and Status in case more than one transactions
+				// of the same hash appeared in the same epoch.
+				if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
+					continue
 				}
 
-				var logExt *store.LogExtra
-				if rcptExt != nil && k < len(rcptExt.LogExts) {
-					logExt = rcptExt.LogExts[k]
+				var rcptExt *store.ReceiptExtra
+				if len(data.ReceiptExts) > 0 {
+					rcptExt = data.ReceiptExts[tx.Hash]
 				}
 
-				log := store.ParseCfxLog(&log, contract.ID, bn, logExt)
-				logs = append(logs, (*logV2)(log))
+				for k, log := range receipt.Logs {
+					contract, _, err := ls.cs.AddContractIfAbsent(log.Address.MustGetBase32Address())
+					if err != nil {
+						return errors.WithMessage(err, "failed to add contract")
+					}
+
+					var logExt *store.LogExtra
+					if rcptExt != nil && k < len(rcptExt.LogExts) {
+						logExt = rcptExt.LogExts[k]
+					}
+
+					log := store.ParseCfxLog(&log, contract.ID, bn, logExt)
+					logs = append(logs, (*logV2)(log))
+				}
 			}
 		}
 	}
@@ -119,6 +120,24 @@ func (ls *logStoreV2) AddLogs(dbTx *gorm.DB, data *store.EpochData, logPartition
 		return err
 	}
 
-	// TODO: write block number partitioned meta table
-	return err
+	// update log partition router info
+	bnMin := dataSlice[0].Blocks[0].BlockNumber.ToInt().Uint64()
+	bnMax := dataSlice[len(dataSlice)-1].GetPivotBlock().BlockNumber.ToInt().Uint64()
+
+	return ls.updatePartitionRouter(dbTx, &logPartition, bnMin, bnMax, len(logs))
+}
+
+// updatePartitionRouter updates log partition router info such as block number range and total counts.
+func (ls *logStoreV2) updatePartitionRouter(dbTx *gorm.DB, partition *bnPartition, bnMin, bnMax uint64, count int) error {
+	err := ls.expandBnRange(dbTx, bnPartitionedLogEntity, int(partition.Index), bnMin, bnMax)
+	if err != nil {
+		return errors.WithMessage(err, "failed to expand partition bn range")
+	}
+
+	err = ls.deltaUpdateCount(dbTx, bnPartitionedLogEntity, int(partition.Index), count)
+	if err != nil {
+		return errors.WithMessage(err, "failed to delta update partition size")
+	}
+
+	return nil
 }

@@ -139,18 +139,25 @@ func (bs *blockStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*store.B
 	return bs.loadBlockSummary("block_number = ?", blockNumber)
 }
 
-// AddBlocks adds blocks of specified epoch into db store.
-func (bs *blockStore) AddBlocks(dbTx *gorm.DB, data *store.EpochData) error {
-	blocks := []*block{}
-	pivotIndex := len(data.Blocks) - 1
+// Pushn batch save epoch blocks into db store.
+func (bs *blockStore) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
+	var blocks []*block
 
-	for i, block := range data.Blocks {
-		var blockExt *store.BlockExtra
-		if i < len(data.BlockExts) {
-			blockExt = data.BlockExts[i]
+	for _, data := range dataSlice {
+		pivotIndex := len(data.Blocks) - 1
+
+		for i, block := range data.Blocks {
+			var blockExt *store.BlockExtra
+			if i < len(data.BlockExts) {
+				blockExt = data.BlockExts[i]
+			}
+
+			blocks = append(blocks, newBlock(block, i == pivotIndex, blockExt))
 		}
+	}
 
-		blocks = append(blocks, newBlock(block, i == pivotIndex, blockExt))
+	if len(blocks) == 0 {
+		return nil
 	}
 
 	return dbTx.CreateInBatches(blocks, defaultBatchSizeBlockInsert).Error

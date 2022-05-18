@@ -100,44 +100,41 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 	}
 
 	return ms.db.Transaction(func(dbTx *gorm.DB) error {
-		for _, data := range dataSlice {
-			if err := ms.putOneWithTx(dbTx, data, logPartition); err != nil {
-				return err
+		if !ms.disabler.IsChainBlockDisabled() {
+			// save blocks
+			if err := ms.bs.Pushn(dbTx, dataSlice); err != nil {
+				return errors.WithMessagef(err, "failed to save blocks")
 			}
 		}
 
-		return nil
+		skipTxn := ms.disabler.IsChainTxnDisabled()
+		skipRcpt := ms.disabler.IsChainReceiptDisabled()
+		if !skipRcpt || !skipTxn {
+			// save transactions or receipts
+			if err := ms.ts.Pushn(dbTx, dataSlice, skipTxn, skipRcpt); err != nil {
+				return errors.WithMessage(err, "failed to save transactions")
+			}
+		}
+
+		if !ms.disabler.IsChainLogDisabled() {
+			if ms.config.AddressIndexedLogEnabled {
+				// save address indexed event logs
+				for _, data := range dataSlice {
+					if err := ms.ails.AddAddressIndexedLogs(dbTx, data); err != nil {
+						return errors.WithMessage(err, "failed to save address indexed event logs")
+					}
+
+				}
+			}
+
+			// save event logs
+			if err := ms.ls.Pushn(dbTx, dataSlice, logPartition); err != nil {
+				return errors.WithMessage(err, "failed to save event logs")
+			}
+
+		}
+
+		// save epoch to block mapping data
+		return ms.ebms.Pushn(dbTx, dataSlice)
 	})
-}
-
-func (ms *MysqlStoreV2) putOneWithTx(dbTx *gorm.DB, data *store.EpochData, logPartition bnPartition) error {
-	if !ms.disabler.IsChainBlockDisabled() { // save blocks
-		if err := ms.bs.AddBlocks(dbTx, data); err != nil {
-			return errors.WithMessagef(err, "failed to save blocks")
-		}
-	}
-
-	skipTxn := ms.disabler.IsChainTxnDisabled()
-	skipRcpt := ms.disabler.IsChainReceiptDisabled()
-	if !skipRcpt || !skipTxn { // save transactions && receipts
-		if err := ms.ts.AddTransactions(dbTx, data, skipTxn, skipRcpt); err != nil {
-			return errors.WithMessage(err, "failed to save transactions")
-		}
-	}
-
-	if !ms.disabler.IsChainLogDisabled() { // save event logs
-		if err := ms.ls.AddLogs(dbTx, data, logPartition); err != nil {
-			return errors.WithMessage(err, "failed to save event logs")
-		}
-
-		if ms.config.AddressIndexedLogEnabled { // save address indexed event logs
-			if err := ms.ails.AddAddressIndexedLogs(dbTx, data); err != nil {
-				return errors.WithMessage(err, "failed to save address indexed event logs")
-			}
-		}
-	}
-
-	// TODO: write epoch to block mapping table
-
-	return nil
 }

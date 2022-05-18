@@ -218,43 +218,46 @@ func (ts *txStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, err
 	}, nil
 }
 
-// AddTransactions adds transactions of specified epoch into db store.
-func (ts *txStore) AddTransactions(dbTx *gorm.DB, data *store.EpochData, skipTx, skipRcpt bool) error {
+// Pushn batch save epoch transactions into db store.
+func (ts *txStore) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData, skipTx, skipRcpt bool) error {
 	if skipTx && skipRcpt {
 		return nil
 	}
 
-	// Containers to collect transactions and receipts for batch inserting.
-	txns := make([]*transaction, 0, len(data.Blocks))
-	for i, block := range data.Blocks {
-		var blockExt *store.BlockExtra
-		if i < len(data.BlockExts) {
-			blockExt = data.BlockExts[i]
-		}
+	// containers to collect transactions and receipts for batch inserting
+	var txns []*transaction
 
-		for j, tx := range block.Transactions {
-			receipt := data.Receipts[tx.Hash]
-
-			// Skip transactions that unexecuted in block.
-			// !!! Still need to check BlockHash and Status in case more than one transactions
-			// of the same hash appeared in the same epoch.
-			if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
-				continue
+	for _, data := range dataSlice {
+		for i, block := range data.Blocks {
+			var blockExt *store.BlockExtra
+			if i < len(data.BlockExts) {
+				blockExt = data.BlockExts[i]
 			}
 
-			var txExt *store.TransactionExtra
-			if blockExt != nil && j < len(blockExt.TxnExts) {
-				txExt = blockExt.TxnExts[j]
-			}
+			for j, tx := range block.Transactions {
+				receipt := data.Receipts[tx.Hash]
 
-			var rcptExt *store.ReceiptExtra
-			if len(data.ReceiptExts) > 0 {
-				rcptExt = data.ReceiptExts[tx.Hash]
-			}
+				// Skip transactions that unexecuted in block.
+				// !!! Still need to check BlockHash and Status in case more than one transactions
+				// of the same hash appeared in the same epoch.
+				if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
+					continue
+				}
 
-			if !skipTx || !skipRcpt {
-				txn := newTx(&tx, receipt, txExt, rcptExt, skipTx, skipRcpt)
-				txns = append(txns, txn)
+				var txExt *store.TransactionExtra
+				if blockExt != nil && j < len(blockExt.TxnExts) {
+					txExt = blockExt.TxnExts[j]
+				}
+
+				var rcptExt *store.ReceiptExtra
+				if len(data.ReceiptExts) > 0 {
+					rcptExt = data.ReceiptExts[tx.Hash]
+				}
+
+				if !skipTx || !skipRcpt {
+					txn := newTx(&tx, receipt, txExt, rcptExt, skipTx, skipRcpt)
+					txns = append(txns, txn)
+				}
 			}
 		}
 	}
@@ -263,9 +266,5 @@ func (ts *txStore) AddTransactions(dbTx *gorm.DB, data *store.EpochData, skipTx,
 		return nil
 	}
 
-	if err := dbTx.CreateInBatches(txns, defaultBatchSizeTxnInsert).Error; err != nil {
-		return err
-	}
-
-	return nil
+	return dbTx.CreateInBatches(txns, defaultBatchSizeTxnInsert).Error
 }

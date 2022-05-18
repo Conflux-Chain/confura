@@ -3,9 +3,12 @@ package mysql
 import (
 	"database/sql"
 
+	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"gorm.io/gorm"
 )
+
+const defaultBatchSizeMappingInsert = 1000
 
 // epochBlockMap mapping data from epoch to relative block info.
 // (such as block range and pivot block hash).
@@ -76,4 +79,25 @@ func (e2bms *epochBlockMapStore) pivotHash(epoch uint64) (string, bool, error) {
 	}
 
 	return e2bmap.PivotHash, existed, nil
+}
+
+// Pushn batch saves epoch to block mapping data to db store.
+func (e2bms *epochBlockMapStore) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
+	var mappings []*epochBlockMap
+
+	for _, data := range dataSlice {
+		pivotBlock := data.GetPivotBlock()
+		mappings = append(mappings, &epochBlockMap{
+			Epoch:     data.Number,
+			BnMin:     data.Blocks[0].BlockNumber.ToInt().Uint64(),
+			BnMax:     pivotBlock.BlockNumber.ToInt().Uint64(),
+			PivotHash: pivotBlock.Hash.String(),
+		})
+	}
+
+	if len(mappings) == 0 {
+		return nil
+	}
+
+	return dbTx.CreateInBatches(mappings, defaultBatchSizeMappingInsert).Error
 }
