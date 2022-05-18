@@ -32,17 +32,18 @@ type MysqlStoreV2 struct {
 
 func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStoreV2 {
 	cs := NewContractStore(db)
+	ebms := newEpochBlockMapStore(db)
 
 	ms := MysqlStoreV2{
 		baseStore: newBaseStore(db),
 		ts:        newTxStore(db),
 		bs:        newBlockStore(db),
-		ls:        newLogStoreV2(db, cs),
+		ls:        newLogStoreV2(db, cs, ebms),
 		ails:      NewAddressIndexedLogStore(db, cs, config.AddressIndexedLogPartitions),
 		ess:       NewEpochStatStore(db),
 		cfs:       newConfStore(db),
 		us:        newUserStore(db),
-		ebms:      newEpochBlockMapStore(db),
+		ebms:      ebms,
 		cs:        cs,
 		config:    config,
 		disabler:  option.Disabler,
@@ -136,5 +137,60 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 
 		// save epoch to block mapping data
 		return ms.ebms.Pushn(dbTx, dataSlice)
+	})
+}
+
+// Popn pops multiple epoch data from database.
+func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
+	maxEpoch, ok, err := ms.ebms.MaxEpoch()
+	if err != nil {
+		return errors.WithMessage(err, "failed to get max epoch")
+	}
+
+	if !ok || epochUntil > maxEpoch { // no data in database or popped beyond the max epoch
+		return nil
+	}
+
+	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/delete")
+	defer updater.Update()
+
+	return ms.db.Transaction(func(dbTx *gorm.DB) error {
+		if !ms.disabler.IsChainBlockDisabled() {
+			// remove blocks
+			if err := ms.bs.Remove(dbTx, epochUntil, maxEpoch); err != nil {
+				return errors.WithMessage(err, "failed to remove blocks")
+			}
+		}
+
+		skipTxn := ms.disabler.IsChainTxnDisabled()
+		skipRcpt := ms.disabler.IsChainReceiptDisabled()
+		if !skipRcpt || !skipTxn {
+			// remove transactions or receipts
+			if err := ms.ts.Remove(dbTx, epochUntil, maxEpoch); err != nil {
+				return errors.WithMessage(err, "failed to remove transactions")
+			}
+		}
+
+		if !ms.disabler.IsChainLogDisabled() {
+			// remove address indexed event logs
+			if ms.config.AddressIndexedLogEnabled {
+				if err := ms.ails.DeleteAddressIndexedLogs(dbTx, epochUntil, maxEpoch); err != nil {
+					return errors.WithMessage(err, "failed to remove address indexed event logs")
+				}
+			}
+
+			// pop event logs
+			if err := ms.ls.Popn(dbTx, epochUntil); err != nil {
+				return errors.WithMessage(err, "failed to pop event logs")
+			}
+		}
+
+		// remove epoch to block mapping data
+		if err := ms.ebms.Remove(dbTx, epochUntil, maxEpoch); err != nil {
+			return errors.WithMessage(err, "failed to remove epoch to block mapping data")
+		}
+
+		// pop is always due to pivot chain switch, update reorg version too
+		return ms.cfs.createOrUpdateReorgVersion(dbTx)
 	})
 }

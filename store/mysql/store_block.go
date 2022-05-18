@@ -162,3 +162,8 @@ func (bs *blockStore) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
 
 	return dbTx.CreateInBatches(blocks, defaultBatchSizeBlockInsert).Error
 }
+
+// Remove remove blocks of specific epoch range from db store.
+func (bs *blockStore) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
+	return dbTx.Where("epoch >= ? AND epoch <= ?", epochFrom, epochTo).Delete(&block{}).Error
+}

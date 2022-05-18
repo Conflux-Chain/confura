@@ -34,12 +34,13 @@ func (logV2) TableName() string {
 
 type logStoreV2 struct {
 	*bnPartitionedStore
-	cs *ContractStore
+	cs   *ContractStore
+	ebms *epochBlockMapStore
 }
 
-func newLogStoreV2(db *gorm.DB, cs *ContractStore) *logStoreV2 {
+func newLogStoreV2(db *gorm.DB, cs *ContractStore, ebms *epochBlockMapStore) *logStoreV2 {
 	return &logStoreV2{
-		bnPartitionedStore: newBnPartitionedStore(db), cs: cs,
+		bnPartitionedStore: newBnPartitionedStore(db), cs: cs, ebms: ebms,
 	}
 }
 
@@ -120,23 +121,55 @@ func (ls *logStoreV2) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData, logPart
 		return err
 	}
 
-	// update log partition router info
+	// update block range for log partition router
 	bnMin := dataSlice[0].Blocks[0].BlockNumber.ToInt().Uint64()
 	bnMax := dataSlice[len(dataSlice)-1].GetPivotBlock().BlockNumber.ToInt().Uint64()
 
-	return ls.updatePartitionRouter(dbTx, &logPartition, bnMin, bnMax, len(logs))
-}
-
-// updatePartitionRouter updates log partition router info such as block number range and total counts.
-func (ls *logStoreV2) updatePartitionRouter(dbTx *gorm.DB, partition *bnPartition, bnMin, bnMax uint64, count int) error {
-	err := ls.expandBnRange(dbTx, bnPartitionedLogEntity, int(partition.Index), bnMin, bnMax)
+	err = ls.expandBnRange(dbTx, bnPartitionedLogEntity, int(logPartition.Index), bnMin, bnMax)
 	if err != nil {
 		return errors.WithMessage(err, "failed to expand partition bn range")
 	}
 
-	err = ls.deltaUpdateCount(dbTx, bnPartitionedLogEntity, int(partition.Index), count)
+	// update partition data size
+	err = ls.deltaUpdateCount(dbTx, bnPartitionedLogEntity, int(logPartition.Index), len(logs))
 	if err != nil {
 		return errors.WithMessage(err, "failed to delta update partition size")
+	}
+
+	return nil
+}
+
+// Popn pops event logs until the specific epoch from db store.
+func (ls *logStoreV2) Popn(dbTx *gorm.DB, epochUntil uint64) error {
+	bn, ok, err := ls.ebms.BlockRange(epochUntil)
+	if err != nil {
+		return errors.WithMessagef(err, "failed to get block mapping for epoch %v", epochUntil)
+	}
+
+	if !ok { // no block mapping found for epoch
+		return errors.Errorf("no block mapping found for epoch %v", epochUntil)
+	}
+
+	// update block range for log partition router
+	partitions, err := ls.shrinkBnRange(dbTx, bnPartitionedLogEntity, bn.From)
+	if err != nil {
+		return errors.WithMessage(err, "failed to shrink partition bn range")
+	}
+
+	for i := len(partitions) - 1; i >= 0; i-- {
+		partition := partitions[i]
+		tblName := ls.getPartitionedTableName(&logV2{}, partition.Index)
+
+		res := dbTx.Table(tblName).Where("bn >= ?", bn.From).Delete(logV2{})
+		if res.Error != nil {
+			return res.Error
+		}
+
+		// update partition data size
+		err = ls.deltaUpdateCount(dbTx, bnPartitionedLogEntity, int(partition.Index), -int(res.RowsAffected))
+		if err != nil {
+			return errors.WithMessage(err, "failed to delta update partition size")
+		}
 	}
 
 	return nil

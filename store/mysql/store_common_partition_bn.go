@@ -213,17 +213,20 @@ func (bnps *bnPartitionedStore) expandBnRange(dbTx *gorm.DB, entity string, part
 }
 
 // shrinkBnRange shrink block number range from the latest entity partition.
-func (bnps *bnPartitionedStore) shrinkBnRange(dbTx *gorm.DB, entity string, to uint64) error {
+// !!! The shrunk until block number is not accounted for the entity range.
+func (bnps *bnPartitionedStore) shrinkBnRange(dbTx *gorm.DB, entity string, bn uint64) ([]*bnPartition, error) {
+	var shrunkPartitions []*bnPartition
+
 	startIdx, endIdx, err := bnps.indexRange(entity)
 	if err != nil {
-		return errors.WithMessage(err, "failed to get index range")
+		return nil, errors.WithMessage(err, "failed to get index range")
 	}
 
 	// shrink from the latest partition in case the shrunk range is not fully covered by any partition
 	for idx := int32(endIdx); idx >= int32(startIdx); idx-- {
 		part, err := bnps.getPartitionByIndex(entity, uint32(idx))
 		if err != nil {
-			return errors.WithMessagef(err, "failed to get partition with index %v", idx)
+			return nil, errors.WithMessagef(err, "failed to get partition with index %v", idx)
 		}
 
 		if !part.BnMin.Valid || !part.BnMax.Valid {
@@ -231,26 +234,28 @@ func (bnps *bnPartitionedStore) shrinkBnRange(dbTx *gorm.DB, entity string, to u
 			continue
 		}
 
-		if uint64(part.BnMax.Int64) <= to { // shrunk over
+		if bn > 0 && uint64(part.BnMax.Int64) < bn { // shrunk over
 			break
 		}
 
 		updates := make(map[string]interface{})
 
-		if uint64(part.BnMin.Int64) <= to {
-			updates["bn_max"] = to
-		} else { // shrunk through the whole partition
+		if bn == 0 || uint64(part.BnMin.Int64) >= bn {
 			updates["bn_max"] = gorm.Expr("NULL")
 			updates["bn_min"] = gorm.Expr("NULL")
+		} else { // bn != 0 && part.BnMin.Int64 < bn
+			updates["bn_max"] = bn - 1
 		}
 
 		err = dbTx.Model(&bnPartition{}).Where(part).Updates(updates).Error
 		if err != nil {
-			return errors.WithMessagef(err, "failed to shrink partition with index %v", idx)
+			return nil, errors.WithMessagef(err, "failed to shrink partition with index %v", idx)
 		}
+
+		shrunkPartitions = append(shrunkPartitions, part)
 	}
 
-	return nil
+	return shrunkPartitions, nil
 }
 
 // oldestPartition returns the oldest created partition (also with the min index) from

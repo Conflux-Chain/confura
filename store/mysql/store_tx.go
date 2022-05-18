@@ -268,3 +268,8 @@ func (ts *txStore) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData, skipTx, sk
 
 	return dbTx.CreateInBatches(txns, defaultBatchSizeTxnInsert).Error
 }
+
+// Remove remove transactions of specific epoch range from db store.
+func (ts *txStore) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
+	return dbTx.Where("epoch >= ? AND epoch <= ?", epochFrom, epochTo).Delete(&transaction{}).Error
+}

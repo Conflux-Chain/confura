@@ -101,3 +101,8 @@ func (e2bms *epochBlockMapStore) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochDa
 
 	return dbTx.CreateInBatches(mappings, defaultBatchSizeMappingInsert).Error
 }
+
+// Remove remove epoch to block mappings of specific epoch range from db store.
+func (e2bms *epochBlockMapStore) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
+	return dbTx.Where("epoch >= ? AND epoch <= ?", epochFrom, epochTo).Delete(&epochBlockMap{}).Error
+}
