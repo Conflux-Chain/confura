@@ -14,6 +14,8 @@ import (
 	"gorm.io/hints"
 )
 
+const defaultBatchSizeTxnInsert = 500
+
 type transaction struct {
 	ID                uint64
 	Epoch             uint64 `gorm:"not null;index"`
@@ -214,4 +216,56 @@ func (ts *txStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, err
 	return &store.TransactionReceipt{
 		CfxReceipt: &receipt, Extra: ptrRcptExtra,
 	}, nil
+}
+
+// AddTransactions adds transactions of specified epoch into db store.
+func (ts *txStore) AddTransactions(dbTx *gorm.DB, data *store.EpochData, skipTx, skipRcpt bool) error {
+	if skipTx && skipRcpt {
+		return nil
+	}
+
+	// Containers to collect transactions and receipts for batch inserting.
+	txns := make([]*transaction, 0, len(data.Blocks))
+	for i, block := range data.Blocks {
+		var blockExt *store.BlockExtra
+		if i < len(data.BlockExts) {
+			blockExt = data.BlockExts[i]
+		}
+
+		for j, tx := range block.Transactions {
+			receipt := data.Receipts[tx.Hash]
+
+			// Skip transactions that unexecuted in block.
+			// !!! Still need to check BlockHash and Status in case more than one transactions
+			// of the same hash appeared in the same epoch.
+			if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
+				continue
+			}
+
+			var txExt *store.TransactionExtra
+			if blockExt != nil && j < len(blockExt.TxnExts) {
+				txExt = blockExt.TxnExts[j]
+			}
+
+			var rcptExt *store.ReceiptExtra
+			if len(data.ReceiptExts) > 0 {
+				rcptExt = data.ReceiptExts[tx.Hash]
+			}
+
+			if !skipTx || !skipRcpt {
+				txn := newTx(&tx, receipt, txExt, rcptExt, skipTx, skipRcpt)
+				txns = append(txns, txn)
+			}
+		}
+	}
+
+	if len(txns) == 0 {
+		return nil
+	}
+
+	if err := dbTx.CreateInBatches(txns, defaultBatchSizeTxnInsert).Error; err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -8,6 +8,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const defaultBatchSizeBlockInsert = 500
+
 type block struct {
 	ID          uint64
 	Epoch       uint64 `gorm:"not null;index"`
@@ -135,4 +137,21 @@ func (bs *blockStore) GetBlockByBlockNumber(blockNumber uint64) (*store.Block, e
 
 func (bs *blockStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*store.BlockSummary, error) {
 	return bs.loadBlockSummary("block_number = ?", blockNumber)
+}
+
+// AddBlocks adds blocks of specified epoch into db store.
+func (bs *blockStore) AddBlocks(dbTx *gorm.DB, data *store.EpochData) error {
+	blocks := []*block{}
+	pivotIndex := len(data.Blocks) - 1
+
+	for i, block := range data.Blocks {
+		var blockExt *store.BlockExtra
+		if i < len(data.BlockExts) {
+			blockExt = data.BlockExts[i]
+		}
+
+		blocks = append(blocks, newBlock(block, i == pivotIndex, blockExt))
+	}
+
+	return dbTx.CreateInBatches(blocks, defaultBatchSizeBlockInsert).Error
 }
