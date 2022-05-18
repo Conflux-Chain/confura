@@ -73,7 +73,7 @@ nearhead:
     # maxOpenConns: 10
     # maxIdleConns: 10
     # addressIndexedLogEnabled: false
-    # addressIndexedLogPartitions: 10
+    # addressIndexedLogPartitions: 100
   # redis:
   #   enabled: false
   #   cacheTime: 12h

@@ -40,7 +40,7 @@ type Config struct {
 	MaxIdleConns    int           `default:"10"`
 
 	AddressIndexedLogEnabled    bool
-	AddressIndexedLogPartitions uint32 `default:"10"`
+	AddressIndexedLogPartitions uint32 `default:"100"`
 }
 
 func mustNewConfigFromViper(key string) *Config {
