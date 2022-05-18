@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/conflux-chain/conflux-infura/store"
 	cisync "github.com/conflux-chain/conflux-infura/sync"
 	"github.com/conflux-chain/conflux-infura/sync/catchup"
 	"github.com/conflux-chain/conflux-infura/util"
@@ -85,8 +86,9 @@ func startSyncService(*cobra.Command, []string) {
 	}
 
 	if syncOpt.kvSyncEnabled {
-		syncer := startSyncCfxCache(ctx, &wg, syncCtx)
-		subs = append(subs, syncer)
+		if syncer := startSyncCfxCache(ctx, &wg, syncCtx); syncer != nil {
+			subs = append(subs, syncer)
+		}
 	}
 
 	if syncOpt.ethSyncEnabled {
@@ -119,8 +121,9 @@ func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, syncCtx
 	}
 
 	if syncCtx.cfxCache != nil {
-		syncer := startSyncCfxCache(ctx, wg, syncCtx)
-		subs = append(subs, syncer)
+		if syncer := startSyncCfxCache(ctx, wg, syncCtx); syncer != nil {
+			subs = append(subs, syncer)
+		}
 	}
 
 	if len(subs) > 0 {
@@ -149,6 +152,14 @@ func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncC
 }
 
 func startSyncCfxCache(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) *cisync.KVCacheSyncer {
+	if store.StoreConfig().IsChainBlockDisabled() &&
+		store.StoreConfig().IsChainTxnDisabled() &&
+		store.StoreConfig().IsChainReceiptDisabled() {
+		// KV sync only syncs block, transaction and receipt data. If all of them are disabled,
+		// nothing to sync, just stop right here.
+		return nil
+	}
+
 	// Sync data to cache
 	logrus.Info("Start to sync CFX blockchain data into cache")
 	csyncer := cisync.MustNewKVCacheSyncer(syncCtx.syncCfx, syncCtx.cfxCache)
