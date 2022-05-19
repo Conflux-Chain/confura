@@ -76,12 +76,21 @@ func (bnps *bnPartitionedStore) growPartition(entity string, tabler schema.Table
 	return &newPart, err
 }
 
-// shrinkPartition removes a partition with the smallest index from the entity paritition list.
-// The partition table will also be dropped.
-func (bnps *bnPartitionedStore) shrinkPartition(entity string, tabler schema.Tabler) (*bnPartition, error) {
+// shrinkPartition removes a partition with the smallest index from the entity paritition list and the partition table will also
+// be dropped.
+// If the passed in `partitionIndex` parameter is non-negative, it will do sanity check to ensure the latest partition index is
+// equal to the passed in `partitionIndex`.
+func (bnps *bnPartitionedStore) shrinkPartition(entity string, tabler schema.Tabler, partitionIndex int) (*bnPartition, error) {
 	oldPart, existed, err := bnps.oldestPartition(entity)
 	if err != nil || !existed {
 		return nil, err
+	}
+
+	if partitionIndex >= 0 && oldPart.Index != uint32(partitionIndex) { // sanity check on partition index
+		return nil, errors.WithMessagef(
+			store.ErrNotFound,
+			"expected partition index %v, got %v", partitionIndex, oldPart.Index,
+		)
 	}
 
 	if err = bnps.db.Delete(oldPart).Error; err != nil {

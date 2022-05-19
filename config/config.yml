@@ -63,17 +63,20 @@ nearhead:
 #   level: info
 #   forceColor: false
 # store:
-  # mysql:
-    # enabled: false
-    # host: 127.0.0.1:3306
-    # username: ''
-    # password: ''
-    # database: conflux_infura
-    # connMaxLifeTime: 3m
-    # maxOpenConns: 10
-    # maxIdleConns: 10
-    # addressIndexedLogEnabled: false
-    # addressIndexedLogPartitions: 100
+#   mysql:
+#     enabled: false
+#     host: 127.0.0.1:3306
+#     username: ''
+#     password: ''
+#     database: conflux_infura
+#     connMaxLifeTime: 3m
+#     maxOpenConns: 10
+#     maxIdleConns: 10
+#     addressIndexedLogEnabled: false
+#     addressIndexedLogPartitions: 100
+#     # max number of archive log partitions ranged by block number to maintain. Once exceeded,
+#     # data will be pruned from the oldest partition to keep max archive log partitions.
+#     maxBnRangedArchiveLogPartitions: 5
   # redis:
   #   enabled: false
   #   cacheTime: 12h

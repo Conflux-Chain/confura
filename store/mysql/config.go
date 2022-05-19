@@ -41,6 +41,8 @@ type Config struct {
 
 	AddressIndexedLogEnabled    bool
 	AddressIndexedLogPartitions uint32 `default:"100"`
+
+	MaxBnRangedArchiveLogPartitions uint32 `default:"5"`
 }
 
 func mustNewConfigFromViper(key string) *Config {

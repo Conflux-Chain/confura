@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+	"time"
 
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/types"
@@ -232,4 +233,37 @@ func (ls *logStoreV2) GetBnPartitionedLogs(filter LogFilter, partition bnPartiti
 	err := filter.find(ls.db, &res)
 
 	return res, err
+}
+
+// SchedulePrune periodically prunes log partitions to keep the specified number of archive log partitions.
+func (ls *logStoreV2) SchedulePrune(maxArchivePartitions uint32) {
+	ticker := time.NewTicker(time.Hour * 1)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		startPartIdx, endPartIdx, err := ls.indexRange(bnPartitionedLogEntity)
+
+		if ls.IsRecordNotFound(err) { // no partitions found
+			continue
+		}
+
+		if err != nil {
+			logrus.WithError(err).Error("Failed to get log partition index range to prune")
+			continue
+		}
+
+		for i := startPartIdx; i <= endPartIdx; i++ {
+			if (endPartIdx - i) <= maxArchivePartitions { // no need to prune
+				break
+			}
+
+			partition, err := ls.shrinkPartition(bnPartitionedLogEntity, &logV2{}, int(i))
+			if err != nil {
+				logrus.WithField("partitionIndex", i).WithError(err).Error("Failed to shrink log partition")
+				break
+			}
+
+			logrus.WithField("partition", partition).Info("Archive log partition ranged by block number pruned")
+		}
+	}
 }

@@ -260,3 +260,8 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 
 	return result, nil
 }
+
+// Prune prune data from db store.
+func (ms *MysqlStoreV2) Prune() {
+	go ms.ls.SchedulePrune(ms.config.MaxBnRangedArchiveLogPartitions)
+}
