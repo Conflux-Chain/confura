@@ -1,7 +1,10 @@
 package mysql
 
 import (
+	"context"
+
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -173,4 +176,60 @@ func (ls *logStoreV2) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	}
 
 	return nil
+}
+
+func (ls *logStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilterV2) ([]*store.LogV2, error) {
+	// find the partitions that holds the event logs
+	partitions, _, err := ls.searchPartitions(
+		bnPartitionedLogEntity, types.RangeUint64{
+			From: storeFilter.BlockFrom,
+			To:   storeFilter.BlockTo,
+		},
+	)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to search partitions")
+	}
+
+	filter := LogFilter{
+		BlockFrom: storeFilter.BlockFrom,
+		BlockTo:   storeFilter.BlockTo,
+		Topics:    storeFilter.Topics,
+	}
+
+	var result []*store.LogV2
+	for _, partition := range partitions {
+		// check timeout before query
+		select {
+		case <-ctx.Done():
+			return nil, store.ErrGetLogsTimeout
+		default:
+		}
+
+		logs, err := ls.GetBnPartitionedLogs(filter, *partition)
+		if err != nil {
+			return nil, err
+		}
+
+		// convert to common store log
+		for _, v := range logs {
+			result = append(result, (*store.LogV2)(v))
+		}
+
+		// check log count
+		if len(result) > int(store.MaxLogLimit) {
+			return nil, store.ErrGetLogsResultSetTooLarge
+		}
+	}
+
+	return result, nil
+}
+
+// GetBnPartitionedLogs returns event logs for the specified block number partitioned log filter.
+func (ls *logStoreV2) GetBnPartitionedLogs(filter LogFilter, partition bnPartition) ([]*logV2, error) {
+	filter.TableName = ls.getPartitionedTableName(&logV2{}, partition.Index)
+
+	var res []*logV2
+	err := filter.find(ls.db, &res)
+
+	return res, err
 }

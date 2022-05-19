@@ -1,6 +1,9 @@
 package mysql
 
 import (
+	"context"
+	"sort"
+
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
@@ -193,4 +196,67 @@ func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
 		// pop is always due to pivot chain switch, update reorg version too
 		return ms.cfs.createOrUpdateReorgVersion(dbTx)
 	})
+}
+
+func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilterV2) ([]*store.LogV2, error) {
+	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
+	defer updater.Update()
+
+	contracts := storeFilter.Contracts.ToSlice()
+
+	// if address not specified, query event logs from block number partitioned tables.
+	if len(contracts) == 0 {
+		return ms.ls.GetLogs(ctx, storeFilter)
+	}
+
+	filter := LogFilter{
+		BlockFrom: storeFilter.BlockFrom,
+		BlockTo:   storeFilter.BlockTo,
+		Topics:    storeFilter.Topics,
+	}
+
+	var result []*store.LogV2
+	for _, addr := range contracts {
+		// convert contract address to id
+		contract, exists, err := ms.cs.GetContractByAddress(addr)
+		if err != nil {
+			return nil, err
+		}
+
+		if !exists {
+			continue
+		}
+
+		// check timeout before query
+		select {
+		case <-ctx.Done():
+			return nil, store.ErrGetLogsTimeout
+		default:
+		}
+
+		// query address indexed logs
+		addrFilter := AddressIndexedLogFilter{
+			LogFilter:  filter,
+			ContractId: contract.ID,
+		}
+
+		logs, err := ms.ails.GetAddressIndexedLogs(addrFilter, addr)
+		if err != nil {
+			return nil, err
+		}
+
+		// convert to common store log
+		for _, v := range logs {
+			result = append(result, (*store.LogV2)(v))
+		}
+
+		// check log count
+		if len(result) > int(store.MaxLogLimit) {
+			return nil, store.ErrGetLogsResultSetTooLarge
+		}
+	}
+
+	sort.Sort(store.LogSlice(result))
+
+	return result, nil
 }
