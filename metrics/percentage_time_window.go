@@ -121,7 +121,7 @@ func (p *timeWindowPercentage) Mark(marked bool) {
 	now := time.Now()
 	p.expire(now)
 
-	// prepre slot to update
+	// prepare slot to update
 	currentSlot := p.getOrAddSlot(now)
 	currentSlot.update(marked)
 

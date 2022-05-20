@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -44,6 +45,14 @@ func QueryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthDa
 	updater := metrics.NewTimerUpdaterByName("infura/duration/store/eth/query")
 	defer updater.Update()
 
+	data, err := queryEthData(w3c, blockNumber, useBatch)
+	metrics.GetOrRegisterTimeWindowPercentage(nil, time.Minute, 10, "infura/sync/eth/availability").
+		Mark(err == nil || errors.Is(err, ErrChainReorged))
+
+	return data, err
+}
+
+func queryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthData, error) {
 	// Get block by number
 	block, err := w3c.Eth.BlockByNumber(web3Types.BlockNumber(blockNumber), true)
 
