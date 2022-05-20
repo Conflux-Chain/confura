@@ -17,15 +17,14 @@ import (
 
 type MysqlStoreV2 struct {
 	*baseStore
+	*epochBlockMapStore
 	ts   *txStore
 	bs   *blockStore
 	ls   *logStoreV2
 	ails *AddressIndexedLogStore
-	ess  *EpochStatStore
 	cfs  *confStore
 	us   *UserStore
 	cs   *ContractStore
-	ebms *epochBlockMapStore
 
 	// config
 	config *Config
@@ -38,18 +37,17 @@ func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStore
 	ebms := newEpochBlockMapStore(db)
 
 	ms := MysqlStoreV2{
-		baseStore: newBaseStore(db),
-		ts:        newTxStore(db),
-		bs:        newBlockStore(db),
-		ls:        newLogStoreV2(db, cs, ebms),
-		ails:      NewAddressIndexedLogStore(db, cs, config.AddressIndexedLogPartitions),
-		ess:       NewEpochStatStore(db),
-		cfs:       newConfStore(db),
-		us:        newUserStore(db),
-		ebms:      ebms,
-		cs:        cs,
-		config:    config,
-		disabler:  option.Disabler,
+		baseStore:          newBaseStore(db),
+		epochBlockMapStore: ebms,
+		ts:                 newTxStore(db),
+		bs:                 newBlockStore(db),
+		ls:                 newLogStoreV2(db, cs, ebms),
+		ails:               NewAddressIndexedLogStore(db, cs, config.AddressIndexedLogPartitions),
+		cfs:                newConfStore(db),
+		us:                 newUserStore(db),
+		cs:                 cs,
+		config:             config,
+		disabler:           option.Disabler,
 	}
 
 	return &ms
@@ -64,7 +62,7 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 		return nil
 	}
 
-	storeMaxEpoch, ok, err := ms.ebms.MaxEpoch()
+	storeMaxEpoch, ok, err := ms.MaxEpoch()
 	if err != nil {
 		return err
 	}
@@ -106,7 +104,7 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 	return ms.db.Transaction(func(dbTx *gorm.DB) error {
 		if !ms.disabler.IsChainBlockDisabled() {
 			// save blocks
-			if err := ms.bs.Pushn(dbTx, dataSlice); err != nil {
+			if err := ms.bs.Add(dbTx, dataSlice); err != nil {
 				return errors.WithMessagef(err, "failed to save blocks")
 			}
 		}
@@ -115,7 +113,7 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 		skipRcpt := ms.disabler.IsChainReceiptDisabled()
 		if !skipRcpt || !skipTxn {
 			// save transactions or receipts
-			if err := ms.ts.Pushn(dbTx, dataSlice, skipTxn, skipRcpt); err != nil {
+			if err := ms.ts.Add(dbTx, dataSlice, skipTxn, skipRcpt); err != nil {
 				return errors.WithMessage(err, "failed to save transactions")
 			}
 		}
@@ -132,20 +130,20 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 			}
 
 			// save event logs
-			if err := ms.ls.Pushn(dbTx, dataSlice, logPartition); err != nil {
+			if err := ms.ls.Add(dbTx, dataSlice, logPartition); err != nil {
 				return errors.WithMessage(err, "failed to save event logs")
 			}
 
 		}
 
 		// save epoch to block mapping data
-		return ms.ebms.Pushn(dbTx, dataSlice)
+		return ms.epochBlockMapStore.Add(dbTx, dataSlice)
 	})
 }
 
 // Popn pops multiple epoch data from database.
 func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
-	maxEpoch, ok, err := ms.ebms.MaxEpoch()
+	maxEpoch, ok, err := ms.MaxEpoch()
 	if err != nil {
 		return errors.WithMessage(err, "failed to get max epoch")
 	}
@@ -189,7 +187,7 @@ func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
 		}
 
 		// remove epoch to block mapping data
-		if err := ms.ebms.Remove(dbTx, epochUntil, maxEpoch); err != nil {
+		if err := ms.epochBlockMapStore.Remove(dbTx, epochUntil, maxEpoch); err != nil {
 			return errors.WithMessage(err, "failed to remove epoch to block mapping data")
 		}
 

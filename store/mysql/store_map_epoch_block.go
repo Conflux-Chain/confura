@@ -39,7 +39,7 @@ func newEpochBlockMapStore(db *gorm.DB) *epochBlockMapStore {
 	}
 }
 
-// epochRange returns the max epoch within the map store.
+// MaxEpoch returns the max epoch within the map store.
 func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
 	var maxEpoch sql.NullInt64
 
@@ -48,11 +48,11 @@ func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
 		return 0, false, err
 	}
 
-	if maxEpoch.Valid {
-		return uint64(maxEpoch.Int64), true, nil
+	if !maxEpoch.Valid {
+		return 0, false, nil
 	}
 
-	return 0, false, nil
+	return uint64(maxEpoch.Int64), true, nil
 }
 
 // blockRange returns the spanning block range for the give epoch.
@@ -70,7 +70,7 @@ func (e2bms *epochBlockMapStore) BlockRange(epoch uint64) (citypes.RangeUint64, 
 }
 
 // pivotHash returns the pivot hash of the given epoch.
-func (e2bms *epochBlockMapStore) pivotHash(epoch uint64) (string, bool, error) {
+func (e2bms *epochBlockMapStore) PivotHash(epoch uint64) (string, bool, error) {
 	var e2bmap epochBlockMap
 
 	existed, err := e2bms.exists(&e2bmap, "epoch = ?", epoch)
@@ -81,8 +81,8 @@ func (e2bms *epochBlockMapStore) pivotHash(epoch uint64) (string, bool, error) {
 	return e2bmap.PivotHash, existed, nil
 }
 
-// Pushn batch saves epoch to block mapping data to db store.
-func (e2bms *epochBlockMapStore) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
+// Add batch saves epoch to block mapping data to db store.
+func (e2bms *epochBlockMapStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
 	var mappings []*epochBlockMap
 
 	for _, data := range dataSlice {

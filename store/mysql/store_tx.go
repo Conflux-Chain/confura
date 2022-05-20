@@ -218,8 +218,8 @@ func (ts *txStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, err
 	}, nil
 }
 
-// Pushn batch save epoch transactions into db store.
-func (ts *txStore) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData, skipTx, skipRcpt bool) error {
+// Add batch save epoch transactions into db store.
+func (ts *txStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, skipTx, skipRcpt bool) error {
 	if skipTx && skipRcpt {
 		return nil
 	}

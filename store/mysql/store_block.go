@@ -139,8 +139,8 @@ func (bs *blockStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*store.B
 	return bs.loadBlockSummary("block_number = ?", blockNumber)
 }
 
-// Pushn batch save epoch blocks into db store.
-func (bs *blockStore) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
+// Add batch save epoch blocks into db store.
+func (bs *blockStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
 	var blocks []*block
 
 	for _, data := range dataSlice {

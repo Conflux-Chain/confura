@@ -74,7 +74,7 @@ func (ls *logStoreV2) preparePartition(dataSlice []*store.EpochData) (bnPartitio
 	return *partition, nil
 }
 
-func (ls *logStoreV2) Pushn(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartition bnPartition) error {
+func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartition bnPartition) error {
 	// containers to collect event logs for batch inserting
 	var logs []*logV2
 
