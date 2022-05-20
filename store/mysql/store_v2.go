@@ -32,11 +32,29 @@ type MysqlStoreV2 struct {
 	disabler store.StoreDisabler
 }
 
+// NewStoreV2FromV1 adapts a v1 store to v2 store.
+// TODO: deprecate this function once v2 is production ready.
+func NewStoreV2FromV1(v1 *MysqlStore) *MysqlStoreV2 {
+	return &MysqlStoreV2{
+		baseStore:          v1.baseStore,
+		epochBlockMapStore: v1.epochBlockMapStore,
+		ts:                 v1.txStore,
+		bs:                 v1.blockStore,
+		ls:                 newLogStoreV2(v1.db, v1.cs, v1.epochBlockMapStore),
+		ails:               v1.AddressIndexedLogStore,
+		cfs:                v1.confStore,
+		us:                 v1.UserStore,
+		cs:                 v1.cs,
+		config:             v1.config,
+		disabler:           v1.disabler,
+	}
+}
+
 func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStoreV2 {
 	cs := NewContractStore(db)
 	ebms := newEpochBlockMapStore(db)
 
-	ms := MysqlStoreV2{
+	return &MysqlStoreV2{
 		baseStore:          newBaseStore(db),
 		epochBlockMapStore: ebms,
 		ts:                 newTxStore(db),
@@ -49,8 +67,6 @@ func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStore
 		config:             config,
 		disabler:           option.Disabler,
 	}
-
-	return &ms
 }
 
 func (ms *MysqlStoreV2) Push(data *store.EpochData) error {

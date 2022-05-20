@@ -17,19 +17,24 @@ type EthLogsApiHandler struct {
 	storeHandler *EthStoreHandler // chained store handlers
 	ms           *mysql.MysqlStore
 
-	V2 *EthLogsApiHandlerV2
+	v2 *EthLogsApiHandlerV2
 }
 
 func NewEthLogsApiHandler(sh *EthStoreHandler, ms *mysql.MysqlStore) *EthLogsApiHandler {
+	var v2 *EthLogsApiHandlerV2
+	if ms.Config().AddressIndexedLogEnabled {
+		v2 = NewEthLogsApiHandlerV2(ms)
+	}
+
 	return &EthLogsApiHandler{
-		storeHandler: sh, ms: ms,
+		storeHandler: sh, ms: ms, v2: v2,
 	}
 }
 
 func (h *EthLogsApiHandler) GetLogs(
 	ctx context.Context, w3c *web3go.Client, filter web3Types.FilterQuery) ([]web3Types.Log, bool, error) {
-	if h.V2 != nil {
-		return h.V2.GetLogs(ctx, w3c.Eth, &filter)
+	if h.v2 != nil {
+		return h.v2.GetLogs(ctx, w3c.Eth, &filter)
 	}
 
 	if filter.BlockHash != nil { // convert block hash to block number

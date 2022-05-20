@@ -143,6 +143,11 @@ func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncC
 	syncer := cisync.MustNewDatabaseSyncer(syncCtx.syncCfx, syncCtx.cfxDB)
 	go syncer.Sync(ctx, wg)
 
+	if syncCtx.cfxDB.V2 != nil { // prune v2
+		go syncCtx.cfxDB.V2.Prune()
+		return syncer
+	}
+
 	// Prune data from db
 	logrus.Info("Start to prune CFX blockchain data from database")
 	pruner := cisync.MustNewDBPruner(syncCtx.cfxDB)
@@ -178,6 +183,11 @@ func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncC
 	logrus.Info("Start to sync ETH blockchain data into database")
 	ethSyncer := cisync.MustNewEthSyncer(syncCtx.syncEth, syncCtx.ethDB)
 	go ethSyncer.Sync(ctx, wg)
+
+	if syncCtx.ethDB.V2 != nil { // prune v2
+		go syncCtx.ethDB.V2.Prune()
+		return
+	}
 
 	// Prune data from database
 	logrus.Info("Start to prune ETH blockchain data from database")

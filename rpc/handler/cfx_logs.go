@@ -31,10 +31,15 @@ type CfxLogsApiHandler struct {
 
 	ms *mysql.MysqlStore
 
-	V2 *CfxLogsApiHandlerV2
+	v2 *CfxLogsApiHandlerV2
 }
 
 func NewCfxLogsApiHandler(sh CfxStoreHandler, ph *CfxPrunedLogsHandler, ms *mysql.MysqlStore) *CfxLogsApiHandler {
+	var v2 *CfxLogsApiHandlerV2
+	if ms.Config().AddressIndexedLogEnabled {
+		v2 = NewCfxLogsApiHandlerV2(ms, ph)
+	}
+
 	return &CfxLogsApiHandler{
 		storeHandler:  sh,
 		prunedHandler: ph,
@@ -43,13 +48,14 @@ func NewCfxLogsApiHandler(sh CfxStoreHandler, ph *CfxPrunedLogsHandler, ms *mysq
 			store.ErrGetLogsTimeout:           false,
 		},
 		ms: ms,
+		v2: v2,
 	}
 }
 
 func (h *CfxLogsApiHandler) GetLogs(
 	ctx context.Context, cfx sdk.ClientOperator, filter *types.LogFilter) ([]types.Log, bool, error) {
-	if h.V2 != nil {
-		return h.V2.GetLogs(ctx, cfx, filter)
+	if h.v2 != nil {
+		return h.v2.GetLogs(ctx, cfx, filter)
 	}
 
 	if len(filter.BlockHashes) > 1 {

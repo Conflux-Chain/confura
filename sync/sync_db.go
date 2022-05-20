@@ -11,6 +11,7 @@ import (
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/sync/catchup"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
@@ -510,6 +511,11 @@ func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
 	// load from in-memory cache first
 	if pivotHash, ok := syncer.epochPivotWin.getPivotHash(latestEpochNo); ok {
 		return pivotHash, nil
+	}
+
+	if ms, ok := syncer.db.(*mysql.MysqlStore); ok && ms.V2 != nil {
+		pivotHash, _, err := ms.V2.PivotHash(latestEpochNo)
+		return types.Hash(pivotHash), err
 	}
 
 	// load from db store if cache missed

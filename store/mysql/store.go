@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -83,6 +82,8 @@ type MysqlStore struct {
 	minUsedLogsTblPartIdx uint64 // the minimum used partition index for logs table
 
 	disabler store.StoreDisabler // store chaindata disabler
+
+	V2 *MysqlStoreV2
 }
 
 func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
@@ -104,6 +105,10 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 		minEpoch:               citypes.EpochNumberNil,
 		maxEpoch:               citypes.EpochNumberNil,
 		disabler:               option.Disabler,
+	}
+
+	if config.AddressIndexedLogEnabled {
+		ms.V2 = NewStoreV2FromV1(&ms)
 	}
 
 	if option.CalibrateEpochStats {
@@ -134,6 +139,10 @@ func (ms *MysqlStore) Push(data *store.EpochData) error {
 }
 
 func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
+	if ms.V2 != nil {
+		return ms.V2.Pushn(dataSlice)
+	}
+
 	if len(dataSlice) == 0 {
 		return nil
 	}
@@ -237,6 +246,10 @@ func (ms *MysqlStore) Pop() error {
 
 // Popn pops multiple epoch data from database.
 func (ms *MysqlStore) Popn(epochUntil uint64) error {
+	if ms.V2 != nil {
+		return ms.V2.Popn(epochUntil)
+	}
+
 	// Genesis block will never be popped
 	epochUntil = util.MaxUint64(epochUntil, 1)
 
@@ -739,62 +752,9 @@ func (ms *MysqlStore) loadLikelyActionLogsPartEpochRangesTx(dbTx *gorm.DB, opTyp
 }
 
 func (ms *MysqlStore) GetLogsV2(ctx context.Context, storeFilter store.LogFilterV2) ([]*store.LogV2, error) {
-	contracts := storeFilter.Contracts.ToSlice()
-
-	filter := LogFilter{
-		BlockFrom: storeFilter.BlockFrom,
-		BlockTo:   storeFilter.BlockTo,
-		Topics:    storeFilter.Topics,
+	if ms.V2 != nil {
+		return ms.V2.GetLogs(ctx, storeFilter)
 	}
 
-	// TODO if address not specified, query event logs from block number partitioned tables.
-	if len(contracts) == 0 {
-		return nil, nil
-	}
-
-	var result []*store.LogV2
-
-	for _, addr := range contracts {
-		// convert contract address to id
-		contract, exists, err := ms.cs.GetContractByAddress(addr)
-		if err != nil {
-			return nil, err
-		}
-
-		if !exists {
-			continue
-		}
-
-		// check timeout before query
-		select {
-		case <-ctx.Done():
-			return nil, store.ErrGetLogsTimeout
-		default:
-		}
-
-		// query address indexed logs
-		addrFilter := AddressIndexedLogFilter{
-			LogFilter:  filter,
-			ContractId: contract.ID,
-		}
-
-		logs, err := ms.GetAddressIndexedLogs(addrFilter, addr)
-		if err != nil {
-			return nil, err
-		}
-
-		// convert to common store log
-		for _, v := range logs {
-			result = append(result, (*store.LogV2)(v))
-		}
-
-		// check log count
-		if len(result) > int(store.MaxLogLimit) {
-			return nil, store.ErrGetLogsResultSetTooLarge
-		}
-	}
-
-	sort.Sort(store.LogSlice(result))
-
-	return result, nil
+	return nil, store.ErrUnsupported
 }

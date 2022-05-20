@@ -10,6 +10,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/util"
 	gometrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/web3go"
@@ -330,6 +331,11 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 	// load from in-memory cache first
 	if blockHash, ok := syncer.epochPivotWin.getPivotHash(latestBlockNo); ok {
 		return string(blockHash), nil
+	}
+
+	if ms, ok := syncer.db.(*mysql.MysqlStore); ok && ms.V2 != nil {
+		pivotHash, _, err := ms.V2.PivotHash(latestBlockNo)
+		return pivotHash, err
 	}
 
 	// load from db store

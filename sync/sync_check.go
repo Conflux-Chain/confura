@@ -4,6 +4,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/store/mysql"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
@@ -17,8 +18,18 @@ type epochRevertedPruner func(s store.Store, er citypes.RangeUint64) error
 
 // Ensure epoch data in store valid such as not reverted etc.,
 func ensureStoreEpochDataOk(cfx sdk.ClientOperator, s store.Store) error {
-	// Get the latest confirmed sync epoch number from store
-	minEpoch, maxEpoch, err := s.GetGlobalEpochRange()
+	var maxEpoch uint64
+	var err error
+
+	if ms, ok := s.(*mysql.MysqlStore); ok && ms.V2 != nil {
+		maxEpoch, ok, err = ms.V2.MaxEpoch()
+		if err == nil && !ok {
+			err = store.ErrNotFound
+		}
+	} else {
+		// Get the latest confirmed sync epoch number from store
+		_, maxEpoch, err = s.GetGlobalEpochRange()
+	}
 
 	// If there is no epoch data in store yet, nothing needs to be done
 	if s.IsRecordNotFound(err) {
@@ -30,7 +41,7 @@ func ensureStoreEpochDataOk(cfx sdk.ClientOperator, s store.Store) error {
 		return errors.WithMessage(err, "failed to read block epoch range from store")
 	}
 
-	epochRange := citypes.RangeUint64{From: minEpoch, To: maxEpoch}
+	epochRange := citypes.RangeUint64{From: 1, To: maxEpoch}
 	logrus.WithField("epochRange", epochRange).Debug("Ensuring epoch data within range ok...")
 
 	// Epoch reverted handler
@@ -127,6 +138,25 @@ func findFirstRevertedEpochInRange(cfx sdk.ClientOperator, s store.Store, er cit
 
 // Check if the epoch data in store is reverted
 func checkIfEpochIsReverted(cfx sdk.ClientOperator, s store.Store, epochNo uint64) (res bool, err error) {
+	if ms, ok := s.(*mysql.MysqlStore); ok && ms.V2 != nil {
+		pivotHash, ok, err := ms.V2.PivotHash(epochNo)
+		if err != nil {
+			return false, errors.WithMessage(err, "failed to get epoch pivot hash")
+		}
+
+		if !ok {
+			return false, nil
+		}
+
+		// Fetch the epoch pivot block from blockchain
+		epBlock, err := cfx.GetBlockSummaryByEpoch(types.NewEpochNumberUint64(epochNo))
+		if err != nil {
+			return false, errors.WithMessagef(err, "failed to get pivot block for epoch %v from blockchain", epochNo)
+		}
+
+		return types.Hash(pivotHash) != epBlock.BlockHeader.Hash, nil
+	}
+
 	// Get the sync epoch block from store
 	sBlock, err := s.GetBlockSummaryByEpoch(epochNo)
 	if err != nil {
