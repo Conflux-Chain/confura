@@ -3,11 +3,10 @@ package rpc
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"math/bits"
 
-	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
@@ -23,8 +22,6 @@ import (
 )
 
 var (
-	ethHitStatsCollector = cimetrics.NewHitStatsCollector()
-
 	ethEmptyLogs = []web3Types.Log{}
 
 	ethHardforkBlockNumberDevnet    = rpc.BlockNumber(1)
@@ -39,8 +36,8 @@ type EthAPIOption struct {
 	LogApiHandler *handler.EthLogsApiHandler
 }
 
-func getEthStoreHitRatioMetricKey(method string) string {
-	return fmt.Sprintf("infura/rpc/call/%v/ethstore/hitratio", method)
+func updateEthStoreHitRatio(method string, hit bool) {
+	metrics.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/call/%v/ethstore/hitratio", method).Mark(hit)
 }
 
 // ethAPI provides ethereum relative API within EVM space according to:
@@ -50,7 +47,7 @@ type ethAPI struct {
 
 	provider         *node.EthClientProvider
 	chainId          *uint64 // eth chain ID
-	inputBlockMetric cimetrics.InputBlockMetric
+	inputBlockMetric metrics.InputBlockMetric
 
 	hardforkBlockNumber *rpc.BlockNumber // return default value before eSpace hardfork
 }
@@ -97,17 +94,10 @@ func (api *ethAPI) GetBlockByHash(
 	})
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		isStoreHit := false
-		defer func(isHit *bool) {
-			metricKey := getEthStoreHitRatioMetricKey("eth_getBlockByHash")
-			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
-		}(&isStoreHit)
-
 		block, err := api.StoreHandler.GetBlockByHash(ctx, blockHash, fullTx)
+		updateEthStoreHitRatio("eth_getBlockByHash", err == nil)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getBlockByHash hit in the store")
-
-			isStoreHit = true
 			return block, nil
 		}
 
@@ -187,17 +177,10 @@ func (api *ethAPI) GetBlockByNumber(
 	})
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		isStoreHit := false
-		defer func(isHit *bool) {
-			metricKey := getEthStoreHitRatioMetricKey("eth_getBlockByNumber")
-			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
-		}(&isStoreHit)
-
 		block, err := api.StoreHandler.GetBlockByNumber(ctx, &blockNum, fullTx)
+		updateEthStoreHitRatio("eth_getBlockByNumber", err == nil)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getBlockByNumber hit in the store")
-
-			isStoreHit = true
 			return block, nil
 		}
 
@@ -375,17 +358,10 @@ func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (
 	logger := logrus.WithField("txHash", hash.Hex())
 
 	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		isStoreHit := false
-		defer func(isHit *bool) {
-			metricKey := getEthStoreHitRatioMetricKey("eth_getTransactionByHash")
-			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
-		}(&isStoreHit)
-
 		tx, err := api.StoreHandler.GetTransactionByHash(ctx, hash)
+		updateEthStoreHitRatio("eth_getTransactionByHash", err == nil)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getTransactionByHash hit in the store")
-
-			isStoreHit = true
 			return tx, nil
 		}
 
@@ -408,17 +384,10 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	logger := logrus.WithField("txHash", txHash.Hex())
 
 	if !store.EthStoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		isStoreHit := false
-		defer func(isHit *bool) {
-			metricKey := getEthStoreHitRatioMetricKey("eth_getTransactionReceipt")
-			ethHitStatsCollector.CollectHitStats(metricKey, *isHit)
-		}(&isStoreHit)
-
 		tx, err := api.StoreHandler.GetTransactionReceipt(ctx, txHash)
+		updateEthStoreHitRatio("eth_getTransactionReceipt", err == nil)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getTransactionReceipt hit in the ethstore")
-
-			isStoreHit = true
 			return tx, nil
 		}
 
@@ -524,8 +493,7 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 			"filter": filter, "hitStore": hitStore,
 		}).WithError(err).Debug("Delegated `eth_getLogs` to log api handler")
 
-		metricKey := getEthStoreHitRatioMetricKey("eth_getLogs")
-		ethHitStatsCollector.CollectHitStats(metricKey, hitStore)
+		updateEthStoreHitRatio("eth_getLogs", hitStore)
 
 		if logs == nil { // uniform empty logs
 			logs = ethEmptyLogs

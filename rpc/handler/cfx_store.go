@@ -31,14 +31,12 @@ type CfxCommonStoreHandler struct {
 	sname string // store name
 	store store.Store
 
-	next        CfxStoreHandler
-	hsCollector *metrics.HitStatsCollector // hit stats metrics
+	next CfxStoreHandler
 }
 
 func NewCfxCommonStoreHandler(sname string, store store.Store, next CfxStoreHandler) *CfxCommonStoreHandler {
 	return &CfxCommonStoreHandler{
 		sname: sname, store: store, next: next,
-		hsCollector: metrics.NewHitStatsCollector(),
 	}
 }
 
@@ -195,5 +193,5 @@ func (h *CfxCommonStoreHandler) collectHitStats(method string, err error) {
 	hitStore := (err == nil) || errors.Is(err, store.ErrGetLogsResultSetTooLarge)
 
 	metricKey := fmt.Sprintf("infura/rpc/call/%v/%v/hitratio", method, h.sname)
-	h.hsCollector.CollectHitStats(metricKey, hitStore)
+	metrics.GetOrRegisterTimeWindowPercentageDefault(metricKey).Mark(hitStore)
 }

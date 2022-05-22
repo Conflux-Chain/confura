@@ -2,7 +2,6 @@ package store
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -46,7 +45,7 @@ func QueryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthDa
 	defer updater.Update()
 
 	data, err := queryEthData(w3c, blockNumber, useBatch)
-	metrics.GetOrRegisterTimeWindowPercentage(nil, time.Minute, 10, "infura/sync/eth/availability").
+	metrics.GetOrRegisterTimeWindowPercentageDefault("infura/sync/eth/availability").
 		Mark(err == nil || errors.Is(err, ErrChainReorged))
 
 	return data, err

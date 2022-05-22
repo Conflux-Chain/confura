@@ -3,7 +3,6 @@ package store
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -146,7 +145,7 @@ func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 	defer updater.Update()
 
 	data, err := queryEpochData(cfx, epochNumber, useBatch)
-	metrics.GetOrRegisterTimeWindowPercentage(nil, time.Minute, 10, "infura/sync/cfx/availability").
+	metrics.GetOrRegisterTimeWindowPercentageDefault("infura/sync/cfx/availability").
 		Mark(err == nil || errors.Is(err, ErrEpochPivotSwitched))
 
 	return data, err

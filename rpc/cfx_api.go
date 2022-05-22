@@ -7,7 +7,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
-	cimetrics "github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
@@ -15,7 +15,6 @@ import (
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/rate"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -32,8 +31,6 @@ var (
 	emptySponsorInfo    = types.SponsorInfo{}
 	emptyBlock          = types.Block{}
 
-	hitStatsCollector = cimetrics.NewHitStatsCollector()
-
 	defaultLogLimit  = types.NewUint64(store.MaxLogLimit)
 	defaultLogOffset = types.NewUint64(0)
 )
@@ -47,7 +44,7 @@ type CfxAPIOption struct {
 type cfxAPI struct {
 	CfxAPIOption
 	provider         *node.CfxClientProvider
-	inputEpochMetric cimetrics.InputEpochMetric
+	inputEpochMetric metrics.InputEpochMetric
 }
 
 func newCfxAPI(provider *node.CfxClientProvider, option ...CfxAPIOption) *cfxAPI {
@@ -212,7 +209,7 @@ func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, inc
 	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getBlockByHash` to fullnode")
 
 	if includeTxs {
-		metrics.GetOrRegisterGauge("rpc/cfx_getBlockByHash/details", nil).Inc(1)
+		metrics.GetOrRegisterGauge("rpc/cfx_getBlockByHash/details").Inc(1)
 		return cfx.GetBlockByHash(blockHash)
 	}
 
@@ -934,5 +931,5 @@ func (api *cfxAPI) metricLogFilter(cfx sdk.ClientOperator, filter *types.LogFilt
 
 func (h *cfxAPI) collectHitStats(method string, hit bool) {
 	metricKey := fmt.Sprintf("infura/rpc/call/%v/store/hitratio", method)
-	hitStatsCollector.CollectHitStats(metricKey, hit)
+	metrics.GetOrRegisterTimeWindowPercentageDefault(metricKey).Mark(hit)
 }

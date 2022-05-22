@@ -200,7 +200,7 @@ func newStatusMetrics(latency, availability string) *statusMetrics {
 	return &statusMetrics{
 		names:        []string{latency, availability},
 		latency:      infuraMetrics.GetOrRegisterHistogram(nil, latency),
-		availability: infuraMetrics.GetOrRegisterTimeWindowPercentage(nil, time.Minute, 10, availability),
+		availability: infuraMetrics.GetOrRegisterTimeWindowPercentageDefault(availability),
 	}
 }
 
