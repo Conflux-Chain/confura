@@ -3,8 +3,8 @@ package rpc
 import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/rate"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,7 +22,7 @@ const (
 func MustNewNativeSpaceServer(
 	router infuraNode.Router, gashandler *handler.GasStationHandler,
 	exposedModules []string, option ...CfxAPIOption,
-) *util.RpcServer {
+) *rpc.Server {
 	// retrieve all available native space rpc apis
 	allApis := nativeSpaceApis(router, gashandler, option...)
 
@@ -33,7 +33,7 @@ func MustNewNativeSpaceServer(
 		)
 	}
 
-	return util.MustNewRpcServerWithRateLimit(nativeSpaceRpcServerName, exposedApis, rate.DefaultRegistryCfx)
+	return rpc.MustNewServerWithRateLimit(nativeSpaceRpcServerName, exposedApis, rate.DefaultRegistryCfx)
 }
 
 // MustNewEvmSpaceServer new EVM space RPC server by specifying router, and exposed modules.
@@ -41,7 +41,7 @@ func MustNewNativeSpaceServer(
 // list is empty, all RPC API endpoints designated public will be exposed.
 func MustNewEvmSpaceServer(
 	router infuraNode.Router, exposedModules []string, option ...EthAPIOption,
-) *util.RpcServer {
+) *rpc.Server {
 	// retrieve all available EVM space rpc apis
 	allApis, err := evmSpaceApis(router, option...)
 	if err != nil {
@@ -55,7 +55,7 @@ func MustNewEvmSpaceServer(
 		)
 	}
 
-	return util.MustNewRpcServerWithRateLimit(evmSpaceRpcServerName, exposedApis, rate.DefaultRegistryEth)
+	return rpc.MustNewServerWithRateLimit(evmSpaceRpcServerName, exposedApis, rate.DefaultRegistryEth)
 }
 
 type CfxBridgeServerConfig struct {
@@ -65,7 +65,7 @@ type CfxBridgeServerConfig struct {
 	Endpoint       string `default:":32537"`
 }
 
-func MustNewNativeSpaceBridgeServer(config *CfxBridgeServerConfig) *util.RpcServer {
+func MustNewNativeSpaceBridgeServer(config *CfxBridgeServerConfig) *rpc.Server {
 	allApis, err := nativeSpaceBridgeApis(config.EthNode, config.CfxNode)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server")
@@ -76,5 +76,5 @@ func MustNewNativeSpaceBridgeServer(config *CfxBridgeServerConfig) *util.RpcServ
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server with bad exposed modules")
 	}
 
-	return util.MustNewRpcServer(nativeSpaceBridgeRpcServerName, exposedApis)
+	return rpc.MustNewServer(nativeSpaceBridgeRpcServerName, exposedApis)
 }

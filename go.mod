@@ -12,7 +12,6 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/montanaflynn/stats v0.6.6
-	github.com/nsf/jsondiff v0.0.0-20210303162244-6ea32392771e
 	github.com/openweb3/go-rpc-provider v0.1.2
 	github.com/openweb3/web3go v0.0.0-20220510110544-ce23f737a79a
 	github.com/pkg/errors v0.9.1

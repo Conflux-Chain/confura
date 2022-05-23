@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/conflux-chain/conflux-infura/cmd/util"
 	"github.com/conflux-chain/conflux-infura/store"
 	cisync "github.com/conflux-chain/conflux-infura/sync"
 	"github.com/conflux-chain/conflux-infura/sync/catchup"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

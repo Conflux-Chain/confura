@@ -3,7 +3,7 @@ package node
 import (
 	"sync"
 
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 )
 
 var (
@@ -57,7 +57,7 @@ func newFactory(nf nodeFactory, rpcSrvEndpoint string, groupConf map[Group]UrlCo
 	}
 }
 
-func (f *factory) CreatRpcServer() (*util.RpcServer, string) {
+func (f *factory) CreatRpcServer() (*rpc.Server, string) {
 	return NewServer(f.nodeFactory, f.groupConf), f.rpcSrvEndpoint
 }
 

@@ -5,7 +5,7 @@ import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 )
@@ -140,13 +140,13 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to get chain ID from eth space")
 	}
-	util.HookEthRpcMetricsMiddleware(eth)
+	rpc.HookEthRpcMetricsMiddleware(eth)
 
 	cfx, err := sdk.NewClient(cfxNodeURL)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to connect to cfx space")
 	}
-	util.HookCfxRpcMetricsMiddleware(cfx)
+	rpc.HookCfxRpcMetricsMiddleware(cfx)
 
 	return []API{
 		{

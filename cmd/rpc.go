@@ -6,13 +6,16 @@ import (
 	"time"
 
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	cmdutil "github.com/conflux-chain/conflux-infura/cmd/util"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/relay"
 	"github.com/conflux-chain/conflux-infura/rpc"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/store/redis"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/rate"
+	rpcutil "github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -65,7 +68,7 @@ func startRpcService(*cobra.Command, []string) {
 		startNativeSpaceBridgeRpcServer(ctx, &wg)
 	}
 
-	util.GracefulShutdown(&wg, cancel)
+	cmdutil.GracefulShutdown(&wg, cancel)
 }
 
 func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx storeContext) {
@@ -91,7 +94,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 			prunedHandler = handler.NewCfxPrunedLogsHandler(
 				node.NewCfxClientProvider(router),
 				storeCtx.cfxDB.UserStore,
-				util.MustNewRedisClient(redisUrl),
+				redis.MustNewRedisClient(redisUrl),
 			)
 		}
 
@@ -109,10 +112,10 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	server := rpc.MustNewNativeSpaceServer(router, gasHandler, exposedModules, option)
 
 	httpEndpoint := viper.GetString("rpc.endpoint")
-	go server.MustServeGraceful(ctx, wg, httpEndpoint, util.RpcProtocolHttp)
+	go server.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
 
 	if wsEndpoint := viper.GetString("rpc.wsEndpoint"); len(wsEndpoint) > 0 {
-		go server.MustServeGraceful(ctx, wg, wsEndpoint, util.RpcProtocolWS)
+		go server.MustServeGraceful(ctx, wg, wsEndpoint, rpcutil.ProtocolWS)
 	}
 }
 
@@ -132,10 +135,10 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx st
 	server := rpc.MustNewEvmSpaceServer(router, exposedModules, option)
 
 	httpEndpoint := viper.GetString("ethrpc.endpoint")
-	go server.MustServeGraceful(ctx, wg, httpEndpoint, util.RpcProtocolHttp)
+	go server.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
 
 	if wsEndpoint := viper.GetString("ethrpc.wsEndpoint"); len(wsEndpoint) > 0 {
-		go server.MustServeGraceful(ctx, wg, wsEndpoint, util.RpcProtocolWS)
+		go server.MustServeGraceful(ctx, wg, wsEndpoint, rpcutil.ProtocolWS)
 	}
 }
 
@@ -146,5 +149,5 @@ func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup) {
 	logrus.WithField("config", config).Info("Start to run cfx bridge rpc server")
 
 	server := rpc.MustNewNativeSpaceBridgeServer(&config)
-	go server.MustServeGraceful(ctx, wg, config.Endpoint, util.RpcProtocolHttp)
+	go server.MustServeGraceful(ctx, wg, config.Endpoint, rpcutil.ProtocolHttp)
 }

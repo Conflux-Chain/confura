@@ -5,7 +5,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/store/redis"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/openweb3/web3go"
 )
 
@@ -64,12 +64,12 @@ func mustInitSyncContext(storeCtx storeContext) syncContext {
 	sc := syncContext{storeContext: storeCtx}
 
 	if storeCtx.cfxDB != nil || storeCtx.cfxCache != nil {
-		sc.syncCfx = util.MustNewCfxClientFromViper(util.WithClientHookMetrics(true))
-		sc.subCfx = util.MustNewCfxWsClientFromViper()
+		sc.syncCfx = rpc.MustNewCfxClientFromViper(rpc.WithClientHookMetrics(true))
+		sc.subCfx = rpc.MustNewCfxWsClientFromViper()
 	}
 
 	if storeCtx.ethDB != nil {
-		sc.syncEth = util.MustNewEthClientFromViper(util.WithClientHookMetrics(true))
+		sc.syncEth = rpc.MustNewEthClientFromViper(rpc.WithClientHookMetrics(true))
 	}
 
 	return sc

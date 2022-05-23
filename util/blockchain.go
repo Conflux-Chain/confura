@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
+	web3goTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -131,4 +132,37 @@ func NormalizeEthBlockNumber(w3c *web3go.Client, blockNum *rpc.BlockNumber, hard
 
 func IsZeroHash(hash *common.Hash) bool {
 	return hash == nil || reflect.DeepEqual(hash, &common.Hash{})
+}
+
+func IsTxExecutedInBlock(tx *types.Transaction) bool {
+	return tx != nil && tx.BlockHash != nil && tx.Status != nil && *tx.Status < 2
+}
+
+// IsEmptyBlock checks if block contains any executed transaction(s)
+func IsEmptyBlock(block *types.Block) bool {
+	for _, tx := range block.Transactions {
+		if IsTxExecutedInBlock(&tx) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// IsEip155Tx check if the EVM transaction is compliant to EIP155
+func IsEip155Tx(tx *web3goTypes.Transaction) bool {
+	if tx.V != nil && tx.V.Uint64() >= 35 {
+		return true
+	}
+
+	return false
+}
+
+// IsLegacyEthTx check if the EVM transaction is legacy (pre EIP155)
+func IsLegacyEthTx(tx *web3goTypes.Transaction) bool {
+	if tx.V != nil && tx.V.Uint64() == 27 || tx.V.Uint64() == 28 {
+		return true
+	}
+
+	return false
 }

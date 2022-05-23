@@ -1,4 +1,4 @@
-package util
+package rpc
 
 import (
 	"fmt"
@@ -6,8 +6,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/middleware"
-	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/sirupsen/logrus"
 )
 
@@ -75,44 +74,21 @@ func HookCfxRpcMetricsMiddleware(cfx *sdk.Client) {
 	cfx.UseCallRpcMiddleware(callRpcMetricsMiddleware)
 }
 
-func HookCfxRpcConsoleLogMiddleware(cfx *sdk.Client) {
-	cfx.UseCallRpcMiddleware(middleware.CallRpcConsoleMiddleware)
-	cfx.UseBatchCallRpcMiddleware(middleware.BatchCallRpcConsoleMiddleware)
-}
-
 func callRpcMetricsMiddleware(handler middleware.CallRpcHandler) middleware.CallRpcHandler {
-	metricFn := func(result interface{}, method string, args ...interface{}) error {
+	return middleware.CallRpcHandlerFunc(func(result interface{}, method string, args ...interface{}) error {
 		start := time.Now()
 
-		var metricKey string
 		err := handler.Handle(result, method, args...)
 
+		var metricKey string
 		if err != nil {
 			metricKey = fmt.Sprintf("infura/duration/cfx/rpc/call/%v/error", method)
 		} else {
 			metricKey = fmt.Sprintf("infura/duration/cfx/rpc/call/%v/success", method)
 		}
 
-		metricTimer := metrics.GetOrRegisterTimer(metricKey, nil)
-		metricTimer.UpdateSince(start)
+		metrics.GetOrRegisterTimer(metricKey).UpdateSince(start)
 
 		return err
-	}
-
-	return middleware.CallRpcHandlerFunc(metricFn)
-}
-
-func IsTxExecutedInBlock(tx *types.Transaction) bool {
-	return tx != nil && tx.BlockHash != nil && tx.Status != nil && *tx.Status < 2
-}
-
-// IsEmptyBlock checks if block contains any executed transaction(s)
-func IsEmptyBlock(block *types.Block) bool {
-	for _, tx := range block.Transactions {
-		if IsTxExecutedInBlock(&tx) {
-			return false
-		}
-	}
-
-	return true
+	})
 }

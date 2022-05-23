@@ -4,8 +4,9 @@ import (
 	"context"
 	"sync"
 
+	"github.com/conflux-chain/conflux-infura/cmd/util"
 	"github.com/conflux-chain/conflux-infura/node"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -53,10 +54,10 @@ func startNodeManagerService(*cobra.Command, []string) {
 
 func startNativeSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup) {
 	server, endpoint := node.Factory().CreatRpcServer()
-	go server.MustServeGraceful(ctx, wg, endpoint, util.RpcProtocolHttp)
+	go server.MustServeGraceful(ctx, wg, endpoint, rpc.ProtocolHttp)
 }
 
 func startEvmSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup) {
 	server, endpoint := node.EthFactory().CreatRpcServer()
-	go server.MustServeGraceful(ctx, wg, endpoint, util.RpcProtocolHttp)
+	go server.MustServeGraceful(ctx, wg, endpoint, rpc.ProtocolHttp)
 }

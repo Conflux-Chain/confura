@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/conflux-chain/conflux-infura/cmd/test"
+	"github.com/conflux-chain/conflux-infura/cmd/util"
 	"github.com/conflux-chain/conflux-infura/config"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

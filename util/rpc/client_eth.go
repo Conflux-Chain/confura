@@ -1,13 +1,12 @@
-package util
+package rpc
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/openweb3/web3go"
 	providers "github.com/openweb3/web3go/provider_wrapper"
-	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -74,41 +73,20 @@ func HookEthRpcMetricsMiddleware(eth *web3go.Client) {
 }
 
 func callEthRpcMetricsMiddleware(f providers.CallFunc) providers.CallFunc {
-	metricFn := func(resultPtr interface{}, method string, args ...interface{}) error {
+	return providers.CallFunc(func(resultPtr interface{}, method string, args ...interface{}) error {
 		start := time.Now()
 
-		var metricKey string
 		err := f(resultPtr, method, args...)
 
+		var metricKey string
 		if err != nil {
 			metricKey = fmt.Sprintf("infura/duration/eth/rpc/call/%v/error", method)
 		} else {
 			metricKey = fmt.Sprintf("infura/duration/eth/rpc/call/%v/success", method)
 		}
 
-		metricTimer := metrics.GetOrRegisterTimer(metricKey, nil)
-		metricTimer.UpdateSince(start)
+		metrics.GetOrRegisterTimer(metricKey).UpdateSince(start)
 
 		return err
-	}
-
-	return providers.CallFunc(metricFn)
-}
-
-// IsEip155Tx check if the EVM transaction is compliant to EIP155
-func IsEip155Tx(tx *types.Transaction) bool {
-	if tx.V != nil && tx.V.Uint64() >= 35 {
-		return true
-	}
-
-	return false
-}
-
-// IsLegacyEthTx check if the EVM transaction is legacy (pre EIP155)
-func IsLegacyEthTx(tx *types.Transaction) bool {
-	if tx.V != nil && tx.V.Uint64() == 27 || tx.V.Uint64() == 28 {
-		return true
-	}
-
-	return false
+	})
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
@@ -44,7 +43,7 @@ func NewManagerWithRepartition(nf nodeFactory, urls []string, resolver Repartiti
 	var members []consistent.Member
 
 	for _, url := range urls {
-		nodeName := util.Url2NodeName(url)
+		nodeName := Url2NodeName(url)
 		if _, ok := manager.nodes[nodeName]; !ok {
 			node, _ := nf(nodeName, url, &manager)
 			manager.nodes[nodeName] = node
@@ -61,7 +60,7 @@ func (m *Manager) Add(url string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	nodeName := util.Url2NodeName(url)
+	nodeName := Url2NodeName(url)
 	if _, ok := m.nodes[nodeName]; !ok {
 		node, _ := m.nodeFactory(nodeName, url, m)
 		m.nodes[nodeName] = node
@@ -73,7 +72,7 @@ func (m *Manager) Remove(url string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	nodeName := util.Url2NodeName(url)
+	nodeName := Url2NodeName(url)
 	if node, ok := m.nodes[nodeName]; ok {
 		node.Close()
 		delete(m.nodes, nodeName)
@@ -86,7 +85,7 @@ func (m *Manager) Get(url string) Node {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	nodeName := util.Url2NodeName(url)
+	nodeName := Url2NodeName(url)
 	return m.nodes[nodeName]
 }
 

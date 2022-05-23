@@ -17,11 +17,10 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
-
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -77,9 +76,9 @@ func init() {
 
 func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
 	// Prepare fullnode client instance
-	cfx := util.MustNewCfxClient(conf.FullnodeRpcEndpoint)
+	cfx := rpc.MustNewCfxClient(conf.FullnodeRpcEndpoint)
 	// Prepare infura rpc service client instance
-	infura := util.MustNewCfxClient(conf.InfuraRpcEndpoint)
+	infura := rpc.MustNewCfxClient(conf.InfuraRpcEndpoint)
 
 	validator := &EpochValidator{
 		cfx:    cfx,

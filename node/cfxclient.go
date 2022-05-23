@@ -4,7 +4,7 @@ import (
 	"context"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 )
 
 type CfxClientProvider struct {
@@ -14,7 +14,7 @@ type CfxClientProvider struct {
 func NewCfxClientProvider(router Router) *CfxClientProvider {
 	cp := &CfxClientProvider{
 		clientProvider: newClientProvider(router, func(url string) (interface{}, error) {
-			return util.NewCfxClient(url, util.WithClientHookMetrics(true))
+			return rpc.NewCfxClient(url, rpc.WithClientHookMetrics(true))
 		}),
 	}
 

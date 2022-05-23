@@ -2,16 +2,17 @@ package node
 
 import (
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-func NewServer(nf nodeFactory, groupConf map[Group]UrlConfig) *util.RpcServer {
+func NewServer(nf nodeFactory, groupConf map[Group]UrlConfig) *rpc.Server {
 	managers := make(map[Group]*Manager)
 	for k, v := range groupConf {
 		managers[k] = NewManager(nf, v.Nodes)
 	}
 
-	return util.MustNewRpcServer("node", map[string]interface{}{
+	return rpc.MustNewServer("node", map[string]interface{}{
 		"node": &api{managers},
 	})
 }

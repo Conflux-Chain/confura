@@ -1,4 +1,4 @@
-package util
+package rpc
 
 import (
 	"context"
@@ -13,29 +13,29 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type RpcProtocol string
+type Protocol string
 
 const (
-	RpcProtocolHttp = "HTTP"
-	RpcProtocolWS   = "WS"
+	ProtocolHttp = "HTTP"
+	ProtocolWS   = "WS"
 )
 
 // DefaultShutdownTimeout is default timeout to shutdown RPC server.
 var DefaultShutdownTimeout = 3 * time.Second
 
-// RpcServer serves JSON RPC services.
-type RpcServer struct {
+// Server serves JSON RPC services.
+type Server struct {
 	name    string
-	servers map[RpcProtocol]*http.Server
+	servers map[Protocol]*http.Server
 }
 
-// MustNewRpcServer creates an instance of RpcServer with specified RPC services.
-func MustNewRpcServer(name string, rpcs map[string]interface{}) *RpcServer {
-	return MustNewRpcServerWithRateLimit(name, rpcs, nil)
+// MustNewServer creates an instance of Server with specified RPC services.
+func MustNewServer(name string, rpcs map[string]interface{}) *Server {
+	return MustNewServerWithRateLimit(name, rpcs, nil)
 }
 
-// MustNewRpcServerWithRateLimit creates an instance of RpcServer with specified RPC services.
-func MustNewRpcServerWithRateLimit(name string, rpcs map[string]interface{}, registry *rate.Registry) *RpcServer {
+// MustNewServerWithRateLimit creates an instance of Server with specified RPC services.
+func MustNewServerWithRateLimit(name string, rpcs map[string]interface{}, registry *rate.Registry) *Server {
 	handler := rpc.NewServer()
 	servedApis := make([]string, 0, len(rpcs))
 
@@ -51,38 +51,21 @@ func MustNewRpcServerWithRateLimit(name string, rpcs map[string]interface{}, reg
 		"name": name,
 	}).Info("RPC server APIs registered")
 
-	return &RpcServer{
+	return &Server{
 		name: name,
-		servers: map[RpcProtocol]*http.Server{
-			RpcProtocolHttp: {
-				Handler: rateLimitHandler(registry, node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"})),
+		servers: map[Protocol]*http.Server{
+			ProtocolHttp: {
+				Handler: rate.HttpHandler(registry, node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"})),
 			},
-			RpcProtocolWS: {
-				Handler: rateLimitHandler(registry, handler.WebsocketHandler([]string{"*"})),
+			ProtocolWS: {
+				Handler: rate.HttpHandler(registry, handler.WebsocketHandler([]string{"*"})),
 			},
 		},
 	}
 }
 
-func rateLimitHandler(registry *rate.Registry, next http.Handler) http.Handler {
-	if registry == nil {
-		return next
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		limiter, ok := registry.Get("rpc.httpRequest")
-		if !ok {
-			next.ServeHTTP(w, r)
-		} else if ip := GetIPAddress(r); limiter.Allow(ip, 1) {
-			next.ServeHTTP(w, r)
-		} else {
-			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
-		}
-	})
-}
-
 // MustServe serves RPC server in blocking way or panics if failed.
-func (s *RpcServer) MustServe(endpoint string, protocol RpcProtocol) {
+func (s *Server) MustServe(endpoint string, protocol Protocol) {
 	logger := logrus.WithFields(logrus.Fields{
 		"name":     s.name,
 		"endpoint": endpoint,
@@ -105,7 +88,7 @@ func (s *RpcServer) MustServe(endpoint string, protocol RpcProtocol) {
 }
 
 // MustServeGraceful serves RPC server in a goroutine until graceful shutdown.
-func (s *RpcServer) MustServeGraceful(ctx context.Context, wg *sync.WaitGroup, endpoint string, protocol RpcProtocol) {
+func (s *Server) MustServeGraceful(ctx context.Context, wg *sync.WaitGroup, endpoint string, protocol Protocol) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -116,7 +99,7 @@ func (s *RpcServer) MustServeGraceful(ctx context.Context, wg *sync.WaitGroup, e
 	s.shutdown(protocol)
 }
 
-func (s *RpcServer) shutdown(protocol RpcProtocol) {
+func (s *Server) shutdown(protocol Protocol) {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultShutdownTimeout)
 	defer cancel()
 
@@ -132,4 +115,4 @@ func (s *RpcServer) shutdown(protocol RpcProtocol) {
 	}
 }
 
-func (s *RpcServer) String() string { return s.name }
+func (s *Server) String() string { return s.name }

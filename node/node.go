@@ -8,7 +8,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/buraksezer/consistent"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -97,7 +97,7 @@ func NewEthNode(name, url string, hm HealthMonitor) *EthNode {
 
 	n := &EthNode{
 		baseNode: newBaseNode(name, url, cancel),
-		Client:   util.MustNewEthClient(url, util.WithClientRetryCount(0)),
+		Client:   rpc.MustNewEthClient(url, rpc.WithClientRetryCount(0)),
 	}
 
 	n.atomicStatus.Store(NewEthStatus(name))
@@ -134,7 +134,7 @@ func NewCfxNode(name, url string, hm HealthMonitor) *CfxNode {
 
 	n := &CfxNode{
 		baseNode:       newBaseNode(name, url, cancel),
-		ClientOperator: util.MustNewCfxClient(url, util.WithClientRetryCount(0)),
+		ClientOperator: rpc.MustNewCfxClient(url, rpc.WithClientRetryCount(0)),
 	}
 
 	n.atomicStatus.Store(NewStatus(name))

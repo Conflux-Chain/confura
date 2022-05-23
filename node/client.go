@@ -62,7 +62,7 @@ func (p *clientProvider) getClient(key string, group Group) (interface{}, error)
 		return nil, ErrClientUnavailable
 	}
 
-	nodeName := util.Url2NodeName(url)
+	nodeName := Url2NodeName(url)
 
 	logger = logger.WithFields(logrus.Fields{
 		"node": nodeName,

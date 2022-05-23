@@ -7,7 +7,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,7 +24,7 @@ func mustNewWorker(name, nodeUrl string, chanSize int) *worker {
 	return &worker{
 		name:       name,
 		resultChan: make(chan *store.EpochData, chanSize),
-		cfx:        util.MustNewCfxClient(nodeUrl),
+		cfx:        rpc.MustNewCfxClient(nodeUrl),
 	}
 }
 

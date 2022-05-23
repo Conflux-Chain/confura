@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/openweb3/web3go"
 )
 
@@ -16,7 +16,7 @@ type EthClientProvider struct {
 func NewEthClientProvider(router Router) *EthClientProvider {
 	cp := &EthClientProvider{
 		clientProvider: newClientProvider(router, func(url string) (interface{}, error) {
-			return util.NewEthClient(url, util.WithClientHookMetrics(true))
+			return rpc.NewEthClient(url, rpc.WithClientHookMetrics(true))
 		}),
 	}
 

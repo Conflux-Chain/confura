@@ -11,7 +11,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/conflux-chain/conflux-infura/util"
+	rpcutil "github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 	ring "github.com/zealws/golang-ring"
@@ -47,9 +47,9 @@ type PubSubValidator struct {
 
 func MustNewPubSubValidator(conf *PSVConfig) *PubSubValidator {
 	// Prepare fullnode client instance
-	cfx := util.MustNewCfxClient(conf.FullnodeRpcEndpoint)
+	cfx := rpcutil.MustNewCfxClient(conf.FullnodeRpcEndpoint)
 	// Prepare infura rpc service client instance
-	infura := util.MustNewCfxClient(conf.InfuraRpcEndpoint)
+	infura := rpcutil.MustNewCfxClient(conf.InfuraRpcEndpoint)
 
 	return &PubSubValidator{cfx: cfx, infura: infura, conf: conf}
 }

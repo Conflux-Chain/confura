@@ -8,24 +8,24 @@ import (
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	fullnode = util.MustNewCfxClient(
+	fullnode = rpc.MustNewCfxClient(
 		"http://main.confluxrpc.org/v2",
-		util.WithClientRetryCount(3),
-		util.WithClientRetryInterval(time.Second),
-		util.WithClientRequestTimeout(time.Second),
+		rpc.WithClientRetryCount(3),
+		rpc.WithClientRetryInterval(time.Second),
+		rpc.WithClientRequestTimeout(time.Second),
 	)
 	// CHANGE TO INFURA URL BELOW TO TEST
-	infura = util.MustNewCfxClient(
+	infura = rpc.MustNewCfxClient(
 		"http://main.confluxrpc.org/v2",
-		util.WithClientRetryCount(3),
-		util.WithClientRetryInterval(time.Second),
-		util.WithClientRequestTimeout(time.Second),
+		rpc.WithClientRetryCount(3),
+		rpc.WithClientRetryInterval(time.Second),
+		rpc.WithClientRequestTimeout(time.Second),
 	)
 
 	wcfx     = cfxaddress.MustNewFromBase32("cfx:acg158kvr8zanb1bs048ryb6rtrhr283ma70vz70tx")
