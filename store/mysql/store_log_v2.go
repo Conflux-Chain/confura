@@ -115,23 +115,23 @@ func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartit
 		}
 	}
 
+	// update block range for log partition router
+	bnMin := dataSlice[0].Blocks[0].BlockNumber.ToInt().Uint64()
+	bnMax := dataSlice[len(dataSlice)-1].GetPivotBlock().BlockNumber.ToInt().Uint64()
+
+	err := ls.expandBnRange(dbTx, bnPartitionedLogEntity, int(logPartition.Index), bnMin, bnMax)
+	if err != nil {
+		return errors.WithMessage(err, "failed to expand partition bn range")
+	}
+
 	if len(logs) == 0 {
 		return nil
 	}
 
 	tblName := ls.getPartitionedTableName(&logV2{}, logPartition.Index)
-	err := dbTx.Table(tblName).CreateInBatches(logs, defaultBatchSizeLogInsert).Error
+	err = dbTx.Table(tblName).CreateInBatches(logs, defaultBatchSizeLogInsert).Error
 	if err != nil {
 		return err
-	}
-
-	// update block range for log partition router
-	bnMin := dataSlice[0].Blocks[0].BlockNumber.ToInt().Uint64()
-	bnMax := dataSlice[len(dataSlice)-1].GetPivotBlock().BlockNumber.ToInt().Uint64()
-
-	err = ls.expandBnRange(dbTx, bnPartitionedLogEntity, int(logPartition.Index), bnMin, bnMax)
-	if err != nil {
-		return errors.WithMessage(err, "failed to expand partition bn range")
 	}
 
 	// update partition data size
