@@ -186,11 +186,12 @@ func (bnps *bnPartitionedStore) deltaUpdateCount(dbTx *gorm.DB, entity string, p
 		)
 	}
 
+	dbTx = dbTx.Model(&bnPartition{}).Where("id = ?", lastPart.ID)
 	if delta > 0 {
-		return dbTx.Model(&lastPart).UpdateColumn("count", gorm.Expr("count + ?", delta)).Error
+		return dbTx.UpdateColumn("count", gorm.Expr("count + ?", delta)).Error
 	}
 
-	return dbTx.Model(&lastPart).UpdateColumn("count", gorm.Expr("GREATEST(0, CAST(count AS SIGNED) - ?)", -delta)).Error
+	return dbTx.UpdateColumn("count", gorm.Expr("GREATEST(0, CAST(count AS SIGNED) - ?)", -delta)).Error
 }
 
 // expandBnRange expands block number range of the latest entity partition.
@@ -218,7 +219,7 @@ func (bnps *bnPartitionedStore) expandBnRange(dbTx *gorm.DB, entity string, part
 		"bn_max": to,
 	}
 
-	return dbTx.Model(&bnPartition{}).Where(lastPart).Updates(updates).Error
+	return dbTx.Model(&bnPartition{}).Where("id = ?", lastPart.ID).Updates(updates).Error
 }
 
 // shrinkBnRange shrink block number range from the latest entity partition.
@@ -256,7 +257,7 @@ func (bnps *bnPartitionedStore) shrinkBnRange(dbTx *gorm.DB, entity string, bn u
 			updates["bn_max"] = bn - 1
 		}
 
-		err = dbTx.Model(&bnPartition{}).Where(part).Updates(updates).Error
+		err = dbTx.Model(&bnPartition{}).Where("id = ?", part.ID).Updates(updates).Error
 		if err != nil {
 			return nil, errors.WithMessagef(err, "failed to shrink partition with index %v", idx)
 		}
