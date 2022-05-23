@@ -88,7 +88,7 @@ func (filter *LogFilter) calculateQuerySetSize(db *gorm.DB) (uint64, error) {
 		Max sql.NullInt64
 	}
 
-	if err := db.First(&result).Error; err != nil {
+	if err := db.Find(&result).Error; err != nil {
 		return 0, err
 	}
 
