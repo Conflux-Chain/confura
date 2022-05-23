@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"fmt"
-	"math/big"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -10,64 +9,65 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
-var defaultEpochs = map[string]bool{
-	types.EpochEarliest.String():         true,
-	types.EpochLatestCheckpoint.String(): true,
-	types.EpochLatestConfirmed.String():  true,
-	types.EpochLatestState.String():      true,
-	types.EpochLatestMined.String():      true,
-	types.EpochLatestFinalized.String():  true,
-}
-
 // InputEpochMetric is used to add metrics for input epoch parameter.
 type InputEpochMetric struct {
 	cache util.ConcurrentMap // method -> epoch -> metric name
 	gaps  util.ConcurrentMap // method -> histogram
 }
 
+// Update marks the percentage for different epochs. If epoch number specified,
+// add statistic for epoch gap against latest mined.
 func (metric *InputEpochMetric) Update(epoch *types.Epoch, method string, cfx sdk.ClientOperator) {
-	if epoch == nil {
-		name := metric.getMetricName(method, "default")
-		metrics.GetOrRegisterGauge(name, nil).Inc(1)
-	} else if num, ok := epoch.ToInt(); ok {
-		name := metric.getMetricName(method, "number")
-		metrics.GetOrRegisterGauge(name, nil).Inc(1)
+	// mark percentage for most popular values
+	metric.updatePercentage(method, "default", epoch == nil)
+	metric.updatePercentage(method, types.EpochLatestMined.String(), types.EpochLatestMined.Equals(epoch))
+	metric.updatePercentage(method, types.EpochLatestState.String(), types.EpochLatestState.Equals(epoch))
 
+	// epoch number
+	var isNum bool
+	if epoch != nil {
+		_, isNum = epoch.ToInt()
+	}
+	metric.updatePercentage(method, "number", isNum)
+
+	// other cases
+	metric.updatePercentage(method, "others",
+		epoch != nil && !isNum &&
+			!types.EpochLatestMined.Equals(epoch) &&
+			!types.EpochLatestState.Equals(epoch))
+
+	if epoch == nil {
+		return
+	}
+
+	// update epoch gap against latest_mined if epoch number specified
+	if num, ok := epoch.ToInt(); ok {
 		if latestMined, err := cfx.GetEpochNumber(types.EpochLatestMined); err == nil && latestMined != nil {
-			gap := new(big.Int).Sub(latestMined.ToInt(), num)
-			metric.getGapMetric(method).Update(gap.Int64())
-		}
-	} else {
-		epochName := epoch.String()
-		if _, ok := defaultEpochs[epochName]; ok {
-			name := metric.getMetricName(method, epochName)
-			metrics.GetOrRegisterGauge(name, nil).Inc(1)
-		} else {
-			name := metric.getMetricName(method, "hash")
-			metrics.GetOrRegisterGauge(name, nil).Inc(1)
+			gap := latestMined.ToInt().Int64() - num.Int64()
+			metric.updateGap(method, gap)
 		}
 	}
 }
 
-func (metric *InputEpochMetric) getMetricName(method string, epoch string) string {
-	val, _ := metric.cache.LoadOrStoreFn(method, func(k interface{}) interface{} {
+func (metric *InputEpochMetric) updatePercentage(method string, epoch string, hit bool) {
+	val, _ := metric.cache.LoadOrStoreFn(method, func(interface{}) interface{} {
 		// need to return pointer type for noCopy
 		return &util.ConcurrentMap{}
 	})
 
 	epoch2MetricNames := val.(*util.ConcurrentMap)
 
-	val, _ = epoch2MetricNames.LoadOrStoreFn(epoch, func(k interface{}) interface{} {
+	val, _ = epoch2MetricNames.LoadOrStoreFn(epoch, func(interface{}) interface{} {
 		return fmt.Sprintf("rpc/input/epoch/%v/%v", method, epoch)
 	})
 
-	return val.(string)
+	GetOrRegisterTimeWindowPercentageDefault(val.(string)).Mark(hit)
 }
 
-func (metric *InputEpochMetric) getGapMetric(method string) metrics.Histogram {
-	val, _ := metric.gaps.LoadOrStoreFn(method, func(k interface{}) interface{} {
-		return GetOrRegisterHistogram(nil, "rpc/input/epoch/gap/%v", method)
+func (metric *InputEpochMetric) updateGap(method string, gap int64) {
+	val, _ := metric.gaps.LoadOrStoreFn(method, func(interface{}) interface{} {
+		return GetOrRegisterHistogram("rpc/input/epoch/gap/%v", method)
 	})
 
-	return val.(metrics.Histogram)
+	val.(metrics.Histogram).Update(gap)
 }

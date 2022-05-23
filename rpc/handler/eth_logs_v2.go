@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/rpc/ethbridge"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
@@ -74,6 +75,10 @@ func (handler *EthLogsApiHandlerV2) getLogsReorgGuard(
 	if err != nil {
 		return nil, false, err
 	}
+
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/split/alldatabase").Mark(fnFilter == nil)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/split/allfullnode").Mark(dbFilter == nil)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
 
 	var logs []types.Log
 

@@ -187,6 +187,8 @@ func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, ep
 }
 
 func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (interface{}, error) {
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getBlockByHash/details").Mark(includeTxs)
+
 	logger := logrus.WithFields(logrus.Fields{"blockHash": blockHash, "includeTxs": includeTxs})
 
 	if !util.IsInterfaceValNil(api.StoreHandler) {
@@ -209,7 +211,6 @@ func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, inc
 	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getBlockByHash` to fullnode")
 
 	if includeTxs {
-		metrics.GetOrRegisterGauge("rpc/cfx_getBlockByHash/details").Inc(1)
 		return cfx.GetBlockByHash(blockHash)
 	}
 
@@ -228,7 +229,17 @@ func (api *cfxAPI) GetBlockByHashWithPivotAssumption(
 }
 
 func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (interface{}, error) {
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getBlockByEpochNumber/details").Mark(includeTxs)
+
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch, "includeTxs": includeTxs})
+
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		logger.WithError(err).Info("Failed to get fullnode for `cfx_getBlockByEpochNumber` delegate")
+		return nil, err
+	}
+
+	api.inputEpochMetric.Update(&epoch, "cfx_getBlockByEpochNumber", cfx)
 
 	if !util.IsInterfaceValNil(api.StoreHandler) {
 		block, err := api.StoreHandler.GetBlockByEpochNumber(ctx, &epoch, includeTxs)
@@ -241,17 +252,9 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch,
 		}
 	}
 
-	cfx, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		logger.WithError(err).Info("Failed to get fullnode for `cfx_getBlockByEpochNumber` delegate")
-		return nil, err
-	}
-
 	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getBlockByEpochNumber` to fullnode")
-	api.inputEpochMetric.Update(&epoch, "cfx_getBlockByEpochNumber", cfx)
 
 	if includeTxs {
-		metrics.GetOrRegisterGauge("rpc/cfx_getBlockByEpochNumber/details", nil).Inc(1)
 		return cfx.GetBlockByEpoch(&epoch)
 	}
 
@@ -260,6 +263,8 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch,
 
 func (api *cfxAPI) GetBlockByBlockNumber(
 	ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (interface{}, error) {
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getBlockByBlockNumber/details").Mark(includeTxs)
+
 	logger := logrus.WithFields(logrus.Fields{"blockNumber": blockNumer, "includeTxs": includeTxs})
 
 	if !util.IsInterfaceValNil(api.StoreHandler) {
@@ -282,7 +287,6 @@ func (api *cfxAPI) GetBlockByBlockNumber(
 	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getBlockByBlockNumber` to fullnode")
 
 	if includeTxs {
-		metrics.GetOrRegisterGauge("rpc/cfx_getBlockByBlockNumber/details", nil).Inc(1)
 		return cfx.GetBlockByBlockNumber(blockNumer)
 	}
 
@@ -535,6 +539,14 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(
 func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch})
 
+	cfx, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		logger.WithError(err).Info("Failed to get fullnode for `cfx_getBlocksByEpoch` delegate")
+		return nil, err
+	}
+
+	api.inputEpochMetric.Update(&epoch, "cfx_getBlocksByEpoch", cfx)
+
 	if !util.IsInterfaceValNil(api.StoreHandler) {
 		blocks, err := api.StoreHandler.GetBlocksByEpoch(ctx, &epoch)
 
@@ -546,14 +558,7 @@ func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]t
 		}
 	}
 
-	cfx, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		logger.WithError(err).Info("Failed to get fullnode for `cfx_getBlocksByEpoch` delegate")
-		return nil, err
-	}
-
 	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getBlocksByEpoch` to fullnode")
-	api.inputEpochMetric.Update(&epoch, "cfx_getBlocksByEpoch", cfx)
 
 	return cfx.GetBlocksByEpoch(&epoch)
 }
@@ -589,7 +594,12 @@ func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash)
 	}
 
 	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getTransactionReceipt` to fullnode")
-	return cfx.GetTransactionReceipt(txHash)
+	receipt, err := cfx.GetTransactionReceipt(txHash)
+	if err == nil {
+		metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getTransactionReceipt/null").Mark(receipt == nil)
+	}
+
+	return receipt, err
 }
 
 func (api *cfxAPI) GetAccount(ctx context.Context, address types.Address, epoch *types.Epoch) (types.AccountInfo, error) {
@@ -715,6 +725,7 @@ func (api *cfxAPI) GetPoSRewardByEpoch(ctx context.Context, epoch types.Epoch) (
 		return nil, err
 	}
 
+	api.inputEpochMetric.Update(&epoch, "cfx_getPoSRewardByEpoch", cfx)
 	return cfx.GetPoSRewardByEpoch(epoch)
 }
 
@@ -922,6 +933,17 @@ func (api *cfxAPI) pubsubCtxFromContext(ctx context.Context) (psCtx *pubsubConte
 }
 
 func (api *cfxAPI) metricLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) {
+	isBlockRange := filter.FromBlock != nil || filter.ToBlock != nil
+	isBlockHashes := len(filter.BlockHashes) > 0
+	isEpochRange := !isBlockRange && !isBlockHashes
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/epochRange").Mark(isEpochRange)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/blockRange").Mark(isBlockRange)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/hashes").Mark(isBlockHashes)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/null").Mark(len(filter.Address) == 0)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/single").Mark(len(filter.Address) == 1)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/multiple").Mark(len(filter.Address) > 1)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/topics").Mark(len(filter.Topics) > 0)
+
 	// add metrics for the `epoch` filter only if block hash and block number range are not specified.
 	if len(filter.BlockHashes) == 0 && filter.FromBlock == nil && filter.ToBlock == nil {
 		api.inputEpochMetric.Update(filter.FromEpoch, "cfx_getLogs/from", cfx)

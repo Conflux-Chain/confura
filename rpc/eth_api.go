@@ -89,6 +89,8 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 func (api *ethAPI) GetBlockByHash(
 	ctx context.Context, blockHash common.Hash, fullTx bool,
 ) (*web3Types.Block, error) {
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getBlockByHash/details").Mark(fullTx)
+
 	logger := logrus.WithFields(logrus.Fields{
 		"blockHash": blockHash.Hex(), "includeTxs": fullTx,
 	})
@@ -172,9 +174,18 @@ func (api *ethAPI) GetBlockByNumber(
 		return nil, err
 	}
 
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getBlockByNumber/details").Mark(fullTx)
+
 	logger := logrus.WithFields(logrus.Fields{
 		"blockNum": blockNum, "includeTxs": fullTx,
 	})
+
+	w3c, err := api.provider.GetClientByIP(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c)
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		block, err := api.StoreHandler.GetBlockByNumber(ctx, &blockNum, fullTx)
@@ -189,12 +200,6 @@ func (api *ethAPI) GetBlockByNumber(
 
 	logger.Debug("Delegating eth_getBlockByNumber rpc request to fullnode")
 
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c)
 	return w3c.Eth.BlockByNumber(blockNum, fullTx)
 }
 
@@ -401,7 +406,12 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 		return nil, err
 	}
 
-	return w3c.Eth.TransactionReceipt(txHash)
+	receipt, err := w3c.Eth.TransactionReceipt(txHash)
+	if err != nil {
+		metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getTransactionReceipt/null").Mark(receipt == nil)
+	}
+
+	return receipt, err
 }
 
 // ethLogFilter temporary offset/limit support on eth log filter
@@ -459,6 +469,8 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 	if err != nil {
 		return nil, err
 	}
+
+	api.metricLogFilter(w3c, &filter.FilterQuery)
 
 	flag, ok := store.ParseEthLogFilterType(&filter.FilterQuery)
 	if !ok {
@@ -704,6 +716,19 @@ func (api *ethAPI) validateLogFilter(flag store.LogFilterType, filter *web3Types
 	}
 
 	return nil
+}
+
+func (api *ethAPI) metricLogFilter(w3c *web3go.Client, filter *web3Types.FilterQuery) {
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/hash").Mark(filter.BlockHash != nil)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/null").Mark(len(filter.Addresses) == 0)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/single").Mark(len(filter.Addresses) == 1)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/multiple").Mark(len(filter.Addresses) > 1)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/topics").Mark(len(filter.Topics) > 0)
+
+	if filter.BlockHash == nil {
+		api.inputBlockMetric.Update1(filter.FromBlock, "eth_getLogs/from", w3c)
+		api.inputBlockMetric.Update1(filter.ToBlock, "eth_getLogs/to", w3c)
+	}
 }
 
 // The following RPC methods are not supported yet by the fullnode:

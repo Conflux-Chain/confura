@@ -21,9 +21,9 @@ func GetOrRegisterMeter(nameFormat string, nameArgs ...interface{}) metrics.Mete
 	return metrics.GetOrRegisterMeter(name, nil)
 }
 
-func GetOrRegisterHistogram(r metrics.Registry, nameFormat string, nameArgs ...interface{}) metrics.Histogram {
+func GetOrRegisterHistogram(nameFormat string, nameArgs ...interface{}) metrics.Histogram {
 	name := fmt.Sprintf(nameFormat, nameArgs...)
-	return metrics.GetOrRegisterHistogram(name, r, metrics.NewExpDecaySample(1024, 0.015))
+	return metrics.GetOrRegisterHistogram(name, nil, metrics.NewExpDecaySample(1024, 0.015))
 }
 
 func GetOrRegisterTimer(nameFormat string, nameArgs ...interface{}) metrics.Timer {

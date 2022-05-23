@@ -199,7 +199,7 @@ type statusMetrics struct {
 func newStatusMetrics(latency, availability string) *statusMetrics {
 	return &statusMetrics{
 		names:        []string{latency, availability},
-		latency:      infuraMetrics.GetOrRegisterHistogram(nil, latency),
+		latency:      infuraMetrics.GetOrRegisterHistogram(latency),
 		availability: infuraMetrics.GetOrRegisterTimeWindowPercentageDefault(availability),
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
 )
@@ -75,6 +76,10 @@ func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
 	if err != nil {
 		return nil, false, err
 	}
+
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/split/alldatabase").Mark(fnFilter == nil)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/split/allfullnode").Mark(len(dbFilters) == 0)
+	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/split/partial").Mark(len(dbFilters) > 0 && fnFilter != nil)
 
 	var logs []types.Log
 
