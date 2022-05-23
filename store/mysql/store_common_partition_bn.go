@@ -17,9 +17,9 @@ type bnPartition struct {
 	ID uint64
 
 	// entity type
-	Entity string `gorm:"index:uidx_entity_index,unique;priority:1;size:64;not null"`
-	// shard index starting from 0
-	Index uint32 `gorm:"index:uidx_entity_index,unique;priority:2;not null"`
+	Entity string `gorm:"index:uidx_entity_pi,unique;priority:1;size:64;not null"`
+	// partition index starting from 0
+	Index uint32 `gorm:"column:pi;index:uidx_entity_pi,unique;priority:2;not null"`
 	// num of rows on shard
 	Count uint32 `gorm:"not null;default:0"`
 	// min block number
@@ -187,10 +187,10 @@ func (bnps *bnPartitionedStore) deltaUpdateCount(dbTx *gorm.DB, entity string, p
 	}
 
 	if delta > 0 {
-		return dbTx.UpdateColumn("count", gorm.Expr("count + ?", delta)).Error
+		return dbTx.Model(&lastPart).UpdateColumn("count", gorm.Expr("count + ?", delta)).Error
 	}
 
-	return dbTx.UpdateColumn("count", gorm.Expr("GREATEST(0, CAST(count AS SIGNED) - ?)", -delta)).Error
+	return dbTx.Model(&lastPart).UpdateColumn("count", gorm.Expr("GREATEST(0, CAST(count AS SIGNED) - ?)", -delta)).Error
 }
 
 // expandBnRange expands block number range of the latest entity partition.
@@ -286,9 +286,9 @@ func (bnps *bnPartitionedStore) latestOrOldestPartition(entity string, latest bo
 
 	db := bnps.db.Where("entity = ?", entity)
 	if latest {
-		db = db.Order("index desc")
+		db = db.Order("pi desc")
 	} else {
-		db = db.Order("index asc")
+		db = db.Order("pi asc")
 	}
 
 	err := db.First(&partition).Error
@@ -315,7 +315,7 @@ func (bnps *bnPartitionedStore) getPartitionByIndex(entity string, index uint32)
 
 // indexRange returns the partition index range for the entity.
 func (bnps *bnPartitionedStore) indexRange(entity string) (start uint32, end uint32, err error) {
-	v0, v1, err := bnps.entityRange("MAX(index) AS max, MIN(index) AS min", entity)
+	v0, v1, err := bnps.entityRange("MAX(pi) AS max, MIN(pi) AS min", entity)
 	if err != nil {
 		return
 	}

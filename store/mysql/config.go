@@ -22,6 +22,8 @@ var allModels = []interface{}{
 	&conf{},
 	&User{},
 	&Contract{},
+	&epochBlockMap{},
+	&bnPartition{},
 }
 
 // Config represents the mysql configurations to open a database instance.

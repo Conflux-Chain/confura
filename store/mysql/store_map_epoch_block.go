@@ -15,7 +15,7 @@ const defaultBatchSizeMappingInsert = 1000
 type epochBlockMap struct {
 	ID uint64
 	// epoch number
-	Epoch uint64 `gorm:"index:unique;not null"`
+	Epoch uint64 `gorm:"unique;not null"`
 	// min block number
 	BnMin uint64 `gorm:"not null"`
 	// max block number

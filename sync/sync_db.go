@@ -172,6 +172,19 @@ func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 }
 
 func (syncer *DatabaseSyncer) loadLastSyncEpoch() (loaded bool, err error) {
+	if ms, ok := syncer.db.(*mysql.MysqlStore); ok && ms.V2 != nil {
+		maxEpoch, ok, err := ms.V2.MaxEpoch()
+		if err != nil {
+			return false, errors.WithMessage(err, "failed to get max epoch from epoch to block mapping")
+		}
+
+		if ok {
+			syncer.epochFrom = maxEpoch + 1
+		}
+
+		return ok, nil
+	}
+
 	_, maxEpoch, err := syncer.db.GetGlobalEpochRange()
 	if err == nil {
 		syncer.epochFrom = maxEpoch + 1
