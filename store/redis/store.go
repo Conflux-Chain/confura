@@ -6,10 +6,10 @@ import (
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
-	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

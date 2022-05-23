@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/openweb3/web3go"
 	providers "github.com/openweb3/web3go/provider_wrapper"
 	"github.com/sirupsen/logrus"

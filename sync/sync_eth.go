@@ -7,11 +7,11 @@ import (
 
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
-	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	gometrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"

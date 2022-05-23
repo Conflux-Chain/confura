@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/openweb3/web3go"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"

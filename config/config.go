@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
-	"github.com/conflux-chain/conflux-infura/alert"
-	"github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/util/alert"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"

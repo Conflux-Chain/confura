@@ -6,7 +6,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/middleware"
-	"github.com/conflux-chain/conflux-infura/metrics"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/sirupsen/logrus"
 )
 

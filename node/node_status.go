@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	infuraMetrics "github.com/conflux-chain/conflux-infura/metrics"
+	infuraMetrics "github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

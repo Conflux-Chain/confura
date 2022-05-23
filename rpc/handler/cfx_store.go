@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/conflux-chain/conflux-infura/metrics"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
