@@ -1,10 +1,8 @@
 package rpc
 
 import (
-	"fmt"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/openweb3/web3go"
 	providers "github.com/openweb3/web3go/provider_wrapper"
 	"github.com/sirupsen/logrus"
@@ -60,33 +58,19 @@ func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 
 	eth, err := web3go.NewClientWithOption(url, opt.ClientOption)
 	if err == nil && opt.hookMetrics {
-		HookEthRpcMetricsMiddleware(eth)
+		HookEthRpcMetricsMiddleware(eth, url)
 	}
 
 	return eth, err
 }
 
-func HookEthRpcMetricsMiddleware(eth *web3go.Client) {
+func HookEthRpcMetricsMiddleware(eth *web3go.Client, nodeUrl string) {
 	mp := providers.NewMiddlewarableProvider(eth.Provider())
-	mp.HookCall(callEthRpcMetricsMiddleware)
-	eth.SetProvider(mp)
-}
-
-func callEthRpcMetricsMiddleware(f providers.CallFunc) providers.CallFunc {
-	return providers.CallFunc(func(resultPtr interface{}, method string, args ...interface{}) error {
-		start := time.Now()
-
-		err := f(resultPtr, method, args...)
-
-		var metricKey string
-		if err != nil {
-			metricKey = fmt.Sprintf("infura/duration/eth/rpc/call/%v/error", method)
-		} else {
-			metricKey = fmt.Sprintf("infura/duration/eth/rpc/call/%v/success", method)
-		}
-
-		metrics.GetOrRegisterTimer(metricKey).UpdateSince(start)
-
-		return err
+	mp.HookCall(func(cf providers.CallFunc) providers.CallFunc {
+		return middlewareMetrics(nodeUrl, "eth", cf)
 	})
+	mp.HookCall(func(cf providers.CallFunc) providers.CallFunc {
+		return middlewareLog(nodeUrl, "eth", cf)
+	})
+	eth.SetProvider(mp)
 }

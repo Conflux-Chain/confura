@@ -1,12 +1,10 @@
 package rpc
 
 import (
-	"fmt"
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/middleware"
-	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/sirupsen/logrus"
 )
 
@@ -71,24 +69,11 @@ func NewCfxClient(url string, options ...ClientOption) (*sdk.Client, error) {
 }
 
 func HookCfxRpcMetricsMiddleware(cfx *sdk.Client) {
-	cfx.UseCallRpcMiddleware(callRpcMetricsMiddleware)
-}
+	cfx.UseCallRpcMiddleware(func(handler middleware.CallRpcHandler) middleware.CallRpcHandler {
+		return middleware.CallRpcHandlerFunc(middlewareMetrics(cfx.GetNodeURL(), "cfx", handler.Handle))
+	})
 
-func callRpcMetricsMiddleware(handler middleware.CallRpcHandler) middleware.CallRpcHandler {
-	return middleware.CallRpcHandlerFunc(func(result interface{}, method string, args ...interface{}) error {
-		start := time.Now()
-
-		err := handler.Handle(result, method, args...)
-
-		var metricKey string
-		if err != nil {
-			metricKey = fmt.Sprintf("infura/duration/cfx/rpc/call/%v/error", method)
-		} else {
-			metricKey = fmt.Sprintf("infura/duration/cfx/rpc/call/%v/success", method)
-		}
-
-		metrics.GetOrRegisterTimer(metricKey).UpdateSince(start)
-
-		return err
+	cfx.UseCallRpcMiddleware(func(handler middleware.CallRpcHandler) middleware.CallRpcHandler {
+		return middleware.CallRpcHandlerFunc(middlewareLog(cfx.GetNodeURL(), "cfx", handler.Handle))
 	})
 }
