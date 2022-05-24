@@ -37,8 +37,6 @@ const (
 )
 
 var (
-	maxLogsLimit = hexutil.Uint64(50) // max logs limit to fetch from fullnode && infura
-
 	validEpochFromNoFilePath = ".evno" // file path to read/write epoch number from where the validation will start
 
 	errResultNotMatched  = errors.New("results not matched")
@@ -276,7 +274,7 @@ func (validator *EpochValidator) scanOnce() (bool, error) {
 
 	validator.conf.EpochScanFrom++
 
-	if validator.conf.EpochScanFrom%5000 == 0 { // periodly save the scaning progress per 5000 epochs in case of data lost
+	if validator.conf.EpochScanFrom%1000 == 0 { // periodly save the scaning progress per 1000 epochs in case of data lost
 		validator.saveScanCursor()
 	}
 
@@ -690,7 +688,7 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 
 	// filter: epoch range
 	filterByEpoch := types.LogFilter{
-		FromEpoch: epoch, ToEpoch: epoch, Limit: &maxLogsLimit,
+		FromEpoch: epoch, ToEpoch: epoch,
 	}
 
 	if err := validator.doValidateGetLogs(filterByEpoch); err != nil {
@@ -723,7 +721,6 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 
 	filterByBlockHashes := types.LogFilter{
 		BlockHashes: blockHashes,
-		Limit:       &maxLogsLimit,
 	}
 
 	if err := validator.doValidateGetLogs(filterByBlockHashes); err != nil {
@@ -742,7 +739,6 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 	filterByBlockNumbers := types.LogFilter{
 		FromBlock: block.BlockNumber,
 		ToBlock:   block.BlockNumber,
-		Limit:     &maxLogsLimit,
 	}
 
 	if err := validator.doValidateGetLogs(filterByBlockNumbers); err != nil {

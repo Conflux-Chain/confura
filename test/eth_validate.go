@@ -228,7 +228,7 @@ func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
 
 	validator.conf.ScanFromBlock++
 
-	if validator.conf.ScanFromBlock%5000 == 0 { // periodly save the scaning progress per 5000 blocks in case of data lost
+	if validator.conf.ScanFromBlock%1000 == 0 { // periodly save the scaning progress per 1000 blocks in case of data lost
 		validator.saveScanCursor()
 	}
 
@@ -508,11 +508,10 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 	})
 
 	// filter: blocknumbers
-	fromBn, toBn, limitSize := int64(blockNo), int64(blockNo), uint(maxLogsLimit)
+	fromBn, toBn := int64(blockNo), int64(blockNo)
 	filterByBlockNums := types.FilterQuery{
 		FromBlock: (*rpc.BlockNumber)(&fromBn),
 		ToBlock:   (*rpc.BlockNumber)(&toBn),
-		Limit:     &limitSize,
 	}
 
 	if err := validator.doValidateGetLogs(&filterByBlockNums); err != nil {
@@ -523,7 +522,6 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 	// filter: blockhash
 	filterByBlockHash := types.FilterQuery{
 		BlockHash: &blockHash,
-		Limit:     &limitSize,
 	}
 
 	if err := validator.doValidateGetLogs(&filterByBlockHash); err != nil {
