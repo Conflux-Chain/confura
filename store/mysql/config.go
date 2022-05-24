@@ -87,6 +87,17 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 
 	db := config.mustNewDB(config.Database)
 
+	// Very naive check on database tables are ready or not.
+	// If no database tables are found, we regard the database as a new created one.
+	if !newCreated {
+		var tables []string
+		if err := db.Raw("SHOW TABLES").Scan(&tables).Error; err != nil {
+			logrus.WithField("database", config.Database).WithError(err).Fatal("Failed to query database tables")
+		}
+
+		newCreated = (len(tables) == 0)
+	}
+
 	if newCreated {
 		if err := db.Migrator().CreateTable(allModels...); err != nil {
 			logrus.WithError(err).Fatal("Failed to create tables")
