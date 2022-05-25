@@ -17,8 +17,8 @@ var (
 func Factory() *factory {
 	cfxOnce.Do(func() {
 		cfxFactory = newFactory(
-			func(name, url string, hm HealthMonitor) (Node, error) {
-				return NewCfxNode(name, url, hm), nil
+			func(group Group, name, url string, hm HealthMonitor) (Node, error) {
+				return NewCfxNode(group, name, url, hm), nil
 			},
 			cfg.Endpoint, urlCfg, cfg.Router.NodeRPCURL,
 		)
@@ -30,8 +30,8 @@ func Factory() *factory {
 func EthFactory() *factory {
 	ethOnce.Do(func() {
 		ethFactory = newFactory(
-			func(name, url string, hm HealthMonitor) (Node, error) {
-				return NewEthNode(name, url, hm), nil
+			func(group Group, name, url string, hm HealthMonitor) (Node, error) {
+				return NewEthNode(group, name, url, hm), nil
 			},
 			cfg.EthEndpoint, ethUrlCfg, cfg.Router.EthNodeRPCURL,
 		)

@@ -10,14 +10,14 @@ import (
 )
 
 // nodeFactory factory methods to create node instance
-type nodeFactory func(name, url string, hm HealthMonitor) (Node, error)
+type nodeFactory func(group Group, name, url string, hm HealthMonitor) (Node, error)
 
 // Manager manages full node cluster, including:
 // 1. Monitor node health and disable/enable full node automatically.
 // 2. Implements Router interface to route RPC requests to different full nodes
 // in manner of consistent hashing.
 type Manager struct {
-	space    string
+	group    Group
 	nodes    map[string]Node        // node name => Node
 	hashRing *consistent.Consistent // consistent hashing algorithm
 	resolver RepartitionResolver    // support repartition for hash ring
@@ -28,13 +28,13 @@ type Manager struct {
 	midEpoch        uint64            // middle epoch of managed full nodes.
 }
 
-func NewManager(space string, nf nodeFactory, urls []string) *Manager {
-	return NewManagerWithRepartition(space, nf, urls, &noopRepartitionResolver{})
+func NewManager(group Group, nf nodeFactory, urls []string) *Manager {
+	return NewManagerWithRepartition(group, nf, urls, &noopRepartitionResolver{})
 }
 
-func NewManagerWithRepartition(space string, nf nodeFactory, urls []string, resolver RepartitionResolver) *Manager {
+func NewManagerWithRepartition(group Group, nf nodeFactory, urls []string, resolver RepartitionResolver) *Manager {
 	manager := Manager{
-		space:           space,
+		group:           group,
 		nodeFactory:     nf,
 		nodes:           make(map[string]Node),
 		resolver:        resolver,
@@ -46,7 +46,7 @@ func NewManagerWithRepartition(space string, nf nodeFactory, urls []string, reso
 	for _, url := range urls {
 		nodeName := Url2NodeName(url)
 		if _, ok := manager.nodes[nodeName]; !ok {
-			node, _ := nf(nodeName, url, &manager)
+			node, _ := nf(group, nodeName, url, &manager)
 			manager.nodes[nodeName] = node
 			members = append(members, node)
 		}
@@ -63,7 +63,7 @@ func (m *Manager) Add(url string) {
 
 	nodeName := Url2NodeName(url)
 	if _, ok := m.nodes[nodeName]; !ok {
-		node, _ := m.nodeFactory(nodeName, url, m)
+		node, _ := m.nodeFactory(m.group, nodeName, url, m)
 		m.nodes[nodeName] = node
 		m.hashRing.Add(node)
 	}
@@ -143,9 +143,9 @@ func (m *Manager) Distribute(key []byte) Node {
 func (m *Manager) Route(key []byte) string {
 	if n := m.Distribute(key); n != nil {
 		// metrics overall route QPS
-		metrics.Registry.Nodes.Routes(m.space).Mark(1)
+		metrics.Registry.Nodes.Routes(m.group.Space(), m.group.String(), "overall").Mark(1)
 		// metrics per node route QPS
-		metrics.Registry.Nodes.Routes(m.space, n.Name()).Mark(1)
+		metrics.Registry.Nodes.Routes(m.group.Space(), m.group.String(), n.Name()).Mark(1)
 
 		return n.Url()
 	}

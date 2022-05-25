@@ -9,7 +9,7 @@ import (
 func NewServer(nf nodeFactory, groupConf map[Group]UrlConfig) *rpc.Server {
 	managers := make(map[Group]*Manager)
 	for k, v := range groupConf {
-		managers[k] = NewManager(k.Space(), nf, v.Nodes)
+		managers[k] = NewManager(k, nf, v.Nodes)
 	}
 
 	return rpc.MustNewServer("node", map[string]interface{}{

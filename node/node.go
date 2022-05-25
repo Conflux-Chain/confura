@@ -92,7 +92,7 @@ type EthNode struct {
 
 // NewEthNode creates an instance of EVM space node and start to monitor
 // node health in a separate goroutine until node closed.
-func NewEthNode(name, url string, hm HealthMonitor) *EthNode {
+func NewEthNode(group Group, name, url string, hm HealthMonitor) *EthNode {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	n := &EthNode{
@@ -100,7 +100,7 @@ func NewEthNode(name, url string, hm HealthMonitor) *EthNode {
 		Client:   rpc.MustNewEthClient(url, rpc.WithClientRetryCount(0)),
 	}
 
-	n.atomicStatus.Store(NewEthStatus(name))
+	n.atomicStatus.Store(NewStatus(group, name))
 
 	go n.monitor(ctx, n, hm)
 
@@ -129,7 +129,7 @@ type CfxNode struct {
 
 // NewCfxNode creates an instance of conflux full node and start to monitor
 // node health in a separate goroutine until node closed.
-func NewCfxNode(name, url string, hm HealthMonitor) *CfxNode {
+func NewCfxNode(group Group, name, url string, hm HealthMonitor) *CfxNode {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	n := &CfxNode{
@@ -137,7 +137,7 @@ func NewCfxNode(name, url string, hm HealthMonitor) *CfxNode {
 		ClientOperator: rpc.MustNewCfxClient(url, rpc.WithClientRetryCount(0)),
 	}
 
-	n.atomicStatus.Store(NewStatus(name))
+	n.atomicStatus.Store(NewStatus(group, name))
 
 	go n.monitor(ctx, n, hm)
 

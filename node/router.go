@@ -34,6 +34,10 @@ func (g Group) Space() string {
 	return "cfx"
 }
 
+func (g Group) String() string {
+	return string(g)
+}
+
 // Router is used to route RPC requests to multiple full nodes.
 type Router interface {
 	// Route returns the full node URL for specified group and key.

@@ -43,27 +43,16 @@ type Status struct {
 	latestHeartBeatErrs *ring.Ring
 }
 
-func NewStatus(nodeName string) Status {
-	return newStatus(nodeName, newStatusMetrics(
-		infuraMetrics.Registry.Nodes.NodeLatency("cfx", nodeName),
-		infuraMetrics.Registry.Nodes.NodeAvailability("cfx", nodeName),
-	))
-}
-
-func NewEthStatus(nodeName string) Status {
-	return newStatus(nodeName, newStatusMetrics(
-		infuraMetrics.Registry.Nodes.NodeLatency("eth", nodeName),
-		infuraMetrics.Registry.Nodes.NodeAvailability("eth", nodeName),
-	))
-}
-
-func newStatus(nodeName string, metric *statusMetrics) Status {
+func NewStatus(group Group, nodeName string) Status {
 	hbErrRingBuf := &ring.Ring{}
 	hbErrRingBuf.SetCapacity(int(2 * cfg.Monitor.Unhealth.Failures))
 
 	return Status{
-		nodeName:            nodeName,
-		metric:              metric,
+		nodeName: nodeName,
+		metric: newStatusMetrics(
+			infuraMetrics.Registry.Nodes.NodeLatency(group.Space(), group.String(), nodeName),
+			infuraMetrics.Registry.Nodes.NodeAvailability(group.Space(), group.String(), nodeName),
+		),
 		latestHeartBeatErrs: hbErrRingBuf,
 	}
 }
