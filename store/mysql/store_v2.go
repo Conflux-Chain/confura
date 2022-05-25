@@ -12,9 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TODO: ensure MysqlStore implements Store interface
-// var _ store.Store = (*MysqlStoreV2)(nil)
-
 type MysqlStoreV2 struct {
 	*baseStore
 	*epochBlockMapStore
@@ -52,7 +49,7 @@ func NewStoreV2FromV1(v1 *MysqlStore) *MysqlStoreV2 {
 
 func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStoreV2 {
 	cs := NewContractStore(db)
-	ebms := newEpochBlockMapStore(db)
+	ebms := newEpochBlockMapStore(db, config)
 
 	return &MysqlStoreV2{
 		baseStore:          newBaseStore(db),
@@ -115,6 +112,11 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 		if logPartition, err = ms.ls.preparePartition(dataSlice); err != nil {
 			return errors.WithMessage(err, "failed to prepare log partition")
 		}
+	}
+
+	// prepare epoch to block mapping table partition if necessary
+	if ms.epochBlockMapStore.preparePartition(dataSlice) != nil {
+		return errors.New("failed to prepare epoch block map partition")
 	}
 
 	return ms.db.Transaction(func(dbTx *gorm.DB) error {

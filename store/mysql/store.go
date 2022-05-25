@@ -91,7 +91,7 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 
 	ms := MysqlStore{
 		baseStore:              newBaseStore(db),
-		epochBlockMapStore:     newEpochBlockMapStore(db),
+		epochBlockMapStore:     newEpochBlockMapStore(db, config),
 		txStore:                newTxStore(db),
 		blockStore:             newBlockStore(db),
 		logStore:               newLogStore(db),

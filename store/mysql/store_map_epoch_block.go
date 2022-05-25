@@ -5,17 +5,23 @@ import (
 
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
+	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
 
-const defaultBatchSizeMappingInsert = 1000
+const (
+	// batch insert size for epoch to block mapping
+	defaultBatchSizeMappingInsert = 1000
 
-// epochBlockMap mapping data from epoch to relative block info.
-// (such as block range and pivot block hash).
+	// epoch to block mapping partition size
+	epochToBlockMappingPartitionSize = 50_000_000
+)
+
+// epochBlockMap mapping data from epoch to relative block info (such as block range and pivot block hash).
+// Use MySQL ranged partitions for scalability and performance.
 type epochBlockMap struct {
-	ID uint64
 	// epoch number
-	Epoch uint64 `gorm:"unique;not null"`
+	Epoch uint64 `gorm:"primaryKey"`
 	// min block number
 	BnMin uint64 `gorm:"not null"`
 	// max block number
@@ -31,12 +37,65 @@ func (epochBlockMap) TableName() string {
 // epochBlockMapStore used to get epoch to block map data.
 type epochBlockMapStore struct {
 	*baseStore
+
+	// help partitioner
+	partitioner *mysqlRangePartitioner
 }
 
-func newEpochBlockMapStore(db *gorm.DB) *epochBlockMapStore {
+func newEpochBlockMapStore(db *gorm.DB, config *Config) *epochBlockMapStore {
 	return &epochBlockMapStore{
 		baseStore: newBaseStore(db),
+		partitioner: newMysqlRangePartitioner(
+			config.Database, epochBlockMap{}.TableName(), "epoch",
+		),
 	}
+}
+
+// preparePartition creates new table partition if necessary.
+func (ebms *epochBlockMapStore) preparePartition(dataSlice []*store.EpochData) error {
+	var latestPartitionIndex int
+
+	partition, err := ebms.partitioner.latestPartition(ebms.db)
+	if err != nil {
+		return errors.WithMessage(err, "failed to get latest partition")
+	}
+
+	if partition != nil {
+		latestPartitionIndex = ebms.partitioner.indexOfPartition(partition)
+	} else {
+		// create initial partition
+		initPartitionIndex := int(dataSlice[0].Number / epochToBlockMappingPartitionSize)
+		threshold := uint64(initPartitionIndex+1) * epochToBlockMappingPartitionSize
+
+		err = ebms.partitioner.convert(ebms.db, initPartitionIndex, threshold)
+		if err != nil {
+			return errors.WithMessage(err, "failed to init range partitioned table")
+		}
+
+		latestPartitionIndex = int(initPartitionIndex)
+	}
+
+	for _, data := range dataSlice {
+		if data.Number%epochToBlockMappingPartitionSize != 0 {
+			continue
+		}
+
+		// create new partition if necessary
+		partitionIndex := int(data.Number / epochToBlockMappingPartitionSize)
+		if int(partitionIndex) <= latestPartitionIndex { // partition already exists
+			continue
+		}
+
+		threshold := uint64(partitionIndex+1) * epochToBlockMappingPartitionSize
+		err := ebms.partitioner.addPartition(ebms.db, partitionIndex, threshold)
+		if err != nil {
+			return errors.WithMessage(err, "failed to add partition")
+		}
+
+		latestPartitionIndex = partitionIndex
+	}
+
+	return nil
 }
 
 // MaxEpoch returns the max epoch within the map store.
