@@ -3,7 +3,7 @@ module github.com/conflux-chain/conflux-infura
 go 1.15
 
 require (
-	github.com/Conflux-Chain/go-conflux-sdk v1.1.5
+	github.com/Conflux-Chain/go-conflux-sdk v1.2.0
 	github.com/Conflux-Chain/go-conflux-util v0.0.0-20220216032819-554815f9dbe6
 	github.com/buraksezer/consistent v0.9.0
 	github.com/cespare/xxhash v1.1.0
@@ -12,8 +12,8 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/montanaflynn/stats v0.6.6
-	github.com/openweb3/go-rpc-provider v0.1.2
-	github.com/openweb3/web3go v0.0.0-20220510110544-ce23f737a79a
+	github.com/openweb3/go-rpc-provider v0.2.0
+	github.com/openweb3/web3go v0.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
 	github.com/selvatico/go-mocket v1.0.7

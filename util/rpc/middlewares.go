@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"context"
 	"time"
 
 	"github.com/conflux-chain/conflux-infura/util/metrics"
@@ -10,12 +11,12 @@ import (
 
 func middlewareMetrics(
 	fullnode, space string,
-	handler func(result interface{}, method string, args ...interface{}) error,
-) func(result interface{}, method string, args ...interface{}) error {
-	return func(result interface{}, method string, args ...interface{}) error {
+	handler func(ctx context.Context, result interface{}, method string, args ...interface{}) error,
+) func(ctx context.Context, result interface{}, method string, args ...interface{}) error {
+	return func(ctx context.Context, result interface{}, method string, args ...interface{}) error {
 		start := time.Now()
 
-		err := handler(result, method, args...)
+		err := handler(ctx, result, method, args...)
 
 		metrics.Registry.RPC.FullnodeQps(space, method, err).UpdateSince(start)
 
@@ -32,11 +33,11 @@ func middlewareMetrics(
 
 func middlewareLog(
 	fullnode, space string,
-	handler func(result interface{}, method string, args ...interface{}) error,
-) func(result interface{}, method string, args ...interface{}) error {
-	return func(result interface{}, method string, args ...interface{}) error {
+	handler func(ctx context.Context, result interface{}, method string, args ...interface{}) error,
+) func(ctx context.Context, result interface{}, method string, args ...interface{}) error {
+	return func(ctx context.Context, result interface{}, method string, args ...interface{}) error {
 		if !logrus.IsLevelEnabled(logrus.DebugLevel) {
-			return handler(result, method, args...)
+			return handler(ctx, result, method, args...)
 		}
 
 		logger := logrus.WithFields(logrus.Fields{
@@ -49,7 +50,7 @@ func middlewareLog(
 		logger.Debug("RPC enter")
 
 		start := time.Now()
-		err := handler(result, method, args...)
+		err := handler(ctx, result, method, args...)
 		logger = logger.WithField("elapsed", time.Since(start))
 
 		if err != nil {

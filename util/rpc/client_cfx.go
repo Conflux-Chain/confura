@@ -26,7 +26,7 @@ func (o *cfxClientOption) SetRequestTimeout(reqTimeout time.Duration) {
 }
 
 func (o *cfxClientOption) SetMaxConnsPerHost(maxConns int) {
-	o.MaxConnectionNum = maxConns
+	o.MaxConnectionPerHost = maxConns
 }
 
 func MustNewCfxClientFromViper(options ...ClientOption) *sdk.Client {
@@ -49,10 +49,10 @@ func MustNewCfxClient(url string, options ...ClientOption) *sdk.Client {
 func NewCfxClient(url string, options ...ClientOption) (*sdk.Client, error) {
 	opt := &cfxClientOption{
 		ClientOption: &sdk.ClientOption{
-			RetryCount:       cfxClientCfg.Retry,
-			RetryInterval:    cfxClientCfg.RetryInterval,
-			RequestTimeout:   cfxClientCfg.RequestTimeout,
-			MaxConnectionNum: cfxClientCfg.MaxConnsPerHost,
+			RetryCount:           cfxClientCfg.Retry,
+			RetryInterval:        cfxClientCfg.RetryInterval,
+			RequestTimeout:       cfxClientCfg.RequestTimeout,
+			MaxConnectionPerHost: cfxClientCfg.MaxConnsPerHost,
 		},
 	}
 

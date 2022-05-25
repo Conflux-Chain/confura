@@ -3,14 +3,14 @@ package rpc
 import (
 	"time"
 
+	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	"github.com/openweb3/web3go"
-	providers "github.com/openweb3/web3go/provider_wrapper"
 	"github.com/sirupsen/logrus"
 )
 
 type ethClientOption struct {
 	baseClientOption
-	*web3go.ClientOption
+	providers.Option
 }
 
 func (o *ethClientOption) SetRetryCount(retry int) {
@@ -26,7 +26,7 @@ func (o *ethClientOption) SetRequestTimeout(reqTimeout time.Duration) {
 }
 
 func (o *ethClientOption) SetMaxConnsPerHost(maxConns int) {
-	o.MaxConnectionNum = maxConns
+	o.MaxConnectionPerHost = maxConns
 }
 
 func MustNewEthClientFromViper(options ...ClientOption) *web3go.Client {
@@ -44,11 +44,11 @@ func MustNewEthClient(url string, options ...ClientOption) *web3go.Client {
 
 func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 	opt := ethClientOption{
-		ClientOption: &web3go.ClientOption{
-			RetryCount:       ethClientCfg.Retry,
-			RetryInterval:    ethClientCfg.RetryInterval,
-			RequestTimeout:   ethClientCfg.RequestTimeout,
-			MaxConnectionNum: ethClientCfg.MaxConnsPerHost,
+		Option: providers.Option{
+			RetryCount:           ethClientCfg.Retry,
+			RetryInterval:        ethClientCfg.RetryInterval,
+			RequestTimeout:       ethClientCfg.RequestTimeout,
+			MaxConnectionPerHost: ethClientCfg.MaxConnsPerHost,
 		},
 	}
 
@@ -56,7 +56,7 @@ func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 		o(&opt)
 	}
 
-	eth, err := web3go.NewClientWithOption(url, opt.ClientOption)
+	eth, err := web3go.NewClientWithOption(url, opt.Option)
 	if err == nil && opt.hookMetrics {
 		HookEthRpcMetricsMiddleware(eth, url)
 	}
@@ -66,10 +66,10 @@ func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 
 func HookEthRpcMetricsMiddleware(eth *web3go.Client, nodeUrl string) {
 	mp := providers.NewMiddlewarableProvider(eth.Provider())
-	mp.HookCall(func(cf providers.CallFunc) providers.CallFunc {
+	mp.HookCallContext(func(cf providers.CallContextFunc) providers.CallContextFunc {
 		return middlewareMetrics(nodeUrl, "eth", cf)
 	})
-	mp.HookCall(func(cf providers.CallFunc) providers.CallFunc {
+	mp.HookCallContext(func(cf providers.CallContextFunc) providers.CallContextFunc {
 		return middlewareLog(nodeUrl, "eth", cf)
 	})
 	eth.SetProvider(mp)
