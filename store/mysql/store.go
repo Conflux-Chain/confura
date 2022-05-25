@@ -166,7 +166,7 @@ func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		}
 	}
 
-	updater := metrics.NewTimerUpdaterByName("infura/duration/store/mysql/write")
+	updater := metrics.Registry.Store.Push("mysql")
 	defer updater.Update()
 
 	// Disabled during development
@@ -422,7 +422,7 @@ func (ms *MysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 }
 
 func (ms *MysqlStore) remove(reorg bool, epochFrom, epochTo uint64, option store.EpochRemoveOption, newOpAffects func() *mysqlEpochDataOpAffects) error {
-	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/delete")
+	updater := metrics.Registry.Store.Pop("mysql")
 	defer updater.Update()
 
 	txOpAffects := newOpAffects()

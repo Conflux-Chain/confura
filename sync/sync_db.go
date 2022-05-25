@@ -15,7 +15,6 @@ import (
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/metrics"
-	gometrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -200,7 +199,7 @@ func (syncer *DatabaseSyncer) loadLastSyncEpoch() (loaded bool, err error) {
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
 func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
-	updater := metrics.NewTimerUpdaterByName("infura/duration/db/sync/once")
+	updater := metrics.Registry.Sync.SyncOnceQps("cfx", "db")
 	defer updater.Update()
 
 	// Drain pivot switch reorg event channel to handle pivot chain reorg
@@ -226,8 +225,7 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 
 	epochTo, syncSize := syncer.nextEpochTo(maxEpochTo)
 
-	ssGauge := gometrics.GetOrRegisterGauge("infura/db/sync/size/confirmed", nil)
-	ssGauge.Update(int64(syncSize))
+	metrics.Registry.Sync.SyncOnceSize("cfx", "db").Update(int64(syncSize))
 
 	logger := logrus.WithFields(logrus.Fields{
 		"syncSize":       syncSize,

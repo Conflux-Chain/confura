@@ -12,7 +12,6 @@ import (
 	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/metrics"
-	gometrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -127,7 +126,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 		return false, errors.WithMessage(err, "failed to query the latest block number")
 	}
 
-	updater := metrics.NewTimerUpdaterByName("infura/duration/eth/sync/once")
+	updater := metrics.Registry.Sync.SyncOnceQps("eth", "db")
 	defer updater.Update()
 
 	recentBlockNo := recentBlockNumber.Uint64()
@@ -148,8 +147,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	toBlock := util.MinUint64(syncer.fromBlock+syncer.maxSyncBlocks-1, recentBlockNo)
 	syncSize := toBlock - syncer.fromBlock + 1
 
-	syncSizeGauge := gometrics.GetOrRegisterGauge("infura/eth/sync/size", nil)
-	syncSizeGauge.Update(int64(syncSize))
+	metrics.Registry.Sync.SyncOnceSize("eth", "db").Update(int64(syncSize))
 
 	logger := logrus.WithFields(logrus.Fields{
 		"syncSize": syncSize, "fromBlock": syncer.fromBlock, "toBlock": toBlock,

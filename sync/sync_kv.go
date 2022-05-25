@@ -12,7 +12,6 @@ import (
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util/metrics"
-	gometrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -262,13 +261,12 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 		return nil
 	}
 
-	updater := metrics.NewTimerUpdaterByName("infura/duration/cache/sync/once")
+	updater := metrics.Registry.Sync.SyncOnceQps("cfx", "cache")
 	defer updater.Update()
 
 	syncFrom, syncSize := syncer.syncWindow.peekShrinkFrom(uint32(syncer.maxSyncEpochs))
 
-	syncSizeGauge := gometrics.GetOrRegisterGauge("infura/cache/sync/size/stated", nil)
-	syncSizeGauge.Update(int64(syncSize))
+	metrics.Registry.Sync.SyncOnceSize("cfx", "cache").Update(int64(syncSize))
 
 	logger = logger.WithFields(logrus.Fields{"syncFrom": syncFrom, "syncSize": syncSize})
 	logger.Debug("Cache syncer starting to sync epoch(s)...")

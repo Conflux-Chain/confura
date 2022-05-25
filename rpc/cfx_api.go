@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"fmt"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -187,7 +186,7 @@ func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, ep
 }
 
 func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (interface{}, error) {
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getBlockByHash/details").Mark(includeTxs)
+	metrics.Registry.RPC.Percentage("cfx_getBlockByHash", "includeTxs").Mark(includeTxs)
 
 	logger := logrus.WithFields(logrus.Fields{"blockHash": blockHash, "includeTxs": includeTxs})
 
@@ -229,7 +228,7 @@ func (api *cfxAPI) GetBlockByHashWithPivotAssumption(
 }
 
 func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (interface{}, error) {
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getBlockByEpochNumber/details").Mark(includeTxs)
+	metrics.Registry.RPC.Percentage("cfx_getBlockByEpochNumber", "includeTxs").Mark(includeTxs)
 
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch, "includeTxs": includeTxs})
 
@@ -263,7 +262,7 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch,
 
 func (api *cfxAPI) GetBlockByBlockNumber(
 	ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (interface{}, error) {
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getBlockByBlockNumber/details").Mark(includeTxs)
+	metrics.Registry.RPC.Percentage("cfx_getBlockByBlockNumber", "details").Mark(includeTxs)
 
 	logger := logrus.WithFields(logrus.Fields{"blockNumber": blockNumer, "includeTxs": includeTxs})
 
@@ -596,7 +595,7 @@ func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash)
 	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getTransactionReceipt` to fullnode")
 	receipt, err := cfx.GetTransactionReceipt(txHash)
 	if err == nil {
-		metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getTransactionReceipt/null").Mark(receipt == nil)
+		metrics.Registry.RPC.Percentage("cfx_getTransactionReceipt", "notfound").Mark(receipt == nil)
 	}
 
 	return receipt, err
@@ -936,13 +935,13 @@ func (api *cfxAPI) metricLogFilter(cfx sdk.ClientOperator, filter *types.LogFilt
 	isBlockRange := filter.FromBlock != nil || filter.ToBlock != nil
 	isBlockHashes := len(filter.BlockHashes) > 0
 	isEpochRange := !isBlockRange && !isBlockHashes
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/epochRange").Mark(isEpochRange)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/blockRange").Mark(isBlockRange)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/hashes").Mark(isBlockHashes)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/null").Mark(len(filter.Address) == 0)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/single").Mark(len(filter.Address) == 1)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/multiple").Mark(len(filter.Address) > 1)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/topics").Mark(len(filter.Topics) > 0)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/epochRange").Mark(isEpochRange)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/blockRange").Mark(isBlockRange)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/hashes").Mark(isBlockHashes)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/address/null").Mark(len(filter.Address) == 0)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/address/single").Mark(len(filter.Address) == 1)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/address/multiple").Mark(len(filter.Address) > 1)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/topics").Mark(len(filter.Topics) > 0)
 
 	// add metrics for the `epoch` filter only if block hash and block number range are not specified.
 	if len(filter.BlockHashes) == 0 && filter.FromBlock == nil && filter.ToBlock == nil {
@@ -952,6 +951,5 @@ func (api *cfxAPI) metricLogFilter(cfx sdk.ClientOperator, filter *types.LogFilt
 }
 
 func (h *cfxAPI) collectHitStats(method string, hit bool) {
-	metricKey := fmt.Sprintf("infura/rpc/call/%v/store/hitratio", method)
-	metrics.GetOrRegisterTimeWindowPercentageDefault(metricKey).Mark(hit)
+	metrics.Registry.RPC.StoreHit(method, "store").Mark(hit)
 }

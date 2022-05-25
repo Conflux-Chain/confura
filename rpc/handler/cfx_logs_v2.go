@@ -77,9 +77,9 @@ func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
 		return nil, false, err
 	}
 
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/split/alldatabase").Mark(fnFilter == nil)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/split/allfullnode").Mark(len(dbFilters) == 0)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/split/partial").Mark(len(dbFilters) > 0 && fnFilter != nil)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/split/alldatabase").Mark(fnFilter == nil)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/split/allfullnode").Mark(len(dbFilters) == 0)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/split/partial").Mark(len(dbFilters) > 0 && fnFilter != nil)
 
 	var logs []types.Log
 

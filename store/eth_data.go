@@ -41,11 +41,11 @@ func (current *EthData) IsContinuousTo(prev *EthData) (continuous bool, desc str
 
 // QueryEthData queries blockchain data for the specified block number.
 func QueryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthData, error) {
-	updater := metrics.NewTimerUpdaterByName("infura/duration/store/eth/query")
+	updater := metrics.Registry.Sync.QueryEpochData("eth")
 	defer updater.Update()
 
 	data, err := queryEthData(w3c, blockNumber, useBatch)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("infura/sync/eth/availability").
+	metrics.Registry.Sync.QueryEpochDataAvailability("eth").
 		Mark(err == nil || errors.Is(err, ErrChainReorged))
 
 	return data, err

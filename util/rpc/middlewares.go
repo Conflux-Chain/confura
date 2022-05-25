@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/conflux-chain/conflux-infura/util/metrics"
@@ -18,21 +17,14 @@ func middlewareMetrics(
 
 		err := handler(result, method, args...)
 
-		var metricKey string
-		if err != nil {
-			metricKey = fmt.Sprintf("infura/rpc/fullnode/%v/%v/failure", space, method)
-		} else {
-			metricKey = fmt.Sprintf("infura/rpc/fullnode/%v/%v/success", space, method)
-		}
-
-		metrics.GetOrRegisterTimer(metricKey).UpdateSince(start)
+		metrics.Registry.RPC.FullnodeQps(space, method, err).UpdateSince(start)
 
 		// overall error rate for each full node
-		metrics.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/fullnode/rate/error").Mark(err != nil)
-		metrics.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/fullnode/rate/error/%v", fullnode).Mark(err != nil)
+		metrics.Registry.RPC.FullnodeErrorRate().Mark(err != nil)
+		metrics.Registry.RPC.FullnodeErrorRate(fullnode).Mark(err != nil)
 		nonRpcErr := err != nil && !utils.IsRPCJSONError(err) // generally io error
-		metrics.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/fullnode/rate/nonRpcErr").Mark(nonRpcErr)
-		metrics.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/fullnode/rate/nonRpcErr/%v", fullnode).Mark(nonRpcErr)
+		metrics.Registry.RPC.FullnodeNonRpcErrorRate().Mark(nonRpcErr)
+		metrics.Registry.RPC.FullnodeNonRpcErrorRate(fullnode).Mark(nonRpcErr)
 
 		return err
 	}

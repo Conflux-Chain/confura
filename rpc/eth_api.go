@@ -37,7 +37,7 @@ type EthAPIOption struct {
 }
 
 func updateEthStoreHitRatio(method string, hit bool) {
-	metrics.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/call/%v/ethstore/hitratio", method).Mark(hit)
+	metrics.Registry.RPC.StoreHit(method, "store").Mark(hit)
 }
 
 // ethAPI provides ethereum relative API within EVM space according to:
@@ -89,7 +89,7 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 func (api *ethAPI) GetBlockByHash(
 	ctx context.Context, blockHash common.Hash, fullTx bool,
 ) (*web3Types.Block, error) {
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getBlockByHash/details").Mark(fullTx)
+	metrics.Registry.RPC.Percentage("eth_getBlockByHash", "fullTx").Mark(fullTx)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"blockHash": blockHash.Hex(), "includeTxs": fullTx,
@@ -174,7 +174,7 @@ func (api *ethAPI) GetBlockByNumber(
 		return nil, err
 	}
 
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getBlockByNumber/details").Mark(fullTx)
+	metrics.Registry.RPC.Percentage("eth_getBlockByNumber", "fullTx").Mark(fullTx)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"blockNum": blockNum, "includeTxs": fullTx,
@@ -408,7 +408,7 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 
 	receipt, err := w3c.Eth.TransactionReceipt(txHash)
 	if err != nil {
-		metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getTransactionReceipt/null").Mark(receipt == nil)
+		metrics.Registry.RPC.Percentage("eth_getTransactionReceipt", "notfound").Mark(receipt == nil)
 	}
 
 	return receipt, err
@@ -719,11 +719,11 @@ func (api *ethAPI) validateLogFilter(flag store.LogFilterType, filter *web3Types
 }
 
 func (api *ethAPI) metricLogFilter(w3c *web3go.Client, filter *web3Types.FilterQuery) {
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/hash").Mark(filter.BlockHash != nil)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/null").Mark(len(filter.Addresses) == 0)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/single").Mark(len(filter.Addresses) == 1)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/address/multiple").Mark(len(filter.Addresses) > 1)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/topics").Mark(len(filter.Topics) > 0)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/hash").Mark(filter.BlockHash != nil)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/address/null").Mark(len(filter.Addresses) == 0)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "address/single").Mark(len(filter.Addresses) == 1)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "address/multiple").Mark(len(filter.Addresses) > 1)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/topics").Mark(len(filter.Topics) > 0)
 
 	if filter.BlockHash == nil {
 		api.inputBlockMetric.Update1(filter.FromBlock, "eth_getLogs/from", w3c)

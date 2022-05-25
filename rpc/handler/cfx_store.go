@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
@@ -192,6 +191,5 @@ func (h *CfxCommonStoreHandler) collectHitStats(method string, err error) {
 
 	hitStore := (err == nil) || errors.Is(err, store.ErrGetLogsResultSetTooLarge)
 
-	metricKey := fmt.Sprintf("infura/rpc/call/%v/%v/hitratio", method, h.sname)
-	metrics.GetOrRegisterTimeWindowPercentageDefault(metricKey).Mark(hitStore)
+	metrics.Registry.RPC.StoreHit(method, h.sname).Mark(hitStore)
 }

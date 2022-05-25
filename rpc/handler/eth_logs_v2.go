@@ -76,9 +76,9 @@ func (handler *EthLogsApiHandlerV2) getLogsReorgGuard(
 		return nil, false, err
 	}
 
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/split/alldatabase").Mark(fnFilter == nil)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/split/allfullnode").Mark(dbFilter == nil)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/split/alldatabase").Mark(fnFilter == nil)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/split/allfullnode").Mark(dbFilter == nil)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
 
 	var logs []types.Log
 

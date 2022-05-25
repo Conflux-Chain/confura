@@ -91,7 +91,7 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 		return err
 	}
 
-	updater := metrics.NewTimerUpdaterByName("infura/duration/store/mysql/write")
+	updater := metrics.Registry.Store.Push("mysql")
 	defer updater.Update()
 
 	// the log partition to write event logs
@@ -168,7 +168,7 @@ func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
 		return nil
 	}
 
-	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/delete")
+	updater := metrics.Registry.Store.Pop("mysql")
 	defer updater.Update()
 
 	return ms.db.Transaction(func(dbTx *gorm.DB) error {
@@ -213,7 +213,7 @@ func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
 }
 
 func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilterV2) ([]*store.LogV2, error) {
-	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
+	updater := metrics.Registry.Store.GetLogs()
 	defer updater.Update()
 
 	contracts := storeFilter.Contracts.ToSlice()

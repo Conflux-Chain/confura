@@ -104,9 +104,9 @@ func (h *EthLogsApiHandler) getLogsReorgGuard(ctx context.Context, w3c *web3go.C
 		return nil, false, err
 	}
 
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/split/alldatabase").Mark(fnFilter == nil)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/split/allfullnode").Mark(dbFilter == nil)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/eth_getLogs/filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/split/alldatabase").Mark(fnFilter == nil)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/split/allfullnode").Mark(dbFilter == nil)
+	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
 
 	var logs []web3Types.Log
 
@@ -194,8 +194,6 @@ func (h *EthLogsApiHandler) splitLogFilter(w3c *web3go.Client, filter *web3Types
 		logger.Debug("All eSpace event logs in database")
 		return filter, nil, nil
 	}
-
-	metrics.GetOrRegisterHistogram("rpc/eth_getLogs/split/fn").Update(int64(blockTo - maxBlock))
 
 	// no data in database
 	if blockFrom > maxBlock {

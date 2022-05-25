@@ -45,15 +45,15 @@ type Status struct {
 
 func NewStatus(nodeName string) Status {
 	return newStatus(nodeName, newStatusMetrics(
-		fmt.Sprintf("infura/nodes/latency/%v", nodeName),
-		fmt.Sprintf("infura/nodes/availability/%v", nodeName),
+		infuraMetrics.Registry.Nodes.NodeLatency("cfx", nodeName),
+		infuraMetrics.Registry.Nodes.NodeAvailability("cfx", nodeName),
 	))
 }
 
 func NewEthStatus(nodeName string) Status {
 	return newStatus(nodeName, newStatusMetrics(
-		fmt.Sprintf("infura/ethnodes/latency/%v", nodeName),
-		fmt.Sprintf("infura/ethnodes/availability/%v", nodeName),
+		infuraMetrics.Registry.Nodes.NodeLatency("eth", nodeName),
+		infuraMetrics.Registry.Nodes.NodeAvailability("eth", nodeName),
 	))
 }
 

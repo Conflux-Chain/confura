@@ -257,9 +257,9 @@ func (h *CfxLogsApiHandler) getLogsReorgGuard(ctx context.Context, cfx sdk.Clien
 		return nil, false, err
 	}
 
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/split/alldatabase").Mark(fnFilter == nil)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/split/allfullnode").Mark(dbFilter == nil)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("rpc/cfx_getLogs/filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/split/alldatabase").Mark(fnFilter == nil)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/split/allfullnode").Mark(dbFilter == nil)
+	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
 
 	var logs []types.Log
 
@@ -345,8 +345,6 @@ func (h *CfxLogsApiHandler) splitLogFilter(cfx sdk.ClientOperator, filter *types
 		logger.Debug("All coreSpace event logs in database")
 		return filter, nil, nil
 	}
-
-	metrics.GetOrRegisterHistogram("rpc/cfx_getLogs/split/fn").Update(int64(epochTo - maxEpoch))
 
 	// no data in database
 	if epochFrom > maxEpoch {

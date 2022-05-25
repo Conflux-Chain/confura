@@ -141,11 +141,11 @@ func (epoch *EpochData) IsContinuousTo(prev *EpochData) (continuous bool, desc s
 // QueryEpochData queries blockchain data for the specified epoch number.
 // TODO better to use batch API to return all if performance is low in case of high TPS.
 func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (EpochData, error) {
-	updater := metrics.NewTimerUpdaterByName("infura/duration/store/epoch/query")
+	updater := metrics.Registry.Sync.QueryEpochData("cfx")
 	defer updater.Update()
 
 	data, err := queryEpochData(cfx, epochNumber, useBatch)
-	metrics.GetOrRegisterTimeWindowPercentageDefault("infura/sync/cfx/availability").
+	metrics.Registry.Sync.QueryEpochDataAvailability("cfx").
 		Mark(err == nil || errors.Is(err, ErrEpochPivotSwitched))
 
 	return data, err

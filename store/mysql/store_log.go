@@ -130,7 +130,7 @@ func newLogStore(db *gorm.DB) *logStore {
 
 // TODO Cacheing nearhead epoch logs in memory or redis to improve performance
 func (ls *logStore) GetLogs(filter store.LogFilter) ([]store.Log, error) {
-	updater := metrics.NewTimerUpdaterByName("infura/store/mysql/getlogs")
+	updater := metrics.Registry.Store.GetLogs()
 	defer updater.Update()
 
 	// epoch range calculated from log filter, which can be used to help locate the logs table partitions
