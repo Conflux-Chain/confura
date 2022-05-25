@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/buraksezer/consistent"
@@ -16,6 +17,7 @@ import (
 type Group string
 
 const (
+	// Note, must begin with cfx or eth as space name for metrics
 	GroupCfxHttp     = "cfxhttp"
 	GroupCfxWs       = "cfxws"
 	GroupCfxLogs     = "cfxlog"
@@ -23,6 +25,14 @@ const (
 	GroupEthHttp     = "ethhttp"
 	GroupEthLogs     = "ethlogs"
 )
+
+func (g Group) Space() string {
+	if strings.HasPrefix(string(g), "eth") {
+		return "eth"
+	}
+
+	return "cfx"
+}
 
 // Router is used to route RPC requests to multiple full nodes.
 type Router interface {

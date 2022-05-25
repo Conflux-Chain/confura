@@ -118,13 +118,13 @@ func (*StoreMetrics) GetLogs() TimerUpdater {
 // Node manager metrics
 type NodeManagerMetrics struct{}
 
-func (*NodeManagerMetrics) Routes(node ...string) metrics.Meter {
+func (*NodeManagerMetrics) Routes(space string, node ...string) metrics.Meter {
 	name := "overall"
 	if len(node) > 0 {
 		name = node[0]
 	}
 
-	return GetOrRegisterMeter("infura/nodes/routes/%v", name)
+	return GetOrRegisterMeter("infura/nodes/%v/routes/%v", space, name)
 }
 
 func (*NodeManagerMetrics) NodeLatency(space, node string) string {

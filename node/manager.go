@@ -17,6 +17,7 @@ type nodeFactory func(name, url string, hm HealthMonitor) (Node, error)
 // 2. Implements Router interface to route RPC requests to different full nodes
 // in manner of consistent hashing.
 type Manager struct {
+	space    string
 	nodes    map[string]Node        // node name => Node
 	hashRing *consistent.Consistent // consistent hashing algorithm
 	resolver RepartitionResolver    // support repartition for hash ring
@@ -27,12 +28,13 @@ type Manager struct {
 	midEpoch        uint64            // middle epoch of managed full nodes.
 }
 
-func NewManager(nf nodeFactory, urls []string) *Manager {
-	return NewManagerWithRepartition(nf, urls, &noopRepartitionResolver{})
+func NewManager(space string, nf nodeFactory, urls []string) *Manager {
+	return NewManagerWithRepartition(space, nf, urls, &noopRepartitionResolver{})
 }
 
-func NewManagerWithRepartition(nf nodeFactory, urls []string, resolver RepartitionResolver) *Manager {
+func NewManagerWithRepartition(space string, nf nodeFactory, urls []string, resolver RepartitionResolver) *Manager {
 	manager := Manager{
+		space:           space,
 		nodeFactory:     nf,
 		nodes:           make(map[string]Node),
 		resolver:        resolver,
@@ -141,9 +143,9 @@ func (m *Manager) Distribute(key []byte) Node {
 func (m *Manager) Route(key []byte) string {
 	if n := m.Distribute(key); n != nil {
 		// metrics overall route QPS
-		metrics.Registry.Nodes.Routes().Mark(1)
+		metrics.Registry.Nodes.Routes(m.space).Mark(1)
 		// metrics per node route QPS
-		metrics.Registry.Nodes.Routes(n.Name()).Mark(1)
+		metrics.Registry.Nodes.Routes(m.space, n.Name()).Mark(1)
 
 		return n.Url()
 	}
