@@ -21,7 +21,7 @@ const (
 // Use MySQL ranged partitions for scalability and performance.
 type epochBlockMap struct {
 	// epoch number
-	Epoch uint64 `gorm:"primaryKey"`
+	Epoch uint64 `gorm:"primaryKey;autoIncrement:false"`
 	// min block number
 	BnMin uint64 `gorm:"not null"`
 	// max block number

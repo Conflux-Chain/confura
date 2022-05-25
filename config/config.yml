@@ -14,6 +14,8 @@ ethrpc:
   endpoint: ":28545"
   #wsEndpoint: ":28535"
 cfx:
+  #ws: ws://test-internal.confluxrpc.com/ws
+  #http: http://test-internal.confluxrpc.com
   ws: ws://test.confluxrpc.com/ws
   http: http://test.confluxrpc.com
   retry: 3
@@ -21,7 +23,7 @@ cfx:
   requestTimeout: 3s
   maxConnsPerHost: 1024 # optionally limits the total number of connections per host
 eth:
-  http: http://evmtestnet.confluxrpc.com
+  http: http://evmtestnet-internal.confluxrpc.com
   retry: 3
   retryInterval: 1s
   requestTimeout: 3s
@@ -32,7 +34,7 @@ sync:
   sub:
     buffer: 1000
 #  useBatch: false # Whether to use epoch_getEpochReceipts to batch get receipts
-#  fromEpoch: 0    # The epoch number from which to sync core space
+  fromEpoch: 68169    # The epoch number from which to sync core space
 #  maxEpochs: 10   # Maximum number of epochs to batch sync epoch data once
   addrBlacklist: [cfx:acav5v98np8t3m66uw7x61yer1ja1jm0dpzj1zyzxv]
 #  eth:
@@ -59,36 +61,40 @@ nearhead:
 #   report:
 #     enabled: false
 #     interval: 10s
-# log:
-#   level: info
-#   forceColor: false
-# store:
-#   mysql:
-#     enabled: false
-#     host: 127.0.0.1:3306
-#     username: ''
-#     password: ''
-#     database: conflux_infura
-#     connMaxLifeTime: 3m
-#     maxOpenConns: 10
-#     maxIdleConns: 10
-#     addressIndexedLogEnabled: false
-#     addressIndexedLogPartitions: 100
-#     # max number of archive log partitions ranged by block number to maintain. Once exceeded,
-#     # data will be pruned from the oldest partition to keep max archive log partitions.
-#     maxBnRangedArchiveLogPartitions: 5
+log:
+  level: debug
+  forceColor: true
+store:
+  mysql:
+    enabled: true
+    host: 127.0.0.1:3306
+    username: root
+    password: root
+    database: conflux_infura
+    connMaxLifeTime: 3m
+    maxOpenConns: 10
+    maxIdleConns: 10
+    addressIndexedLogEnabled: true
+    addressIndexedLogPartitions: 100
+    # max number of archive log partitions ranged by block number to maintain. Once exceeded,
+    # data will be pruned from the oldest partition to keep max archive log partitions.
+    maxBnRangedArchiveLogPartitions: 5
+    maxE2BMapArchiveLogPartitions: 2
   # redis:
   #   enabled: false
   #   cacheTime: 12h
   #   url: redis://<user>:<pass>@localhost:6379/<db>
   # disables: [block,transaction,receipt] # disabled chain data types within store, available options are: `block`, `transaction`, `receipt` and `log`
-# ethstore:
-  # mysql:
-    # enabled: false
-    # dsn: user:password@tcp(127.0.0.1:3306)/conflux_infura_eth?parseTime=true
-    # connMaxLifeTime: 3m
-    # maxOpenConns: 10
-    # maxIdleConns: 10
+ethstore:
+  mysql:
+    enabled: false
+    dsn: root:root@tcp(127.0.0.1:3306)/conflux_infura_eth?parseTime=true
+    connMaxLifeTime: 3m
+    maxOpenConns: 10
+    maxIdleConns: 10
+    addressIndexedLogEnabled: true
+    addressIndexedLogPartitions: 100
+    maxBnRangedArchiveLogPartitions: 5
   # disables: [block,transaction,receipt] # disabled chain data types within store, available options are: `block`, `transaction`, `receipt` and `log`
 # alert:
 #   customTags: [testnet,dev]
