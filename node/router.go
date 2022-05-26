@@ -7,6 +7,7 @@ import (
 
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
+	rpcutil "github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
@@ -197,7 +198,7 @@ func newLocalNodeGroup(urls []string) *localNodeGroup {
 	var members []consistent.Member
 
 	for _, v := range urls {
-		nodeName := Url2NodeName(v)
+		nodeName := rpcutil.Url2NodeName(v)
 		if _, ok := item.nodes[nodeName]; !ok {
 			item.nodes[nodeName] = localNode(v)
 			members = append(members, localNode(v))
@@ -280,7 +281,7 @@ func (r *LocalRouter) updateOnce(urls []string, group Group) {
 
 	// detect new added
 	for _, v := range urls {
-		nodeName := Url2NodeName(v)
+		nodeName := rpcutil.Url2NodeName(v)
 		if _, ok := fnNodes[nodeName]; !ok {
 			fnNodes[nodeName] = localNode(v)
 			hashRing.Add(localNode(v))
@@ -290,7 +291,7 @@ func (r *LocalRouter) updateOnce(urls []string, group Group) {
 	// detect removed
 	nodes := make(map[string]bool)
 	for _, v := range urls {
-		nodes[Url2NodeName(v)] = true
+		nodes[rpcutil.Url2NodeName(v)] = true
 	}
 
 	var removed []string

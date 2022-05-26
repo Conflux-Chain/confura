@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -62,7 +63,7 @@ func (p *clientProvider) getClient(key string, group Group) (interface{}, error)
 		return nil, ErrClientUnavailable
 	}
 
-	nodeName := Url2NodeName(url)
+	nodeName := rpc.Url2NodeName(url)
 
 	logger = logger.WithFields(logrus.Fields{
 		"node": nodeName,

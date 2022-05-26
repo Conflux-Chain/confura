@@ -140,13 +140,13 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to get chain ID from eth space")
 	}
-	rpc.HookEthRpcMetricsMiddleware(eth, ethNodeURL)
+	rpc.HookMiddlewares(eth.Provider(), ethNodeURL, "eth")
 
 	cfx, err := sdk.NewClient(cfxNodeURL)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to connect to cfx space")
 	}
-	rpc.HookCfxRpcMetricsMiddleware(cfx)
+	rpc.HookMiddlewares(cfx.Provider(), cfxNodeURL, "cfx")
 
 	return []API{
 		{

@@ -11,6 +11,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/throttle"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
+	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -104,7 +105,7 @@ func (h *CfxPrunedLogsHandler) getLogsByUser(ctx context.Context, filter types.L
 }
 
 func (h *CfxPrunedLogsHandler) getLogsThrottled(cfx sdk.ClientOperator, filter types.LogFilter) ([]types.Log, error) {
-	nodeName := node.Url2NodeName(cfx.GetNodeURL())
+	nodeName := rpc.Url2NodeName(cfx.GetNodeURL())
 	key := fmt.Sprintf("rpc:throttle:cfx_getLogs:%v", nodeName)
 	if !h.throttling.Ref(key) {
 		return nil, errQuotaNotEnough

@@ -4,7 +4,6 @@ import (
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/Conflux-Chain/go-conflux-sdk/middleware"
 	"github.com/sirupsen/logrus"
 )
 
@@ -62,18 +61,8 @@ func NewCfxClient(url string, options ...ClientOption) (*sdk.Client, error) {
 
 	cfx, err := sdk.NewClient(url, *opt.ClientOption)
 	if err == nil && opt.hookMetrics {
-		HookCfxRpcMetricsMiddleware(cfx)
+		HookMiddlewares(cfx.Provider(), url, "cfx")
 	}
 
 	return cfx, err
-}
-
-func HookCfxRpcMetricsMiddleware(cfx *sdk.Client) {
-	cfx.UseCallRpcMiddleware(func(handler middleware.CallRpcHandler) middleware.CallRpcHandler {
-		return middleware.CallRpcHandlerFunc(middlewareMetrics(cfx.GetNodeURL(), "cfx", handler.Handle))
-	})
-
-	cfx.UseCallRpcMiddleware(func(handler middleware.CallRpcHandler) middleware.CallRpcHandler {
-		return middleware.CallRpcHandlerFunc(middlewareLog(cfx.GetNodeURL(), "cfx", handler.Handle))
-	})
 }

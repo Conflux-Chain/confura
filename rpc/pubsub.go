@@ -10,8 +10,8 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/util"
+	rpcutil "github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -220,7 +220,7 @@ type delegateClient struct {
 }
 
 func getOrNewDelegateClient(cfx sdk.ClientOperator) *delegateClient {
-	nodeName := node.Url2NodeName(cfx.GetNodeURL())
+	nodeName := rpcutil.Url2NodeName(cfx.GetNodeURL())
 	client, _ := delegateClients.LoadOrStore(nodeName, &delegateClient{ClientOperator: cfx})
 	return client.(*delegateClient)
 }

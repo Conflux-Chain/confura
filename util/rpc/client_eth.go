@@ -58,19 +58,8 @@ func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 
 	eth, err := web3go.NewClientWithOption(url, opt.Option)
 	if err == nil && opt.hookMetrics {
-		HookEthRpcMetricsMiddleware(eth, url)
+		HookMiddlewares(eth.Provider(), url, "eth")
 	}
 
 	return eth, err
-}
-
-func HookEthRpcMetricsMiddleware(eth *web3go.Client, nodeUrl string) {
-	mp := providers.NewMiddlewarableProvider(eth.Provider())
-	mp.HookCallContext(func(cf providers.CallContextFunc) providers.CallContextFunc {
-		return middlewareMetrics(nodeUrl, "eth", cf)
-	})
-	mp.HookCallContext(func(cf providers.CallContextFunc) providers.CallContextFunc {
-		return middlewareLog(nodeUrl, "eth", cf)
-	})
-	eth.SetProvider(mp)
 }
