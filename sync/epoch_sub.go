@@ -86,7 +86,7 @@ func (subMan *epochSubMan) runSub(ctx context.Context) error {
 			subMan.stopped = true
 			return nil
 		case err := <-subMan.cfxSub.Err():
-			logrus.WithError(err).Error("Epoch subscription error")
+			logrus.WithError(err).Info("Epoch subscription error")
 			return err
 		case epoch := <-subMan.subCh:
 			for _, s := range subMan.subscribers {
@@ -138,12 +138,19 @@ func MustSubEpoch(ctx context.Context, wg *sync.WaitGroup, cfx *sdk.Client, subs
 	}()
 
 	for {
-		if err := subMan.runSub(ctx); err == nil { // blocks until sub error or stopped
+		// blocks until sub error or stopped
+		if err := subMan.runSub(ctx); err == nil {
 			return
 		}
 
-		for err := subMan.reSub(); err != nil; { // resub until suceess or stopped
+		// resub until suceess or stopped
+		for failures, err := 0, subMan.reSub(); err != nil; {
 			logrus.WithError(err).Debug("Failed to resub epoch")
+
+			failures++
+			if failures%3 == 0 { // trigger error for every 3 failures
+				logrus.WithField("failures", failures).WithError(err).Error("Failed to try too many epoch resubs")
+			}
 
 			tc := time.After(resubWaitDuration)
 			select {
@@ -154,7 +161,7 @@ func MustSubEpoch(ctx context.Context, wg *sync.WaitGroup, cfx *sdk.Client, subs
 			}
 		}
 
-		logrus.Warn("Epoch resub ok!")
+		logrus.Info("Epoch resub ok!")
 	}
 }
 
