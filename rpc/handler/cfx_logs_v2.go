@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -195,6 +196,8 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockHashes(
 			fnBlockHashes = append(fnBlockHashes, hash)
 		}
 	}
+
+	sort.Ints(dbBlockNumbers) // sort block numbers ascendingly
 
 	var dbFilters []store.LogFilterV2
 	for _, bn := range dbBlockNumbers {
