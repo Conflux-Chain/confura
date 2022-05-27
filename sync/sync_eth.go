@@ -306,6 +306,19 @@ func (syncer *EthSyncer) mustLoadLastSyncBlock() {
 }
 
 func (syncer *EthSyncer) loadLastSyncBlock() (loaded bool, err error) {
+	if ms, ok := syncer.db.(*mysql.MysqlStore); ok && ms.V2 != nil {
+		maxBlock, ok, err := ms.V2.MaxEpoch()
+		if err != nil {
+			return false, errors.WithMessage(err, "failed to get max block from e2b mapping")
+		}
+
+		if ok {
+			syncer.fromBlock = maxBlock + 1
+		}
+
+		return ok, nil
+	}
+
 	_, maxBlock, err := syncer.db.GetGlobalEpochRange()
 	if err == nil {
 		syncer.fromBlock = maxBlock + 1
