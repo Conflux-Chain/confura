@@ -27,5 +27,5 @@ func (api *netAPI) Version(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	return api.cache.GetNetVersion(w3c)
+	return api.cache.GetNetVersion(w3c.Client)
 }

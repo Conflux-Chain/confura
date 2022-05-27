@@ -27,5 +27,5 @@ func (api *web3API) ClientVersion(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	return api.cache.GetClientVersion(w3c)
+	return api.cache.GetClientVersion(w3c.Client)
 }

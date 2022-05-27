@@ -127,7 +127,7 @@ func (api *ethAPI) ChainId(ctx context.Context) (*hexutil.Uint64, error) {
 		return nil, err
 	}
 
-	return api.cache.GetChainId(w3c)
+	return api.cache.GetChainId(w3c.Client)
 }
 
 // BlockNumber returns the block number of the chain head.
@@ -242,7 +242,7 @@ func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 		return nil, err
 	}
 
-	return api.cache.GetGasPrice(w3c)
+	return api.cache.GetGasPrice(w3c.Client)
 }
 
 // GetStorageAt returns the value from a storage position at a given address.
