@@ -9,6 +9,12 @@ import (
 	"github.com/openweb3/web3go"
 )
 
+type Web3goClient struct {
+	*web3go.Client
+
+	URL string
+}
+
 type EthClientProvider struct {
 	*clientProvider
 }
@@ -16,7 +22,12 @@ type EthClientProvider struct {
 func NewEthClientProvider(router Router) *EthClientProvider {
 	cp := &EthClientProvider{
 		clientProvider: newClientProvider(router, func(url string) (interface{}, error) {
-			return rpc.NewEthClient(url, rpc.WithClientHookMetrics(true))
+			client, err := rpc.NewEthClient(url, rpc.WithClientHookMetrics(true))
+			if err != nil {
+				return nil, err
+			}
+
+			return &Web3goClient{client, url}, nil
 		}),
 	}
 
@@ -27,22 +38,22 @@ func NewEthClientProvider(router Router) *EthClientProvider {
 	return cp
 }
 
-func (p *EthClientProvider) GetClientByIP(ctx context.Context) (*web3go.Client, error) {
+func (p *EthClientProvider) GetClientByIP(ctx context.Context) (*Web3goClient, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
 	client, err := p.getClient(remoteAddr, GroupEthHttp)
 
-	return client.(*web3go.Client), err
+	return client.(*Web3goClient), err
 }
 
-func (p *EthClientProvider) GetClientByIPGroup(ctx context.Context, group Group) (*web3go.Client, error) {
+func (p *EthClientProvider) GetClientByIPGroup(ctx context.Context, group Group) (*Web3goClient, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
 	client, err := p.getClient(remoteAddr, group)
 
-	return client.(*web3go.Client), err
+	return client.(*Web3goClient), err
 }
 
-func (p *EthClientProvider) GetClientRandom() (*web3go.Client, error) {
+func (p *EthClientProvider) GetClientRandom() (*Web3goClient, error) {
 	key := fmt.Sprintf("random_key_%v", rand.Int())
 	client, err := p.getClient(key, GroupEthHttp)
-	return client.(*web3go.Client), err
+	return client.(*Web3goClient), err
 }

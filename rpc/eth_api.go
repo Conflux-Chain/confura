@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
+	"github.com/openweb3/web3go/client"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -152,7 +153,7 @@ func (api *ethAPI) GetBalance(
 
 	balance, err := w3c.Eth.Balance(address, blockNumOrHash)
 
-	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getBalance", w3c)
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getBalance", w3c.Eth)
 	return (*hexutil.Big)(balance), err
 }
 
@@ -179,7 +180,7 @@ func (api *ethAPI) GetBlockByNumber(
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c)
+	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c.Eth)
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		block, err := api.StoreHandler.GetBlockByNumber(ctx, &blockNum, fullTx)
@@ -206,7 +207,7 @@ func (api *ethAPI) GetUncleByBlockNumberAndIndex(
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update1(&blockNr, "eth_getUncleByBlockNumberAndIndex", w3c)
+	api.inputBlockMetric.Update1(&blockNr, "eth_getUncleByBlockNumberAndIndex", w3c.Eth)
 	return w3c.Eth.UncleByBlockNumberAndIndex(blockNr, uint(index))
 }
 
@@ -253,7 +254,7 @@ func (api *ethAPI) GetStorageAt(
 		return common.Hash{}, err
 	}
 
-	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getStorageAt", w3c)
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getStorageAt", w3c.Eth)
 	return w3c.Eth.StorageAt(address, (*big.Int)(location), blockNumOrHash)
 }
 
@@ -267,7 +268,7 @@ func (api *ethAPI) GetCode(
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getCode", w3c)
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getCode", w3c.Eth)
 	return w3c.Eth.CodeAt(account, blockNumOrHash)
 }
 
@@ -285,7 +286,7 @@ func (api *ethAPI) GetTransactionCount(
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getTransactionCount", w3c)
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getTransactionCount", w3c.Eth)
 	count, err := w3c.Eth.TransactionCount(account, blockNumOrHash)
 	return (*hexutil.Big)(count), err
 }
@@ -330,7 +331,7 @@ func (api *ethAPI) Call(
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update2(blockNumOrHash, "eth_call", w3c)
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_call", w3c.Eth)
 	return w3c.Eth.Call(request, blockNumOrHash)
 }
 
@@ -346,7 +347,7 @@ func (api *ethAPI) EstimateGas(
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update2(blockNumOrHash, "eth_estimateGas", w3c)
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_estimateGas", w3c.Eth)
 	gas, err := w3c.Eth.EstimateGas(request, blockNumOrHash)
 	return (*hexutil.Big)(gas), err
 }
@@ -463,14 +464,14 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 		return nil, err
 	}
 
-	api.metricLogFilter(w3c, &filter.FilterQuery)
+	api.metricLogFilter(w3c.Eth, &filter.FilterQuery)
 
 	flag, ok := store.ParseEthLogFilterType(&filter.FilterQuery)
 	if !ok {
 		return ethEmptyLogs, errInvalidEthLogFilter
 	}
 
-	if err := api.normalizeLogFilter(w3c, flag, &filter.FilterQuery); err != nil {
+	if err := api.normalizeLogFilter(w3c.Client, flag, &filter.FilterQuery); err != nil {
 		return ethEmptyLogs, err
 	}
 
@@ -492,7 +493,7 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 	}
 
 	if api.LogApiHandler != nil {
-		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c, filter.FilterQuery)
+		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client, filter.FilterQuery)
 
 		logrus.WithFields(logrus.Fields{
 			"filter": filter, "hitStore": hitStore,
@@ -533,7 +534,7 @@ func (api *ethAPI) GetBlockTransactionCountByNumber(ctx context.Context, blockNu
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockTransactionCountByNumber", w3c)
+	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockTransactionCountByNumber", w3c.Eth)
 	count, err := w3c.Eth.BlockTransactionCountByNumber(blockNum)
 	return (*hexutil.Big)(count), err
 }
@@ -651,7 +652,7 @@ func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 		return nil, err
 	}
 
-	api.inputBlockMetric.Update1(&blockNum, "eth_getTransactionByBlockNumberAndIndex", w3c)
+	api.inputBlockMetric.Update1(&blockNum, "eth_getTransactionByBlockNumberAndIndex", w3c.Eth)
 	return w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))
 }
 
@@ -711,7 +712,7 @@ func (api *ethAPI) validateLogFilter(flag store.LogFilterType, filter *web3Types
 	return nil
 }
 
-func (api *ethAPI) metricLogFilter(w3c *web3go.Client, filter *web3Types.FilterQuery) {
+func (api *ethAPI) metricLogFilter(eth *client.RpcEthClient, filter *web3Types.FilterQuery) {
 	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/hash").Mark(filter.BlockHash != nil)
 	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/address/null").Mark(len(filter.Addresses) == 0)
 	metrics.Registry.RPC.Percentage("eth_getLogs", "address/single").Mark(len(filter.Addresses) == 1)
@@ -719,8 +720,8 @@ func (api *ethAPI) metricLogFilter(w3c *web3go.Client, filter *web3Types.FilterQ
 	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/topics").Mark(len(filter.Topics) > 0)
 
 	if filter.BlockHash == nil {
-		api.inputBlockMetric.Update1(filter.FromBlock, "eth_getLogs/from", w3c)
-		api.inputBlockMetric.Update1(filter.ToBlock, "eth_getLogs/to", w3c)
+		api.inputBlockMetric.Update1(filter.FromBlock, "eth_getLogs/from", eth)
+		api.inputBlockMetric.Update1(filter.ToBlock, "eth_getLogs/to", eth)
 	}
 }
 
