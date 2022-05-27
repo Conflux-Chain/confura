@@ -174,7 +174,7 @@ func (validator *EthValidator) doSampling() error {
 	}
 
 	// Shuffle block number by reduction of random number from latest block
-	latestBlockNo := block.Uint64()
+	latestBlockNo := block.Uint64() - 20
 
 	randomDiff := util.RandUint64(samplingRandomBlockDiff)
 	if latestBlockNo < randomDiff {
@@ -192,6 +192,7 @@ func (validator *EthValidator) doSampling() error {
 	// we'd better do some retrying before determining the final validation result.
 	for i := 1; i <= samplingValidationRetries && errors.Is(err, errResultNotMatched); i++ {
 		time.Sleep(samplingValidationSleepDuration)
+
 		err = validator.validateEthBlock(blockNo)
 		logrus.WithField("block", blockNo).WithError(err).Infof("ETH validator sampling validation retried %v time(s)", i)
 	}
@@ -209,15 +210,12 @@ func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
 	}
 
 	// Already catch up to the latest block?
-	maxBlockTo := block.Uint64()
+	maxBlockTo := block.Uint64() - 20
 	if validator.conf.ScanFromBlock > maxBlockTo {
-		blockRange := citypes.RangeUint64{
+		logrus.WithField("blockRange", citypes.RangeUint64{
 			From: validator.conf.ScanFromBlock,
 			To:   maxBlockTo,
-		}
-		logrus.WithField("blockRange", blockRange).Debug(
-			"ETH validator scaning skipped due to catched up already",
-		)
+		}).Debug("ETH validator scaning skipped due to catched up already")
 
 		return nil
 	}
@@ -238,16 +236,12 @@ func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
 func (validator *EthValidator) validateEthBlock(blockNo uint64) error {
 	logrus.WithField("blockNo", blockNo).Debug("ETH validator runs validating ETH block...")
 
-	block, err := validator.validateGetBlockSummaryByNumber(blockNo)
+	block, err := validator.validateGetBlockByNumber(blockNo)
 	if err != nil {
 		return err
 	}
 
-	if err = validator.validateGetBlockSummaryByHash(block.Hash); err != nil {
-		return err
-	}
-
-	if err = validator.validateGetBlockByNumber(blockNo); err != nil {
+	if err = validator.validateGetBlockSummaryByNumber(blockNo); err != nil {
 		return err
 	}
 
@@ -255,23 +249,38 @@ func (validator *EthValidator) validateEthBlock(blockNo uint64) error {
 		return err
 	}
 
-	blockTxHashes := block.Transactions.Hashes()
-	if len(blockTxHashes) == 0 {
+	if err = validator.validateGetBlockSummaryByHash(block.Hash); err != nil {
+		return err
+	}
+
+	blockTxns := block.Transactions.Transactions()
+	if len(blockTxns) == 0 {
 		return nil
 	}
 
-	// randomly pick a block transaction for validation
-	ri := util.RandUint64(uint64(len(blockTxHashes)))
-	txh := blockTxHashes[ri]
-	if err = validator.validateGetTransactionByHash(txh); err != nil {
+	// pick first transaction for validation
+	if err = validator.validateGetTransactionByHash(blockTxns[0].Hash); err != nil {
 		return err
 	}
 
-	if err = validator.validateGetTransactionReceipt(txh); err != nil {
-		return err
+	// pick first success transaction for validation
+	var firstOkTxn *types.Transaction
+	for i, txn := range blockTxns {
+		if util.IsSuccessEthTx(&txn) {
+			firstOkTxn = &blockTxns[i]
+			break
+		}
 	}
 
-	if err = validator.validateGetLogs(blockNo, block.Hash); err != nil {
+	var rcpt *types.Receipt
+	if firstOkTxn != nil {
+		rcpt, err = validator.validateGetTransactionReceipt(firstOkTxn.Hash)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err = validator.validateGetLogs(blockNo, block.Hash, rcpt); err != nil {
 		return err
 	}
 
@@ -322,55 +331,26 @@ func (validator *EthValidator) doValidate(fnCall, infuraCall func() (interface{}
 	return mi, nil
 }
 
-// Validate eth_getBlockByNumber (includeTxs = false)
-func (validator *EthValidator) validateGetBlockSummaryByNumber(blockNumer uint64) (*types.Block, error) {
+// Validate eth_getBlockByNumber (includeTxs = true)
+func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) (*types.Block, error) {
 	var b1, b2 *types.Block
 	var err1, err2 error
 
 	fnCall := func() (interface{}, error) {
-		b1, err1 = validator.fn.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), false)
-		if err1 != nil {
-			err1 = errors.WithMessage(err1, "failed to query block summary from fullnode")
-		}
-
-		return b1, err1
-	}
-
-	infuraCall := func() (interface{}, error) {
-		b2, err2 = validator.infura.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), false)
-		if err2 != nil {
-			err2 = errors.WithMessage(err2, "failed to query block summary from infura")
-		}
-
-		return b2, err2
-	}
-
-	mi, err := validator.doValidate(fnCall, infuraCall)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"matchInfo": mi, "blockNumer": blockNumer,
-		}).WithError(err).Info("ETH validator failed to validate eth_getBlockByNumber (includeTxs = false)")
-		return b1, errors.WithMessagef(err, "failed to validate eth_getBlockByNumber (includeTxs = false) by number %v", blockNumer)
-	}
-
-	return b1, nil
-}
-
-// Validate eth_getBlockByNumber (includeTxs = true)
-func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) error {
-	fnCall := func() (interface{}, error) {
-		b1, err1 := validator.fn.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), true)
+		b1, err1 = validator.fn.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), true)
 		if err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block from fullnode")
 		}
+
 		return b1, err1
 	}
 
 	infuraCall := func() (interface{}, error) {
-		b2, err2 := validator.infura.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), true)
+		b2, err2 = validator.infura.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), true)
 		if err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block from infura")
 		}
+
 		return b2, err2
 	}
 
@@ -379,39 +359,73 @@ func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) error
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "blockNumer": blockNumer,
 		}).WithError(err).Info("ETH validator failed to validate eth_getBlockByNumber (includeTxs = true)")
-		return errors.WithMessagef(err, "failed to validate eth_getBlockByNumber (includeTxs = true) by number %v", blockNumer)
+		return b1, errors.WithMessagef(err, "failed to validate eth_getBlockByNumber (includeTxs = true) by number %v", blockNumer)
+	}
+
+	return b1, nil
+}
+
+// Validate eth_getBlockByNumber (includeTxs = false)
+func (validator *EthValidator) validateGetBlockSummaryByNumber(blockNumer uint64) error {
+	fnCall := func() (interface{}, error) {
+		b1, err1 := validator.fn.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), false)
+		if err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query block summary from fullnode")
+		}
+		return b1, err1
+	}
+
+	infuraCall := func() (interface{}, error) {
+		b2, err2 := validator.infura.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), false)
+		if err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query block summary from infura")
+		}
+		return b2, err2
+	}
+
+	mi, err := validator.doValidate(fnCall, infuraCall)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"matchInfo": mi, "blockNumer": blockNumer,
+		}).WithError(err).Info("ETH validator failed to validate eth_getBlockByNumber (includeTxs = false)")
+		return errors.WithMessagef(err, "failed to validate eth_getBlockByNumber (includeTxs = false) by number %v", blockNumer)
 	}
 
 	return nil
 }
 
 // Validate eth_getTransactionReceipt
-func (validator *EthValidator) validateGetTransactionReceipt(txHash common.Hash) error {
-	genCall := func(src string, w3c *web3go.Client) func() (interface{}, error) {
-		return func() (interface{}, error) {
-			rcpt, err := w3c.Eth.TransactionReceipt(txHash)
-			if err != nil {
-				return rcpt, errors.WithMessagef(
-					err, "failed to query transaction receipts from %v", src,
-				)
-			}
+func (validator *EthValidator) validateGetTransactionReceipt(txHash common.Hash) (*types.Receipt, error) {
+	var rcpt1, rcpt2 *types.Receipt
+	var err1, err2 error
 
-			return rcpt, nil
+	fnCall := func() (interface{}, error) {
+		rcpt1, err1 = validator.fn.Eth.TransactionReceipt(txHash)
+		if err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query transaction receipts from fullnode")
 		}
+
+		return rcpt1, err1
 	}
 
-	fnCall := genCall("fullnode", validator.fn)
-	infuraCall := genCall("infura", validator.infura)
+	infuraCall := func() (interface{}, error) {
+		rcpt2, err2 = validator.infura.Eth.TransactionReceipt(txHash)
+		if err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query transaction receipts from infura")
+		}
+
+		return rcpt2, err2
+	}
 
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "txHash": txHash.Hex(),
 		}).WithError(err).Info("ETH validator failed to validate eth_getTransactionReceipt")
-		return errors.WithMessagef(err, "failed to validate eth_getTransactionReceipt by hash %v", txHash.Hex())
+		return nil, errors.WithMessagef(err, "failed to validate eth_getTransactionReceipt by hash %v", txHash.Hex())
 	}
 
-	return nil
+	return rcpt1, nil
 }
 
 // Validate eth_getTransactionByHash
@@ -502,9 +516,35 @@ func (validator *EthValidator) validateGetBlockSummaryByHash(blockHash common.Ha
 }
 
 // Validate eth_getLogs
-func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.Hash) error {
+func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.Hash, someReceipt *types.Receipt) error {
+	var someContractAddrs []common.Address
+	var someTopics [][]common.Hash
+
+	if someReceipt != nil {
+		for _, log := range someReceipt.Logs {
+			if len(someContractAddrs) >= 3 {
+				break
+			}
+
+			someContractAddrs = append(someContractAddrs, log.Address)
+
+			for i, topic := range log.Topics {
+				if len(someTopics) <= i {
+					someTopics = append(someTopics, []common.Hash{})
+				}
+
+				if len(topic) > 0 {
+					someTopics[i] = append(someTopics[i], topic)
+				}
+			}
+		}
+	}
+
 	logger := logrus.WithFields(logrus.Fields{
-		"blockNo": blockNo, "blockHash": blockHash.Hex(),
+		"blockNo":           blockNo,
+		"blockHash":         blockHash.Hex(),
+		"withContractAddrs": len(someContractAddrs),
+		"withTopics":        len(someTopics),
 	})
 
 	// filter: blocknumbers
@@ -515,8 +555,18 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 	}
 
 	if err := validator.doValidateGetLogs(&filterByBlockNums); err != nil {
-		logger.WithError(err).Info("ETH validator failed to validate eth_getLogs (filterByBlockNums)")
+		logger.WithField("filterByBlockNums", filterByBlockNums).WithError(err).Info("ETH validator failed to validate eth_getLogs")
 		return errors.WithMessagef(err, "failed to validate eth_getLogs")
+	}
+
+	if len(someContractAddrs) > 0 { // add address and topics filter
+		filterByBlockNums.Addresses = someContractAddrs
+		filterByBlockNums.Topics = someTopics
+
+		if err := validator.doValidateGetLogs(&filterByBlockNums); err != nil {
+			logger.WithField("filterByBlockNumsWithAddr", filterByBlockNums).WithError(err).Info("ETH validator failed to validate eth_getLogs")
+			return errors.WithMessagef(err, "failed to validate eth_getLogs")
+		}
 	}
 
 	// filter: blockhash
@@ -529,7 +579,15 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 		return errors.WithMessagef(err, "failed to validate eth_getLogs")
 	}
 
-	// TODO add more logFilter for testing
+	if len(someContractAddrs) > 0 { // add address and topics filter
+		filterByBlockHash.Addresses = someContractAddrs
+		filterByBlockHash.Topics = someTopics
+
+		if err := validator.doValidateGetLogs(&filterByBlockHash); err != nil {
+			logger.WithField("filterByBlockHashWithAddr", filterByBlockHash).WithError(err).Info("ETH validator failed to validate eth_getLogs")
+			return errors.WithMessagef(err, "failed to validate eth_getLogs")
+		}
+	}
 
 	return nil
 }

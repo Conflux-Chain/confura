@@ -8,6 +8,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	web3goTypes "github.com/openweb3/web3go/types"
@@ -165,4 +166,9 @@ func IsLegacyEthTx(tx *web3goTypes.Transaction) bool {
 	}
 
 	return false
+}
+
+// IsSuccessEthTx check if the EVM transaction is success
+func IsSuccessEthTx(tx *web3goTypes.Transaction) bool {
+	return tx.Status != nil && *tx.Status == ethtypes.ReceiptStatusSuccessful
 }

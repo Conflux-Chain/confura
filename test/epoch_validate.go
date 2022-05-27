@@ -17,6 +17,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
@@ -27,13 +28,23 @@ import (
 	"go.uber.org/multierr"
 )
 
+type epochValidationCtxKey string
+
 const (
 	// number of retries on sampling validation failed
 	samplingValidationRetries = 2
 	// sleeping duration before each retry
-	samplingValidationSleepDuration = time.Millisecond * 300
+	samplingValidationSleepDuration = time.Second * 1
 	// random epoch diff to latest epoch for sampling validation
 	samplingRandomEpochDiff = 100
+
+	// context keys to store epoch context values
+	ctxKeyCfxPivotBlock             epochValidationCtxKey = "pivotBlock"             // *types.Block
+	ctxKeyCfxPivotBlockSummary      epochValidationCtxKey = "pivotBlockSummary"      // *types.BlockSummary
+	ctxKeyCfxBlockHashes            epochValidationCtxKey = "blockHashes"            // []types.Hash
+	ctxKeyCfxFirstBlock             epochValidationCtxKey = "firstBlock"             // *types.Block
+	ctxKeyCfxFirstBlockSummary      epochValidationCtxKey = "firstBlockSummary"      // *types.BlockSummary
+	ctxKeyCfxSomeTransactionReceipt epochValidationCtxKey = "someTransactionReceipt" // *types.TransactionReceipt
 )
 
 var (
@@ -43,7 +54,7 @@ var (
 	errValidationSkipped = errors.New("validation skipped")
 )
 
-type epochValidationFunc func(epoch *types.Epoch) error
+type epochValidationFunc func(ctx context.Context, epoch *types.Epoch) (context.Context, error)
 
 // EVConfig validation config provided to EpochValidator
 type EVConfig struct {
@@ -216,7 +227,12 @@ func (validator *EpochValidator) doSampling() error {
 		validator.validateGetBlockSummaryByEpoch,
 		validator.validateGetBlockByEpoch,
 		validator.validateGetBlocksByEpoch,
-		validator.validateEpochCombo,
+		validator.validateGetBlockSummaryByHash,
+		validator.validateGetBlockByHash,
+		validator.validateGetBlockSummaryByBlockNumber,
+		validator.validateGetBlockByBlockNumber,
+		validator.validateGetTransactionByHash,
+		validator.validateGetTransactionReceipt,
 		validator.validateGetLogs,
 	}
 
@@ -265,7 +281,12 @@ func (validator *EpochValidator) scanOnce() (bool, error) {
 		validator.validateGetBlockSummaryByEpoch,
 		validator.validateGetBlockByEpoch,
 		validator.validateGetBlocksByEpoch,
-		validator.validateEpochCombo,
+		validator.validateGetBlockSummaryByHash,
+		validator.validateGetBlockByHash,
+		validator.validateGetBlockSummaryByBlockNumber,
+		validator.validateGetBlockByBlockNumber,
+		validator.validateGetTransactionByHash,
+		validator.validateGetTransactionReceipt,
 		validator.validateGetLogs,
 	}
 	if err := validator.doRun(validator.conf.EpochScanFrom, epochVFuncs...); err != nil {
@@ -285,66 +306,13 @@ func (validator *EpochValidator) doRun(epochNo uint64, vfuncs ...epochValidation
 	logrus.WithField("epochNo", epochNo).Debug("Epoch validator does run validating epoch...")
 
 	epoch := types.NewEpochNumberUint64(epochNo)
+	ctx := context.Background()
+
+	var err error
 	for _, f := range vfuncs {
-		if err := f(epoch); err != nil {
+		if ctx, err = f(ctx, epoch); err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-// Validate epoch combo api suite eg., cfx_getTransactionByHash, cfx_getTransactionReceipt,
-// cfx_getBlockByHash and cfx_getBlockByBlockNumber.
-func (validator *EpochValidator) validateEpochCombo(epoch *types.Epoch) error {
-	epBlockHashes, err := validator.cfx.GetBlocksByEpoch(epoch)
-	if err != nil {
-		return errors.WithMessage(err, "failed to query epoch block hashes for validating epoch combo")
-	}
-
-	ri := util.RandUint64(uint64(len(epBlockHashes)))
-	bh := epBlockHashes[ri]
-	if _, err := validator.validateGetBlockSummaryByHash(bh); err != nil {
-		return err
-	}
-
-	block, err := validator.validateGetBlockByHash(bh)
-	if err != nil {
-		return err
-	}
-
-	blockNum := hexutil.Uint64(block.BlockNumber.ToInt().Uint64())
-	if _, err := validator.validateGetBlockSummaryByBlockNumber(blockNum); err != nil {
-		return err
-	}
-
-	if _, err := validator.validateGetBlockByBlockNumber(blockNum); err != nil {
-		return err
-	}
-
-	if len(block.Transactions) == 0 {
-		return nil
-	}
-
-	// find some executed transaction for validation testing
-	var ptx *types.Transaction
-	for _, tx := range block.Transactions {
-		if tx.BlockHash != nil && tx.Status != nil { // executed transaction only
-			ptx = &tx
-			break
-		}
-	}
-
-	if ptx == nil {
-		return nil
-	}
-
-	if err := validator.validateGetTransactionByHash(ptx.Hash); err != nil {
-		return err
-	}
-
-	if err := validator.validateGetTransactionReceipt(ptx.Hash); err != nil {
-		return err
 	}
 
 	return nil
@@ -401,56 +369,63 @@ func (validator *EpochValidator) doValidate(fnCall, infuraCall func() (interface
 }
 
 // Validate cfx_getTransactionReceipt
-func (validator *EpochValidator) validateGetTransactionReceipt(txHash types.Hash) error {
-	genCall := func(src string, cfx sdk.ClientOperator) func() (interface{}, error) {
-		return func() (interface{}, error) {
-			rcpt, err := cfx.GetTransactionReceipt(txHash)
-			if err != nil {
-				return rcpt, errors.WithMessagef(
-					err, "failed to query transaction receipts from %v", src,
-				)
-			}
-
-			filteredLogs := make([]types.Log, 0, len(rcpt.Logs))
-			for _, log := range rcpt.Logs {
-				if !store.IsAddressBlacklisted(&log.Address) {
-					filteredLogs = append(filteredLogs, log)
-				}
-			}
-
-			rcpt.Logs = filteredLogs
-			return rcpt, nil
-		}
+func (validator *EpochValidator) validateGetTransactionReceipt(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
+	txn, err := validator.getSomeTransaction(ctx, epoch, true)
+	if err != nil || txn == nil {
+		return ctx, errors.WithMessage(err, "failed to get some exec transaction to validate cfx_getTransactionReceipt")
 	}
 
-	fnCall := genCall("fullnode", validator.cfx)
-	infuraCall := genCall("infura", validator.infura)
+	var rcpt1, rcpt2 *types.TransactionReceipt
+	var err1, err2 error
+
+	fnCall := func() (interface{}, error) {
+		if rcpt1, err1 = validator.cfx.GetTransactionReceipt(txn.Hash); err1 != nil {
+			err1 = errors.WithMessage(err1, "failed to query transaction receipts from fullnode")
+		}
+
+		rcpt1.Logs = validator.filterLogs(rcpt1.Logs)
+		return rcpt1, err1
+	}
+
+	infuraCall := func() (interface{}, error) {
+		if rcpt2, err2 = validator.infura.GetTransactionReceipt(txn.Hash); err2 != nil {
+			err2 = errors.WithMessage(err2, "failed to query transaction receipts from infura")
+		}
+
+		rcpt2.Logs = validator.filterLogs(rcpt2.Logs)
+		return rcpt2, err2
+	}
 
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"matchInfo": mi, "txHash": txHash,
+			"matchInfo": mi, "txHash": txn.Hash,
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getTransactionReceipt")
-		return errors.WithMessagef(err, "failed to validate cfx_getTransactionReceipt by hash %v", txHash)
+		return ctx, errors.WithMessage(err, "failed to validate cfx_getTransactionReceipt by hash")
 	}
 
-	return nil
+	return context.WithValue(ctx, ctxKeyCfxSomeTransactionReceipt, rcpt1), nil
 }
 
 // Validate cfx_getTransactionByHash
-func (validator *EpochValidator) validateGetTransactionByHash(txHash types.Hash) error {
+func (validator *EpochValidator) validateGetTransactionByHash(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
+	txn, err := validator.getSomeTransaction(ctx, epoch, false)
+	if err != nil || txn == nil {
+		return ctx, errors.WithMessage(err, "failed to get some transaction to validate cfx_getTransactionByHash")
+	}
+
 	var tx1, tx2 *types.Transaction
 	var err1, err2 error
 
 	fnCall := func() (interface{}, error) {
-		if tx1, err1 = validator.cfx.GetTransactionByHash(txHash); err1 != nil {
+		if tx1, err1 = validator.cfx.GetTransactionByHash(txn.Hash); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query transaction from fullnode")
 		}
 		return tx1, err1
 	}
 
 	infuraCall := func() (interface{}, error) {
-		if tx2, err2 = validator.infura.GetTransactionByHash(txHash); err2 != nil {
+		if tx2, err2 = validator.infura.GetTransactionByHash(txn.Hash); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query transaction from infura")
 		}
 		return tx2, err2
@@ -459,28 +434,33 @@ func (validator *EpochValidator) validateGetTransactionByHash(txHash types.Hash)
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"matchInfo": mi, "txHash": txHash,
+			"matchInfo": mi, "txHash": txn.Hash,
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getTransactionByHash")
-		return errors.WithMessagef(err, "failed to validate cfx_getTransactionByHash by hash %v", txHash)
+		return ctx, errors.WithMessage(err, "failed to validate cfx_getTransactionByHash by hash")
 	}
 
-	return nil
+	return ctx, nil
 }
 
 // Validate cfx_getBlockByHash (includeTxs = true)
-func (validator *EpochValidator) validateGetBlockByHash(blockHash types.Hash) (*types.Block, error) {
+func (validator *EpochValidator) validateGetBlockByHash(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
+	blockHashes, err := validator.getBlockHashes(ctx, epoch)
+	if err != nil || len(blockHashes) == 0 {
+		return ctx, errors.WithMessage(err, "failed to get block hashes to validate cfx_getBlockByHash (includeTxs = true)")
+	}
+
 	var b1, b2 *types.Block
 	var err1, err2 error
 
 	fnCall := func() (interface{}, error) {
-		if b1, err1 = validator.cfx.GetBlockByHash(blockHash); err1 != nil {
+		if b1, err1 = validator.cfx.GetBlockByHash(blockHashes[0]); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block by hash from fullnode")
 		}
 		return b1, err1
 	}
 
 	infuraCall := func() (interface{}, error) {
-		if b2, err2 = validator.infura.GetBlockByHash(blockHash); err2 != nil {
+		if b2, err2 = validator.infura.GetBlockByHash(blockHashes[0]); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block by hash from infura")
 		}
 		return b2, err2
@@ -489,28 +469,33 @@ func (validator *EpochValidator) validateGetBlockByHash(blockHash types.Hash) (*
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"matchInfo": mi, "blockHash": blockHash,
+			"matchInfo": mi, "blockHash": blockHashes[0],
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getBlockByHash (includeTxs = true)")
-		return b1, errors.WithMessagef(err, "failed to validate cfx_getBlockByHash (includeTxs = true) by hash %v", blockHash)
+		return ctx, errors.WithMessage(err, "failed to validate cfx_getBlockByHash (includeTxs = true) by hash")
 	}
 
-	return b1, nil
+	return context.WithValue(ctx, ctxKeyCfxFirstBlock, b1), nil
 }
 
 // Validate cfx_getBlockByHash (includeTxs = false)
-func (validator *EpochValidator) validateGetBlockSummaryByHash(blockHash types.Hash) (*types.BlockSummary, error) {
+func (validator *EpochValidator) validateGetBlockSummaryByHash(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
+	blockHashes, err := validator.getBlockHashes(ctx, epoch)
+	if err != nil || len(blockHashes) == 0 {
+		return ctx, errors.WithMessage(err, "failed to get block hashes to validate cfx_getBlockByHash (includeTxs = false)")
+	}
+
 	var bs1, bs2 *types.BlockSummary
 	var err1, err2 error
 
 	fnCall := func() (interface{}, error) {
-		if bs1, err1 = validator.cfx.GetBlockSummaryByHash(blockHash); err1 != nil {
+		if bs1, err1 = validator.cfx.GetBlockSummaryByHash(blockHashes[0]); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block summary by hash from fullnode")
 		}
 		return bs1, err1
 	}
 
 	infuraCall := func() (interface{}, error) {
-		if bs2, err2 = validator.infura.GetBlockSummaryByHash(blockHash); err2 != nil {
+		if bs2, err2 = validator.infura.GetBlockSummaryByHash(blockHashes[0]); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block summary by hash from infura")
 		}
 		return bs2, err2
@@ -519,28 +504,35 @@ func (validator *EpochValidator) validateGetBlockSummaryByHash(blockHash types.H
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"matchInfo": mi, "blockHash": blockHash,
+			"matchInfo": mi, "blockHash": blockHashes[0],
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getBlockByHash (includeTxs = false)")
-		return bs1, errors.WithMessagef(err, "failed to validate cfx_getBlockByHash (includeTxs = false) by hash %v", blockHash)
+		return ctx, errors.WithMessage(err, "failed to validate cfx_getBlockByHash (includeTxs = false) by hash")
 	}
 
-	return bs1, nil
+	return context.WithValue(ctx, ctxKeyCfxFirstBlockSummary, bs1), nil
 }
 
 // Validate cfx_getBlockByBlockNumber (includeTxs = true)
-func (validator *EpochValidator) validateGetBlockByBlockNumber(blockNumer hexutil.Uint64) (*types.Block, error) {
+func (validator *EpochValidator) validateGetBlockByBlockNumber(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
+	block, err := validator.getFirstBlock(ctx, epoch)
+	if err != nil || block == nil {
+		return ctx, errors.WithMessage(err, "failed to get first block to validate cfx_getBlockByHash (includeTxs = true)")
+	}
+
+	blockNumber := hexutil.Uint64(block.BlockNumber.ToInt().Uint64())
+
 	var b1, b2 *types.Block
 	var err1, err2 error
 
 	fnCall := func() (interface{}, error) {
-		if b1, err1 = validator.cfx.GetBlockByBlockNumber(blockNumer); err1 != nil {
+		if b1, err1 = validator.cfx.GetBlockByBlockNumber(blockNumber); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block from fullnode")
 		}
 		return b1, err1
 	}
 
 	infuraCall := func() (interface{}, error) {
-		if b2, err2 = validator.infura.GetBlockByBlockNumber(blockNumer); err2 != nil {
+		if b2, err2 = validator.infura.GetBlockByBlockNumber(blockNumber); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block from infura")
 		}
 		return b2, err2
@@ -549,28 +541,35 @@ func (validator *EpochValidator) validateGetBlockByBlockNumber(blockNumer hexuti
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"matchInfo": mi, "blockNumer": blockNumer,
+			"matchInfo": mi, "blockNumer": blockNumber,
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getBlockByBlockNumber (includeTxs = true)")
-		return b1, errors.WithMessagef(err, "failed to validate cfx_getBlockByBlockNumber (includeTxs = true) by number %v", blockNumer)
+		return ctx, errors.WithMessagef(err, "failed to validate cfx_getBlockByBlockNumber (includeTxs = true) by number %v", blockNumber)
 	}
 
-	return b1, nil
+	return ctx, nil
 }
 
 // Validate cfx_getBlockByBlockNumber (includeTxs = false)
-func (validator *EpochValidator) validateGetBlockSummaryByBlockNumber(blockNumer hexutil.Uint64) (*types.BlockSummary, error) {
+func (validator *EpochValidator) validateGetBlockSummaryByBlockNumber(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
+	block, err := validator.getFirstBlock(ctx, epoch)
+	if err != nil || block == nil {
+		return ctx, errors.WithMessage(err, "failed to get first block to validate cfx_getBlockByHash (includeTxs = false)")
+	}
+
+	blockNumber := hexutil.Uint64(block.BlockNumber.ToInt().Uint64())
+
 	var b1, b2 *types.BlockSummary
 	var err1, err2 error
 
 	fnCall := func() (interface{}, error) {
-		if b1, err1 = validator.cfx.GetBlockSummaryByBlockNumber(blockNumer); err1 != nil {
+		if b1, err1 = validator.cfx.GetBlockSummaryByBlockNumber(blockNumber); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block summary from fullnode")
 		}
 		return b1, err1
 	}
 
 	infuraCall := func() (interface{}, error) {
-		if b2, err2 = validator.infura.GetBlockSummaryByBlockNumber(blockNumer); err2 != nil {
+		if b2, err2 = validator.infura.GetBlockSummaryByBlockNumber(blockNumber); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block summary from infura")
 		}
 		return b2, err2
@@ -579,16 +578,16 @@ func (validator *EpochValidator) validateGetBlockSummaryByBlockNumber(blockNumer
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"matchInfo": mi, "blockNumer": blockNumer,
+			"matchInfo": mi, "blockNumer": blockNumber,
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getBlockByBlockNumber (includeTxs = false)")
-		return b1, errors.WithMessagef(err, "failed to validate cfx_getBlockByBlockNumber (includeTxs = false) by number %v", blockNumer)
+		return ctx, errors.WithMessagef(err, "failed to validate cfx_getBlockByBlockNumber (includeTxs = false) by number %v", blockNumber)
 	}
 
-	return b1, nil
+	return ctx, nil
 }
 
 // Validate cfx_getBlocksByEpoch
-func (validator *EpochValidator) validateGetBlocksByEpoch(epoch *types.Epoch) error {
+func (validator *EpochValidator) validateGetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
 	var bhs1, bhs2 []types.Hash
 	var err1, err2 error
 
@@ -611,14 +610,14 @@ func (validator *EpochValidator) validateGetBlocksByEpoch(epoch *types.Epoch) er
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "epoch": epoch,
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getBlocksByEpoch")
-		return errors.WithMessagef(err, "failed to validate cfx_getBlocksByEpoch by epoch %v", epoch)
+		return ctx, errors.WithMessagef(err, "failed to validate cfx_getBlocksByEpoch by epoch %v", epoch)
 	}
 
-	return nil
+	return context.WithValue(ctx, ctxKeyCfxBlockHashes, bhs1), nil
 }
 
 // Validate cfx_getBlockByEpochNumber (includeTxs = true)
-func (validator *EpochValidator) validateGetBlockByEpoch(epoch *types.Epoch) error {
+func (validator *EpochValidator) validateGetBlockByEpoch(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
 	var b1, b2 *types.Block
 	var err1, err2 error
 
@@ -641,14 +640,14 @@ func (validator *EpochValidator) validateGetBlockByEpoch(epoch *types.Epoch) err
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "epoch": epoch,
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getBlockByEpochNumber (includeTxs = true) ")
-		return errors.WithMessagef(err, "failed to validate cfx_getBlockByEpochNumber (includeTxs = true) by epoch %v", epoch)
+		return ctx, errors.WithMessagef(err, "failed to validate cfx_getBlockByEpochNumber (includeTxs = true) by epoch %v", epoch)
 	}
 
-	return nil
+	return context.WithValue(ctx, ctxKeyCfxPivotBlock, b1), nil
 }
 
 // Validate cfx_getBlockByEpochNumber (includeTxs = false)
-func (validator *EpochValidator) validateGetBlockSummaryByEpoch(epoch *types.Epoch) error {
+func (validator *EpochValidator) validateGetBlockSummaryByEpoch(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
 	var bs1, bs2 *types.BlockSummary
 	var err1, err2 error
 
@@ -671,19 +670,42 @@ func (validator *EpochValidator) validateGetBlockSummaryByEpoch(epoch *types.Epo
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "epoch": epoch,
 		}).WithError(err).Info("Epoch validator failed to validate cfx_getBlockByEpochNumber (includeTxs = false) ")
-		return errors.WithMessagef(err, "failed to validate cfx_getBlockByEpochNumber (includeTxs = false) by epoch %v", epoch)
+		return ctx, errors.WithMessagef(err, "failed to validate cfx_getBlockByEpochNumber (includeTxs = false) by epoch %v", epoch)
 	}
 
-	return nil
+	return context.WithValue(ctx, ctxKeyCfxPivotBlockSummary, bs1), nil
 }
 
 // Validate cfx_getLogs
-func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
+func (validator *EpochValidator) validateGetLogs(ctx context.Context, epoch *types.Epoch) (context.Context, error) {
 	epochBigInt, _ := epoch.ToInt()
 	epochNo := epochBigInt.Uint64()
 
+	var someContractAddrs []cfxaddress.Address
+	var someTopics [][]types.Hash
+
+	if someReceipt, _ := validator.getSomeTransactionReceipt(ctx, epoch); someReceipt != nil {
+		for _, log := range someReceipt.Logs {
+			if len(someContractAddrs) >= 3 {
+				break
+			}
+
+			someContractAddrs = append(someContractAddrs, log.Address)
+
+			for i, topic := range log.Topics {
+				if len(someTopics) <= i {
+					someTopics = append(someTopics, []types.Hash{})
+				}
+
+				if len(topic) > 0 {
+					someTopics[i] = append(someTopics[i], topic)
+				}
+			}
+		}
+	}
+
 	logger := logrus.WithFields(logrus.Fields{
-		"epochNo": epochNo, "fromEpochNo": epochNo,
+		"epochNo": epochNo, "withContractAddrs": len(someContractAddrs), "withTopics": len(someTopics),
 	})
 
 	// filter: epoch range
@@ -693,66 +715,90 @@ func (validator *EpochValidator) validateGetLogs(epoch *types.Epoch) error {
 
 	if err := validator.doValidateGetLogs(filterByEpoch); err != nil {
 		logger.WithField("filterByEpoch", filterByEpoch).WithError(err).Info("Epoch validator failed to validate cfx_getLogs")
-		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
+		return ctx, errors.WithMessagef(err, "failed to validate cfx_getLogs")
+	}
+
+	if len(someContractAddrs) > 0 { // add address and topics filter
+		filterByEpoch.Address = someContractAddrs
+		filterByEpoch.Topics = someTopics
+
+		if err := validator.doValidateGetLogs(filterByEpoch); err != nil {
+			logger.WithField("filterByEpochWithAddr", filterByEpoch).
+				WithError(err).
+				Info("Epoch validator failed to validate cfx_getLogs")
+
+			return ctx, errors.WithMessagef(err, "failed to validate cfx_getLogs")
+		}
 	}
 
 	// filter: blockhashes
-	epochs := []*types.Epoch{epoch}
-	if epochNo > 1 {
-		epochs = append(epochs, types.NewEpochNumberUint64(epochNo-1))
-	}
-
-	var blockHashes []types.Hash
-	for _, epoch := range epochs {
-		bhs, err := validator.cfx.GetBlocksByEpoch(epoch)
-		if err == nil && len(bhs) == 0 { // sanity check even though it should never happen
-			err = errors.Errorf("epoch %v has no blocks", epoch)
-		}
-
-		if err != nil {
-			logrus.WithField("epoch", epoch).WithError(err).Info(
-				"Epoch validator failed to query epoch block hashes for validating cfx_getLogs",
-			)
-			return errors.WithMessage(err, "failed to query epoch block hashes for validating cfx_getLogs")
-		}
-
-		blockHashes = append(blockHashes, bhs[len(bhs)-1])
+	blockHashes, err := validator.getBlockHashes(ctx, epoch)
+	if err != nil {
+		logger.WithError(err).Info("Epoch validator failed to get block hashes to validate cfx_getLogs")
+		return ctx, errors.WithMessage(err, "failed to get block hashes to validate cfx_getLogs")
 	}
 
 	filterByBlockHashes := types.LogFilter{
-		BlockHashes: blockHashes,
+		BlockHashes: []types.Hash{
+			blockHashes[len(blockHashes)-1], blockHashes[0],
+		},
 	}
 
 	if err := validator.doValidateGetLogs(filterByBlockHashes); err != nil {
 		logger.WithField("filterByBlockHashes", filterByBlockHashes).WithError(err).Info("Epoch validator failed to validate cfx_getLogs")
-		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
+		return ctx, errors.WithMessagef(err, "failed to validate cfx_getLogs")
+	}
+
+	if len(someContractAddrs) > 0 { // add address and topics filter
+		filterByBlockHashes.Address = someContractAddrs
+		filterByBlockHashes.Topics = someTopics
+
+		if err := validator.doValidateGetLogs(filterByBlockHashes); err != nil {
+			logger.WithField("filterByBlockHashesWithAddr", filterByBlockHashes).
+				WithError(err).
+				Info("Epoch validator failed to validate cfx_getLogs")
+			return ctx, errors.WithMessagef(err, "failed to validate cfx_getLogs")
+		}
 	}
 
 	// filter: blocknumbers
-	block, err := validator.cfx.GetBlockSummaryByEpoch(epoch)
+	firstBlock, err := validator.getFirstBlock(ctx, epoch)
 	if err != nil {
-		logger.WithError(err).Info("Epoch validator failed to query epoch pivot block for validating cfx_getLogs")
-		return errors.WithMessage(err, "failed to query epoch pivot block for validating cfx_getLogs")
+		logger.WithError(err).Info("Epoch validator failed to get first block for validating cfx_getLogs")
+		return ctx, errors.WithMessage(err, "failed to get first block for validating cfx_getLogs")
+	}
+
+	pivotBlock, err := validator.getPivotBlock(ctx, epoch)
+	if err != nil {
+		logger.WithError(err).Info("Epoch validator failed to get pivot block for validating cfx_getLogs")
+		return ctx, errors.WithMessage(err, "failed to get pivot block for validating cfx_getLogs")
 	}
 
 	// ensure test block number range within bound
 	filterByBlockNumbers := types.LogFilter{
-		FromBlock: block.BlockNumber,
-		ToBlock:   block.BlockNumber,
+		FromBlock: firstBlock.BlockNumber,
+		ToBlock:   pivotBlock.BlockNumber,
 	}
 
 	if err := validator.doValidateGetLogs(filterByBlockNumbers); err != nil {
-		logger.
-			WithField("filterByBlockNumbers", filterByBlockNumbers).
+		logger.WithField("filterByBlockNumbers", filterByBlockNumbers).
 			WithError(err).
 			Info("Epoch validator failed to validate cfx_getLogs")
 
-		return errors.WithMessagef(err, "failed to validate cfx_getLogs")
+		return ctx, errors.WithMessagef(err, "failed to validate cfx_getLogs")
 	}
 
-	// TODO add more logFilter for testing
+	if len(someContractAddrs) > 0 { // add address and topics filter
+		filterByBlockNumbers.Address = someContractAddrs
+		filterByBlockNumbers.Topics = someTopics
 
-	return nil
+		if err := validator.doValidateGetLogs(filterByBlockNumbers); err != nil {
+			logger.WithField("filterByBlockNumbersWithAddr", filterByBlockNumbers).WithError(err).Info("Epoch validator failed to validate cfx_getLogs")
+			return ctx, errors.WithMessagef(err, "failed to validate cfx_getLogs")
+		}
+	}
+
+	return ctx, nil
 }
 
 func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error {
@@ -763,26 +809,7 @@ func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error
 				return logs, errors.WithMessagef(err, "failed to query logs from %v", src)
 			}
 
-			for i, log := range logs {
-				// skip validation due to log of blacklisted address found
-				if store.IsAddressBlacklisted(&log.Address) {
-					logrus.WithFields(logrus.Fields{
-						"source":        src,
-						"filter":        filter,
-						"blackListAddr": log.Address.String(),
-					}).Debug(
-						"Epoch validator skipped cfx_getLogs validation due to blacklisted address found",
-					)
-
-					return logs, errValidationSkipped
-				}
-
-				// skip `log.TransactionIndex` field validation due to fullnode bug
-				// TODO: remove this if fullnode bug fixed
-				logs[i].TransactionIndex = nil
-			}
-
-			return logs, nil
+			return validator.filterLogs(logs), nil
 		}
 	}
 
@@ -798,6 +825,21 @@ func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error
 	}
 
 	return nil
+}
+
+func (validator *EpochValidator) filterLogs(logs []types.Log) []types.Log {
+	filteredLogs := make([]types.Log, 0, len(logs))
+	for _, log := range logs {
+		// skip `log.TransactionIndex` field validation due to fullnode bug
+		// TODO: remove this if fullnode bug fixed
+		log.TransactionIndex = nil
+
+		if !store.IsAddressBlacklisted(&log.Address) {
+			filteredLogs = append(filteredLogs, log)
+		}
+	}
+
+	return filteredLogs
 }
 
 func (validator *EpochValidator) saveScanCursor() error {
@@ -830,4 +872,73 @@ func isValidationSkippedErr(err error) bool {
 	}
 
 	return false
+}
+
+func (validator *EpochValidator) getBlockHashes(ctx context.Context, epoch *types.Epoch) ([]types.Hash, error) {
+	if blockhashes, ok := ctx.Value(ctxKeyCfxBlockHashes).([]types.Hash); ok {
+		return blockhashes, nil
+	}
+
+	return validator.cfx.GetBlocksByEpoch(epoch)
+}
+
+func (validator *EpochValidator) getPivotBlock(ctx context.Context, epoch *types.Epoch) (*types.Block, error) {
+	if b, ok := ctx.Value(ctxKeyCfxPivotBlock).(*types.Block); ok {
+		return b, nil
+	}
+
+	return validator.cfx.GetBlockByEpoch(epoch)
+}
+
+func (validator *EpochValidator) getFirstBlock(ctx context.Context, epoch *types.Epoch) (*types.Block, error) {
+	if b, ok := ctx.Value(ctxKeyCfxFirstBlock).(*types.Block); ok {
+		return b, nil
+	}
+
+	blockHashes, err := validator.getBlockHashes(ctx, epoch)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get block hashes")
+	}
+
+	return validator.cfx.GetBlockByHash(blockHashes[0])
+}
+
+func (validator *EpochValidator) getSomeTransaction(ctx context.Context, epoch *types.Epoch, executed bool) (*types.Transaction, error) {
+	blockGetters := map[string]func(context.Context, *types.Epoch) (*types.Block, error){
+		"first": validator.getFirstBlock, "pivot": validator.getPivotBlock,
+	}
+
+	for name, getter := range blockGetters {
+		block, err := getter(ctx, epoch)
+		if err != nil {
+			return nil, errors.WithMessagef(err, "failed to get %v block", name)
+		}
+
+		if len(block.Transactions) > 0 {
+			if !executed {
+				return &block.Transactions[0], nil
+			}
+
+			for _, txn := range block.Transactions {
+				if util.IsTxExecutedInBlock(&txn) {
+					return &txn, nil
+				}
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+func (validator *EpochValidator) getSomeTransactionReceipt(ctx context.Context, epoch *types.Epoch) (*types.TransactionReceipt, error) {
+	if rcpt, ok := ctx.Value(ctxKeyCfxSomeTransactionReceipt).(*types.TransactionReceipt); ok {
+		return rcpt, nil
+	}
+
+	txn, err := validator.getSomeTransaction(ctx, epoch, true)
+	if err != nil || txn == nil {
+		return nil, errors.WithMessage(err, "failted to get some transaction")
+	}
+
+	return validator.cfx.GetTransactionReceipt(txn.Hash)
 }
