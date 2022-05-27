@@ -190,6 +190,8 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockHashes(
 			continue
 		}
 
+		cache[bn] = true
+
 		if epoch := block.EpochNumber.ToInt().Uint64(); epoch <= maxEpoch {
 			dbBlockNumbers = append(dbBlockNumbers, bn)
 		} else {
