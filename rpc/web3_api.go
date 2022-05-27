@@ -4,14 +4,20 @@ import (
 	"context"
 
 	"github.com/conflux-chain/conflux-infura/node"
+	"github.com/conflux-chain/conflux-infura/rpc/cache"
 )
 
 type web3API struct {
 	provider *node.EthClientProvider
+
+	cache *cache.EthCache
 }
 
 func newWeb3API(provider *node.EthClientProvider) *web3API {
-	return &web3API{provider: provider}
+	return &web3API{
+		provider: provider,
+		cache:    cache.NewEth(),
+	}
 }
 
 // ClientVersion returns the current client version.
@@ -21,5 +27,5 @@ func (api *web3API) ClientVersion(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	return w3c.Eth.ClientVersion()
+	return api.cache.GetClientVersion(w3c)
 }

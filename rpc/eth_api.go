@@ -7,6 +7,7 @@ import (
 	"math/bits"
 
 	"github.com/conflux-chain/conflux-infura/node"
+	"github.com/conflux-chain/conflux-infura/rpc/cache"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
@@ -46,10 +47,11 @@ type ethAPI struct {
 	EthAPIOption
 
 	provider         *node.EthClientProvider
-	chainId          *uint64 // eth chain ID
 	inputBlockMetric metrics.InputBlockMetric
 
 	hardforkBlockNumber *rpc.BlockNumber // return default value before eSpace hardfork
+
+	cache *cache.EthCache
 }
 
 func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *ethAPI {
@@ -81,6 +83,7 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 		EthAPIOption:        opt,
 		provider:            provider,
 		hardforkBlockNumber: hardforkBlockNumber,
+		cache:               cache.NewEth(),
 	}
 }
 
@@ -118,21 +121,12 @@ func (api *ethAPI) GetBlockByHash(
 
 // ChainId returns the chainID value for transaction replay protection.
 func (api *ethAPI) ChainId(ctx context.Context) (*hexutil.Uint64, error) {
-	if api.chainId != nil {
-		return (*hexutil.Uint64)(api.chainId), nil
-	}
-
 	w3c, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	chainId, err := w3c.Eth.ChainId()
-	if err == nil {
-		api.chainId = chainId
-	}
-
-	return (*hexutil.Uint64)(chainId), err
+	return api.cache.GetChainId(w3c)
 }
 
 // BlockNumber returns the block number of the chain head.
@@ -247,8 +241,7 @@ func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 		return nil, err
 	}
 
-	gasPrice, err := w3c.Eth.GasPrice()
-	return (*hexutil.Big)(gasPrice), err
+	return api.cache.GetGasPrice(w3c)
 }
 
 // GetStorageAt returns the value from a storage position at a given address.

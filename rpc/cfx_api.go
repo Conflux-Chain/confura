@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	"github.com/conflux-chain/conflux-infura/node"
+	"github.com/conflux-chain/conflux-infura/rpc/cache"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
@@ -44,6 +45,8 @@ type cfxAPI struct {
 	CfxAPIOption
 	provider         *node.CfxClientProvider
 	inputEpochMetric metrics.InputEpochMetric
+
+	cache *cache.CfxCache
 }
 
 func newCfxAPI(provider *node.CfxClientProvider, option ...CfxAPIOption) *cfxAPI {
@@ -55,6 +58,7 @@ func newCfxAPI(provider *node.CfxClientProvider, option ...CfxAPIOption) *cfxAPI
 	return &cfxAPI{
 		CfxAPIOption: opt,
 		provider:     provider,
+		cache:        cache.NewCfx(),
 	}
 }
 
@@ -72,7 +76,7 @@ func (api *cfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 		return nil, err
 	}
 
-	return cfx.GetGasPrice()
+	return api.cache.GetGasPrice(cfx)
 }
 
 func (api *cfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexutil.Big, error) {
@@ -82,7 +86,8 @@ func (api *cfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexuti
 	}
 
 	api.inputEpochMetric.Update(epoch, "cfx_epochNumber", cfx)
-	return cfx.GetEpochNumber(toSlice(epoch)...)
+
+	return api.cache.GetEpochNumber(cfx, epoch)
 }
 
 func (api *cfxAPI) GetBalance(ctx context.Context, address types.Address, epoch *types.Epoch) (*hexutil.Big, error) {
@@ -298,7 +303,7 @@ func (api *cfxAPI) GetBestBlockHash(ctx context.Context) (types.Hash, error) {
 		return "", err
 	}
 
-	return cfx.GetBestBlockHash()
+	return api.cache.GetBestBlockHash(cfx)
 }
 
 func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoch *types.Epoch) (*hexutil.Big, error) {
@@ -646,7 +651,7 @@ func (api *cfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
 		return types.Status{}, err
 	}
 
-	return cfx.GetStatus()
+	return api.cache.GetStatus(cfx)
 }
 
 func (api *cfxAPI) GetBlockRewardInfo(ctx context.Context, epoch types.Epoch) ([]types.RewardInfo, error) {
@@ -665,7 +670,7 @@ func (api *cfxAPI) ClientVersion(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	return cfx.GetClientVersion()
+	return api.cache.GetClientVersion(cfx)
 }
 
 func (api *cfxAPI) GetSupplyInfo(ctx context.Context, epoch *types.Epoch) (types.TokenSupplyInfo, error) {
