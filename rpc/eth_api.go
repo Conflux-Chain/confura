@@ -137,8 +137,7 @@ func (api *ethAPI) BlockNumber(ctx context.Context) (*hexutil.Big, error) {
 		return nil, err
 	}
 
-	blockNum, err := w3c.Eth.BlockNumber()
-	return (*hexutil.Big)(blockNum), err
+	return api.cache.GetBlockNumber(w3c)
 }
 
 // GetBalance returns the amount of wei for the given address in the state of the
