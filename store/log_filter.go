@@ -24,7 +24,7 @@ const (
 	MaxLogBlockHashesSize int    = 128
 	MaxLogEpochRange      uint64 = 1000
 	MaxLogBlockRange      uint64 = 1000
-	MaxLogLimit           uint64 = 5000 // TODO adjust max log limit accordingly
+	MaxLogLimit           uint64 = 10000 // adjust max log limit accordingly
 
 	// Log filter types
 	LogFilterTypeBlockHash  LogFilterType = 1 << iota // 0001
@@ -35,11 +35,15 @@ const (
 var (
 	TimeoutGetLogs = 3 * time.Second
 
-	ErrGetLogsQuerySetTooLarge  = errors.New("query set is too large, please narrow down your filter condition")
+	ErrGetLogsQuerySetTooLarge = errors.New(
+		"query set is too large, please narrow down your filter condition",
+	)
+
 	ErrGetLogsResultSetTooLarge = errors.Errorf(
 		"result set to be queried is too large with more than %v logs, %v",
 		MaxLogLimit, "please narrow down your filter condition",
 	)
+
 	ErrGetLogsTimeout = errors.Errorf(
 		"query timeout with duration exceeds %v(s)", TimeoutGetLogs,
 	)

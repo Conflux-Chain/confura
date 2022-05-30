@@ -54,10 +54,8 @@ func (handler *EthLogsApiHandlerV2) GetLogs(
 		}
 
 		// when reorg occurred, check timeout before retry.
-		select {
-		case <-timeoutCtx.Done():
-			return nil, false, store.ErrGetLogsTimeout
-		default:
+		if err := checkTimeout(ctx); err != nil {
+			return nil, false, err
 		}
 
 		// reorg version changed during data query and try again.
@@ -98,12 +96,26 @@ func (handler *EthLogsApiHandlerV2) getLogsReorgGuard(
 
 	// query data from fullnode
 	if fnFilter != nil {
+		// check timeout before fullnode delegation
+		if err := checkTimeout(ctx); err != nil {
+			return nil, false, err
+		}
+
+		// ensure fullnode delegation is rational
+		if err := handler.checkFullnodeLogFilter(filter); err != nil {
+			return nil, false, err
+		}
+
 		fnLogs, err := eth.Logs(*fnFilter)
 		if err != nil {
 			return nil, false, err
 		}
 
 		logs = append(logs, fnLogs...)
+	}
+
+	if len(logs) > int(store.MaxLogLimit) {
+		return nil, false, store.ErrGetLogsResultSetTooLarge
 	}
 
 	return logs, dbFilter != nil, nil
@@ -216,4 +228,18 @@ func (handler *EthLogsApiHandlerV2) getNetworkId(eth *client.RpcEthClient) (uint
 	handler.networkId.Store(networkId)
 
 	return networkId, nil
+}
+
+// checkFullnodeLogFilter checks if the log filter is rational for fullnode delegation.
+//
+// Note this function assumes the log filter is valid and normalized.
+func (handler *EthLogsApiHandlerV2) checkFullnodeLogFilter(filter *types.FilterQuery) error {
+	if filter.FromBlock != nil && filter.ToBlock != nil {
+		count := *filter.ToBlock - *filter.FromBlock + 1
+		if uint64(count) > store.MaxLogEpochRange {
+			return store.ErrGetLogsQuerySetTooLarge
+		}
+	}
+
+	return nil
 }

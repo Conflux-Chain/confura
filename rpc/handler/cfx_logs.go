@@ -52,6 +52,10 @@ func NewCfxLogsApiHandler(sh CfxStoreHandler, ph *CfxPrunedLogsHandler, ms *mysq
 	}
 }
 
+func (h *CfxLogsApiHandler) V2() *CfxLogsApiHandlerV2 {
+	return h.v2
+}
+
 func (h *CfxLogsApiHandler) GetLogs(
 	ctx context.Context, cfx sdk.ClientOperator, filter *types.LogFilter) ([]types.Log, bool, error) {
 	if h.v2 != nil {

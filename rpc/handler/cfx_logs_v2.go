@@ -54,10 +54,8 @@ func (handler *CfxLogsApiHandlerV2) GetLogs(
 		}
 
 		// when reorg occurred, check timeout before retry.
-		select {
-		case <-timeoutCtx.Done():
-			return nil, false, store.ErrGetLogsTimeout
-		default:
+		if err := checkTimeout(timeoutCtx); err != nil {
+			return nil, false, err
 		}
 
 		// reorg version changed during data query and try again.
@@ -86,6 +84,10 @@ func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
 
 	// query data from database
 	for i := range dbFilters {
+		if err := checkTimeout(ctx); err != nil {
+			return nil, false, err
+		}
+
 		dbLogs, err := handler.ms.GetLogsV2(ctx, dbFilters[i])
 
 		// succeeded to get logs from database
@@ -107,6 +109,11 @@ func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
 			return nil, false, errEventLogsTooStale
 		}
 
+		// ensure fullnode delegation is rational
+		if err := handler.checkFullnodeLogFilter(filter); err != nil {
+			return nil, false, err
+		}
+
 		fnLogs, err := handler.prunedHandler.GetLogs(ctx, *filter)
 		if err != nil {
 			return nil, false, err
@@ -117,12 +124,27 @@ func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
 
 	// query data from fullnode
 	if fnFilter != nil {
+		// timeout check before fullnode delegation
+		if err := checkTimeout(ctx); err != nil {
+			return nil, false, err
+		}
+
+		// ensure split log filter for fullnode is rational
+		if err := handler.checkFullnodeLogFilter(fnFilter); err != nil {
+			return nil, false, err
+		}
+
 		fnLogs, err := cfx.GetLogs(*fnFilter)
 		if err != nil {
 			return nil, false, err
 		}
 
 		logs = append(logs, fnLogs...)
+	}
+
+	// ensure result set never oversized
+	if len(logs) > int(store.MaxLogLimit) {
+		return nil, false, store.ErrGetLogsResultSetTooLarge
 	}
 
 	return logs, len(dbFilters) > 0, nil
@@ -167,9 +189,9 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockHashes(
 	maxEpoch uint64,
 ) ([]store.LogFilterV2, *types.LogFilter, error) {
 	var dbBlockNumbers []int
-	cache := make(map[int]bool)
 	var fnBlockHashes []types.Hash
 
+	cache := make(map[int]bool)
 	// convert block hash to number to query from database
 	for _, hash := range filter.BlockHashes {
 		block, err := cfx.GetBlockSummaryByHash(hash)
@@ -306,4 +328,42 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByEpochRange(
 	}
 
 	return []store.LogFilterV2{dbFilter}, &fnFilter, nil
+}
+
+// checkFullnodeLogFilter checks if the log filter is rational for fullnode delegation.
+//
+// Note this function assumes the log filter is valid and normalized.
+func (handler *CfxLogsApiHandlerV2) checkFullnodeLogFilter(filter *types.LogFilter) error {
+	// epoch range bound checking
+	if filter.FromEpoch != nil && filter.ToEpoch != nil {
+		ef, _ := filter.FromEpoch.ToInt()
+		et, _ := filter.ToEpoch.ToInt()
+		epochFrom, epochTo := ef.Uint64(), et.Uint64()
+
+		if epochTo-epochFrom+1 > store.MaxLogEpochRange {
+			return store.ErrGetLogsQuerySetTooLarge
+		}
+	}
+
+	// block range bound checking
+	if filter.FromBlock != nil && filter.ToBlock != nil {
+		fromBlock := filter.FromBlock.ToInt().Uint64()
+		toBlock := filter.ToBlock.ToInt().Uint64()
+		if toBlock-fromBlock+1 > store.MaxLogBlockRange {
+			return store.ErrGetLogsQuerySetTooLarge
+		}
+	}
+
+	return nil
+}
+
+// checkTimeout checks if operation is timed out.
+func checkTimeout(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return store.ErrGetLogsTimeout
+	default:
+	}
+
+	return nil
 }

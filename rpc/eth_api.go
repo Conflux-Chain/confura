@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"encoding/json"
 	"math/big"
 	"math/bits"
 
@@ -407,53 +406,8 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	return receipt, err
 }
 
-// ethLogFilter temporary offset/limit support on eth log filter
-// TODO: remove this when fullnode deprecates offset/limit support on eth log filter
-type ethLogFilter struct {
-	web3Types.FilterQuery
-	// to print variable value for debuging
-	OffsetV    *hexutil.Uint
-	LimitV     *hexutil.Uint
-	FromBlockV *hexutil.Uint64
-	ToBlockV   *hexutil.Uint64
-}
-
-func (args *ethLogFilter) UnmarshalJSON(data []byte) error {
-	var fq web3Types.FilterQuery
-	if err := json.Unmarshal(data, &fq); err != nil {
-		return errors.WithMessage(err, "failed to unmarshal query filter")
-	}
-
-	var olfilter struct {
-		Offset *uint `json:"offset"`
-		Limit  *uint `json:"limit"`
-	}
-	if err := json.Unmarshal(data, &olfilter); err != nil {
-		return errors.WithMessage(err, "failed to unmarshal query offset/limit")
-	}
-
-	fq.Limit = olfilter.Limit
-
-	args.FilterQuery = fq
-
-	if fq.FromBlock != nil {
-		fromBlock := (hexutil.Uint64)(*fq.FromBlock)
-		args.FromBlockV = &fromBlock
-	}
-
-	if fq.ToBlock != nil {
-		toBlock := (hexutil.Uint64)(*fq.ToBlock)
-		args.ToBlockV = &toBlock
-	}
-
-	args.LimitV = (*hexutil.Uint)(olfilter.Limit)
-	args.OffsetV = (*hexutil.Uint)(olfilter.Offset)
-
-	return nil
-}
-
 // GetLogs returns an array of all logs matching a given filter object.
-func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Types.Log, error) {
+func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([]web3Types.Log, error) {
 	if err := validateRateLimit(ctx, rate.DefaultRegistryEth, "eth_getLogs"); err != nil {
 		return nil, err
 	}
@@ -463,21 +417,21 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 		return nil, err
 	}
 
-	api.metricLogFilter(w3c.Eth, &filter.FilterQuery)
+	api.metricLogFilter(w3c.Eth, &filter)
 
-	flag, ok := store.ParseEthLogFilterType(&filter.FilterQuery)
+	flag, ok := store.ParseEthLogFilterType(&filter)
 	if !ok {
 		return ethEmptyLogs, errInvalidEthLogFilter
 	}
 
-	if err := api.normalizeLogFilter(w3c.Client, flag, &filter.FilterQuery); err != nil {
+	if err := api.normalizeLogFilter(w3c.Client, flag, &filter); err != nil {
 		return ethEmptyLogs, err
 	}
 
-	if err := api.validateLogFilter(flag, &filter.FilterQuery); err != nil {
-		logrus.WithError(err).WithField("filter", filter).Debug(
-			"Invalid log filter parameter for eth_getLogs rpc request",
-		)
+	if err := api.validateLogFilter(flag, &filter); err != nil {
+		api.filterLogger(&filter).
+			WithError(err).
+			Debug("Invalid log filter parameter for eth_getLogs rpc request")
 
 		return ethEmptyLogs, err
 	}
@@ -487,16 +441,12 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 		return ethEmptyLogs, nil
 	}
 
-	if filter.Limit != nil && *filter.Limit == 0 {
-		return ethEmptyLogs, nil
-	}
-
 	if api.LogApiHandler != nil {
-		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client, filter.FilterQuery)
+		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client, filter)
 
-		logrus.WithFields(logrus.Fields{
-			"filter": filter, "hitStore": hitStore,
-		}).WithError(err).Debug("Delegated `eth_getLogs` to log api handler")
+		api.filterLogger(&filter).WithField("hitStore", hitStore).
+			WithError(err).
+			Debug("Delegated `eth_getLogs` to log api handler")
 
 		updateEthStoreHitRatio("eth_getLogs", hitStore)
 
@@ -508,8 +458,10 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter ethLogFilter) ([]web3Type
 	}
 
 	// fail over to fullnode if no handler configured
-	logrus.WithField("filter", filter).Debug("Fail over `eth_getLogs` to fullnode due to no API handler configured")
-	return w3c.Eth.Logs(filter.FilterQuery)
+
+	api.filterLogger(&filter).
+		Debug("Fail over `eth_getLogs` to fullnode due to no API handler configured")
+	return w3c.Eth.Logs(filter)
 }
 
 // GetBlockTransactionCountByHash returns the total number of transactions in the given block.
@@ -683,12 +635,6 @@ func (api *ethAPI) normalizeLogFilter(w3c *web3go.Client, flag store.LogFilterTy
 		filter.FromBlock, filter.ToBlock = blocks[0], blocks[1]
 	}
 
-	// Set `limit` parameter to default max value if not specified or exceeds max limit size
-	if filter.Limit == nil || uint64(*filter.Limit) > store.MaxLogLimit {
-		defaultLogLimitSize := uint(store.MaxLogLimit)
-		filter.Limit = &defaultLogLimitSize
-	}
-
 	return nil
 }
 
@@ -702,7 +648,9 @@ func (api *ethAPI) validateLogFilter(flag store.LogFilterType, filter *web3Types
 		if *filter.FromBlock > *filter.ToBlock {
 			return errInvalidLogFilterBlockRange
 		}
+	}
 
+	if api.LogApiHandler == nil || api.LogApiHandler.V2() == nil {
 		if count := *filter.ToBlock - *filter.FromBlock + 1; uint64(count) > store.MaxLogEpochRange {
 			return errExceedLogFilterBlockRangeSize(store.MaxLogEpochRange)
 		}
@@ -722,6 +670,21 @@ func (api *ethAPI) metricLogFilter(eth *client.RpcEthClient, filter *web3Types.F
 		api.inputBlockMetric.Update1(filter.FromBlock, "eth_getLogs/from", eth)
 		api.inputBlockMetric.Update1(filter.ToBlock, "eth_getLogs/to", eth)
 	}
+}
+
+// TODO: This method should be removed once `web3Types.FilterQuery` is logging friendly.
+func (api *ethAPI) filterLogger(filter *web3Types.FilterQuery) *logrus.Entry {
+	logger := logrus.WithField("filter", filter)
+
+	if filter.FromBlock != nil {
+		logger = logger.WithField("fromBlock", filter.FromBlock.Int64())
+	}
+
+	if filter.ToBlock != nil {
+		logger = logger.WithField("toBlock", filter.ToBlock.Int64())
+	}
+
+	return logger
 }
 
 // The following RPC methods are not supported yet by the fullnode:

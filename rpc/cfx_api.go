@@ -30,9 +30,6 @@ var (
 	emptyRewards        = []types.RewardInfo{}
 	emptySponsorInfo    = types.SponsorInfo{}
 	emptyBlock          = types.Block{}
-
-	defaultLogLimit  = types.NewUint64(store.MaxLogLimit)
-	defaultLogOffset = types.NewUint64(0)
 )
 
 type CfxAPIOption struct {
@@ -384,10 +381,6 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		return emptyLogs, err
 	}
 
-	if filter.Limit != nil && *filter.Limit == 0 {
-		return emptyLogs, nil
-	}
-
 	if api.LogApiHandler != nil {
 		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, cfx, &filter)
 
@@ -437,15 +430,6 @@ func (api *cfxAPI) normalizeLogFilter(cfx sdk.ClientOperator, flag store.LogFilt
 		filter.FromEpoch, filter.ToEpoch = epochs[0], epochs[1]
 	}
 
-	if filter.Offset == nil {
-		filter.Offset = defaultLogOffset
-	}
-
-	// Set `limit` parameter to default max value if not specified or exceeds max limit size
-	if filter.Limit == nil || uint64(*filter.Limit) > store.MaxLogLimit {
-		filter.Limit = defaultLogLimit
-	}
-
 	return nil
 }
 
@@ -468,9 +452,12 @@ func (api *cfxAPI) validateLogFilter(flag store.LogFilterType, filter *types.Log
 			return errInvalidLogFilterBlockRange
 		}
 
-		if count := toBlock - fromBlock + 1; count > store.MaxLogBlockRange {
-			return errExceedLogFilterBlockRangeLimit
+		if api.LogApiHandler == nil || api.LogApiHandler.V2() == nil {
+			if count := toBlock - fromBlock + 1; count > store.MaxLogBlockRange {
+				return errExceedLogFilterBlockRangeLimit
+			}
 		}
+
 	case flag&store.LogFilterTypeEpochRange != 0: // validate epoch range log filter
 		epochFrom, _ := filter.FromEpoch.ToInt()
 		epochTo, _ := filter.ToEpoch.ToInt()
@@ -482,8 +469,10 @@ func (api *cfxAPI) validateLogFilter(flag store.LogFilterType, filter *types.Log
 			return errInvalidLogFilterEpochRange
 		}
 
-		if count := et - ef + 1; count > store.MaxLogEpochRange {
-			return errExceedLogFilterEpochRangeLimit
+		if api.LogApiHandler == nil || api.LogApiHandler.V2() == nil {
+			if count := et - ef + 1; count > store.MaxLogEpochRange {
+				return errExceedLogFilterEpochRangeLimit
+			}
 		}
 	}
 

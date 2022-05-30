@@ -31,6 +31,10 @@ func NewEthLogsApiHandler(sh *EthStoreHandler, ms *mysql.MysqlStore) *EthLogsApi
 	}
 }
 
+func (h *EthLogsApiHandler) V2() *EthLogsApiHandlerV2 {
+	return h.v2
+}
+
 func (h *EthLogsApiHandler) GetLogs(
 	ctx context.Context, w3c *web3go.Client, filter web3Types.FilterQuery) ([]web3Types.Log, bool, error) {
 	if h.v2 != nil {
