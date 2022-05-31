@@ -69,9 +69,7 @@ func middlewareLog(fullnode, space string) providers.CallContextMiddleware {
 
 			if err != nil {
 				logger = logger.WithError(err)
-			}
-
-			if logrus.IsLevelEnabled(logrus.TraceLevel) {
+			} else if logrus.IsLevelEnabled(logrus.TraceLevel) {
 				logger = logger.WithField("result", result)
 			}
 
