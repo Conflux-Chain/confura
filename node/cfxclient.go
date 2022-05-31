@@ -27,14 +27,22 @@ func NewCfxClientProvider(router Router) *CfxClientProvider {
 
 func (p *CfxClientProvider) GetClientByIP(ctx context.Context) (sdk.ClientOperator, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
-	client, err := p.getClient(remoteAddr, GroupCfxHttp)
 
-	return client.(sdk.ClientOperator), err
+	client, err := p.getClient(remoteAddr, GroupCfxHttp)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.(sdk.ClientOperator), nil
 }
 
 func (p *CfxClientProvider) GetClientByIPGroup(ctx context.Context, group Group) (sdk.ClientOperator, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
-	client, err := p.getClient(remoteAddr, group)
 
-	return client.(sdk.ClientOperator), err
+	client, err := p.getClient(remoteAddr, group)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.(sdk.ClientOperator), nil
 }
