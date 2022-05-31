@@ -61,12 +61,11 @@ func (h *CfxPrunedLogsHandler) GetLogs(ctx context.Context, filter types.LogFilt
 func (h *CfxPrunedLogsHandler) getLogsByUser(ctx context.Context, filter types.LogFilter) ([]types.Log, bool, error) {
 	request, ok := ctx.Value("request").(*http.Request)
 	if !ok {
-		logrus.Error("HTTP request instance not found in RPC context")
+		// WebSocket have no http.Request object.
 		return nil, false, nil
 	}
 
 	if request.URL == nil {
-		logrus.Error("URL not set in HTTP request")
 		return nil, false, nil
 	}
 

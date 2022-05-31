@@ -21,7 +21,12 @@ func validateRateLimit(ctx context.Context, registry *rate.Registry, method stri
 		return nil
 	}
 
-	request := ctx.Value("request").(*http.Request)
+	request, ok := ctx.Value("request").(*http.Request)
+	if !ok {
+		// do not support to throttle requests from websocket
+		return nil
+	}
+
 	ip := util.GetIPAddress(request)
 
 	if limiter.Allow(ip, 1) {
