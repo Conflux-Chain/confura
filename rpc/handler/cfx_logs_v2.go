@@ -2,8 +2,8 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"math/big"
 	"sort"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -11,6 +11,8 @@ import (
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/mysql"
 	"github.com/conflux-chain/conflux-infura/util/metrics"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/pkg/errors"
 )
 
 type CfxLogsApiHandlerV2 struct {
@@ -109,12 +111,20 @@ func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
 			return nil, false, errEventLogsTooStale
 		}
 
+		// try to query pruned logs from archive fullnode
+		originalFilter := dbFilters[i].Cfx()
+		if originalFilter == nil {
+			return nil, false, errors.WithMessage(
+				errEventLogsTooStale, "missing original log filter",
+			)
+		}
+
 		// ensure fullnode delegation is rational
-		if err := handler.checkFullnodeLogFilter(filter); err != nil {
+		if err := handler.checkFullnodeLogFilter(originalFilter); err != nil {
 			return nil, false, err
 		}
 
-		fnLogs, err := handler.prunedHandler.GetLogs(ctx, *filter)
+		fnLogs, err := handler.prunedHandler.GetLogs(ctx, *originalFilter)
 		if err != nil {
 			return nil, false, err
 		}
@@ -191,7 +201,8 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockHashes(
 	var dbBlockNumbers []int
 	var fnBlockHashes []types.Hash
 
-	cache := make(map[int]bool)
+	blockNumToHash := make(map[int]types.Hash)
+
 	// convert block hash to number to query from database
 	for _, hash := range filter.BlockHashes {
 		block, err := cfx.GetBlockSummaryByHash(hash)
@@ -208,11 +219,11 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockHashes(
 		bn := int(block.BlockNumber.ToInt().Uint64())
 
 		// dedupe
-		if cache[bn] {
+		if _, ok := blockNumToHash[bn]; ok {
 			continue
 		}
 
-		cache[bn] = true
+		blockNumToHash[bn] = hash
 
 		if epoch := block.EpochNumber.ToInt().Uint64(); epoch <= maxEpoch {
 			dbBlockNumbers = append(dbBlockNumbers, bn)
@@ -225,7 +236,11 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockHashes(
 
 	var dbFilters []store.LogFilterV2
 	for _, bn := range dbBlockNumbers {
-		dbFilters = append(dbFilters, store.ParseCfxLogFilter(uint64(bn), uint64(bn), filter))
+		partialFilter := *filter
+		partialFilter.BlockHashes = []types.Hash{blockNumToHash[bn]}
+
+		logfilter := store.ParseCfxLogFilter(uint64(bn), uint64(bn), &partialFilter)
+		dbFilters = append(dbFilters, logfilter)
 	}
 
 	if len(fnBlockHashes) == 0 {
@@ -258,7 +273,10 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockRange(
 	}
 
 	// otherwise, partial data in databse
-	dbFilter := store.ParseCfxLogFilter(blockFrom, maxBlock, filter)
+	partialFilter := *filter
+	partialFilter.ToBlock = (*hexutil.Big)(big.NewInt(int64(maxBlock)))
+	dbFilter := store.ParseCfxLogFilter(blockFrom, maxBlock, &partialFilter)
+
 	fnFilter := types.LogFilter{
 		FromBlock: types.NewBigInt(maxBlock + 1),
 		ToBlock:   filter.ToBlock,
@@ -319,7 +337,10 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByEpochRange(
 	}
 
 	// otherwise, partial data in databse
-	dbFilter := store.ParseCfxLogFilter(blockFrom, maxBlock, filter)
+	partialFilter := *filter
+	partialFilter.ToEpoch = types.NewEpochNumberUint64(maxEpoch)
+	dbFilter := store.ParseCfxLogFilter(blockFrom, maxBlock, &partialFilter)
+
 	fnFilter := types.LogFilter{
 		FromEpoch: types.NewEpochNumberUint64(maxEpoch + 1),
 		ToEpoch:   filter.ToEpoch,

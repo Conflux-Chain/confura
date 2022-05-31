@@ -11,6 +11,18 @@ type LogFilterV2 struct {
 	BlockTo   uint64
 	Contracts VariadicValue
 	Topics    []VariadicValue // event hash and indexed data 1, 2, 3
+
+	original interface{} // original log filter
+}
+
+// Cfx returns original core space log filter
+func (f LogFilterV2) Cfx() *types.LogFilter {
+	original, ok := f.original.(*types.LogFilter)
+	if ok {
+		return original
+	}
+
+	return nil
 }
 
 func ParseCfxLogFilter(blockFrom, blockTo uint64, filter *types.LogFilter) LogFilterV2 {
@@ -25,6 +37,7 @@ func ParseCfxLogFilter(blockFrom, blockTo uint64, filter *types.LogFilter) LogFi
 		BlockTo:   blockTo,
 		Contracts: newVariadicValueByAddress(filter.Address),
 		Topics:    vvs,
+		original:  filter,
 	}
 }
 
