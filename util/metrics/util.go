@@ -31,9 +31,13 @@ func GetOrRegisterMeter(nameFormat string, nameArgs ...interface{}) metrics.Mete
 	return metrics.GetOrRegisterMeter(name, InfuraRegistry)
 }
 
+func NewHistogram() metrics.Histogram {
+	return metrics.NewHistogram(metrics.NewExpDecaySample(1024, 0.015))
+}
+
 func GetOrRegisterHistogram(nameFormat string, nameArgs ...interface{}) metrics.Histogram {
 	name := fmt.Sprintf(nameFormat, nameArgs...)
-	return metrics.GetOrRegisterHistogram(name, InfuraRegistry, metrics.NewExpDecaySample(1024, 0.015))
+	return InfuraRegistry.GetOrRegister(name, NewHistogram).(metrics.Histogram)
 }
 
 func GetOrRegisterTimer(nameFormat string, nameArgs ...interface{}) metrics.Timer {
