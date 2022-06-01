@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/rate"
@@ -21,13 +20,10 @@ func validateRateLimit(ctx context.Context, registry *rate.Registry, method stri
 		return nil
 	}
 
-	request, ok := ctx.Value("request").(*http.Request)
+	ip, ok := util.GetIPAddress(ctx)
 	if !ok {
-		// do not support to throttle requests from websocket
 		return nil
 	}
-
-	ip := util.GetIPAddress(request)
 
 	if limiter.Allow(ip, 1) {
 		return nil

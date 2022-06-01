@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"net/http"
 	"sync"
 
 	"github.com/conflux-chain/conflux-infura/util"
@@ -93,13 +92,9 @@ func (p *clientProvider) getClient(key string, group Group) (interface{}, error)
 }
 
 func remoteAddrFromContext(ctx context.Context) string {
-	request, ok := ctx.Value("request").(*http.Request)
-	if !ok {
-		// TODO requires go-rpc-provider to support inject ip for WebSocket
-		return "websocket_ip"
+	if ip, ok := util.GetIPAddress(ctx); ok {
+		return ip
 	}
 
-	remoteAddr := util.GetIPAddress(request)
-	logrus.WithField("remoteAddr", remoteAddr).Debug("Get remote address from context")
-	return remoteAddr
+	return "unknown_ip"
 }

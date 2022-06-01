@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/rate"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/openweb3/go-rpc-provider"
@@ -51,16 +52,23 @@ func MustNewServerWithRateLimit(name string, rpcs map[string]interface{}, regist
 		"name": name,
 	}).Info("RPC server APIs registered")
 
+	httpHandler := node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"})
+	wsHandler := handler.WebsocketHandler([]string{"*"})
+
 	return &Server{
 		name: name,
 		servers: map[Protocol]*http.Server{
-			ProtocolHttp: {
-				Handler: rate.HttpHandler(registry, node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"})),
-			},
-			ProtocolWS: {
-				Handler: rate.HttpHandler(registry, handler.WebsocketHandler([]string{"*"})),
-			},
+			ProtocolHttp: newHttpServer(httpHandler, registry),
+			ProtocolWS:   newHttpServer(wsHandler, registry),
 		},
+	}
+}
+
+func newHttpServer(handler http.Handler, registry *rate.Registry) *http.Server {
+	handler = rate.HttpHandler(registry, handler)
+	handler = util.NewIpHttpHandler(handler)
+	return &http.Server{
+		Handler: handler,
 	}
 }
 
