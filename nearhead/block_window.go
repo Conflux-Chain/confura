@@ -5,15 +5,15 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/pkg/errors"
 )
 
 var (
-	statEpochsGauge = metrics.GetOrRegisterGauge("infura/nearhead/window/epochs", nil)
-	statBlocksGauge = metrics.GetOrRegisterGauge("infura/nearhead/window/blocks", nil)
-	statTxsGauge    = metrics.GetOrRegisterGauge("infura/nearhead/window/txs", nil)
-	statLogsGauge   = metrics.GetOrRegisterGauge("infura/nearhead/window/logs", nil)
+	statEpochsGauge = metrics.GetOrRegisterGauge("infura/nearhead/window/epochs")
+	statBlocksGauge = metrics.GetOrRegisterGauge("infura/nearhead/window/blocks")
+	statTxsGauge    = metrics.GetOrRegisterGauge("infura/nearhead/window/txs")
+	statLogsGauge   = metrics.GetOrRegisterGauge("infura/nearhead/window/logs")
 )
 
 // tx may be included in different blocks

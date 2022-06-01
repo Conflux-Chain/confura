@@ -38,7 +38,7 @@ func Init() {
 	}
 
 	go influxdb.InfluxDB(
-		metrics.DefaultRegistry,
+		InfuraRegistry,
 		config.Report.Interval,
 		config.Influxdb.Host,
 		config.Influxdb.DB,

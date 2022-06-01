@@ -23,19 +23,14 @@ func NewPercentage() Percentage {
 }
 
 // GetOrRegisterPercentage returns an existing Percentage or constructs and registers a new standard Percentage.
-func GetOrRegisterPercentage(r metrics.Registry, name string, args ...interface{}) Percentage {
-	return getOrRegisterPercentage(r, NewPercentage, name, args...)
+func GetOrRegisterPercentage(name string, args ...interface{}) Percentage {
+	return getOrRegisterPercentage(NewPercentage, name, args...)
 }
 
 // getOrRegisterPercentage gets or constructs Percentage with specified factory.
-func getOrRegisterPercentage(r metrics.Registry, factory func() Percentage, name string, args ...interface{}) Percentage {
-	if r == nil {
-		r = metrics.DefaultRegistry
-	}
-
+func getOrRegisterPercentage(factory func() Percentage, name string, args ...interface{}) Percentage {
 	metricName := fmt.Sprintf(name, args...)
-
-	return r.GetOrRegister(metricName, factory).(Percentage)
+	return InfuraRegistry.GetOrRegister(metricName, factory).(Percentage)
 }
 
 // noopPercentage is no-op implementation for Percentage interface.

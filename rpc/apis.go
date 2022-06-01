@@ -5,6 +5,7 @@ import (
 	infuraNode "github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
+	"github.com/conflux-chain/conflux-infura/util/metrics/service"
 	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
@@ -81,9 +82,9 @@ func nativeSpaceApis(
 			Service:   newTraceAPI(clientProvider),
 			Public:    false,
 		}, {
-			Namespace: "metrics",
+			Namespace: service.Namespace,
 			Version:   "1.0",
-			Service:   &metricsAPI{},
+			Service:   &service.MetricsAPI{},
 			Public:    false,
 		}, {
 			Namespace: "gasstation",

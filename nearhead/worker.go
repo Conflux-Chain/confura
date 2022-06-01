@@ -7,7 +7,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -17,8 +17,8 @@ var (
 	cachedEpoch       LatestEpochData
 	statedBlockWindow = newBlockWindow(viper.GetUint64("nearhead.cap"))
 
-	cacheTimer    = metrics.GetOrRegisterTimer("infura/nearhead/cache/stated", nil)
-	epochGapGauge = metrics.GetOrRegisterGauge("infura/nearhead/epoch/gap/stated", nil)
+	cacheTimer    = metrics.GetOrRegisterTimer("infura/nearhead/cache/stated")
+	epochGapGauge = metrics.GetOrRegisterGauge("infura/nearhead/epoch/gap/stated")
 )
 
 // Start starts to cache near head data, e.g. blocks, transactions and receipts.

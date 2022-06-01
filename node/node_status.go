@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	infuraMetrics "github.com/conflux-chain/conflux-infura/util/metrics"
-	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	ring "github.com/zealws/golang-ring"
@@ -50,8 +49,8 @@ func NewStatus(group Group, nodeName string) Status {
 	return Status{
 		nodeName: nodeName,
 		metric: newStatusMetrics(
-			infuraMetrics.Registry.Nodes.NodeLatency(group.Space(), group.String(), nodeName),
-			infuraMetrics.Registry.Nodes.NodeAvailability(group.Space(), group.String(), nodeName),
+			metrics.Registry.Nodes.NodeLatency(group.Space(), group.String(), nodeName),
+			metrics.Registry.Nodes.NodeAvailability(group.Space(), group.String(), nodeName),
 		),
 		latestHeartBeatErrs: hbErrRingBuf,
 	}
@@ -82,12 +81,15 @@ func (s *Status) MarshalJSON() ([]byte, error) {
 		LatestHeartBeatErrs []string `json:"latestHeartBeatErrs"`
 	}
 
+	availability := metrics.GetOrRegisterTimeWindowPercentageDefault(s.metric.availability).Value()
+	latency := metrics.GetOrRegisterHistogram(s.metric.latency).Snapshot()
+
 	scopy := Status{
 		NodeName:         s.nodeName,
-		Availability:     fmt.Sprintf("%.2f%%", s.metric.availability.Value()),
-		MeanLatency:      fmt.Sprintf("%.2f(ms)", s.metric.latency.Mean()/1e6),
-		P99Latency:       fmt.Sprintf("%.2f(ms)", s.metric.latency.Percentile(0.99)/1e6),
-		P75Latency:       fmt.Sprintf("%.2f(ms)", s.metric.latency.Percentile(0.75)/1e6),
+		Availability:     fmt.Sprintf("%.2f%%", availability),
+		MeanLatency:      fmt.Sprintf("%.2f(ms)", latency.Mean()/1e6),
+		P99Latency:       fmt.Sprintf("%.2f(ms)", latency.Percentile(0.99)/1e6),
+		P75Latency:       fmt.Sprintf("%.2f(ms)", latency.Percentile(0.75)/1e6),
 		LatestStateEpoch: s.latestStateEpoch,
 		SuccessCounter:   s.successCounter,
 		FailureCounter:   s.failureCounter,
@@ -167,7 +169,8 @@ func (s *Status) checkHealth(targetEpoch uint64) error {
 	// latency too high
 	percentile := cfg.Monitor.Unhealth.LatencyPercentile
 	maxLatency := cfg.Monitor.Unhealth.MaxLatency
-	latency := time.Duration(s.metric.latency.Snapshot().Percentile(percentile))
+	latencySnapshot := metrics.GetOrRegisterHistogram(s.metric.latency).Snapshot()
+	latency := time.Duration(latencySnapshot.Percentile(percentile))
 	if latency > maxLatency {
 		return errors.Errorf("Latency too high (%v)", latency)
 	}
@@ -180,29 +183,27 @@ func (s *Status) Close() {
 }
 
 type statusMetrics struct {
-	names        []string
-	latency      metrics.Histogram // ping latency via cfx_epochNumber/eth_blockNumber
-	availability infuraMetrics.Percentage
+	// metric names
+	latency      string // ping latency via cfx_epochNumber/eth_blockNumber
+	availability string
 }
 
 func newStatusMetrics(latency, availability string) *statusMetrics {
 	return &statusMetrics{
-		names:        []string{latency, availability},
-		latency:      infuraMetrics.GetOrRegisterHistogram(latency),
-		availability: infuraMetrics.GetOrRegisterTimeWindowPercentageDefault(availability),
+		latency:      latency,
+		availability: availability,
 	}
 }
 
 func (sm *statusMetrics) update(start time.Time, err error) {
 	if err == nil {
-		sm.latency.Update(time.Since(start).Nanoseconds())
+		metrics.GetOrRegisterHistogram(sm.latency).Update(time.Since(start).Nanoseconds())
 	}
 
-	sm.availability.Mark(err == nil)
+	metrics.GetOrRegisterTimeWindowPercentageDefault(sm.availability).Mark(err == nil)
 }
 
 func (sm *statusMetrics) unregisterAll() {
-	for _, name := range sm.names {
-		metrics.DefaultRegistry.Unregister(name)
-	}
+	metrics.InfuraRegistry.Unregister(sm.latency)
+	metrics.InfuraRegistry.Unregister(sm.availability)
 }
