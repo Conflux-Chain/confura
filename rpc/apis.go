@@ -2,7 +2,7 @@ package rpc
 
 import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	infuraNode "github.com/conflux-chain/conflux-infura/node"
+	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
 	"github.com/conflux-chain/conflux-infura/util/metrics/service"
@@ -56,10 +56,8 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 
 // nativeSpaceApis returns the collection of built-in RPC APIs for native space.
 func nativeSpaceApis(
-	router infuraNode.Router, gashandler *handler.GasStationHandler, option ...CfxAPIOption,
+	clientProvider *node.CfxClientProvider, gashandler *handler.GasStationHandler, option ...CfxAPIOption,
 ) []API {
-	clientProvider := infuraNode.NewCfxClientProvider(router)
-
 	return []API{
 		{
 			Namespace: "cfx",
@@ -96,9 +94,7 @@ func nativeSpaceApis(
 }
 
 // evmSpaceApis returns the collection of built-in RPC APIs for EVM space.
-func evmSpaceApis(router infuraNode.Router, option ...EthAPIOption) ([]API, error) {
-	clientProvider := infuraNode.NewEthClientProvider(router)
-
+func evmSpaceApis(clientProvider *node.EthClientProvider, option ...EthAPIOption) ([]API, error) {
 	return []API{
 		{
 			Namespace: "eth",

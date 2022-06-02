@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/conflux-chain/conflux-infura/util/rate"
+	"github.com/conflux-chain/conflux-infura/util/rpc/handlers"
 	"github.com/openweb3/go-rpc-provider"
 )
 
@@ -12,7 +12,7 @@ var errRateLimit = errors.New("too many requests")
 
 func RateLimitBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
 	return func(ctx context.Context, msgs []*rpc.JsonRpcMessage) []*rpc.JsonRpcMessage {
-		if rate.Allow(ctx, "rpc_all", len(msgs)) {
+		if handlers.RateLimitAllow(ctx, "rpc_batch", len(msgs)) {
 			return next(ctx, msgs)
 		}
 
@@ -27,10 +27,16 @@ func RateLimitBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
 
 func RateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
-		if rate.Allow(ctx, msg.Method, 1) {
-			return next(ctx, msg)
+		// overall rate limit
+		if !handlers.RateLimitAllow(ctx, "rpc_all", 1) {
+			return msg.ErrorResponse(errRateLimit)
 		}
 
-		return msg.ErrorResponse(errRateLimit)
+		// single method rate limit
+		if !handlers.RateLimitAllow(ctx, msg.Method, 1) {
+			return msg.ErrorResponse(errRateLimit)
+		}
+
+		return next(ctx, msg)
 	}
 }

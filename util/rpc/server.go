@@ -7,9 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/util"
-	"github.com/conflux-chain/conflux-infura/util/rate"
-	"github.com/conflux-chain/conflux-infura/util/rpc/middlewares"
+	"github.com/conflux-chain/conflux-infura/util/rpc/handlers"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
@@ -25,23 +23,6 @@ const (
 // DefaultShutdownTimeout is default timeout to shutdown RPC server.
 var DefaultShutdownTimeout = 3 * time.Second
 
-// go-rpc-provider only supports static middlewares for RPC server.
-func init() {
-	// middlewares executed in order
-
-	// rate limit
-	rpc.HookHandleBatch(middlewares.RateLimitBatch)
-	rpc.HookHandleCallMsg(middlewares.RateLimit)
-
-	// metrics
-	rpc.HookHandleBatch(middlewares.MetricsBatch)
-	rpc.HookHandleCallMsg(middlewares.Metrics)
-
-	// log
-	rpc.HookHandleBatch(middlewares.LogBatch)
-	rpc.HookHandleCallMsg(middlewares.Log)
-}
-
 // Server serves JSON RPC services.
 type Server struct {
 	name    string
@@ -49,12 +30,7 @@ type Server struct {
 }
 
 // MustNewServer creates an instance of Server with specified RPC services.
-func MustNewServer(name string, rpcs map[string]interface{}) *Server {
-	return MustNewServerWithRateLimit(name, rpcs, nil)
-}
-
-// MustNewServerWithRateLimit creates an instance of Server with specified RPC services.
-func MustNewServerWithRateLimit(name string, rpcs map[string]interface{}, registry *rate.Registry) *Server {
+func MustNewServer(name string, rpcs map[string]interface{}, middlewares ...handlers.Middleware) *Server {
 	handler := rpc.NewServer()
 	servedApis := make([]string, 0, len(rpcs))
 
@@ -70,23 +46,25 @@ func MustNewServerWithRateLimit(name string, rpcs map[string]interface{}, regist
 		"name": name,
 	}).Info("RPC server APIs registered")
 
-	httpHandler := node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"})
-	wsHandler := handler.WebsocketHandler([]string{"*"})
+	httpServer := http.Server{
+		Handler: node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
+	}
+
+	wsServer := http.Server{
+		Handler: handler.WebsocketHandler([]string{"*"}),
+	}
+
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		httpServer.Handler = middlewares[i](httpServer.Handler)
+		wsServer.Handler = middlewares[i](wsServer.Handler)
+	}
 
 	return &Server{
 		name: name,
 		servers: map[Protocol]*http.Server{
-			ProtocolHttp: newHttpServer(httpHandler, registry),
-			ProtocolWS:   newHttpServer(wsHandler, registry),
+			ProtocolHttp: &httpServer,
+			ProtocolWS:   &wsServer,
 		},
-	}
-}
-
-func newHttpServer(handler http.Handler, registry *rate.Registry) *http.Server {
-	handler = rate.HttpHandler(registry, handler)
-	handler = util.NewIpHttpHandler(handler)
-	return &http.Server{
-		Handler: handler,
 	}
 }
 

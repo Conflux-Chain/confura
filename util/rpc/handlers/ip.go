@@ -1,4 +1,4 @@
-package util
+package handlers
 
 import (
 	"bytes"
@@ -68,8 +68,8 @@ func isPrivateSubnet(ipAddress net.IP) bool {
 	return false
 }
 
-// getIPAddress returns the remote IP address.
-func getIPAddress(r *http.Request) string {
+// GetIPAddress returns the remote IP address.
+func GetIPAddress(r *http.Request) string {
 	for _, h := range []string{"X-Forwarded-For", "X-Real-Ip"} {
 		addresses := strings.Split(r.Header.Get(h), ",")
 		// march from right to left until we get a public address
@@ -93,17 +93,15 @@ func getIPAddress(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-type realIpkey struct{}
-
-func NewIpHttpHandler(next http.Handler) http.Handler {
+func RealIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := getIPAddress(r)
-		ctx := context.WithValue(r.Context(), realIpkey{}, ip)
+		ip := GetIPAddress(r)
+		ctx := context.WithValue(r.Context(), CtxKeyRealIP, ip)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func GetIPAddress(ctx context.Context) (string, bool) {
-	val, ok := ctx.Value(realIpkey{}).(string)
+func GetIPAddressFromContext(ctx context.Context) (string, bool) {
+	val, ok := ctx.Value(CtxKeyRealIP).(string)
 	return val, ok
 }

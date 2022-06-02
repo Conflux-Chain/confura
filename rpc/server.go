@@ -24,7 +24,8 @@ func MustNewNativeSpaceServer(
 	exposedModules []string, option ...CfxAPIOption,
 ) *rpc.Server {
 	// retrieve all available native space rpc apis
-	allApis := nativeSpaceApis(router, gashandler, option...)
+	clientProvider := infuraNode.NewCfxClientProvider(router)
+	allApis := nativeSpaceApis(clientProvider, gashandler, option...)
 
 	exposedApis, err := filterExposedApis(allApis, exposedModules)
 	if err != nil {
@@ -33,7 +34,9 @@ func MustNewNativeSpaceServer(
 		)
 	}
 
-	return rpc.MustNewServerWithRateLimit(nativeSpaceRpcServerName, exposedApis, rate.DefaultRegistryCfx)
+	middleware := httpMiddleware(rate.DefaultRegistryCfx, clientProvider)
+
+	return rpc.MustNewServer(nativeSpaceRpcServerName, exposedApis, middleware)
 }
 
 // MustNewEvmSpaceServer new EVM space RPC server by specifying router, and exposed modules.
@@ -43,7 +46,8 @@ func MustNewEvmSpaceServer(
 	router infuraNode.Router, exposedModules []string, option ...EthAPIOption,
 ) *rpc.Server {
 	// retrieve all available EVM space rpc apis
-	allApis, err := evmSpaceApis(router, option...)
+	clientProvider := infuraNode.NewEthClientProvider(router)
+	allApis, err := evmSpaceApis(clientProvider, option...)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new EVM space RPC server")
 	}
@@ -55,7 +59,9 @@ func MustNewEvmSpaceServer(
 		)
 	}
 
-	return rpc.MustNewServerWithRateLimit(evmSpaceRpcServerName, exposedApis, rate.DefaultRegistryEth)
+	middleware := httpMiddleware(rate.DefaultRegistryEth, clientProvider)
+
+	return rpc.MustNewServer(evmSpaceRpcServerName, exposedApis, middleware)
 }
 
 type CfxBridgeServerConfig struct {

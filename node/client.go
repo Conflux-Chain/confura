@@ -6,6 +6,7 @@ import (
 
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/rpc"
+	"github.com/conflux-chain/conflux-infura/util/rpc/handlers"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -92,7 +93,7 @@ func (p *clientProvider) getClient(key string, group Group) (interface{}, error)
 }
 
 func remoteAddrFromContext(ctx context.Context) string {
-	if ip, ok := util.GetIPAddress(ctx); ok {
+	if ip, ok := handlers.GetIPAddressFromContext(ctx); ok {
 		return ip
 	}
 
