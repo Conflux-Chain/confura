@@ -30,6 +30,7 @@ func init() {
 	// middlewares executed in order
 
 	// rate limit
+	rpc.HookHandleBatch(middlewares.RateLimitBatch)
 	rpc.HookHandleCallMsg(middlewares.RateLimit)
 
 	// metrics
