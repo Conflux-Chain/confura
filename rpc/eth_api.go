@@ -49,8 +49,6 @@ type ethAPI struct {
 	inputBlockMetric metrics.InputBlockMetric
 
 	hardforkBlockNumber *rpc.BlockNumber // return default value before eSpace hardfork
-
-	cache *cache.EthCache
 }
 
 func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *ethAPI {
@@ -82,7 +80,6 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 		EthAPIOption:        opt,
 		provider:            provider,
 		hardforkBlockNumber: hardforkBlockNumber,
-		cache:               cache.NewEth(),
 	}
 }
 
@@ -110,32 +107,19 @@ func (api *ethAPI) GetBlockByHash(
 
 	logger.Debug("Delegating eth_getBlockByHash rpc request to fullnode")
 
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return w3c.Eth.BlockByHash(blockHash, fullTx)
+	return GetEthClientFromContext(ctx).Eth.BlockByHash(blockHash, fullTx)
 }
 
 // ChainId returns the chainID value for transaction replay protection.
 func (api *ethAPI) ChainId(ctx context.Context) (*hexutil.Uint64, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return api.cache.GetChainId(w3c.Client)
+	w3c := GetEthClientFromContext(ctx)
+	return cache.EthDefault.GetChainId(w3c.Client)
 }
 
 // BlockNumber returns the block number of the chain head.
 func (api *ethAPI) BlockNumber(ctx context.Context) (*hexutil.Big, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return api.cache.GetBlockNumber(w3c)
+	w3c := GetEthClientFromContext(ctx)
+	return cache.EthDefault.GetBlockNumber(w3c)
 }
 
 // GetBalance returns the amount of wei for the given address in the state of the
@@ -143,14 +127,9 @@ func (api *ethAPI) BlockNumber(ctx context.Context) (*hexutil.Big, error) {
 func (api *ethAPI) GetBalance(
 	ctx context.Context, address common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	balance, err := w3c.Eth.Balance(address, blockNumOrHash)
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getBalance", w3c.Eth)
+	balance, err := w3c.Eth.Balance(address, blockNumOrHash)
 	return (*hexutil.Big)(balance), err
 }
 
@@ -168,11 +147,7 @@ func (api *ethAPI) GetBlockByNumber(
 		"blockNum": blockNum, "includeTxs": fullTx,
 	})
 
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c.Eth)
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
@@ -195,11 +170,7 @@ func (api *ethAPI) GetBlockByNumber(
 func (api *ethAPI) GetUncleByBlockNumberAndIndex(
 	ctx context.Context, blockNr web3Types.BlockNumber, index hexutil.Uint,
 ) (*web3Types.Block, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update1(&blockNr, "eth_getUncleByBlockNumberAndIndex", w3c.Eth)
 	return w3c.Eth.UncleByBlockNumberAndIndex(blockNr, uint(index))
 }
@@ -209,44 +180,27 @@ func (api *ethAPI) GetUncleByBlockNumberAndIndex(
 func (api *ethAPI) GetUncleCountByBlockHash(ctx context.Context, hash common.Hash) (
 	*hexutil.Big, error,
 ) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	count, err := w3c.Eth.BlockUnclesCountByHash(hash)
 	return (*hexutil.Big)(count), err
 }
 
 // ProtocolVersion returns the current ethereum protocol version.
 func (api *ethAPI) ProtocolVersion(ctx context.Context) (string, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	return w3c.Eth.ProtocolVersion()
+	return GetEthClientFromContext(ctx).Eth.ProtocolVersion()
 }
 
 // GasPrice returns the current gas price in wei.
 func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return api.cache.GetGasPrice(w3c.Client)
+	w3c := GetEthClientFromContext(ctx)
+	return cache.EthDefault.GetGasPrice(w3c.Client)
 }
 
 // GetStorageAt returns the value from a storage position at a given address.
 func (api *ethAPI) GetStorageAt(
 	ctx context.Context, address common.Address, location *hexutil.Big, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (common.Hash, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return common.Hash{}, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getStorageAt", w3c.Eth)
 	return w3c.Eth.StorageAt(address, (*big.Int)(location), blockNumOrHash)
 }
@@ -256,11 +210,7 @@ func (api *ethAPI) GetStorageAt(
 func (api *ethAPI) GetCode(
 	ctx context.Context, account common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (hexutil.Bytes, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getCode", w3c.Eth)
 	return w3c.Eth.CodeAt(account, blockNumOrHash)
 }
@@ -270,11 +220,7 @@ func (api *ethAPI) GetCode(
 func (api *ethAPI) GetTransactionCount(
 	ctx context.Context, account common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getTransactionCount", w3c.Eth)
 	count, err := w3c.Eth.TransactionCount(account, blockNumOrHash)
 	return (*hexutil.Big)(count), err
@@ -285,21 +231,13 @@ func (api *ethAPI) GetTransactionCount(
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
 func (api *ethAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return common.Hash{}, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.SendRawTransaction(signedTx)
 }
 
 // SubmitTransaction is an alias of `SendRawTransaction` method.
 func (api *ethAPI) SubmitTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return common.Hash{}, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.SubmitTransaction(signedTx)
 }
 
@@ -307,11 +245,7 @@ func (api *ethAPI) SubmitTransaction(ctx context.Context, signedTx hexutil.Bytes
 func (api *ethAPI) Call(
 	ctx context.Context, request web3Types.CallRequest, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (hexutil.Bytes, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_call", w3c.Eth)
 	return w3c.Eth.Call(request, blockNumOrHash)
 }
@@ -323,11 +257,7 @@ func (api *ethAPI) Call(
 func (api *ethAPI) EstimateGas(
 	ctx context.Context, request web3Types.CallRequest, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_estimateGas", w3c.Eth)
 	gas, err := w3c.Eth.EstimateGas(request, blockNumOrHash)
 	return (*hexutil.Big)(gas), err
@@ -350,11 +280,7 @@ func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (
 
 	logger.Debug("Delegating eth_getTransactionByHash rpc request to fullnode")
 
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.TransactionByHash(hash)
 }
 
@@ -376,11 +302,7 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 
 	logger.Debug("Delegating eth_getTransactionReceipt rpc request to fullnode")
 
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	receipt, err := w3c.Eth.TransactionReceipt(txHash)
 	if err != nil {
 		metrics.Registry.RPC.Percentage("eth_getTransactionReceipt", "notfound").Mark(receipt == nil)
@@ -391,11 +313,7 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 
 // GetLogs returns an array of all logs matching a given filter object.
 func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([]web3Types.Log, error) {
-	w3c, err := api.provider.GetClientByIPGroup(ctx, node.GroupEthLogs)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.metricLogFilter(w3c.Eth, &filter)
 
 	flag, ok := store.ParseEthLogFilterType(&filter)
@@ -445,11 +363,7 @@ func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([
 
 // GetBlockTransactionCountByHash returns the total number of transactions in the given block.
 func (api *ethAPI) GetBlockTransactionCountByHash(ctx context.Context, blockHash common.Hash) (*hexutil.Big, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	count, err := w3c.Eth.BlockTransactionCountByHash(blockHash)
 	return (*hexutil.Big)(count), err
 }
@@ -459,11 +373,7 @@ func (api *ethAPI) GetBlockTransactionCountByHash(ctx context.Context, blockHash
 func (api *ethAPI) GetBlockTransactionCountByNumber(ctx context.Context, blockNum web3Types.BlockNumber) (
 	*hexutil.Big, error,
 ) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockTransactionCountByNumber", w3c.Eth)
 	count, err := w3c.Eth.BlockTransactionCountByNumber(blockNum)
 	return (*hexutil.Big)(count), err
@@ -472,65 +382,41 @@ func (api *ethAPI) GetBlockTransactionCountByNumber(ctx context.Context, blockNu
 // Syncing returns an object with data about the sync status or false.
 // https://openethereum.github.io/JSONRPC-eth-module#eth_syncing
 func (api *ethAPI) Syncing(ctx context.Context) (web3Types.SyncStatus, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return web3Types.SyncStatus{}, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.Syncing()
 }
 
 // Hashrate returns the number of hashes per second that the node is mining with.
 // Only applicable when the node is mining.
 func (api *ethAPI) Hashrate(ctx context.Context) (*hexutil.Big, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	hashrate, err := w3c.Eth.Hashrate()
 	return (*hexutil.Big)(hashrate), err
 }
 
 // Coinbase returns the client coinbase address..
 func (api *ethAPI) Coinbase(ctx context.Context) (common.Address, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return common.Address{}, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.Author()
 }
 
 // Mining returns true if client is actively mining new blocks.
 func (api *ethAPI) Mining(ctx context.Context) (bool, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return false, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.IsMining()
 }
 
 // MaxPriorityFeePerGas returns a fee per gas that is an estimate of how much you can pay as
 // a priority fee, or "tip", to get a transaction included in the current block.
 func (api *ethAPI) MaxPriorityFeePerGas(ctx context.Context) (*hexutil.Big, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	priorityFee, err := w3c.Eth.MaxPriorityFeePerGas()
 	return (*hexutil.Big)(priorityFee), err
 }
 
 // Accounts returns a list of addresses owned by client.
 func (api *ethAPI) Accounts(ctx context.Context) ([]common.Address, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.Accounts()
 }
 
@@ -538,11 +424,7 @@ func (api *ethAPI) Accounts(ctx context.Context) ([]common.Address, error) {
 func (api *ethAPI) SubmitHashrate(
 	ctx context.Context, hashrate *hexutil.Big, clientId common.Hash,
 ) (bool, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return false, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.SubmitHashrate((*big.Int)(hashrate), clientId)
 }
 
@@ -551,11 +433,7 @@ func (api *ethAPI) SubmitHashrate(
 func (api *ethAPI) GetUncleByBlockHashAndIndex(
 	ctx context.Context, hash common.Hash, index hexutil.Uint,
 ) (*web3Types.Block, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.UncleByBlockHashAndIndex(hash, index)
 }
 
@@ -564,11 +442,7 @@ func (api *ethAPI) GetUncleByBlockHashAndIndex(
 func (api *ethAPI) GetTransactionByBlockHashAndIndex(
 	ctx context.Context, hash common.Hash, index hexutil.Uint,
 ) (*web3Types.Transaction, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.TransactionByBlockHashAndIndex(hash, uint(index))
 }
 
@@ -577,11 +451,7 @@ func (api *ethAPI) GetTransactionByBlockHashAndIndex(
 func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 	ctx context.Context, blockNum web3Types.BlockNumber, index hexutil.Uint,
 ) (*web3Types.Transaction, error) {
-	w3c, err := api.provider.GetClientByIP(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getTransactionByBlockNumberAndIndex", w3c.Eth)
 	return w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))
 }

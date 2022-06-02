@@ -10,6 +10,8 @@ import (
 	"github.com/openweb3/web3go"
 )
 
+var EthDefault = NewEth()
+
 type EthCache struct {
 	netVersionCache    *expiryCache
 	clientVersionCache *expiryCache

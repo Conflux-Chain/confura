@@ -67,17 +67,17 @@ func nativeSpaceApis(
 		}, {
 			Namespace: "txpool",
 			Version:   "1.0",
-			Service:   &txPoolAPI{clientProvider},
+			Service:   &txPoolAPI{},
 			Public:    true,
 		}, {
 			Namespace: "pos",
 			Version:   "1.0",
-			Service:   newPosAPI(clientProvider),
+			Service:   &posAPI{},
 			Public:    true,
 		}, {
 			Namespace: "trace",
 			Version:   "1.0",
-			Service:   newTraceAPI(clientProvider),
+			Service:   &traceAPI{},
 			Public:    false,
 		}, {
 			Namespace: service.Namespace,
@@ -104,22 +104,22 @@ func evmSpaceApis(clientProvider *node.EthClientProvider, option ...EthAPIOption
 		}, {
 			Namespace: "web3",
 			Version:   "1.0",
-			Service:   newWeb3API(clientProvider),
+			Service:   &web3API{},
 			Public:    true,
 		}, {
 			Namespace: "net",
 			Version:   "1.0",
-			Service:   newNetAPI(clientProvider),
+			Service:   &netAPI{},
 			Public:    true,
 		}, {
 			Namespace: "trace",
 			Version:   "1.0",
-			Service:   newEthTraceAPI(clientProvider),
+			Service:   &ethTraceAPI{},
 			Public:    false,
 		}, {
 			Namespace: "parity",
 			Version:   "1.0",
-			Service:   newParityAPI(clientProvider),
+			Service:   parityAPI{},
 			Public:    false,
 		},
 	}, nil

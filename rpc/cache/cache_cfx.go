@@ -7,6 +7,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+var CfxDefault = NewCfx()
+
 type CfxCache struct {
 	*StatusCache
 
