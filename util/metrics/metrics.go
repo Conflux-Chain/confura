@@ -2,8 +2,10 @@ package metrics
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/openweb3/go-rpc-provider/utils"
 )
 
 var Registry Metrics
@@ -23,6 +25,34 @@ type RpcMetrics struct{}
 // rpc/requests.gauge, rpc/success.gauge, rpc/failure.gauge
 // rpc/duration/$method/success.timer
 // rpc/duration/$method/failure.timer
+
+func (*RpcMetrics) BatchSize() metrics.Histogram {
+	return GetOrRegisterHistogram("infura/rpc/batch/size")
+}
+
+func (*RpcMetrics) BatchLatency() metrics.Histogram {
+	return GetOrRegisterHistogram("infura/rpc/batch/latency")
+}
+
+func (*RpcMetrics) UpdateDuration(method string, err error, start time.Time) {
+	// Overall rate statistics
+	isRpcErr := utils.IsRPCJSONError(err)
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/success").Mark(err == nil)
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/rpcErr").Mark(isRpcErr)
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/nonRpcErr").Mark(err != nil && !isRpcErr)
+
+	// RPC rate statistics
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/success/%v", method).Mark(err == nil)
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/rpcErr/%v", method).Mark(isRpcErr)
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/nonRpcErr/%v", method).Mark(err != nil && !isRpcErr)
+
+	// Only update QPS & Latency if success or rpc error. Because, io error usually takes long time
+	// and impact the average latency.
+	if err == nil || isRpcErr {
+		GetOrRegisterTimer("infura/rpc/duration/all").UpdateSince(start)
+		GetOrRegisterTimer("infura/rpc/duration/%v", method).UpdateSince(start)
+	}
+}
 
 // RPC metrics - inputs
 

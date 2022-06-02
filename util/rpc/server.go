@@ -9,6 +9,7 @@ import (
 
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/rate"
+	"github.com/conflux-chain/conflux-infura/util/rpc/middlewares"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
@@ -23,6 +24,22 @@ const (
 
 // DefaultShutdownTimeout is default timeout to shutdown RPC server.
 var DefaultShutdownTimeout = 3 * time.Second
+
+// go-rpc-provider only supports static middlewares for RPC server.
+func init() {
+	// middlewares executed in order
+
+	// rate limit
+	rpc.HookHandleCallMsg(middlewares.RateLimit)
+
+	// metrics
+	rpc.HookHandleBatch(middlewares.MetricsBatch)
+	rpc.HookHandleCallMsg(middlewares.Metrics)
+
+	// log
+	rpc.HookHandleBatch(middlewares.LogBatch)
+	rpc.HookHandleCallMsg(middlewares.Log)
+}
 
 // Server serves JSON RPC services.
 type Server struct {
