@@ -11,7 +11,6 @@ import (
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/metrics"
-	"github.com/conflux-chain/conflux-infura/util/rate"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -163,10 +162,6 @@ func (api *ethAPI) GetBalance(
 func (api *ethAPI) GetBlockByNumber(
 	ctx context.Context, blockNum web3Types.BlockNumber, fullTx bool,
 ) (*web3Types.Block, error) {
-	if err := validateRateLimit(ctx, rate.DefaultRegistryEth, "eth_getBlockByNumber"); err != nil {
-		return nil, err
-	}
-
 	metrics.Registry.RPC.Percentage("eth_getBlockByNumber", "fullTx").Mark(fullTx)
 
 	logger := logrus.WithFields(logrus.Fields{
@@ -275,10 +270,6 @@ func (api *ethAPI) GetCode(
 func (api *ethAPI) GetTransactionCount(
 	ctx context.Context, account common.Address, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (*hexutil.Big, error) {
-	if err := validateRateLimit(ctx, rate.DefaultRegistryEth, "eth_getTransactionCount"); err != nil {
-		return nil, err
-	}
-
 	w3c, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return nil, err
@@ -294,10 +285,6 @@ func (api *ethAPI) GetTransactionCount(
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
 func (api *ethAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
-	if err := validateRateLimit(ctx, rate.DefaultRegistryEth, "eth_sendRawTransaction"); err != nil {
-		return common.Hash{}, err
-	}
-
 	w3c, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return common.Hash{}, err
@@ -320,10 +307,6 @@ func (api *ethAPI) SubmitTransaction(ctx context.Context, signedTx hexutil.Bytes
 func (api *ethAPI) Call(
 	ctx context.Context, request web3Types.CallRequest, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (hexutil.Bytes, error) {
-	if err := validateRateLimit(ctx, rate.DefaultRegistryEth, "eth_call"); err != nil {
-		return nil, err
-	}
-
 	w3c, err := api.provider.GetClientByIP(ctx)
 	if err != nil {
 		return nil, err
@@ -408,10 +391,6 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 
 // GetLogs returns an array of all logs matching a given filter object.
 func (api *ethAPI) GetLogs(ctx context.Context, filter web3Types.FilterQuery) ([]web3Types.Log, error) {
-	if err := validateRateLimit(ctx, rate.DefaultRegistryEth, "eth_getLogs"); err != nil {
-		return nil, err
-	}
-
 	w3c, err := api.provider.GetClientByIPGroup(ctx, node.GroupEthLogs)
 	if err != nil {
 		return nil, err
