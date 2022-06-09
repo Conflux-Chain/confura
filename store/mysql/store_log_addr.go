@@ -92,7 +92,7 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(data *store.EpochData
 			for i, v := range receipt.Logs {
 				// TODO ignore event logs of big contracts, which will be stored in separate tables.
 
-				contract, _, err := ls.cs.AddContractIfAbsent(v.Address.MustGetBase32Address())
+				cid, _, err := ls.cs.AddContractIfAbsent(v.Address.MustGetBase32Address())
 				if err != nil {
 					return nil, err
 				}
@@ -102,7 +102,7 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(data *store.EpochData
 					logext = receiptExt.LogExts[i]
 				}
 
-				log := store.ParseCfxLog(&v, contract.ID, bn, logext)
+				log := store.ParseCfxLog(&v, cid, bn, logext)
 				partition := ls.getPartitionByAddress(v.Address.MustGetBase32Address())
 				partition2Logs[partition] = append(partition2Logs[partition], (*AddressIndexedLog)(log))
 			}

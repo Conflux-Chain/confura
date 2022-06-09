@@ -171,14 +171,10 @@ func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
 
 	// Disabled during development
 	if ms.config.AddressIndexedLogEnabled {
-		newAdded, err := ms.AddContractByEpochData(dataSlice...)
+		// Note, even if failed to insert event logs afterward, no need to rollback the inserted contract records.
+		_, err := ms.AddContractByEpochData(dataSlice...)
 		if err != nil {
 			return errors.WithMessage(err, "Failed to add contracts for specified epoch data slice")
-		}
-
-		// Note, even if failed to insert event logs afterward, no need to rollback the inserted contract records.
-		if newAdded > 0 {
-			logrus.WithField("count", newAdded).Debug("Succeeded to add new contract into database")
 		}
 	}
 

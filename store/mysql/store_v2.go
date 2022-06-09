@@ -8,7 +8,6 @@ import (
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -97,14 +96,10 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 	if !ms.disabler.IsChainLogDisabled() {
 		// add log contract address
 		if ms.config.AddressIndexedLogEnabled {
-			newAdded, err := ms.cs.AddContractByEpochData(dataSlice...)
+			// Note, even if failed to insert event logs afterward, no need to rollback the inserted contract records.
+			_, err := ms.cs.AddContractByEpochData(dataSlice...)
 			if err != nil {
 				return errors.WithMessage(err, "failed to add contracts for specified epoch data slice")
-			}
-
-			// Note, even if failed to insert event logs afterward, no need to rollback the inserted contract records.
-			if newAdded > 0 {
-				logrus.WithField("count", newAdded).Debug("Succeeded to add new contract into database")
 			}
 		}
 
@@ -234,7 +229,7 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 	var result []*store.LogV2
 	for _, addr := range contracts {
 		// convert contract address to id
-		contract, exists, err := ms.cs.GetContractByAddress(addr)
+		cid, exists, err := ms.cs.GetContractIdByAddress(addr)
 		if err != nil {
 			return nil, err
 		}
@@ -253,7 +248,7 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 		// query address indexed logs
 		addrFilter := AddressIndexedLogFilter{
 			LogFilter:  filter,
-			ContractId: contract.ID,
+			ContractId: cid,
 		}
 
 		logs, err := ms.ails.GetAddressIndexedLogs(addrFilter, addr)

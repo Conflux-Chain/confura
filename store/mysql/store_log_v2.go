@@ -98,7 +98,7 @@ func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartit
 				}
 
 				for k, log := range receipt.Logs {
-					contract, _, err := ls.cs.AddContractIfAbsent(log.Address.MustGetBase32Address())
+					cid, _, err := ls.cs.AddContractIfAbsent(log.Address.MustGetBase32Address())
 					if err != nil {
 						return errors.WithMessage(err, "failed to add contract")
 					}
@@ -108,7 +108,7 @@ func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartit
 						logExt = rcptExt.LogExts[k]
 					}
 
-					log := store.ParseCfxLog(&log, contract.ID, bn, logExt)
+					log := store.ParseCfxLog(&log, cid, bn, logExt)
 					logs = append(logs, (*logV2)(log))
 				}
 			}
