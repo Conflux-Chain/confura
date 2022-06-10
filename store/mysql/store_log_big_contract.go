@@ -233,15 +233,10 @@ func (bcls *bigContractLogStore) Add(
 			return errors.WithMessage(err, "failed to delta update partition size")
 		}
 
-		// update contract event logs count
-		if err := bcls.cs.DeltaUpdateCount(dbTx, cid, len(logs)); err != nil {
-			return errors.WithMessage(err, "failed to delta update contract log partition count")
-		}
-
-		// update contract lastest update epoch
+		// Update contract statistics (log count and lastest updated epoch).
 		latestUpdateEpoch := logs[len(logs)-1].Epoch
-		if err := bcls.cs.SetLastestUpdatedEpoch(dbTx, cid, latestUpdateEpoch); err != nil {
-			return errors.WithMessage(err, "failed to set contract latest udpated epoch")
+		if err := bcls.cs.UpdateContractStats(dbTx, cid, len(logs), latestUpdateEpoch); err != nil {
+			return errors.WithMessage(err, "failed to update contract statistics")
 		}
 	}
 
@@ -249,12 +244,66 @@ func (bcls *bigContractLogStore) Add(
 }
 
 func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
-	// TODO:
-	// 1. use contract latest update epoch to taget deleted partitions;
-	// 2. remove contract event logs && bnpartition info;
-	// 3. update contract logs count statistics;
-	// 4. update contract latest updated epoch.
-	return store.ErrUnsupported
+	contracts, err := bcls.cs.GetUpdatedContractsSinceEpoch(epochUntil)
+	if err != nil {
+		return errors.WithMessage(err, "failed to get updated contracts since start epoch")
+	}
+
+	if len(contracts) == 0 { // no possible contracts found
+		return nil
+	}
+
+	bn, ok, err := bcls.ebms.BlockRange(epochUntil)
+	if err != nil {
+		return errors.WithMessagef(err, "failed to get block mapping for epoch %v", epochUntil)
+	}
+
+	if !ok { // no block mapping found for epoch
+		return errors.Errorf("no block mapping found for epoch %v", epochUntil)
+	}
+
+	// delete event logs for all possible contracts.
+	for _, contract := range contracts {
+		contractEntity := bcls.contractEntity(contract.ID)
+		contractTabler := bcls.contractTabler(contract.ID)
+
+		partitions, err := bcls.shrinkBnRange(dbTx, contractEntity, bn.From)
+		if bcls.IsRecordNotFound(err) {
+			// no specified log partition found for the contract
+			continue
+		}
+
+		if err != nil {
+			return errors.WithMessage(err, "failed to shrink partition bn range")
+		}
+
+		totalRowsAffected := int64(0)
+
+		for i := len(partitions) - 1; i >= 0; i-- {
+			partition := partitions[i]
+			tblName := bcls.getPartitionedTableName(contractTabler, partition.Index)
+
+			res := dbTx.Table(tblName).Where("bn >= ?", bn.From).Delete(&contractLog{})
+			if res.Error != nil {
+				return res.Error
+			}
+
+			// update partition data count
+			err = bcls.deltaUpdateCount(dbTx, contractEntity, int(partition.Index), -int(res.RowsAffected))
+			if err != nil {
+				return errors.WithMessage(err, "failed to delta update partition size")
+			}
+
+			totalRowsAffected += res.RowsAffected
+		}
+
+		// update contract statistics (log count and lastest updated epoch).
+		if err := bcls.cs.UpdateContractStats(dbTx, contract.ID, int(-totalRowsAffected), epochUntil); err != nil {
+			return errors.WithMessage(err, "failed to update contract statistics")
+		}
+	}
+
+	return nil
 }
 
 func (bcls *bigContractLogStore) GetLogs(ctx context.Context, storeFilter store.LogFilterV2) ([]*store.LogV2, error) {

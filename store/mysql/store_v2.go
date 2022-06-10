@@ -213,12 +213,14 @@ func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
 					return errors.WithMessage(err, "failed to remove address indexed event logs")
 				}
 
-				// TODO: remove big contract logs
+				if err := ms.bcls.Popn(dbTx, epochUntil); err != nil {
+					return errors.WithMessage(err, "failed to remove big contract logs")
+				}
 			}
 
 			// pop universal event logs
 			if err := ms.ls.Popn(dbTx, epochUntil); err != nil {
-				return errors.WithMessage(err, "failed to pop event logs")
+				return errors.WithMessage(err, "failed to remove universal event logs")
 			}
 		}
 

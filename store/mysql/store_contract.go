@@ -172,24 +172,23 @@ func (cs *ContractStore) GetUpdatedContractsSinceEpoch(epoch uint64) ([]*Contrac
 	return contracts, nil
 }
 
-func (cs *ContractStore) SetLastestUpdatedEpoch(dbTx *gorm.DB, cid uint64, epoch uint64) error {
-	return dbTx.Where("id = ?", cid).Update("latest_updated_epoch", epoch).Error
-}
-
-// DeltaUpdateCount delta updates the persisted event log count for the contract.
-func (cs *ContractStore) DeltaUpdateCount(dbTx *gorm.DB, cid uint64, delta int) error {
-	if delta == 0 {
-		return nil
+// UpdateContractStats updates statistics (log count/latest updated epoch) of the specified contract.
+func (cs *ContractStore) UpdateContractStats(
+	dbTx *gorm.DB, cid uint64, countDelta int, latestUpdatedEpoch uint64,
+) error {
+	updates := map[string]interface{}{
+		"latest_updated_epoch": latestUpdatedEpoch,
 	}
 
-	update := make(map[string]interface{}, 1)
-	if delta > 0 { // increment
-		update["log_count"] = gorm.Expr("log_count + ?", delta)
-	} else { // decrement
-		update["log_count"] = gorm.Expr("GREATEST(0, CAST(log_count AS SIGNED) - ?)", -delta)
+	if countDelta != 0 {
+		if countDelta > 0 { // increment
+			updates["log_count"] = gorm.Expr("log_count + ?", countDelta)
+		} else { // decrement
+			updates["log_count"] = gorm.Expr("GREATEST(0, CAST(log_count AS SIGNED) - ?)", -countDelta)
+		}
 	}
 
-	return dbTx.Model(&Contract{}).Where("id = ?", cid).Updates(update).Error
+	return dbTx.Model(&Contract{}).Where("id = ?", cid).Updates(updates).Error
 }
 
 // enforceCache enforces to load contract cache from db with specified condition.

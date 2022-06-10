@@ -138,14 +138,9 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 	}
 
 	for cid, logCount := range contract2LogCount {
-		// Update contract log count statistics.
-		if err := ls.cs.DeltaUpdateCount(dbTx, cid, logCount); err != nil {
-			return errors.WithMessage(err, "failed to update contract log count")
-		}
-
-		// update contract lastest update epoch
-		if err := ls.cs.SetLastestUpdatedEpoch(dbTx, cid, data.Number); err != nil {
-			return errors.WithMessage(err, "failed to set contract latest udpated epoch")
+		// Update contract statistics (log count and lastest updated epoch).
+		if err := ls.cs.UpdateContractStats(dbTx, cid, logCount, data.Number); err != nil {
+			return errors.WithMessage(err, "failed to update contract statistics")
 		}
 	}
 
@@ -156,16 +151,25 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 //
 // Generally, this is used when pivot chain switched for confirmed blocks.
 func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
-	// TODO:
-	// 1. optimize delete partitions with contract latest update epoch;
-	// 2. update contract log count statistics.
+	contracts, err := ls.cs.GetUpdatedContractsSinceEpoch(epochFrom)
+	if err != nil {
+		return errors.WithMessage(err, "failed to get updated contracts since start epoch")
+	}
 
-	// Delete logs for all partitions in batch
-	for i := uint32(0); i < ls.partitions; i++ {
-		tableName := ls.getPartitionedTableName(&ls.model, i)
+	// Delete logs for all possible contracts in batches.
+	for _, contract := range contracts {
+		partition := ls.getPartitionByAddress(contract.Address)
+		tableName := ls.getPartitionedTableName(&ls.model, partition)
+
 		sql := fmt.Sprintf("DELETE FROM %v WHERE epoch BETWEEN ? AND ?", tableName)
-		if err := dbTx.Exec(sql, epochFrom, epochTo).Error; err != nil {
+		res := dbTx.Exec(sql, epochFrom, epochTo)
+		if err := res.Error; err != nil {
 			return err
+		}
+
+		// Update contract statistics (log count and lastest updated epoch).
+		if err := ls.cs.UpdateContractStats(dbTx, contract.ID, int(-res.RowsAffected), epochFrom); err != nil {
+			return errors.WithMessage(err, "failed to update contract statistics")
 		}
 	}
 
