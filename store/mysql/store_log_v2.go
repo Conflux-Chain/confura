@@ -50,28 +50,8 @@ func newLogStoreV2(db *gorm.DB, cs *ContractStore, ebms *epochBlockMapStore) *lo
 
 // preparePartition create new log partitions if necessary.
 func (ls *logStoreV2) preparePartition(dataSlice []*store.EpochData) (bnPartition, error) {
-	partition, ok, err := ls.latestPartition(bnPartitionedLogEntity)
-	if err != nil {
-		return bnPartition{}, errors.WithMessage(err, "failed to get latest log partition")
-	}
-
-	// if no partition exists or partition oversizes capacity, create a new partition
-	if !ok || partition.Count >= bnPartitionedLogVolumeSize {
-		newPartition, err := ls.growPartition(bnPartitionedLogEntity, &logV2{})
-		if err != nil {
-			return bnPartition{}, errors.WithMessage(err, "failed to grow log partition")
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"entity":       bnPartitionedLogEntity,
-			"partition":    partition,
-			"newPartition": newPartition,
-		}).Debug("created new log partition")
-
-		return *newPartition, nil
-	}
-
-	return *partition, nil
+	partition, _, err := ls.autoPartition(bnPartitionedLogEntity, &logV2{}, bnPartitionedLogVolumeSize)
+	return partition, err
 }
 
 func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartition bnPartition) error {
@@ -86,8 +66,6 @@ func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartit
 				receipt := data.Receipts[tx.Hash]
 
 				// Skip transactions that unexecuted in block.
-				// !!! Still need to check BlockHash and Status in case more than one transactions
-				// of the same hash appeared in the same epoch.
 				if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
 					continue
 				}
@@ -266,4 +244,20 @@ func (ls *logStoreV2) SchedulePrune(maxArchivePartitions uint32) {
 			logrus.WithField("partition", partition).Info("Archive log partition ranged by block number pruned")
 		}
 	}
+}
+
+// extractContractAddressesOfEpochData extracts unique contract addresses of event logs within epoch data slice.
+func extractContractAddressesOfEpochData(slice ...*store.EpochData) map[string]bool {
+	contracts := make(map[string]bool)
+
+	for _, data := range slice {
+		for _, receipt := range data.Receipts {
+			for i := range receipt.Logs {
+				addr := receipt.Logs[i].Address.String()
+				contracts[addr] = true
+			}
+		}
+	}
+
+	return contracts
 }

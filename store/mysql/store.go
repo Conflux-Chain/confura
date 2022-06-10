@@ -409,7 +409,7 @@ func (ms *MysqlStore) putOneWithTx(dbTx *gorm.DB, data *store.EpochData) ([2]uin
 	}
 
 	if ms.config.AddressIndexedLogEnabled {
-		if err := ms.AddAddressIndexedLogs(dbTx, data); err != nil {
+		if err := ms.AddAddressIndexedLogs(dbTx, data, nil); err != nil {
 			return insertLogIdSpan, opHistory, err
 		}
 	}

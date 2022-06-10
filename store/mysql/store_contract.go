@@ -158,17 +158,7 @@ func (cs *ContractStore) AddContract(contracts map[string]bool) (int, error) {
 
 // AddContract adds contract for the specified epoch data slice and returns the number of new added contracts.
 func (cs *ContractStore) AddContractByEpochData(slice ...*store.EpochData) (int, error) {
-	contracts := make(map[string]bool)
-
-	for _, data := range slice {
-		for _, receipt := range data.Receipts {
-			for i := range receipt.Logs {
-				addr := receipt.Logs[i].Address.String()
-				contracts[addr] = true
-			}
-		}
-	}
-
+	contracts := extractContractAddressesOfEpochData(slice...)
 	return cs.AddContract(contracts)
 }
 
@@ -182,10 +172,14 @@ func (cs *ContractStore) GetUpdatedContractsSinceEpoch(epoch uint64) ([]*Contrac
 	return contracts, nil
 }
 
+func (cs *ContractStore) SetLastestUpdatedEpoch(dbTx *gorm.DB, cid uint64, epoch uint64) error {
+	return dbTx.Where("id = ?", cid).Update("latest_updated_epoch", epoch).Error
+}
+
 // DeltaUpdateCount delta updates the persisted event log count for the contract.
-func (cs *ContractStore) DeltaUpdateCount(dbTx *gorm.DB, cid uint64, delta int) (bool, error) {
+func (cs *ContractStore) DeltaUpdateCount(dbTx *gorm.DB, cid uint64, delta int) error {
 	if delta == 0 {
-		return false, nil
+		return nil
 	}
 
 	update := make(map[string]interface{}, 1)
@@ -195,12 +189,7 @@ func (cs *ContractStore) DeltaUpdateCount(dbTx *gorm.DB, cid uint64, delta int) 
 		update["log_count"] = gorm.Expr("GREATEST(0, CAST(log_count AS SIGNED) - ?)", -delta)
 	}
 
-	res := dbTx.Model(&Contract{}).Where("id = ?", cid).Updates(update)
-	if res.Error != nil {
-		return false, res.Error
-	}
-
-	return res.RowsAffected > 0, nil
+	return dbTx.Model(&Contract{}).Where("id = ?", cid).Updates(update).Error
 }
 
 // enforceCache enforces to load contract cache from db with specified condition.

@@ -36,7 +36,13 @@ func (bnPartition) TableName() string {
 	return "bn_partitions"
 }
 
-// bnPartitionedStore partitioned store by block number
+// IsInitial checks whether the partition is the initial one.
+func (partition bnPartition) IsInitial() bool {
+	// partition index starts from 0
+	return partition.Index == 0
+}
+
+// bnPartitionedStore partitioned store ranged by block number
 type bnPartitionedStore struct {
 	*baseStore
 	partitionedStore
@@ -46,6 +52,36 @@ func newBnPartitionedStore(db *gorm.DB) *bnPartitionedStore {
 	return &bnPartitionedStore{
 		baseStore: newBaseStore(db),
 	}
+}
+
+// autoPartition automatically find some suitable entity partition to write on.
+// It will create a new partition if no partition found or latest partition volume oversized,
+// otherwise return the latest partition found.
+func (bnps *bnPartitionedStore) autoPartition(
+	entity string, tabler schema.Tabler, volumeLimit uint32,
+) (bnPartition, bool, error) {
+	partition, ok, err := bnps.latestPartition(entity)
+	if err != nil {
+		return bnPartition{}, false, errors.WithMessage(err, "failed to get latest partition")
+	}
+
+	// if no partition exists or partition oversizes capacity, create a new partition
+	if !ok || partition.Count >= volumeLimit {
+		newPartition, err := bnps.growPartition(entity, tabler)
+		if err != nil {
+			return bnPartition{}, false, errors.WithMessage(err, "failed to grow partition")
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"entity":       entity,
+			"partition":    partition,
+			"newPartition": newPartition,
+		}).Debug("Created new bnPartition")
+
+		return *newPartition, true, nil
+	}
+
+	return *partition, false, nil
 }
 
 // growPartition appends a partition to the entity partition list. New table will be created with
