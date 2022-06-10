@@ -159,12 +159,12 @@ func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange type
 	partitions []*bnPartition, uncoverings *types.RangeUint64, err error,
 ) {
 	bnStart, bnEnd, existed, err := bnps.bnRange(entity)
-	if !existed { // no partitions found
-		return nil, &searchRange, nil
-	}
-
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if !existed { // no partitions found
+		return nil, &searchRange, nil
 	}
 
 	if searchRange.To < bnStart {

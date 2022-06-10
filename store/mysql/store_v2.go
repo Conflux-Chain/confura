@@ -240,7 +240,8 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 
 	contracts := storeFilter.Contracts.ToSlice()
 
-	// if address not specified, query event logs from block number partitioned tables.
+	// if address not specified, query from universal event log table partition
+	// ranged by block number.
 	if len(contracts) == 0 {
 		return ms.ls.GetLogs(ctx, storeFilter)
 	}
@@ -263,6 +264,29 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 			continue
 		}
 
+		// check if the contract is a big contract or not
+		isBigContract, err := ms.bcls.IsBigContract(cid)
+		if err != nil {
+			return nil, err
+		}
+
+		// if the contract is a big contract, find the event logs from seperate table.
+		if isBigContract {
+			logs, err := ms.bcls.GetContractLogs(ctx, cid, storeFilter)
+			if err != nil {
+				return nil, err
+			}
+
+			result = append(result, logs...)
+
+			// check log count
+			if len(result) > int(store.MaxLogLimit) {
+				return nil, store.ErrGetLogsResultSetTooLarge
+			}
+
+			continue
+		}
+
 		// check timeout before query
 		select {
 		case <-ctx.Done():
@@ -270,13 +294,11 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 		default:
 		}
 
-		// query address indexed logs
+		// query from address indexed logs
 		addrFilter := AddressIndexedLogFilter{
 			LogFilter:  filter,
 			ContractId: cid,
 		}
-
-		// TODO: if contract is big contract, find the event logs within seperate table.
 
 		logs, err := ms.ails.GetAddressIndexedLogs(addrFilter, addr)
 		if err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
@@ -305,11 +306,88 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	return nil
 }
 
-func (bcls *bigContractLogStore) GetLogs(ctx context.Context, storeFilter store.LogFilterV2) ([]*store.LogV2, error) {
-	// TODO:
-	// 1. get event logs like storeLogV2
-	// 2. contractLog.ContractId must be filled since it's not persisted in db.
-	return nil, store.ErrUnsupported
+// IsBigContract check if the contract is big contract or not.
+func (bcls *bigContractLogStore) IsBigContract(cid uint64) (bool, error) {
+	contractEntity := bcls.contractEntity(cid)
+	partition, existed, err := bcls.oldestPartition(contractEntity)
+	if err != nil {
+		return false, errors.WithMessage(err, "failed to check contract partition")
+	}
+
+	if !existed {
+		return false, nil
+	}
+
+	// regarded as big contract with the following two cases:
+	// 1. oldest partition is not the initial one;
+	// 2. oldest partition is the initial one and has data on it.
+	return !partition.IsInitial() || partition.Count > 0, nil
+}
+
+// GetContractLogs get contract logs for the specified filter.
+func (bcls *bigContractLogStore) GetContractLogs(
+	ctx context.Context, cid uint64, storeFilter store.LogFilterV2,
+) ([]*store.LogV2, error) {
+	contractEntity := bcls.contractEntity(cid)
+	partitions, _, err := bcls.searchPartitions(
+		contractEntity, types.RangeUint64{
+			From: storeFilter.BlockFrom,
+			To:   storeFilter.BlockTo,
+		},
+	)
+
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to search partitions")
+	}
+
+	filter := LogFilter{
+		BlockFrom: storeFilter.BlockFrom,
+		BlockTo:   storeFilter.BlockTo,
+		Topics:    storeFilter.Topics,
+	}
+
+	var result []*store.LogV2
+	for _, partition := range partitions {
+		// check timeout before query
+		select {
+		case <-ctx.Done():
+			return nil, store.ErrGetLogsTimeout
+		default:
+		}
+
+		logs, err := bcls.GetContractBnPartitionedLogs(cid, filter, *partition)
+		if err != nil {
+			return nil, err
+		}
+
+		// convert to common store log
+		for _, v := range logs {
+			// fill contract id since it's not persisted in db
+			v.ContractID = cid
+			result = append(result, (*store.LogV2)(v))
+		}
+
+		// check log count
+		if len(result) > int(store.MaxLogLimit) {
+			return nil, store.ErrGetLogsResultSetTooLarge
+		}
+	}
+
+	return result, nil
+}
+
+// GetContractBnPartitionedLogs returns contract event logs for the log filter from
+// specified table partition ranged by block number.
+func (bcls *bigContractLogStore) GetContractBnPartitionedLogs(
+	cid uint64, filter LogFilter, partition bnPartition,
+) ([]*contractLog, error) {
+	contractTabler := bcls.contractTabler(cid)
+	filter.TableName = bcls.getPartitionedTableName(contractTabler, partition.Index)
+
+	var res []*contractLog
+	err := filter.find(bcls.db, &res)
+
+	return res, err
 }
 
 func (bcls *bigContractLogStore) SchedulePrune(maxArchivePartitions uint32) {
