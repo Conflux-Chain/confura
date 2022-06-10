@@ -267,14 +267,13 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 		contractEntity := bcls.contractEntity(contract.ID)
 		contractTabler := bcls.contractTabler(contract.ID)
 
-		partitions, err := bcls.shrinkBnRange(dbTx, contractEntity, bn.From)
-		if bcls.IsRecordNotFound(err) {
-			// no specified log partition found for the contract
-			continue
-		}
-
+		partitions, existed, err := bcls.shrinkBnRange(dbTx, contractEntity, bn.From)
 		if err != nil {
 			return errors.WithMessage(err, "failed to shrink partition bn range")
+		}
+
+		if !existed { // no specified log partition found for the contract
+			continue
 		}
 
 		totalRowsAffected := int64(0)

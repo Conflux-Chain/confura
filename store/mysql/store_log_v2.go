@@ -133,9 +133,13 @@ func (ls *logStoreV2) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	}
 
 	// update block range for log partition router
-	partitions, err := ls.shrinkBnRange(dbTx, bnPartitionedLogEntity, bn.From)
+	partitions, existed, err := ls.shrinkBnRange(dbTx, bnPartitionedLogEntity, bn.From)
 	if err != nil {
 		return errors.WithMessage(err, "failed to shrink partition bn range")
+	}
+
+	if !existed { // no partition found?
+		return nil
 	}
 
 	for i := len(partitions) - 1; i >= 0; i-- {
@@ -219,14 +223,13 @@ func (ls *logStoreV2) SchedulePrune(maxArchivePartitions uint32) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		startPartIdx, endPartIdx, err := ls.indexRange(bnPartitionedLogEntity)
-
-		if ls.IsRecordNotFound(err) { // no partitions found
+		startPartIdx, endPartIdx, existed, err := ls.indexRange(bnPartitionedLogEntity)
+		if err != nil {
+			logrus.WithError(err).Error("Failed to get log partition index range to prune")
 			continue
 		}
 
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get log partition index range to prune")
+		if !existed { // no partitions found
 			continue
 		}
 

@@ -158,8 +158,8 @@ func (bnps *bnPartitionedStore) shrinkPartition(entity string, tabler schema.Tab
 func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange types.RangeUint64) (
 	partitions []*bnPartition, uncoverings *types.RangeUint64, err error,
 ) {
-	bnStart, bnEnd, err := bnps.bnRange(entity)
-	if bnps.IsRecordNotFound(err) { // no partitions found
+	bnStart, bnEnd, existed, err := bnps.bnRange(entity)
+	if !existed { // no partitions found
 		return nil, &searchRange, nil
 	}
 
@@ -259,20 +259,24 @@ func (bnps *bnPartitionedStore) expandBnRange(dbTx *gorm.DB, entity string, part
 }
 
 // shrinkBnRange shrink block number range from the latest entity partition.
-// !!! The shrunk until block number is not accounted for the entity range.
-func (bnps *bnPartitionedStore) shrinkBnRange(dbTx *gorm.DB, entity string, bn uint64) ([]*bnPartition, error) {
+// Note the shrunk until block number will not be accounted for the entity range.
+func (bnps *bnPartitionedStore) shrinkBnRange(dbTx *gorm.DB, entity string, bn uint64) ([]*bnPartition, bool, error) {
 	var shrunkPartitions []*bnPartition
 
-	startIdx, endIdx, err := bnps.indexRange(entity)
+	startIdx, endIdx, ok, err := bnps.indexRange(entity)
 	if err != nil {
-		return nil, errors.WithMessage(err, "failed to get index range")
+		return nil, false, errors.WithMessage(err, "failed to get index range")
+	}
+
+	if !ok {
+		return nil, false, nil
 	}
 
 	// shrink from the latest partition in case the shrunk range is not fully covered by any partition
 	for idx := int32(endIdx); idx >= int32(startIdx); idx-- {
 		part, err := bnps.getPartitionByIndex(entity, uint32(idx))
 		if err != nil {
-			return nil, errors.WithMessagef(err, "failed to get partition with index %v", idx)
+			return nil, false, errors.WithMessagef(err, "failed to get partition with index %v", idx)
 		}
 
 		if !part.BnMin.Valid || !part.BnMax.Valid {
@@ -295,13 +299,13 @@ func (bnps *bnPartitionedStore) shrinkBnRange(dbTx *gorm.DB, entity string, bn u
 
 		err = dbTx.Model(&bnPartition{}).Where("id = ?", part.ID).Updates(updates).Error
 		if err != nil {
-			return nil, errors.WithMessagef(err, "failed to shrink partition with index %v", idx)
+			return nil, false, errors.WithMessagef(err, "failed to shrink partition with index %v", idx)
 		}
 
 		shrunkPartitions = append(shrunkPartitions, part)
 	}
 
-	return shrunkPartitions, nil
+	return shrunkPartitions, true, nil
 }
 
 // oldestPartition returns the oldest created partition (also with the min index) from
@@ -351,22 +355,28 @@ func (bnps *bnPartitionedStore) getPartitionByIndex(entity string, index uint32)
 }
 
 // indexRange returns the partition index range for the entity.
-func (bnps *bnPartitionedStore) indexRange(entity string) (start uint32, end uint32, err error) {
-	v0, v1, err := bnps.entityRange("MAX(pi) AS max, MIN(pi) AS min", entity)
+func (bnps *bnPartitionedStore) indexRange(entity string) (
+	start uint32, end uint32, existed bool, err error,
+) {
+	v0, v1, existed, err := bnps.entityRange("MAX(pi) AS max, MIN(pi) AS min", entity)
 	if err != nil {
 		return
 	}
 
-	return uint32(v0), uint32(v1), nil
+	return uint32(v0), uint32(v1), existed, nil
 }
 
 // bnRange returns the block number range covered by the entity partitions.
-func (bnps *bnPartitionedStore) bnRange(entity string) (start uint64, end uint64, err error) {
+func (bnps *bnPartitionedStore) bnRange(entity string) (
+	start uint64, end uint64, existed bool, err error,
+) {
 	return bnps.entityRange("MAX(bn_max) AS max, MIN(bn_min) AS min", entity)
 }
 
 // range returns entity range covered by partitions.
-func (bnps *bnPartitionedStore) entityRange(selector string, entity string) (start uint64, end uint64, err error) {
+func (bnps *bnPartitionedStore) entityRange(selector string, entity string) (
+	start uint64, end uint64, existed bool, err error,
+) {
 	var er struct {
 		Max, Min sql.NullInt64
 	}
@@ -377,7 +387,7 @@ func (bnps *bnPartitionedStore) entityRange(selector string, entity string) (sta
 	}
 
 	if !er.Max.Valid || !er.Min.Valid {
-		err = store.ErrNotFound
+		existed = false
 		return
 	}
 
