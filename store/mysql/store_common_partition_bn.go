@@ -29,6 +29,10 @@ type bnPartition struct {
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
+	// tabler used to provide partition table name prefix.
+	// It could be manually filled and used for some special cases.
+	tabler schema.Tabler `gorm:"-"`
 }
 
 // TableName overrides the table name
@@ -54,7 +58,7 @@ func newBnPartitionedStore(db *gorm.DB) *bnPartitionedStore {
 	}
 }
 
-// autoPartition automatically find some suitable entity partition to write on.
+// autoPartition automatically prepare some suitable entity partition to write on.
 // It will create a new partition if no partition found or latest partition volume oversized,
 // otherwise return the latest partition found.
 func (bnps *bnPartitionedStore) autoPartition(
@@ -394,4 +398,39 @@ func (bnps *bnPartitionedStore) entityRange(selector string, entity string) (
 	start = uint64(er.Min.Int64)
 	end = uint64(er.Max.Int64)
 	return
+}
+
+// pruneArchivePartitions iteratively prunes archive partitions chronologically
+// from the oldest partition until the number of archive partitions is no more
+// than the specified number.
+//
+// Note the iterative prune operations are not atomic.
+func (bnps *bnPartitionedStore) pruneArchivePartitions(
+	entity string, tabler schema.Tabler, maxArchivePartitions uint32,
+) ([]*bnPartition, error) {
+	var prunedPartitions []*bnPartition
+
+	startPartIdx, endPartIdx, existed, err := bnps.indexRange(entity)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get partition index range")
+	}
+
+	if !existed { // no partitions found
+		return nil, nil
+	}
+
+	for i := startPartIdx; i <= endPartIdx; i++ {
+		if (endPartIdx - i) <= maxArchivePartitions { // no need to prune
+			break
+		}
+
+		partition, err := bnps.shrinkPartition(entity, tabler, int(i))
+		if err != nil {
+			return prunedPartitions, errors.WithMessagef(err, "failed to shrink partition %d", i)
+		}
+
+		prunedPartitions = append(prunedPartitions, partition)
+	}
+
+	return prunedPartitions, nil
 }

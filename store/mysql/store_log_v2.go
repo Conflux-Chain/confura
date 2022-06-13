@@ -2,13 +2,11 @@ package mysql
 
 import (
 	"context"
-	"time"
 
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -38,19 +36,28 @@ func (logV2) TableName() string {
 
 type logStoreV2 struct {
 	*bnPartitionedStore
-	cs   *ContractStore
-	ebms *epochBlockMapStore
+	cs    *ContractStore
+	ebms  *epochBlockMapStore
+	model logV2
+	// notify channel for new bn partition created
+	bnPartitionNotifyChan chan<- *bnPartition
 }
 
-func newLogStoreV2(db *gorm.DB, cs *ContractStore, ebms *epochBlockMapStore) *logStoreV2 {
+func newLogStoreV2(db *gorm.DB, cs *ContractStore, ebms *epochBlockMapStore, notifyChan chan<- *bnPartition) *logStoreV2 {
 	return &logStoreV2{
-		bnPartitionedStore: newBnPartitionedStore(db), cs: cs, ebms: ebms,
+		bnPartitionedStore:    newBnPartitionedStore(db),
+		bnPartitionNotifyChan: notifyChan, cs: cs, ebms: ebms,
 	}
 }
 
 // preparePartition create new log partitions if necessary.
 func (ls *logStoreV2) preparePartition(dataSlice []*store.EpochData) (bnPartition, error) {
-	partition, _, err := ls.autoPartition(bnPartitionedLogEntity, &logV2{}, bnPartitionedLogVolumeSize)
+	partition, newCreated, err := ls.autoPartition(bnPartitionedLogEntity, &ls.model, bnPartitionedLogVolumeSize)
+	if err == nil && newCreated {
+		partition.tabler = &ls.model
+		ls.bnPartitionNotifyChan <- &partition
+	}
+
 	return partition, err
 }
 
@@ -106,7 +113,7 @@ func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartit
 		return nil
 	}
 
-	tblName := ls.getPartitionedTableName(&logV2{}, logPartition.Index)
+	tblName := ls.getPartitionedTableName(&ls.model, logPartition.Index)
 	err = dbTx.Table(tblName).CreateInBatches(logs, defaultBatchSizeLogInsert).Error
 	if err != nil {
 		return err
@@ -215,38 +222,6 @@ func (ls *logStoreV2) GetBnPartitionedLogs(filter LogFilter, partition bnPartiti
 	err := filter.find(ls.db, &res)
 
 	return res, err
-}
-
-// SchedulePrune periodically prunes log partitions to keep the specified number of archive log partitions.
-func (ls *logStoreV2) SchedulePrune(maxArchivePartitions uint32) {
-	ticker := time.NewTicker(time.Hour * 1)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		startPartIdx, endPartIdx, existed, err := ls.indexRange(bnPartitionedLogEntity)
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get log partition index range to prune")
-			continue
-		}
-
-		if !existed { // no partitions found
-			continue
-		}
-
-		for i := startPartIdx; i <= endPartIdx; i++ {
-			if (endPartIdx - i) <= maxArchivePartitions { // no need to prune
-				break
-			}
-
-			partition, err := ls.shrinkPartition(bnPartitionedLogEntity, &logV2{}, int(i))
-			if err != nil {
-				logrus.WithField("partitionIndex", i).WithError(err).Error("Failed to shrink log partition")
-				break
-			}
-
-			logrus.WithField("partition", partition).Info("Archive log partition ranged by block number pruned")
-		}
-	}
 }
 
 // extractContractAddressesOfEpochData extracts unique contract addresses of event logs within epoch data slice.

@@ -27,18 +27,25 @@ type MysqlStoreV2 struct {
 	config *Config
 	// store chaindata disabler
 	disabler store.StoreDisabler
+	// store pruner
+	pruner *storePruner
 }
 
 // NewStoreV2FromV1 adapts a v1 store to v2 store.
 // TODO: deprecate this function once v2 is production ready.
 func NewStoreV2FromV1(v1 *MysqlStore) *MysqlStoreV2 {
-	bcls := newBigContractLogStore(v1.db, v1.cs, v1.epochBlockMapStore, v1.AddressIndexedLogStore)
+	pruner := newStorePruner(v1.db)
+	ls := newLogStoreV2(v1.db, v1.cs, v1.epochBlockMapStore, pruner.newBnPartitionObsChan)
+	bcls := newBigContractLogStore(
+		v1.db, v1.cs, v1.epochBlockMapStore, v1.AddressIndexedLogStore, pruner.newBnPartitionObsChan,
+	)
+
 	return &MysqlStoreV2{
 		baseStore:          v1.baseStore,
 		epochBlockMapStore: v1.epochBlockMapStore,
 		ts:                 v1.txStore,
 		bs:                 v1.blockStore,
-		ls:                 newLogStoreV2(v1.db, v1.cs, v1.epochBlockMapStore),
+		ls:                 ls,
 		bcls:               bcls,
 		ails:               v1.AddressIndexedLogStore,
 		cfs:                v1.confStore,
@@ -46,10 +53,12 @@ func NewStoreV2FromV1(v1 *MysqlStore) *MysqlStoreV2 {
 		cs:                 v1.cs,
 		config:             v1.config,
 		disabler:           v1.disabler,
+		pruner:             pruner,
 	}
 }
 
 func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStoreV2 {
+	pruner := newStorePruner(db)
 	cs := NewContractStore(db)
 	ebms := newEpochBlockMapStore(db, config)
 	ails := NewAddressIndexedLogStore(db, cs, config.AddressIndexedLogPartitions)
@@ -59,14 +68,15 @@ func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStore
 		epochBlockMapStore: ebms,
 		ts:                 newTxStore(db),
 		bs:                 newBlockStore(db),
-		ls:                 newLogStoreV2(db, cs, ebms),
-		bcls:               newBigContractLogStore(db, cs, ebms, ails),
+		ls:                 newLogStoreV2(db, cs, ebms, pruner.newBnPartitionObsChan),
+		bcls:               newBigContractLogStore(db, cs, ebms, ails, pruner.newBnPartitionObsChan),
 		ails:               ails,
 		cfs:                newConfStore(db),
 		us:                 newUserStore(db),
 		cs:                 cs,
 		config:             config,
 		disabler:           option.Disabler,
+		pruner:             pruner,
 	}
 }
 
@@ -323,7 +333,5 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 
 // Prune prune data from db store.
 func (ms *MysqlStoreV2) Prune() {
-	go ms.ls.SchedulePrune(ms.config.MaxBnRangedArchiveLogPartitions)
-
-	// TODO: schedule to prune big contract log partitions
+	go ms.pruner.schedulePrune(ms.config)
 }

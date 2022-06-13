@@ -41,13 +41,20 @@ type bigContractLogStore struct {
 	cs   *ContractStore
 	ebms *epochBlockMapStore
 	ails *AddressIndexedLogStore
+	// notify channel for new bn partition created
+	bnPartitionNotifyChan chan<- *bnPartition
 }
 
 func newBigContractLogStore(
-	db *gorm.DB, cs *ContractStore, ebms *epochBlockMapStore, ails *AddressIndexedLogStore,
+	db *gorm.DB,
+	cs *ContractStore,
+	ebms *epochBlockMapStore,
+	ails *AddressIndexedLogStore,
+	notifyChan chan<- *bnPartition,
 ) *bigContractLogStore {
 	return &bigContractLogStore{
-		bnPartitionedStore: newBnPartitionedStore(db), cs: cs, ebms: ebms, ails: ails,
+		bnPartitionedStore:    newBnPartitionedStore(db),
+		bnPartitionNotifyChan: notifyChan, cs: cs, ebms: ebms, ails: ails,
 	}
 }
 
@@ -78,9 +85,14 @@ func (bcls *bigContractLogStore) preparePartitions(dataSlice []*store.EpochData)
 		}
 
 		clEntity, clTabler := bcls.contractEntity(contract.ID), bcls.contractTabler(contract.ID)
-		partition, _, err := bcls.autoPartition(clEntity, clTabler, bnPartitionedLogVolumeSize)
+		partition, newCreated, err := bcls.autoPartition(clEntity, clTabler, bnPartitionedLogVolumeSize)
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to auto contract log partition")
+		}
+
+		if newCreated {
+			partition.tabler = clTabler
+			bcls.bnPartitionNotifyChan <- &partition
 		}
 
 		contract2BnPartitions[contract.ID] = partition
@@ -388,11 +400,4 @@ func (bcls *bigContractLogStore) GetContractBnPartitionedLogs(
 	err := filter.find(bcls.db, &res)
 
 	return res, err
-}
-
-func (bcls *bigContractLogStore) SchedulePrune(maxArchivePartitions uint32) {
-	// TODO:
-	// 1. prune for existed big contract should be scheduled at first;
-	// 2. prune for fresh new big contract should be scheduled right after migration.
-	panic(store.ErrUnsupported)
 }
