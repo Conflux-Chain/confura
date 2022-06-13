@@ -125,6 +125,7 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 
 	return bcls.db.Transaction(func(dbTx *gorm.DB) error {
 		var aiLogs []*AddressIndexedLog
+		var bnMin, bnMax uint64
 
 		aidb := dbTx.Table(aiTableName).Where("cid = ?", contract.ID)
 		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeLogInsert, func(tx *gorm.DB, batch int) error {
@@ -140,17 +141,27 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 			}
 
 			// delete from address indexed log table
-			lastPrimaryId := aiLogs[len(aiLogs)-1].ID
-			delRes := dbTx.Table(aiTableName).Where("id <= ?", lastPrimaryId).Delete(&contractLog{})
+			lastlog := aiLogs[len(aiLogs)-1]
+			delRes := dbTx.Table(aiTableName).Where("id <= ?", lastlog.ID).Delete(&contractLog{})
 			if err := delRes.Error; err != nil {
 				return errors.WithMessage(err, "failed to delete address indexed log")
 			}
+
+			if batch == 1 { // least block number of the first batch
+				bnMin = aiLogs[0].BlockNumber
+			}
+			bnMax = lastlog.BlockNumber
 
 			return nil
 		})
 
 		if err := res.Error; err != nil {
 			return errors.WithMessage(err, "failed to batch get address indexed logs for migration")
+		}
+
+		// expand partition block number range
+		if err := bcls.expandBnRange(dbTx, clEntity, int(partition.Index), bnMin, bnMax); err != nil {
+			return errors.WithMessage(err, "failed to expand partition bn range")
 		}
 
 		// update seperate contract log partition count

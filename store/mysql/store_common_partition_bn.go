@@ -181,7 +181,8 @@ func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange type
 		return nil, &searchRange, nil
 	}
 
-	db := bnps.db.Where("bn_min <= ? AND bn_max >= ?", searchRange.To, searchRange.From)
+	db := bnps.db.Where("entity = ?", entity).
+		Where("bn_min <= ? AND bn_max >= ?", searchRange.To, searchRange.From)
 	err = db.Find(&partitions).Error
 	if err != nil {
 		return nil, nil, err
