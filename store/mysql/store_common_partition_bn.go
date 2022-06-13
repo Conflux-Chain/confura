@@ -397,6 +397,8 @@ func (bnps *bnPartitionedStore) entityRange(selector string, entity string) (
 
 	start = uint64(er.Min.Int64)
 	end = uint64(er.Max.Int64)
+	existed = true
+
 	return
 }
 
@@ -420,6 +422,11 @@ func (bnps *bnPartitionedStore) pruneArchivePartitions(
 	}
 
 	for i := startPartIdx; i <= endPartIdx; i++ {
+		logrus.WithFields(logrus.Fields{
+			"i": i, "end": endPartIdx,
+			"maxArchivePartitions": maxArchivePartitions,
+		}).Debug("Pruning archive bn partition...")
+
 		if (endPartIdx - i) <= maxArchivePartitions { // no need to prune
 			break
 		}

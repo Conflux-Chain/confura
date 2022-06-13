@@ -19,7 +19,7 @@ const (
 // contractLog event logs for specified contract
 type contractLog struct {
 	ID          uint64
-	ContractID  uint64 `gorm:"column:-"` // ignored
+	ContractID  uint64 `gorm:"-"` // ignored
 	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn"`
 	Epoch       uint64 `gorm:"not null"`
 	Topic0      string `gorm:"size:66;not null"`
@@ -130,6 +130,7 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeLogInsert, func(tx *gorm.DB, batch int) error {
 			clLogs := make([]*contractLog, 0, len(aiLogs))
 			for _, aiLog := range aiLogs {
+				aiLog.ID = 0 // clear primary id
 				clLogs = append(clLogs, (*contractLog)(aiLog))
 			}
 

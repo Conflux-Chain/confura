@@ -21,7 +21,7 @@ func (ps *partitionedStore) createPartitionedTable(db *gorm.DB, modelPtr schema.
 		return false, nil
 	}
 
-	if err := migrator.CreateTable(modelPtr); err != nil {
+	if err := db.Table(modelPtr.TableName()).AutoMigrate(modelPtr); err != nil {
 		return false, err
 	}
 
