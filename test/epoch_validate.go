@@ -18,9 +18,9 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
-	"github.com/conflux-chain/conflux-infura/store"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/blacklist"
 	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
@@ -834,7 +834,8 @@ func (validator *EpochValidator) filterLogs(logs []types.Log) []types.Log {
 		// TODO: remove this if fullnode bug fixed
 		log.TransactionIndex = nil
 
-		if !store.IsAddressBlacklisted(&log.Address) {
+		epochNo := log.EpochNumber.ToInt().Uint64()
+		if !blacklist.IsAddressBlacklisted(&log.Address, epochNo) {
 			filteredLogs = append(filteredLogs, log)
 		}
 	}

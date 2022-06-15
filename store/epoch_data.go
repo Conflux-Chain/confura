@@ -2,41 +2,26 @@ package store
 
 import (
 	"fmt"
-	"strings"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	sdkerr "github.com/Conflux-Chain/go-conflux-sdk/types/errors"
 	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/conflux-chain/conflux-infura/util/blacklist"
 	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 var (
 	// flyweight instance for empty EpochData
 	emptyEpochData = EpochData{}
 
-	// blacklisted contract address set
-	blacklistedAddressSet = map[string]struct{}{}
-
 	errBlockValidationFailed      = errors.New("epoch block validation failed")
 	errTxsReceiptValidationFailed = errors.New("transaction receipt validation failed")
 )
-
-func init() {
-	// Load blacklisted contract address.
-	blAddrs := viper.GetStringSlice("sync.addrBlacklist")
-	if len(blAddrs) > 0 { // setup blacklisted address set
-		for _, addr := range blAddrs {
-			blacklistedAddressSet[strings.ToLower(addr)] = struct{}{}
-		}
-	}
-}
 
 func RequireContinuous(slice []*EpochData, currentEpoch uint64) error {
 	if len(slice) == 0 {
@@ -299,7 +284,8 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 				log.LogIndex = types.NewBigInt(logIndex)
 				log.TransactionLogIndex = types.NewBigInt(txLogIndex)
 
-				if !IsAddressBlacklisted(&log.Address) { // skip blacklisted address
+				// skip blacklisted address
+				if !blacklist.IsAddressBlacklisted(&log.Address, epochNumber) {
 					logs = append(logs, log)
 				}
 
@@ -315,19 +301,6 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 	return EpochData{
 		Number: epochNumber, Blocks: blocks, Receipts: receipts,
 	}, nil
-}
-
-// Check if address blacklisted or not
-func IsAddressBlacklisted(addr *cfxaddress.Address) bool {
-	if len(blacklistedAddressSet) == 0 {
-		return false
-	}
-
-	addrStr := addr.MustGetBase32Address()
-	addrStr = strings.ToLower(addrStr)
-
-	_, exists := blacklistedAddressSet[addrStr]
-	return exists
 }
 
 func validateBlock(block *types.Block, epochNumber uint64, hash types.Hash) error {
