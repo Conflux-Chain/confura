@@ -28,6 +28,10 @@ func init() {
 		logrus.WithError(err).Fatal("Failed to load blacklisted contract address")
 	}
 
+	if len(blackListAddrStrs) == 0 {
+		return
+	}
+
 	var addrInfos []*BlacklistedAddrInfo
 	if err := json.Unmarshal(([]byte)(blackListAddrStrs), &addrInfos); err != nil {
 		logrus.WithError(err).Fatal("Failed to parse blacklisted contract address json")
