@@ -131,8 +131,12 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeLogInsert, func(tx *gorm.DB, batch int) error {
 			clLogs := make([]*contractLog, 0, len(aiLogs))
 			for _, aiLog := range aiLogs {
-				aiLog.ID = 0 // clear primary id
-				clLogs = append(clLogs, (*contractLog)(aiLog))
+				// copy address indexed event log
+				clog := (contractLog)(*aiLog)
+				// clear primary id
+				clog.ID = 0
+
+				clLogs = append(clLogs, &clog)
 			}
 
 			// insert into seperate contract log table
