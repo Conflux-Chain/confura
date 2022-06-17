@@ -129,7 +129,9 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 
 		aidb := dbTx.Table(aiTableName).Where("cid = ?", contract.ID)
 		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeLogInsert, func(tx *gorm.DB, batch int) error {
+			deleteIds := make([]uint64, len(aiLogs))
 			clLogs := make([]*contractLog, 0, len(aiLogs))
+
 			for _, aiLog := range aiLogs {
 				// copy address indexed event log
 				clog := (contractLog)(*aiLog)
@@ -137,6 +139,7 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 				clog.ID = 0
 
 				clLogs = append(clLogs, &clog)
+				deleteIds = append(deleteIds, aiLog.ID)
 			}
 
 			// insert into seperate contract log table
@@ -145,8 +148,7 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 			}
 
 			// delete from address indexed log table
-			lastlog := aiLogs[len(aiLogs)-1]
-			delRes := dbTx.Table(aiTableName).Where("id <= ?", lastlog.ID).Delete(&contractLog{})
+			delRes := dbTx.Table(aiTableName).Where("id IN (?)", deleteIds).Delete(&contractLog{})
 			if err := delRes.Error; err != nil {
 				return errors.WithMessage(err, "failed to delete address indexed log")
 			}
@@ -154,7 +156,7 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 			if batch == 1 { // least block number of the first batch
 				bnMin = aiLogs[0].BlockNumber
 			}
-			bnMax = lastlog.BlockNumber
+			bnMax = aiLogs[len(aiLogs)-1].BlockNumber
 
 			return nil
 		})
