@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"io/ioutil"
 	"math"
+	"math/big"
 	"os"
 	"reflect"
 	"strconv"
@@ -383,6 +384,10 @@ func (validator *EpochValidator) validateGetTransactionReceipt(ctx context.Conte
 			err1 = errors.WithMessage(err1, "failed to query transaction receipts from fullnode")
 		}
 
+		for i := range rcpt1.Logs { // receipt log has no `epochNumber` data
+			rcpt1.Logs[i].EpochNumber = (*hexutil.Big)(big.NewInt(int64(*rcpt1.EpochNumber)))
+		}
+
 		rcpt1.Logs = validator.filterLogs(rcpt1.Logs)
 		return rcpt1, err1
 	}
@@ -390,6 +395,10 @@ func (validator *EpochValidator) validateGetTransactionReceipt(ctx context.Conte
 	infuraCall := func() (interface{}, error) {
 		if rcpt2, err2 = validator.infura.GetTransactionReceipt(txn.Hash); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query transaction receipts from infura")
+		}
+
+		for i := range rcpt2.Logs { // receipt log has no `epochNumber` data
+			rcpt2.Logs[i].EpochNumber = (*hexutil.Big)(big.NewInt(int64(*rcpt2.EpochNumber)))
 		}
 
 		rcpt2.Logs = validator.filterLogs(rcpt2.Logs)
