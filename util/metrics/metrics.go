@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/go-rpc-provider/utils"
 )
@@ -114,8 +115,12 @@ func (*RpcMetrics) FullnodeNonRpcErrorRate(node ...string) Percentage {
 // Sync service metrics
 type SyncMetrics struct{}
 
-func (*SyncMetrics) SyncOnceQps(space, storeName string) TimerUpdater {
-	return NewTimerUpdaterByName(fmt.Sprintf("infura/sync/%v/%v/once", space, storeName))
+func (*SyncMetrics) SyncOnceQps(space, storeName string, err error) metrics.Timer {
+	if util.IsInterfaceValNil(err) {
+		return GetOrRegisterTimer("infura/sync/%v/%v/once/success", space, storeName)
+	}
+
+	return GetOrRegisterTimer("infura/sync/%v/%v/once/failure", space, storeName)
 }
 
 func (*SyncMetrics) SyncOnceSize(space, storeName string) metrics.Histogram {

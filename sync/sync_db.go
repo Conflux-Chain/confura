@@ -199,9 +199,6 @@ func (syncer *DatabaseSyncer) loadLastSyncEpoch() (loaded bool, err error) {
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
 func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
-	updater := metrics.Registry.Sync.SyncOnceQps("cfx", "db")
-	defer updater.Update()
-
 	// Drain pivot switch reorg event channel to handle pivot chain reorg
 	if err := syncer.drainPivotReorgEvents(); err != nil {
 		return false, err
@@ -361,7 +358,11 @@ func (syncer *DatabaseSyncer) doCheckPoint() error {
 func (syncer *DatabaseSyncer) doTicker(ticker *time.Ticker) error {
 	logrus.Debug("DB sync ticking")
 
-	if complete, err := syncer.syncOnce(); err != nil {
+	start := time.Now()
+	complete, err := syncer.syncOnce()
+	metrics.Registry.Sync.SyncOnceQps("cfx", "db", err).UpdateSince(start)
+
+	if err != nil {
 		ticker.Reset(syncer.syncIntervalNormal)
 		return err
 	} else if complete {

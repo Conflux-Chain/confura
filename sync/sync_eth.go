@@ -107,7 +107,11 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 func (syncer *EthSyncer) doTicker(ticker *time.Ticker) error {
 	logrus.Debug("ETH sync ticking")
 
-	if complete, err := syncer.syncOnce(); err != nil {
+	start := time.Now()
+	complete, err := syncer.syncOnce()
+	metrics.Registry.Sync.SyncOnceQps("eth", "db", err).UpdateSince(start)
+
+	if err != nil {
 		ticker.Reset(syncer.syncIntervalNormal)
 		return err
 	} else if complete {
@@ -125,9 +129,6 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	if err != nil {
 		return false, errors.WithMessage(err, "failed to query the latest block number")
 	}
-
-	updater := metrics.Registry.Sync.SyncOnceQps("eth", "db")
-	defer updater.Update()
 
 	recentBlockNo := recentBlockNumber.Uint64()
 	if recentBlockNo > skipBlocksAheadLatest {

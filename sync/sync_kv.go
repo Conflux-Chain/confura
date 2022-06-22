@@ -134,7 +134,11 @@ func (syncer *KVCacheSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 					)
 				}
 			case <-syncer.syncTimerCh:
-				if err := syncer.syncOnce(); err != nil {
+				start := time.Now()
+				err := syncer.syncOnce()
+				metrics.Registry.Sync.SyncOnceQps("cfx", "cache", err).UpdateSince(start)
+
+				if err != nil {
 					logger.WithError(err).Error("Cache syncer failed to sync epoch data")
 				}
 
@@ -260,9 +264,6 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 		logger.Debug("Cache syncer syncOnce skipped with epoch sync window empty")
 		return nil
 	}
-
-	updater := metrics.Registry.Sync.SyncOnceQps("cfx", "cache")
-	defer updater.Update()
 
 	syncFrom, syncSize := syncer.syncWindow.peekShrinkFrom(uint32(syncer.maxSyncEpochs))
 
