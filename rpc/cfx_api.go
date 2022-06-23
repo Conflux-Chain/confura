@@ -318,6 +318,13 @@ func (api *cfxAPI) normalizeLogFilter(cfx sdk.ClientOperator, flag store.LogFilt
 		filter.FromEpoch, filter.ToEpoch = epochs[0], epochs[1]
 	}
 
+	// For store v2, filter offset/limit is not supported anymore.
+	// TODO: remove the following reset codes once fullnode v2.0.3 is ready.
+	if api.LogApiHandler != nil && api.LogApiHandler.V2() != nil {
+		filter.Offset = nil
+		filter.Limit = nil
+	}
+
 	return nil
 }
 
@@ -364,8 +371,11 @@ func (api *cfxAPI) validateLogFilter(flag store.LogFilterType, filter *types.Log
 		}
 	}
 
-	if filter.Offset != nil && *filter.Offset > 0 {
-		return errLogOffsetUnsupported
+	// TODO: remove the following reset codes once fullnode v2.0.3 is ready.
+	if filter.Limit != nil && uint64(*filter.Limit) > store.MaxLogLimit {
+		return errors.Errorf(
+			"limit set exceeds max acceptable value %v", store.MaxLogLimit,
+		)
 	}
 
 	return nil

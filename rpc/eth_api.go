@@ -484,6 +484,12 @@ func (api *ethAPI) normalizeLogFilter(w3c *web3go.Client, flag store.LogFilterTy
 		filter.FromBlock, filter.ToBlock = blocks[0], blocks[1]
 	}
 
+	// For store v2, filter offset/limit is not supported anymore.
+	// TODO: remove the following reset codes once fullnode v2.0.3 is ready.
+	if api.LogApiHandler != nil && api.LogApiHandler.V2() != nil {
+		filter.Limit = nil
+	}
+
 	return nil
 }
 
@@ -499,10 +505,20 @@ func (api *ethAPI) validateLogFilter(flag store.LogFilterType, filter *web3Types
 		}
 	}
 
-	if api.LogApiHandler == nil || api.LogApiHandler.V2() == nil {
-		if count := *filter.ToBlock - *filter.FromBlock + 1; uint64(count) > store.MaxLogEpochRange {
-			return errExceedLogFilterBlockRangeSize(store.MaxLogEpochRange)
-		}
+	if api.LogApiHandler != nil && api.LogApiHandler.V2() != nil {
+		// ignore offset/limit && epoch/block range bound for v2
+		return nil
+	}
+
+	if count := *filter.ToBlock - *filter.FromBlock + 1; uint64(count) > store.MaxLogEpochRange {
+		return errExceedLogFilterBlockRangeSize(store.MaxLogEpochRange)
+	}
+
+	// TODO: remove the following reset codes once fullnode v2.0.3 is ready.
+	if filter.Limit != nil && uint64(*filter.Limit) > store.MaxLogLimit {
+		return errors.Errorf(
+			"limit set exceeds max acceptable value %v", store.MaxLogLimit,
+		)
 	}
 
 	return nil
