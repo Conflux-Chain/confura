@@ -9,8 +9,9 @@ func IsInterfaceValNil(i interface{}) bool {
 		return true
 	}
 
-	if reflect.ValueOf(i).Kind() == reflect.Ptr && reflect.ValueOf(i).IsNil() {
-		return true
+	switch reflect.TypeOf(i).Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Array, reflect.Chan, reflect.Slice, reflect.Func:
+		return reflect.ValueOf(i).IsNil()
 	}
 
 	return false

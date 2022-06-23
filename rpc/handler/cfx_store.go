@@ -185,7 +185,7 @@ func (h *CfxCommonStoreHandler) GetLogs(ctx context.Context, filter store.LogFil
 }
 
 func (h *CfxCommonStoreHandler) collectHitStats(method string, err error) {
-	if !errors.Is(err, store.ErrUnsupported) {
+	if errors.Is(err, store.ErrUnsupported) { // ignore unsupported samples
 		return
 	}
 

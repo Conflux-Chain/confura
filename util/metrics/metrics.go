@@ -36,20 +36,24 @@ func (*RpcMetrics) BatchLatency() metrics.Histogram {
 }
 
 func (*RpcMetrics) UpdateDuration(method string, err error, start time.Time) {
+	var isNilErr, isRpcErr bool
+	if isNilErr = util.IsInterfaceValNil(err); !isNilErr {
+		isRpcErr = utils.IsRPCJSONError(err)
+	}
+
 	// Overall rate statistics
-	isRpcErr := utils.IsRPCJSONError(err)
-	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/success").Mark(err == nil)
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/success").Mark(isNilErr)
 	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/rpcErr").Mark(isRpcErr)
-	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/nonRpcErr").Mark(err != nil && !isRpcErr)
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/nonRpcErr").Mark(!isNilErr && !isRpcErr)
 
 	// RPC rate statistics
-	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/success/%v", method).Mark(err == nil)
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/success/%v", method).Mark(isNilErr)
 	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/rpcErr/%v", method).Mark(isRpcErr)
-	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/nonRpcErr/%v", method).Mark(err != nil && !isRpcErr)
+	GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/nonRpcErr/%v", method).Mark(!isNilErr && !isRpcErr)
 
 	// Only update QPS & Latency if success or rpc error. Because, io error usually takes long time
 	// and impact the average latency.
-	if err == nil || isRpcErr {
+	if isNilErr || isRpcErr {
 		GetOrRegisterTimer("infura/rpc/duration/all").UpdateSince(start)
 		GetOrRegisterTimer("infura/rpc/duration/%v", method).UpdateSince(start)
 	}
@@ -89,7 +93,7 @@ func (*RpcMetrics) StoreHit(method, storeName string) Percentage {
 // RPC metrics - fullnode
 
 func (*RpcMetrics) FullnodeQps(space, method string, err error) metrics.Timer {
-	if err == nil {
+	if util.IsInterfaceValNil(err) {
 		return GetOrRegisterTimer("infura/rpc/fullnode/%v/%v/success", space, method)
 	}
 
