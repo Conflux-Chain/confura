@@ -222,8 +222,6 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 
 	epochTo, syncSize := syncer.nextEpochTo(maxEpochTo)
 
-	metrics.Registry.Sync.SyncOnceSize("cfx", "db").Update(int64(syncSize))
-
 	logger := logrus.WithFields(logrus.Fields{
 		"syncSize":       syncSize,
 		"syncEpochRange": citypes.RangeUint64{From: syncer.epochFrom, To: epochTo},
@@ -293,6 +291,8 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 
 		eplogger.Debug("Db syncer succeeded to query epoch data")
 	}
+
+	metrics.Registry.Sync.SyncOnceSize("cfx", "db").Update(int64(len(epochDataSlice)))
 
 	if len(epochDataSlice) == 0 { // empty epoch data query
 		logger.Debug("Db syncer skipped due to empty sync range")

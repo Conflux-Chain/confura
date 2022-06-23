@@ -148,8 +148,6 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	toBlock := util.MinUint64(syncer.fromBlock+syncer.maxSyncBlocks-1, recentBlockNo)
 	syncSize := toBlock - syncer.fromBlock + 1
 
-	metrics.Registry.Sync.SyncOnceSize("eth", "db").Update(int64(syncSize))
-
 	logger := logrus.WithFields(logrus.Fields{
 		"syncSize": syncSize, "fromBlock": syncer.fromBlock, "toBlock": toBlock,
 	})
@@ -218,6 +216,8 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 
 		blogger.Debug("ETH syncer succeeded to query epoch data")
 	}
+
+	metrics.Registry.Sync.SyncOnceSize("eth", "db").Update(int64(len(ethDataSlice)))
 
 	if len(ethDataSlice) == 0 { // empty eth data query
 		logger.Debug("ETH syncer skipped due to empty sync range")

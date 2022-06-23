@@ -267,8 +267,6 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 
 	syncFrom, syncSize := syncer.syncWindow.peekShrinkFrom(uint32(syncer.maxSyncEpochs))
 
-	metrics.Registry.Sync.SyncOnceSize("cfx", "cache").Update(int64(syncSize))
-
 	logger = logger.WithFields(logrus.Fields{"syncFrom": syncFrom, "syncSize": syncSize})
 	logger.Debug("Cache syncer starting to sync epoch(s)...")
 
@@ -334,6 +332,8 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 
 		eplogger.Debug("Cache syncer succeeded to query epoch data")
 	}
+
+	metrics.Registry.Sync.SyncOnceSize("cfx", "cache").Update(int64(len(epochDataSlice)))
 
 	if len(epochDataSlice) == 0 { // empty epoch data query
 		logger.Debug("Cache syncer skipped due to empty sync range")
