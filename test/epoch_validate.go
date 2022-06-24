@@ -381,7 +381,7 @@ func (validator *EpochValidator) validateGetTransactionReceipt(ctx context.Conte
 
 	fnCall := func() (interface{}, error) {
 		if rcpt1, err1 = validator.cfx.GetTransactionReceipt(txn.Hash); err1 != nil {
-			err1 = errors.WithMessage(err1, "failed to query transaction receipts from fullnode")
+			return nil, errors.WithMessage(err1, "failed to query transaction receipts from fullnode")
 		}
 
 		for i := range rcpt1.Logs { // receipt log has no `epochNumber` data
@@ -394,7 +394,7 @@ func (validator *EpochValidator) validateGetTransactionReceipt(ctx context.Conte
 
 	infuraCall := func() (interface{}, error) {
 		if rcpt2, err2 = validator.infura.GetTransactionReceipt(txn.Hash); err2 != nil {
-			err2 = errors.WithMessage(err2, "failed to query transaction receipts from infura")
+			return nil, errors.WithMessage(err2, "failed to query transaction receipts from infura")
 		}
 
 		for i := range rcpt2.Logs { // receipt log has no `epochNumber` data
