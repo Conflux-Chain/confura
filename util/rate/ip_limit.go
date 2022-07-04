@@ -1,7 +1,6 @@
 package rate
 
 import (
-	"net"
 	"sync"
 	"time"
 
@@ -43,11 +42,6 @@ func NewIpLimiter(rate rate.Limit, burst int) *IpLimiter {
 }
 
 func (l *IpLimiter) Allow(ip string, n int) bool {
-	if nip := net.ParseIP(ip); nip != nil && nip.IsLoopback() {
-		// for loopback ip, always return true
-		return true
-	}
-
 	l.mu.Lock()
 	defer l.mu.Unlock()
 

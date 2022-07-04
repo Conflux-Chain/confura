@@ -105,3 +105,23 @@ func GetIPAddressFromContext(ctx context.Context) (string, bool) {
 	val, ok := ctx.Value(CtxKeyRealIP).(string)
 	return val, ok
 }
+
+func GetAccessToken(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return ""
+	}
+
+	// access token path pattern:
+	// http://example.com/${accessToken}...
+	key := strings.TrimLeft(r.URL.Path, "/")
+	if idx := strings.Index(key, "/"); idx > 0 {
+		key = key[:idx]
+	}
+
+	return key
+}
+
+func GetAccessTokenFromContext(ctx context.Context) (string, bool) {
+	val, ok := ctx.Value(CtxAccessToken).(string)
+	return val, ok
+}

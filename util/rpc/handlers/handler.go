@@ -11,4 +11,5 @@ type CtxKey string
 const (
 	CtxKeyRealIP       = CtxKey("Infura-Real-IP")
 	CtxKeyRateRegistry = CtxKey("Infura-Rate-Limit-Registry")
+	CtxAccessToken     = CtxKey("Infura-Access-Token")
 )

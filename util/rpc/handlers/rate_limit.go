@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"net"
 	"net/http"
 
 	"github.com/conflux-chain/conflux-infura/util/rate"
@@ -14,6 +15,28 @@ func RateLimit(registry *rate.Registry) Middleware {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func WhiteListAllow(ctx context.Context) bool {
+	if ip, ok := GetIPAddressFromContext(ctx); ok {
+		nip := net.ParseIP(ip)
+
+		// always allow request from loopback ip
+		if nip != nil && nip.IsLoopback() {
+			return true
+		}
+	}
+
+	registry, ok := ctx.Value(CtxKeyRateRegistry).(*rate.Registry)
+	if !ok {
+		return false
+	}
+
+	if token, ok := GetAccessTokenFromContext(ctx); ok {
+		return registry.WhiteListed(token)
+	}
+
+	return false
 }
 
 func RateLimitAllow(ctx context.Context, name string, n int) bool {

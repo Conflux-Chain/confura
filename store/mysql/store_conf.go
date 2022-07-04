@@ -89,17 +89,21 @@ func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
 	return cs.StoreConfig(MysqlConfKeyReorgVersion, newVersion)
 }
 
-func (cs *confStore) LoadRateLimitConfigs() map[string]rate.Option {
+func (cs *confStore) LoadRateLimitConfigs() *rate.Config {
 	var cfgs []conf
 	if err := cs.db.Where("name LIKE ?", "ratelimit.%").Find(&cfgs).Error; err != nil {
+		logrus.WithError(err).Error("Failed to load rate limit config from db")
 		return nil
 	}
 
 	if len(cfgs) == 0 {
-		return nil
+		return &rate.Config{}
 	}
 
-	opts := make(map[string]rate.Option)
+	rconf := &rate.Config{
+		IpLimitOpts: make(map[string]rate.Option),
+		WhiteList:   make(map[string]struct{}),
+	}
 
 	namePrefixLen := len("ratelimit.")
 
@@ -107,6 +111,14 @@ func (cs *confStore) LoadRateLimitConfigs() map[string]rate.Option {
 		name := v.Name[namePrefixLen:]
 		if len(name) == 0 {
 			logrus.WithField("cfg", v).Warn("Invalid rate limit config, name is too short")
+			continue
+		}
+
+		if strings.EqualFold(name, "whitelist") { // add white list
+			whiteList := strings.Split(v.Value, ",")
+			for _, name := range whiteList {
+				rconf.WhiteList[name] = struct{}{}
+			}
 			continue
 		}
 
@@ -125,8 +137,8 @@ func (cs *confStore) LoadRateLimitConfigs() map[string]rate.Option {
 			logrus.WithField("cfg", v).Warn("Invalid rate limit config, burst is not number")
 		}
 
-		opts[name] = rate.NewOption(r, burst)
+		rconf.IpLimitOpts[name] = rate.NewOption(r, burst)
 	}
 
-	return opts
+	return rconf
 }

@@ -16,13 +16,15 @@ func init() {
 }
 
 type Registry struct {
-	limiters map[string]*IpLimiter
-	mu       sync.Mutex
+	limiters   map[string]*IpLimiter
+	whilteList map[string]struct{}
+	mu         sync.Mutex
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
-		limiters: make(map[string]*IpLimiter),
+		limiters:   make(map[string]*IpLimiter),
+		whilteList: make(map[string]struct{}),
 	}
 }
 
@@ -32,6 +34,11 @@ func (m *Registry) Get(name string) (*IpLimiter, bool) {
 
 	limiter, ok := m.limiters[name]
 	return limiter, ok
+}
+
+func (m *Registry) WhiteListed(name string) bool {
+	_, existed := m.whilteList[name]
+	return existed
 }
 
 func (m *Registry) GetOrRegister(name string, rate rate.Limit, burst int) *IpLimiter {
