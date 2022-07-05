@@ -16,7 +16,6 @@ require (
 	github.com/openweb3/web3go v0.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
-	github.com/selvatico/go-mocket v1.0.7
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/viper v1.10.0
@@ -26,7 +25,6 @@ require (
 	golang.org/x/time v0.0.0-20220411224347-583f2d630306
 	gorm.io/driver/mysql v1.0.5
 	gorm.io/gorm v1.22.2
-	gorm.io/hints v1.1.0
 )
 
 // replace github.com/Conflux-Chain/go-conflux-sdk => ../go-conflux-sdk
