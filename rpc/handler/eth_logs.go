@@ -13,17 +13,17 @@ import (
 	"github.com/openweb3/web3go/types"
 )
 
-type EthLogsApiHandlerV2 struct {
-	ms *mysql.MysqlStoreV2
+type EthLogsApiHandler struct {
+	ms *mysql.MysqlStore
 
 	networkId atomic.Value
 }
 
-func NewEthLogsApiHandlerV2(ms *mysql.MysqlStoreV2) *EthLogsApiHandlerV2 {
-	return &EthLogsApiHandlerV2{ms: ms}
+func NewEthLogsApiHandler(ms *mysql.MysqlStore) *EthLogsApiHandler {
+	return &EthLogsApiHandler{ms: ms}
 }
 
-func (handler *EthLogsApiHandlerV2) GetLogs(
+func (handler *EthLogsApiHandler) GetLogs(
 	ctx context.Context,
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
@@ -63,7 +63,7 @@ func (handler *EthLogsApiHandlerV2) GetLogs(
 	}
 }
 
-func (handler *EthLogsApiHandlerV2) getLogsReorgGuard(
+func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	ctx context.Context,
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
@@ -121,10 +121,10 @@ func (handler *EthLogsApiHandlerV2) getLogsReorgGuard(
 	return logs, dbFilter != nil, nil
 }
 
-func (handler *EthLogsApiHandlerV2) splitLogFilter(
+func (handler *EthLogsApiHandler) splitLogFilter(
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
-) (*store.LogFilterV2, *types.FilterQuery, error) {
+) (*store.LogFilter, *types.FilterQuery, error) {
 	maxBlock, ok, err := handler.ms.MaxEpoch()
 	if err != nil {
 		return nil, nil, err
@@ -141,11 +141,11 @@ func (handler *EthLogsApiHandlerV2) splitLogFilter(
 	return handler.splitLogFilterByBlockRange(eth, filter, maxBlock)
 }
 
-func (handler *EthLogsApiHandlerV2) splitLogFilterByBlockHash(
+func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
 	maxBlock uint64,
-) (*store.LogFilterV2, *types.FilterQuery, error) {
+) (*store.LogFilter, *types.FilterQuery, error) {
 	block, err := eth.BlockByHash(*filter.BlockHash, false)
 	if err != nil {
 		return nil, nil, err
@@ -166,15 +166,15 @@ func (handler *EthLogsApiHandlerV2) splitLogFilterByBlockHash(
 		return nil, nil, err
 	}
 
-	dbFilter := store.ParseEthLogFilterV2(bn, bn, filter, networkId)
+	dbFilter := store.ParseEthLogFilter(bn, bn, filter, networkId)
 	return &dbFilter, nil, err
 }
 
-func (handler *EthLogsApiHandlerV2) splitLogFilterByBlockRange(
+func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
 	maxBlock uint64,
-) (*store.LogFilterV2, *types.FilterQuery, error) {
+) (*store.LogFilter, *types.FilterQuery, error) {
 	if filter.FromBlock == nil || *filter.FromBlock < 0 {
 		return nil, filter, nil
 	}
@@ -197,12 +197,12 @@ func (handler *EthLogsApiHandlerV2) splitLogFilterByBlockRange(
 
 	// all data in database
 	if blockTo <= maxBlock {
-		dbFilter := store.ParseEthLogFilterV2(blockFrom, blockTo, filter, networkId)
+		dbFilter := store.ParseEthLogFilter(blockFrom, blockTo, filter, networkId)
 		return &dbFilter, nil, nil
 	}
 
 	// otherwise, partial data in databse
-	dbFilter := store.ParseEthLogFilterV2(blockFrom, maxBlock, filter, networkId)
+	dbFilter := store.ParseEthLogFilter(blockFrom, maxBlock, filter, networkId)
 	fnBlockFrom := types.BlockNumber(maxBlock + 1)
 	fnFilter := types.FilterQuery{
 		FromBlock: &fnBlockFrom,
@@ -214,7 +214,7 @@ func (handler *EthLogsApiHandlerV2) splitLogFilterByBlockRange(
 	return &dbFilter, &fnFilter, nil
 }
 
-func (handler *EthLogsApiHandlerV2) getNetworkId(eth *client.RpcEthClient) (uint32, error) {
+func (handler *EthLogsApiHandler) getNetworkId(eth *client.RpcEthClient) (uint32, error) {
 	if val := handler.networkId.Load(); val != nil {
 		return val.(uint32), nil
 	}
@@ -233,7 +233,7 @@ func (handler *EthLogsApiHandlerV2) getNetworkId(eth *client.RpcEthClient) (uint
 // checkFullnodeLogFilter checks if the log filter is rational for fullnode delegation.
 //
 // Note this function assumes the log filter is valid and normalized.
-func (handler *EthLogsApiHandlerV2) checkFullnodeLogFilter(filter *types.FilterQuery) error {
+func (handler *EthLogsApiHandler) checkFullnodeLogFilter(filter *types.FilterQuery) error {
 	if filter.FromBlock != nil && filter.ToBlock != nil {
 		count := *filter.ToBlock - *filter.FromBlock + 1
 		if uint64(count) > store.MaxLogEpochRange {

@@ -27,7 +27,7 @@ var (
 
 type CfxAPIOption struct {
 	StoreHandler  *handler.CfxStoreHandler
-	LogApiHandler *handler.CfxLogsApiHandlerV2
+	LogApiHandler *handler.CfxLogsApiHandler
 	Relayer       *relay.TxnRelayer
 }
 

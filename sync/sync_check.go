@@ -23,7 +23,7 @@ func ensureStoreEpochDataOk(cfx sdk.ClientOperator, s store.StackOperable) error
 	var maxEpoch uint64
 	var err error
 
-	if ms, ok := s.(*mysql.MysqlStoreV2); ok {
+	if ms, ok := s.(*mysql.MysqlStore); ok {
 		maxEpoch, ok, err = ms.MaxEpoch()
 		if err == nil && !ok { // no epoch data existed yet
 			return nil
@@ -148,7 +148,7 @@ func findFirstRevertedEpochInRange(
 func checkIfEpochIsReverted(
 	cfx sdk.ClientOperator, s store.StackOperable, epochNo uint64,
 ) (res bool, err error) {
-	if ms, ok := s.(*mysql.MysqlStoreV2); ok {
+	if ms, ok := s.(*mysql.MysqlStore); ok {
 		pivotHash, ok, err := ms.PivotHash(epochNo)
 		if err != nil {
 			return false, errors.WithMessage(err, "failed to get epoch pivot hash")

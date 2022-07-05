@@ -33,7 +33,7 @@ var (
 
 type EthAPIOption struct {
 	StoreHandler  *handler.EthStoreHandler
-	LogApiHandler *handler.EthLogsApiHandlerV2
+	LogApiHandler *handler.EthLogsApiHandler
 }
 
 func updateEthStoreHitRatio(method string, hit bool) {

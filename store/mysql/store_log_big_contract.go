@@ -356,8 +356,8 @@ func (bcls *bigContractLogStore) IsBigContract(cid uint64) (bool, error) {
 
 // GetContractLogs get contract logs for the specified filter.
 func (bcls *bigContractLogStore) GetContractLogs(
-	ctx context.Context, cid uint64, storeFilter store.LogFilterV2,
-) ([]*store.LogV2, error) {
+	ctx context.Context, cid uint64, storeFilter store.LogFilter,
+) ([]*store.Log, error) {
 	contractEntity := bcls.contractEntity(cid)
 	partitions, _, err := bcls.searchPartitions(
 		contractEntity, types.RangeUint64{
@@ -376,7 +376,7 @@ func (bcls *bigContractLogStore) GetContractLogs(
 		Topics:    storeFilter.Topics,
 	}
 
-	var result []*store.LogV2
+	var result []*store.Log
 	for _, partition := range partitions {
 		// check timeout before query
 		select {
@@ -394,7 +394,7 @@ func (bcls *bigContractLogStore) GetContractLogs(
 		for _, v := range logs {
 			// fill contract id since it's not persisted in db
 			v.ContractID = cid
-			result = append(result, (*store.LogV2)(v))
+			result = append(result, (*store.Log)(v))
 		}
 
 		// check log count

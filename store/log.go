@@ -10,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type LogV2 struct {
+type Log struct {
 	ID          uint64
 	ContractID  uint64
 	BlockNumber uint64
@@ -23,7 +23,7 @@ type LogV2 struct {
 	Extra       []byte
 }
 
-func (log *LogV2) cmp(other *LogV2) int {
+func (log *Log) cmp(other *Log) int {
 	if log.BlockNumber < other.BlockNumber {
 		return -1
 	}
@@ -43,7 +43,7 @@ func (log *LogV2) cmp(other *LogV2) int {
 	return 0
 }
 
-type LogSlice []*LogV2
+type LogSlice []*Log
 
 func (s LogSlice) Len() int           { return len(s) }
 func (s LogSlice) Less(i, j int) bool { return s[i].cmp(s[j]) < 0 }
@@ -59,7 +59,7 @@ type logExtraData struct {
 	EthExtra            *LogExtra          `json:"eth,omitempty"`
 }
 
-func ParseCfxLog(log *types.Log, cid, bn uint64, logExt *LogExtra) *LogV2 {
+func ParseCfxLog(log *types.Log, cid, bn uint64, logExt *LogExtra) *Log {
 	convertLogTopicFunc := func(log *types.Log, index int) string {
 		if index < 0 || index >= len(log.Topics) {
 			return ""
@@ -68,7 +68,7 @@ func ParseCfxLog(log *types.Log, cid, bn uint64, logExt *LogExtra) *LogV2 {
 		return log.Topics[index].String()
 	}
 
-	return &LogV2{
+	return &Log{
 		ContractID:  cid,
 		BlockNumber: bn,
 		Epoch:       log.EpochNumber.ToInt().Uint64(),
@@ -89,7 +89,7 @@ func ParseCfxLog(log *types.Log, cid, bn uint64, logExt *LogExtra) *LogV2 {
 	}
 }
 
-func (log *LogV2) ToCfxLog() (*types.Log, *LogExtra) {
+func (log *Log) ToCfxLog() (*types.Log, *LogExtra) {
 	var extra logExtraData
 	if err := json.Unmarshal(log.Extra, &extra); err != nil {
 		logrus.WithError(err).Error("Failed to unmarshal cfx log from Extra field")

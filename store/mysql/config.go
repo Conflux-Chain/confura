@@ -80,7 +80,7 @@ func MustNewEthStoreConfigFromViper() *Config {
 }
 
 // MustOpenOrCreate creates an instance of store or exits on any erorr.
-func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStoreV2 {
+func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 	newCreated := config.mustCreateDatabaseIfAbsent()
 
 	db := config.mustNewDB(config.Database)
@@ -119,7 +119,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStoreV2 {
 
 	logrus.Info("MySQL database initialized")
 
-	return mustNewStoreV2(db, config, option)
+	return mustNewStore(db, config, option)
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {

@@ -19,17 +19,17 @@ var (
 	errEventLogsTooStale = errors.New("event logs are too stale (already pruned)")
 )
 
-type CfxLogsApiHandlerV2 struct {
-	ms *mysql.MysqlStoreV2
+type CfxLogsApiHandler struct {
+	ms *mysql.MysqlStore
 
 	prunedHandler *CfxPrunedLogsHandler // optional
 }
 
-func NewCfxLogsApiHandlerV2(ms *mysql.MysqlStoreV2, prunedHandler *CfxPrunedLogsHandler) *CfxLogsApiHandlerV2 {
-	return &CfxLogsApiHandlerV2{ms, prunedHandler}
+func NewCfxLogsApiHandler(ms *mysql.MysqlStore, prunedHandler *CfxPrunedLogsHandler) *CfxLogsApiHandler {
+	return &CfxLogsApiHandler{ms, prunedHandler}
 }
 
-func (handler *CfxLogsApiHandlerV2) GetLogs(
+func (handler *CfxLogsApiHandler) GetLogs(
 	ctx context.Context,
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
@@ -69,7 +69,7 @@ func (handler *CfxLogsApiHandlerV2) GetLogs(
 	}
 }
 
-func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
+func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	ctx context.Context,
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
@@ -164,10 +164,10 @@ func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
 	return logs, len(dbFilters) > 0, nil
 }
 
-func (handler *CfxLogsApiHandlerV2) splitLogFilter(
+func (handler *CfxLogsApiHandler) splitLogFilter(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
-) ([]store.LogFilterV2, *types.LogFilter, error) {
+) ([]store.LogFilter, *types.LogFilter, error) {
 	maxEpoch, ok, err := handler.ms.MaxEpoch()
 	if err != nil {
 		return nil, nil, err
@@ -197,11 +197,11 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilter(
 	return handler.splitLogFilterByEpochRange(cfx, filter, maxEpoch, blockRange.To)
 }
 
-func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockHashes(
+func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 	maxEpoch uint64,
-) ([]store.LogFilterV2, *types.LogFilter, error) {
+) ([]store.LogFilter, *types.LogFilter, error) {
 	var dbBlockNumbers []int
 	var fnBlockHashes []types.Hash
 
@@ -238,7 +238,7 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockHashes(
 
 	sort.Ints(dbBlockNumbers) // sort block numbers ascendingly
 
-	var dbFilters []store.LogFilterV2
+	var dbFilters []store.LogFilter
 	for _, bn := range dbBlockNumbers {
 		partialFilter := *filter
 		partialFilter.BlockHashes = []types.Hash{blockNumToHash[bn]}
@@ -258,11 +258,11 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockHashes(
 	}, nil
 }
 
-func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockRange(
+func (handler *CfxLogsApiHandler) splitLogFilterByBlockRange(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 	maxBlock uint64,
-) ([]store.LogFilterV2, *types.LogFilter, error) {
+) ([]store.LogFilter, *types.LogFilter, error) {
 	// no data in database
 	blockFrom := filter.FromBlock.ToInt().Uint64()
 	if blockFrom > maxBlock {
@@ -273,7 +273,7 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockRange(
 	blockTo := filter.ToBlock.ToInt().Uint64()
 	if blockTo <= maxBlock {
 		dbFilter := store.ParseCfxLogFilter(blockFrom, blockTo, filter)
-		return []store.LogFilterV2{dbFilter}, nil, nil
+		return []store.LogFilter{dbFilter}, nil, nil
 	}
 
 	// otherwise, partial data in databse
@@ -288,14 +288,14 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByBlockRange(
 		Topics:    filter.Topics,
 	}
 
-	return []store.LogFilterV2{dbFilter}, &fnFilter, nil
+	return []store.LogFilter{dbFilter}, &fnFilter, nil
 }
 
-func (handler *CfxLogsApiHandlerV2) splitLogFilterByEpochRange(
+func (handler *CfxLogsApiHandler) splitLogFilterByEpochRange(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 	maxEpoch, maxBlock uint64,
-) ([]store.LogFilterV2, *types.LogFilter, error) {
+) ([]store.LogFilter, *types.LogFilter, error) {
 	epochFrom, ok := filter.FromEpoch.ToInt()
 	if !ok {
 		return nil, filter, nil
@@ -337,7 +337,7 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByEpochRange(
 		blockTo := blockRange.To
 
 		dbFilter := store.ParseCfxLogFilter(blockFrom, blockTo, filter)
-		return []store.LogFilterV2{dbFilter}, nil, nil
+		return []store.LogFilter{dbFilter}, nil, nil
 	}
 
 	// otherwise, partial data in databse
@@ -352,13 +352,13 @@ func (handler *CfxLogsApiHandlerV2) splitLogFilterByEpochRange(
 		Topics:    filter.Topics,
 	}
 
-	return []store.LogFilterV2{dbFilter}, &fnFilter, nil
+	return []store.LogFilter{dbFilter}, &fnFilter, nil
 }
 
 // checkFullnodeLogFilter checks if the log filter is rational for fullnode delegation.
 //
 // Note this function assumes the log filter is valid and normalized.
-func (handler *CfxLogsApiHandlerV2) checkFullnodeLogFilter(filter *types.LogFilter) error {
+func (handler *CfxLogsApiHandler) checkFullnodeLogFilter(filter *types.LogFilter) error {
 	// epoch range bound checking
 	if filter.FromEpoch != nil && filter.ToEpoch != nil {
 		ef, _ := filter.FromEpoch.ToInt()

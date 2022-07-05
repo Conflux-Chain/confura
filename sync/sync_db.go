@@ -43,7 +43,7 @@ type DatabaseSyncer struct {
 	// conflux sdk client
 	cfx sdk.ClientOperator
 	// db store
-	db *mysql.MysqlStoreV2
+	db *mysql.MysqlStore
 	// epoch number to sync data from
 	epochFrom uint64
 	// maximum number of epochs to sync once
@@ -65,7 +65,7 @@ type DatabaseSyncer struct {
 }
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
-func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStoreV2) *DatabaseSyncer {
+func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *DatabaseSyncer {
 	var conf syncConfig
 	viperutil.MustUnmarshalKey("sync", &conf)
 

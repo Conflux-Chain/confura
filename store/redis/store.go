@@ -111,7 +111,7 @@ func (rs *RedisStore) GetNumLogs() (uint64, error) {
 	return cnt, nil
 }
 
-func (rs *RedisStore) GetLogs(ctx context.Context, filter store.LogFilterV2) (logs []*store.LogV2, err error) {
+func (rs *RedisStore) GetLogs(ctx context.Context, filter store.LogFilter) (logs []*store.Log, err error) {
 	// TODO add implementation
 	return nil, store.ErrUnsupported
 }

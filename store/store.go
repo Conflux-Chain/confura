@@ -38,7 +38,7 @@ type Prunable interface {
 
 // Readable is used for RPC to read cached data from database.
 type Readable interface {
-	GetLogs(ctx context.Context, filter LogFilterV2) ([]*LogV2, error)
+	GetLogs(ctx context.Context, filter LogFilter) ([]*Log, error)
 
 	GetTransaction(ctx context.Context, txHash types.Hash) (*Transaction, error)
 	GetReceipt(ctx context.Context, txHash types.Hash) (*TransactionReceipt, error)

@@ -10,8 +10,8 @@ import (
 )
 
 type storeContext struct {
-	cfxDB    *mysql.MysqlStoreV2
-	ethDB    *mysql.MysqlStoreV2
+	cfxDB    *mysql.MysqlStore
+	ethDB    *mysql.MysqlStore
 	cfxCache *redis.RedisStore
 }
 

@@ -17,7 +17,7 @@ const (
 	bnPartitionedLogVolumeSize = 10_000_000
 )
 
-type logV2 struct {
+type log struct {
 	ID          uint64
 	ContractID  uint64 `gorm:"column:cid;size:64;not null"`
 	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn"`
@@ -30,28 +30,28 @@ type logV2 struct {
 	Extra       []byte `gorm:"type:mediumText"` // extra data in JSON format
 }
 
-func (logV2) TableName() string {
-	return "logs_v2"
+func (log) TableName() string {
+	return "logs"
 }
 
-type logStoreV2 struct {
+type logStore struct {
 	*bnPartitionedStore
 	cs    *ContractStore
 	ebms  *epochBlockMapStore
-	model logV2
+	model log
 	// notify channel for new bn partition created
 	bnPartitionNotifyChan chan<- *bnPartition
 }
 
-func newLogStoreV2(db *gorm.DB, cs *ContractStore, ebms *epochBlockMapStore, notifyChan chan<- *bnPartition) *logStoreV2 {
-	return &logStoreV2{
+func newLogStore(db *gorm.DB, cs *ContractStore, ebms *epochBlockMapStore, notifyChan chan<- *bnPartition) *logStore {
+	return &logStore{
 		bnPartitionedStore:    newBnPartitionedStore(db),
 		bnPartitionNotifyChan: notifyChan, cs: cs, ebms: ebms,
 	}
 }
 
 // preparePartition create new log partitions if necessary.
-func (ls *logStoreV2) preparePartition(dataSlice []*store.EpochData) (bnPartition, error) {
+func (ls *logStore) preparePartition(dataSlice []*store.EpochData) (bnPartition, error) {
 	partition, newCreated, err := ls.autoPartition(bnPartitionedLogEntity, &ls.model, bnPartitionedLogVolumeSize)
 	if err == nil && newCreated {
 		partition.tabler = &ls.model
@@ -61,9 +61,9 @@ func (ls *logStoreV2) preparePartition(dataSlice []*store.EpochData) (bnPartitio
 	return partition, err
 }
 
-func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartition bnPartition) error {
+func (ls *logStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartition bnPartition) error {
 	// containers to collect event logs for batch inserting
-	var logs []*logV2
+	var logs []*log
 
 	for _, data := range dataSlice {
 		for _, block := range data.Blocks {
@@ -82,8 +82,8 @@ func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartit
 					rcptExt = data.ReceiptExts[tx.Hash]
 				}
 
-				for k, log := range receipt.Logs {
-					cid, _, err := ls.cs.AddContractIfAbsent(log.Address.MustGetBase32Address())
+				for k, rlog := range receipt.Logs {
+					cid, _, err := ls.cs.AddContractIfAbsent(rlog.Address.MustGetBase32Address())
 					if err != nil {
 						return errors.WithMessage(err, "failed to add contract")
 					}
@@ -93,8 +93,8 @@ func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartit
 						logExt = rcptExt.LogExts[k]
 					}
 
-					log := store.ParseCfxLog(&log, cid, bn, logExt)
-					logs = append(logs, (*logV2)(log))
+					clog := store.ParseCfxLog(&rlog, cid, bn, logExt)
+					logs = append(logs, (*log)(clog))
 				}
 			}
 		}
@@ -129,7 +129,7 @@ func (ls *logStoreV2) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartit
 }
 
 // Popn pops event logs until the specific epoch from db store.
-func (ls *logStoreV2) Popn(dbTx *gorm.DB, epochUntil uint64) error {
+func (ls *logStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	bn, ok, err := ls.ebms.BlockRange(epochUntil)
 	if err != nil {
 		return errors.WithMessagef(err, "failed to get block mapping for epoch %v", epochUntil)
@@ -151,9 +151,9 @@ func (ls *logStoreV2) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 
 	for i := len(partitions) - 1; i >= 0; i-- {
 		partition := partitions[i]
-		tblName := ls.getPartitionedTableName(&logV2{}, partition.Index)
+		tblName := ls.getPartitionedTableName(&log{}, partition.Index)
 
-		res := dbTx.Table(tblName).Where("bn >= ?", bn.From).Delete(logV2{})
+		res := dbTx.Table(tblName).Where("bn >= ?", bn.From).Delete(log{})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -168,7 +168,7 @@ func (ls *logStoreV2) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	return nil
 }
 
-func (ls *logStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilterV2) ([]*store.LogV2, error) {
+func (ls *logStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([]*store.Log, error) {
 	// find the partitions that holds the event logs
 	partitions, _, err := ls.searchPartitions(
 		bnPartitionedLogEntity, types.RangeUint64{
@@ -186,7 +186,7 @@ func (ls *logStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilterV2
 		Topics:    storeFilter.Topics,
 	}
 
-	var result []*store.LogV2
+	var result []*store.Log
 	for _, partition := range partitions {
 		// check timeout before query
 		select {
@@ -202,7 +202,7 @@ func (ls *logStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilterV2
 
 		// convert to common store log
 		for _, v := range logs {
-			result = append(result, (*store.LogV2)(v))
+			result = append(result, (*store.Log)(v))
 		}
 
 		// check log count
@@ -215,10 +215,10 @@ func (ls *logStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilterV2
 }
 
 // GetBnPartitionedLogs returns event logs for the specified block number partitioned log filter.
-func (ls *logStoreV2) GetBnPartitionedLogs(filter LogFilter, partition bnPartition) ([]*logV2, error) {
-	filter.TableName = ls.getPartitionedTableName(&logV2{}, partition.Index)
+func (ls *logStore) GetBnPartitionedLogs(filter LogFilter, partition bnPartition) ([]*log, error) {
+	filter.TableName = ls.getPartitionedTableName(&log{}, partition.Index)
 
-	var res []*logV2
+	var res []*log
 	err := filter.find(ls.db, &res)
 
 	return res, err

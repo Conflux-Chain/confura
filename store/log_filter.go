@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	web3Types "github.com/openweb3/web3go/types"
 
 	"github.com/pkg/errors"
@@ -99,4 +100,64 @@ func ParseEthLogFilterType(filter *web3Types.FilterQuery) (LogFilterType, bool) 
 	}
 
 	return flag, true
+}
+
+type LogFilter struct {
+	BlockFrom uint64
+	BlockTo   uint64
+	Contracts VariadicValue
+	Topics    []VariadicValue // event hash and indexed data 1, 2, 3
+
+	original interface{} // original log filter
+}
+
+// Cfx returns original core space log filter
+func (f LogFilter) Cfx() *types.LogFilter {
+	original, ok := f.original.(*types.LogFilter)
+	if ok {
+		return original
+	}
+
+	return nil
+}
+
+func ParseCfxLogFilter(blockFrom, blockTo uint64, filter *types.LogFilter) LogFilter {
+	var vvs []VariadicValue
+
+	for _, hashes := range filter.Topics {
+		vvs = append(vvs, newVariadicValueByHashes(hashes))
+	}
+
+	return LogFilter{
+		BlockFrom: blockFrom,
+		BlockTo:   blockTo,
+		Contracts: newVariadicValueByAddress(filter.Address),
+		Topics:    vvs,
+		original:  filter,
+	}
+}
+
+func ParseEthLogFilter(blockFrom, blockTo uint64, filter *web3Types.FilterQuery, networkId uint32) LogFilter {
+	var contracts []string
+	for i := range filter.Addresses {
+		// convert eth hex40 address to cfx base32 address
+		addr, _ := cfxaddress.NewFromCommon(filter.Addresses[i], networkId)
+		contracts = append(contracts, addr.MustGetBase32Address())
+	}
+
+	var vvs []VariadicValue
+	for _, topic := range filter.Topics {
+		var hashes []string
+		for _, hash := range topic {
+			hashes = append(hashes, hash.Hex())
+		}
+		vvs = append(vvs, NewVariadicValue(hashes...))
+	}
+
+	return LogFilter{
+		BlockFrom: blockFrom,
+		BlockTo:   blockTo,
+		Contracts: NewVariadicValue(contracts...),
+		Topics:    vvs,
+	}
 }

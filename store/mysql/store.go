@@ -13,24 +13,24 @@ import (
 )
 
 var (
-	_ store.Readable      = (*MysqlStoreV2)(nil)
-	_ store.StackOperable = (*MysqlStoreV2)(nil)
-	_ store.Configurable  = (*MysqlStoreV2)(nil)
-	_ io.Closer           = (*MysqlStoreV2)(nil)
+	_ store.Readable      = (*MysqlStore)(nil)
+	_ store.StackOperable = (*MysqlStore)(nil)
+	_ store.Configurable  = (*MysqlStore)(nil)
+	_ io.Closer           = (*MysqlStore)(nil)
 )
 
 type StoreOption struct {
 	Disabler store.StoreDisabler
 }
 
-type MysqlStoreV2 struct {
+type MysqlStore struct {
 	*baseStore
 	*epochBlockMapStore
 	*txStore
 	*blockStore
 	*confStore
 	*UserStore
-	ls   *logStoreV2
+	ls   *logStore
 	ails *AddressIndexedLogStore
 	bcls *bigContractLogStore
 	cs   *ContractStore
@@ -43,20 +43,20 @@ type MysqlStoreV2 struct {
 	pruner *storePruner
 }
 
-func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStoreV2 {
+func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 	pruner := newStorePruner(db)
 	cs := NewContractStore(db)
 	ebms := newEpochBlockMapStore(db, config)
 	ails := NewAddressIndexedLogStore(db, cs, config.AddressIndexedLogPartitions)
 
-	return &MysqlStoreV2{
+	return &MysqlStore{
 		baseStore:          newBaseStore(db),
 		epochBlockMapStore: ebms,
 		txStore:            newTxStore(db),
 		blockStore:         newBlockStore(db),
 		confStore:          newConfStore(db),
 		UserStore:          newUserStore(db),
-		ls:                 newLogStoreV2(db, cs, ebms, pruner.newBnPartitionObsChan),
+		ls:                 newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
 		bcls:               newBigContractLogStore(db, cs, ebms, ails, pruner.newBnPartitionObsChan),
 		ails:               ails,
 		cs:                 cs,
@@ -66,11 +66,11 @@ func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStore
 	}
 }
 
-func (ms *MysqlStoreV2) Push(data *store.EpochData) error {
+func (ms *MysqlStore) Push(data *store.EpochData) error {
 	return ms.Pushn([]*store.EpochData{data})
 }
 
-func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
+func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
 	if len(dataSlice) == 0 {
 		return nil
 	}
@@ -172,7 +172,7 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 }
 
 // Popn pops multiple epoch data from database.
-func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
+func (ms *MysqlStore) Popn(epochUntil uint64) error {
 	maxEpoch, ok, err := ms.MaxEpoch()
 	if err != nil {
 		return errors.WithMessage(err, "failed to get max epoch")
@@ -230,7 +230,7 @@ func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
 	})
 }
 
-func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilterV2) ([]*store.LogV2, error) {
+func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([]*store.Log, error) {
 	updater := metrics.Registry.Store.GetLogs()
 	defer updater.Update()
 
@@ -248,7 +248,7 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 		Topics:    storeFilter.Topics,
 	}
 
-	var result []*store.LogV2
+	var result []*store.Log
 	for _, addr := range contracts {
 		// convert contract address to id
 		cid, exists, err := ms.cs.GetContractIdByAddress(addr)
@@ -303,7 +303,7 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 
 		// convert to common store log
 		for _, v := range logs {
-			result = append(result, (*store.LogV2)(v))
+			result = append(result, (*store.Log)(v))
 		}
 
 		// check log count
@@ -318,6 +318,6 @@ func (ms *MysqlStoreV2) GetLogs(ctx context.Context, storeFilter store.LogFilter
 }
 
 // Prune prune data from db store.
-func (ms *MysqlStoreV2) Prune() {
+func (ms *MysqlStore) Prune() {
 	go ms.pruner.schedulePrune(ms.config)
 }

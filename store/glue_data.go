@@ -23,8 +23,3 @@ type TransactionReceipt struct {
 	CfxReceipt *types.TransactionReceipt
 	Extra      *ReceiptExtra
 }
-
-type Log struct {
-	CfxLog *types.Log
-	Extra  *LogExtra
-}

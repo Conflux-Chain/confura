@@ -87,7 +87,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	gasHandler := handler.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
 
-	var logsApiHandler *handler.CfxLogsApiHandlerV2
+	var logsApiHandler *handler.CfxLogsApiHandler
 	if storeCtx.cfxDB != nil {
 		var prunedHandler *handler.CfxPrunedLogsHandler
 		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
@@ -98,7 +98,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 			)
 		}
 
-		logsApiHandler = handler.NewCfxLogsApiHandlerV2(storeCtx.ethDB, prunedHandler)
+		logsApiHandler = handler.NewCfxLogsApiHandler(storeCtx.ethDB, prunedHandler)
 
 		go rate.DefaultRegistryCfx.AutoReload(10*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
 	}
@@ -126,7 +126,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx st
 	// Add empty store tolerance
 	if !util.IsInterfaceValNil(storeCtx.ethDB) {
 		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.ethDB, nil)
-		option.LogApiHandler = handler.NewEthLogsApiHandlerV2(storeCtx.ethDB)
+		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.ethDB)
 
 		go rate.DefaultRegistryEth.AutoReload(10*time.Second, storeCtx.ethDB.LoadRateLimitConfigs)
 	}

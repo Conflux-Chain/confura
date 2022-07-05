@@ -39,7 +39,7 @@ type EthSyncer struct {
 	// EVM space chain id
 	chainId uint32
 	// db store
-	db *mysql.MysqlStoreV2
+	db *mysql.MysqlStore
 	// block number to sync chaindata from
 	fromBlock uint64
 	// maximum number of blocks to sync once
@@ -53,7 +53,7 @@ type EthSyncer struct {
 }
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
-func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStoreV2) *EthSyncer {
+func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 	ethChainId, err := ethC.Eth.ChainId()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get chain ID from eth space")
