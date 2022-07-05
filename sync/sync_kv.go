@@ -412,7 +412,7 @@ func (syncer *KVCacheSyncer) getStoreLatestPivotHash() (types.Hash, error) {
 	}
 
 	// load from cache store
-	pivotBlock, err := syncer.cache.GetBlockSummaryByEpoch(latestEpochNo)
+	pivotBlock, err := syncer.cache.GetBlockSummaryByEpoch(context.Background(), latestEpochNo)
 	if err == nil {
 		return pivotBlock.CfxBlockSummary.Hash, nil
 	}

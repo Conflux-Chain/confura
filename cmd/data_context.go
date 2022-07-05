@@ -10,30 +10,28 @@ import (
 )
 
 type storeContext struct {
-	cfxDB    *mysql.MysqlStore
-	ethDB    *mysql.MysqlStore
-	cfxCache store.CacheStore
+	cfxDB    *mysql.MysqlStoreV2
+	ethDB    *mysql.MysqlStoreV2
+	cfxCache *redis.RedisStore
 }
 
-func mustInitStoreContext(calibrateEpochStats bool) storeContext {
+func mustInitStoreContext() storeContext {
 	var ctx storeContext
 
 	if config := mysql.MustNewConfigFromViper(); config.Enabled {
 		ctx.cfxDB = config.MustOpenOrCreate(mysql.StoreOption{
-			CalibrateEpochStats: calibrateEpochStats,
-			Disabler:            store.StoreConfig(),
+			Disabler: store.StoreConfig(),
 		})
 	}
 
 	if ethConfig := mysql.MustNewEthStoreConfigFromViper(); ethConfig.Enabled {
 		ctx.ethDB = ethConfig.MustOpenOrCreate(mysql.StoreOption{
-			CalibrateEpochStats: calibrateEpochStats,
-			Disabler:            store.EthStoreConfig(),
+			Disabler: store.EthStoreConfig(),
 		})
 	}
 
-	if cache, ok := redis.MustNewCacheStoreFromViper(store.StoreConfig()); ok {
-		ctx.cfxCache = cache
+	if redis, ok := redis.MustNewRedisStoreFromViper(store.StoreConfig()); ok {
+		ctx.cfxCache = redis
 	}
 
 	return ctx

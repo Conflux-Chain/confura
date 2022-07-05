@@ -16,24 +16,24 @@ import (
 )
 
 var (
-	_ store.Store = (*redisStore)(nil) // ensure redisStore implements Store interface
+	_ store.Store = (*RedisStore)(nil) // ensure redisStore implements Store interface
 )
 
-type redisStoreConfig struct {
+type RedisStoreConfig struct {
 	Enabled   bool
 	CacheTime time.Duration `default:"12h"`
 	Url       string
 }
 
-type redisStore struct {
+type RedisStore struct {
 	ctx       context.Context
 	rdb       *redis.Client
 	cacheTime time.Duration
 	disabler  store.StoreDisabler
 }
 
-func MustNewCacheStoreFromViper(disabler store.StoreDisabler) (*redisStore, bool) {
-	var rsconf redisStoreConfig
+func MustNewRedisStoreFromViper(disabler store.StoreDisabler) (*RedisStore, bool) {
+	var rsconf RedisStoreConfig
 	viper.MustUnmarshalKey("store.redis", &rsconf)
 
 	if !rsconf.Enabled {
@@ -45,7 +45,7 @@ func MustNewCacheStoreFromViper(disabler store.StoreDisabler) (*redisStore, bool
 	rdb := MustNewRedisClient(rsconf.Url)
 	ctx := context.Background()
 
-	return &redisStore{rdb: rdb, ctx: ctx, cacheTime: rsconf.CacheTime, disabler: disabler}, true
+	return &RedisStore{rdb: rdb, ctx: ctx, cacheTime: rsconf.CacheTime, disabler: disabler}, true
 }
 
 func MustNewRedisClient(url string) *redis.Client {
@@ -64,27 +64,27 @@ func MustNewRedisClient(url string) *redis.Client {
 	return client
 }
 
-func (rs *redisStore) IsRecordNotFound(err error) bool {
+func (rs *RedisStore) IsRecordNotFound(err error) bool {
 	return errors.Is(err, redis.Nil) || errors.Is(err, store.ErrNotFound)
 }
 
-func (rs *redisStore) GetBlockEpochRange() (uint64, uint64, error) {
+func (rs *RedisStore) GetBlockEpochRange() (uint64, uint64, error) {
 	return loadEpochRange(rs.ctx, rs.rdb, store.EpochBlock)
 }
 
-func (rs *redisStore) GetTransactionEpochRange() (uint64, uint64, error) {
+func (rs *RedisStore) GetTransactionEpochRange() (uint64, uint64, error) {
 	return loadEpochRange(rs.ctx, rs.rdb, store.EpochTransaction)
 }
 
-func (rs *redisStore) GetLogEpochRange() (uint64, uint64, error) {
+func (rs *RedisStore) GetLogEpochRange() (uint64, uint64, error) {
 	return loadEpochRange(rs.ctx, rs.rdb, store.EpochLog)
 }
 
-func (rs *redisStore) GetGlobalEpochRange() (uint64, uint64, error) {
+func (rs *RedisStore) GetGlobalEpochRange() (uint64, uint64, error) {
 	return loadEpochRange(rs.ctx, rs.rdb, store.EpochDataNil)
 }
 
-func (rs *redisStore) GetNumBlocks() (uint64, error) {
+func (rs *RedisStore) GetNumBlocks() (uint64, error) {
 	cnt, err := loadEpochDataCount(rs.ctx, rs.rdb, store.EpochBlock)
 	if err != nil && !rs.IsRecordNotFound(err) {
 		return 0, err
@@ -93,7 +93,7 @@ func (rs *redisStore) GetNumBlocks() (uint64, error) {
 	return cnt, nil
 }
 
-func (rs *redisStore) GetNumTransactions() (uint64, error) {
+func (rs *RedisStore) GetNumTransactions() (uint64, error) {
 	cnt, err := loadEpochDataCount(rs.ctx, rs.rdb, store.EpochTransaction)
 	if err != nil && !rs.IsRecordNotFound(err) {
 		return 0, err
@@ -102,7 +102,7 @@ func (rs *redisStore) GetNumTransactions() (uint64, error) {
 	return cnt, nil
 }
 
-func (rs *redisStore) GetNumLogs() (uint64, error) {
+func (rs *RedisStore) GetNumLogs() (uint64, error) {
 	cnt, err := loadEpochDataCount(rs.ctx, rs.rdb, store.EpochLog)
 	if err != nil && !rs.IsRecordNotFound(err) {
 		return 0, err
@@ -111,12 +111,12 @@ func (rs *redisStore) GetNumLogs() (uint64, error) {
 	return cnt, nil
 }
 
-func (rs *redisStore) GetLogs(filter store.LogFilter) (logs []store.Log, err error) {
+func (rs *RedisStore) GetLogs(ctx context.Context, filter store.LogFilterV2) (logs []*store.LogV2, err error) {
 	// TODO add implementation
 	return nil, store.ErrUnsupported
 }
 
-func (rs *redisStore) GetTransaction(txHash types.Hash) (*store.Transaction, error) {
+func (rs *RedisStore) GetTransaction(ctx context.Context, txHash types.Hash) (*store.Transaction, error) {
 	tx, err := loadTx(rs.ctx, rs.rdb, txHash)
 	if err != nil {
 		return nil, err
@@ -126,7 +126,7 @@ func (rs *redisStore) GetTransaction(txHash types.Hash) (*store.Transaction, err
 	return &store.Transaction{CfxTransaction: tx}, nil
 }
 
-func (rs *redisStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, error) {
+func (rs *RedisStore) GetReceipt(ctx context.Context, txHash types.Hash) (*store.TransactionReceipt, error) {
 	receipt, err := loadTxReceipt(rs.ctx, rs.rdb, txHash)
 	if err != nil {
 		return nil, err
@@ -136,16 +136,16 @@ func (rs *redisStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, 
 	return &store.TransactionReceipt{CfxReceipt: receipt}, nil
 }
 
-func (rs *redisStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error) {
+func (rs *RedisStore) GetBlocksByEpoch(ctx context.Context, epochNumber uint64) ([]types.Hash, error) {
 	return loadEpochBlocks(rs.ctx, rs.rdb, epochNumber)
 }
 
-func (rs *redisStore) GetBlockByEpoch(epochNumber uint64) (*store.Block, error) {
+func (rs *RedisStore) GetBlockByEpoch(ctx context.Context, epochNumber uint64) (*store.Block, error) {
 	// TODO Cannot get tx from redis in advance, since only executed txs are saved in store
 	return nil, store.ErrUnsupported
 }
 
-func (rs *redisStore) GetBlockSummaryByEpoch(epochNumber uint64) (*store.BlockSummary, error) {
+func (rs *RedisStore) GetBlockSummaryByEpoch(ctx context.Context, epochNumber uint64) (*store.BlockSummary, error) {
 	pivotBlock, err := loadEpochPivotBlock(rs.ctx, rs.rdb, epochNumber)
 	if err != nil {
 		logrus.WithField("epochNumber", epochNumber).WithError(err).Debug("Pivot block missed in cache")
@@ -161,11 +161,11 @@ func (rs *redisStore) GetBlockSummaryByEpoch(epochNumber uint64) (*store.BlockSu
 	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
-func (rs *redisStore) GetBlockByHash(blockHash types.Hash) (*store.Block, error) {
+func (rs *RedisStore) GetBlockByHash(ctx context.Context, blockHash types.Hash) (*store.Block, error) {
 	return nil, store.ErrUnsupported
 }
 
-func (rs *redisStore) GetBlockSummaryByHash(blockHash types.Hash) (*store.BlockSummary, error) {
+func (rs *RedisStore) GetBlockSummaryByHash(ctx context.Context, blockHash types.Hash) (*store.BlockSummary, error) {
 	blocksum, err := loadBlockSummaryByHash(rs.ctx, rs.rdb, blockHash)
 	if err != nil {
 		return nil, err
@@ -175,11 +175,11 @@ func (rs *redisStore) GetBlockSummaryByHash(blockHash types.Hash) (*store.BlockS
 	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
-func (rs *redisStore) GetBlockByBlockNumber(blockNumber uint64) (*store.Block, error) {
+func (rs *RedisStore) GetBlockByBlockNumber(ctx context.Context, blockNumber uint64) (*store.Block, error) {
 	return nil, store.ErrUnsupported
 }
 
-func (rs *redisStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*store.BlockSummary, error) {
+func (rs *RedisStore) GetBlockSummaryByBlockNumber(ctx context.Context, blockNumber uint64) (*store.BlockSummary, error) {
 	blocksum, err := loadBlockSummaryByNumber(rs.ctx, rs.rdb, blockNumber)
 	if err != nil {
 		return nil, err
@@ -189,11 +189,11 @@ func (rs *redisStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*store.B
 	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
-func (rs *redisStore) Push(data *store.EpochData) error {
+func (rs *RedisStore) Push(data *store.EpochData) error {
 	return rs.Pushn([]*store.EpochData{data})
 }
 
-func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
+func (rs *RedisStore) Pushn(dataSlice []*store.EpochData) error {
 	if len(dataSlice) == 0 {
 		return nil
 	}
@@ -267,7 +267,7 @@ func (rs *redisStore) Pushn(dataSlice []*store.EpochData) error {
 	}, watchKeys...)
 }
 
-func (rs *redisStore) Pop() error {
+func (rs *RedisStore) Pop() error {
 	_, maxEpoch, err := rs.GetGlobalEpochRange()
 	if err != nil {
 		return errors.WithMessage(err, "failed to get global epoch range")
@@ -277,7 +277,7 @@ func (rs *redisStore) Pop() error {
 }
 
 // Popn pops multiple epoch data from redis.
-func (rs *redisStore) Popn(epochUntil uint64) error {
+func (rs *RedisStore) Popn(epochUntil uint64) error {
 	_, maxEpoch, err := rs.GetGlobalEpochRange()
 	if err != nil {
 		return errors.WithMessage(err, "failed to get global epoch range")
@@ -296,27 +296,27 @@ func (rs *redisStore) Popn(epochUntil uint64) error {
 	return err
 }
 
-func (rs *redisStore) DequeueBlocks(epochUntil uint64) error {
+func (rs *RedisStore) DequeueBlocks(epochUntil uint64) error {
 	return rs.dequeueEpochRangeData(store.EpochBlock, epochUntil)
 }
 
-func (rs *redisStore) DequeueTransactions(epochUntil uint64) error {
+func (rs *RedisStore) DequeueTransactions(epochUntil uint64) error {
 	return rs.dequeueEpochRangeData(store.EpochTransaction, epochUntil)
 }
 
-func (rs *redisStore) DequeueLogs(epochUntil uint64) error {
+func (rs *RedisStore) DequeueLogs(epochUntil uint64) error {
 	return rs.dequeueEpochRangeData(store.EpochLog, epochUntil)
 }
 
-func (rs *redisStore) Close() error {
+func (rs *RedisStore) Close() error {
 	return rs.rdb.Close()
 }
 
-func (rs *redisStore) Flush() error {
+func (rs *RedisStore) Flush() error {
 	return rs.rdb.FlushDBAsync(rs.ctx).Err()
 }
 
-func (rs *redisStore) LoadConfig(confNames ...string) (map[string]interface{}, error) {
+func (rs *RedisStore) LoadConfig(confNames ...string) (map[string]interface{}, error) {
 	iSlice, err := rs.rdb.HMGet(rs.ctx, "conf", confNames...).Result()
 	if err != nil {
 		return nil, err
@@ -335,11 +335,11 @@ func (rs *redisStore) LoadConfig(confNames ...string) (map[string]interface{}, e
 	return res, nil
 }
 
-func (rs *redisStore) StoreConfig(confName string, confVal interface{}) error {
+func (rs *RedisStore) StoreConfig(confName string, confVal interface{}) error {
 	return rs.rdb.HSet(rs.ctx, "conf", confName, confVal).Err()
 }
 
-func (rs *redisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKeys ...string) error {
+func (rs *RedisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKeys ...string) error {
 	for {
 		err := rs.rdb.Watch(rs.ctx, func(tx *redis.Tx) error {
 			return txConsumeFunc(tx)
@@ -359,7 +359,7 @@ func (rs *redisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKe
 }
 
 // TODO: store extra epoch data for more data fields extensibility.
-func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (store.EpochDataOpNumAlters, error) {
+func (rs *RedisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (store.EpochDataOpNumAlters, error) {
 	opHistory := store.EpochDataOpNumAlters{}
 
 	// Epoch blocks & transactions hash collections
@@ -468,7 +468,7 @@ func (rs *redisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 	return opHistory, nil
 }
 
-func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemoveOption, rmOpType store.EpochOpType) error {
+func (rs *RedisStore) remove(epochFrom, epochTo uint64, option store.EpochRemoveOption, rmOpType store.EpochOpType) error {
 	if epochFrom > epochTo {
 		return errors.Errorf("invalid epoch range (%v,%v)", epochFrom, epochTo)
 	}
@@ -596,7 +596,7 @@ func (rs *redisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 	}, watchKeys...)
 }
 
-func (rs *redisStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil uint64) error {
+func (rs *RedisStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil uint64) error {
 	epochFrom, _, err := loadEpochRange(rs.ctx, rs.rdb, rt)
 	if err != nil {
 		return errors.WithMessage(err, "failed to get epoch range")
@@ -609,7 +609,7 @@ func (rs *redisStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil u
 	return rs.remove(epochFrom, epochUntil, rt.ToRemoveOption(), rt.ToDequeOption())
 }
 
-func (rs *redisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64, growFrom ...uint64) error {
+func (rs *RedisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64, growFrom ...uint64) error {
 	cacheKey := getMetaCacheKey("epoch.ranges")
 	batchKVTo := make([]interface{}, 0, 4*2)
 	batchKFrom := make([]string, 0, 4)
@@ -659,7 +659,7 @@ func (rs *redisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64, gr
 	return nil
 }
 
-func (rs *redisStore) updateEpochRangeMin(rp redis.Pipeliner, epochNo uint64, rt store.EpochDataType) error {
+func (rs *RedisStore) updateEpochRangeMin(rp redis.Pipeliner, epochNo uint64, rt store.EpochDataType) error {
 	cacheKey := getMetaCacheKey("epoch.ranges")
 
 	// Update min epoch for local epoch range
@@ -721,7 +721,7 @@ return true
 	return nil
 }
 
-func (rs *redisStore) updateEpochDataCount(rp redis.Pipeliner, opHistory store.EpochDataOpNumAlters) error {
+func (rs *RedisStore) updateEpochDataCount(rp redis.Pipeliner, opHistory store.EpochDataOpNumAlters) error {
 	refreshExpr := false
 
 	// Update epoch totals
@@ -750,12 +750,12 @@ func (rs *redisStore) updateEpochDataCount(rp redis.Pipeliner, opHistory store.E
 	return nil
 }
 
-func (rs *redisStore) refreshEpochStatsExpr() error {
+func (rs *RedisStore) refreshEpochStatsExpr() error {
 	cacheKey := getMetaCacheKey("epoch.statistics")
 	return rs.rdb.Expire(rs.ctx, cacheKey, rs.cacheTime).Err()
 }
 
-func (rs *redisStore) refreshEpochRangeExpr() error {
+func (rs *RedisStore) refreshEpochRangeExpr() error {
 	cacheKey := getMetaCacheKey("epoch.ranges")
 	return rs.rdb.Expire(rs.ctx, cacheKey, rs.cacheTime).Err()
 }

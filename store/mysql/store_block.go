@@ -1,6 +1,8 @@
 package mysql
 
 import (
+	"context"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
@@ -87,7 +89,7 @@ func (bs *blockStore) loadBlockSummary(whereClause string, args ...interface{}) 
 	}, nil
 }
 
-func (bs *blockStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error) {
+func (bs *blockStore) GetBlocksByEpoch(ctx context.Context, epochNumber uint64) ([]types.Hash, error) {
 	rows, err := bs.db.Raw("SELECT hash FROM blocks WHERE epoch = ?", epochNumber).Rows()
 	if err != nil {
 		return nil, err
@@ -113,29 +115,29 @@ func (bs *blockStore) GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error)
 	return result, nil
 }
 
-func (bs *blockStore) GetBlockByEpoch(epochNumber uint64) (*store.Block, error) {
+func (bs *blockStore) GetBlockByEpoch(ctx context.Context, epochNumber uint64) (*store.Block, error) {
 	// TODO Cannot get tx from db in advance, since only executed txs saved in db
 	return nil, store.ErrUnsupported
 }
 
-func (bs *blockStore) GetBlockSummaryByEpoch(epochNumber uint64) (*store.BlockSummary, error) {
+func (bs *blockStore) GetBlockSummaryByEpoch(ctx context.Context, epochNumber uint64) (*store.BlockSummary, error) {
 	return bs.loadBlockSummary("epoch = ? AND pivot = true", epochNumber)
 }
 
-func (bs *blockStore) GetBlockByHash(blockHash types.Hash) (*store.Block, error) {
+func (bs *blockStore) GetBlockByHash(ctx context.Context, blockHash types.Hash) (*store.Block, error) {
 	return nil, store.ErrUnsupported
 }
 
-func (bs *blockStore) GetBlockSummaryByHash(blockHash types.Hash) (*store.BlockSummary, error) {
+func (bs *blockStore) GetBlockSummaryByHash(ctx context.Context, blockHash types.Hash) (*store.BlockSummary, error) {
 	hash := blockHash.String()
 	return bs.loadBlockSummary("hash_id = ? AND hash = ?", util.GetShortIdOfHash(hash), hash)
 }
 
-func (bs *blockStore) GetBlockByBlockNumber(blockNumber uint64) (*store.Block, error) {
+func (bs *blockStore) GetBlockByBlockNumber(ctx context.Context, blockNumber uint64) (*store.Block, error) {
 	return nil, store.ErrUnsupported
 }
 
-func (bs *blockStore) GetBlockSummaryByBlockNumber(blockNumber uint64) (*store.BlockSummary, error) {
+func (bs *blockStore) GetBlockSummaryByBlockNumber(ctx context.Context, blockNumber uint64) (*store.BlockSummary, error) {
 	return bs.loadBlockSummary("block_number = ?", blockNumber)
 }
 

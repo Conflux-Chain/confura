@@ -49,7 +49,7 @@ func start(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	wg := &sync.WaitGroup{}
 
-	storeCtx := mustInitStoreContext(syncServerEnabled)
+	storeCtx := mustInitStoreContext()
 	defer storeCtx.Close()
 
 	if syncServerEnabled {

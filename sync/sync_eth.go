@@ -39,7 +39,7 @@ type EthSyncer struct {
 	// EVM space chain id
 	chainId uint32
 	// db store
-	db store.Store
+	db *mysql.MysqlStoreV2
 	// block number to sync chaindata from
 	fromBlock uint64
 	// maximum number of blocks to sync once
@@ -53,7 +53,7 @@ type EthSyncer struct {
 }
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
-func MustNewEthSyncer(ethC *web3go.Client, db store.Store) *EthSyncer {
+func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStoreV2) *EthSyncer {
 	ethChainId, err := ethC.Eth.ChainId()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get chain ID from eth space")
@@ -307,30 +307,16 @@ func (syncer *EthSyncer) mustLoadLastSyncBlock() {
 }
 
 func (syncer *EthSyncer) loadLastSyncBlock() (loaded bool, err error) {
-	if ms, ok := syncer.db.(*mysql.MysqlStore); ok && ms.V2 != nil {
-		maxBlock, ok, err := ms.V2.MaxEpoch()
-		if err != nil {
-			return false, errors.WithMessage(err, "failed to get max block from e2b mapping")
-		}
-
-		if ok {
-			syncer.fromBlock = maxBlock + 1
-		}
-
-		return ok, nil
+	maxBlock, ok, err := syncer.db.MaxEpoch()
+	if err != nil {
+		return false, errors.WithMessage(err, "failed to get max block from e2b mapping")
 	}
 
-	_, maxBlock, err := syncer.db.GetGlobalEpochRange()
-	if err == nil {
+	if ok {
 		syncer.fromBlock = maxBlock + 1
-		return true, nil
 	}
 
-	if !syncer.db.IsRecordNotFound(err) {
-		return false, errors.WithMessage(err, "failed to read sync block range from ethdb")
-	}
-
-	return false, nil
+	return ok, nil
 }
 
 func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
@@ -345,22 +331,8 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 		return string(blockHash), nil
 	}
 
-	if ms, ok := syncer.db.(*mysql.MysqlStore); ok && ms.V2 != nil {
-		pivotHash, _, err := ms.V2.PivotHash(latestBlockNo)
-		return pivotHash, err
-	}
-
-	// load from db store
-	block, err := syncer.db.GetBlockSummaryByEpoch(latestBlockNo)
-	if err == nil {
-		return string(block.CfxBlockSummary.Hash), nil
-	}
-
-	if syncer.db.IsRecordNotFound(err) {
-		return "", nil
-	}
-
-	return "", errors.WithMessagef(err, "failed to get block #%v", latestBlockNo)
+	pivotHash, _, err := syncer.db.PivotHash(latestBlockNo)
+	return pivotHash, err
 }
 
 // convertToEpochData converts ETH block data to Conflux epoch data. This is used to bridge eth

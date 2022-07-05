@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+	"io"
 	"sort"
 
 	"github.com/conflux-chain/conflux-infura/store"
@@ -11,16 +12,27 @@ import (
 	"gorm.io/gorm"
 )
 
+var (
+	_ store.Readable      = (*MysqlStoreV2)(nil)
+	_ store.StackOperable = (*MysqlStoreV2)(nil)
+	_ store.Configurable  = (*MysqlStoreV2)(nil)
+	_ io.Closer           = (*MysqlStoreV2)(nil)
+)
+
+type StoreOption struct {
+	Disabler store.StoreDisabler
+}
+
 type MysqlStoreV2 struct {
 	*baseStore
 	*epochBlockMapStore
-	ts   *txStore
-	bs   *blockStore
+	*txStore
+	*blockStore
+	*confStore
+	*UserStore
 	ls   *logStoreV2
 	ails *AddressIndexedLogStore
 	bcls *bigContractLogStore
-	cfs  *confStore
-	us   *UserStore
 	cs   *ContractStore
 
 	// config
@@ -29,32 +41,6 @@ type MysqlStoreV2 struct {
 	disabler store.StoreDisabler
 	// store pruner
 	pruner *storePruner
-}
-
-// NewStoreV2FromV1 adapts a v1 store to v2 store.
-// TODO: deprecate this function once v2 is production ready.
-func NewStoreV2FromV1(v1 *MysqlStore) *MysqlStoreV2 {
-	pruner := newStorePruner(v1.db)
-	ls := newLogStoreV2(v1.db, v1.cs, v1.epochBlockMapStore, pruner.newBnPartitionObsChan)
-	bcls := newBigContractLogStore(
-		v1.db, v1.cs, v1.epochBlockMapStore, v1.AddressIndexedLogStore, pruner.newBnPartitionObsChan,
-	)
-
-	return &MysqlStoreV2{
-		baseStore:          v1.baseStore,
-		epochBlockMapStore: v1.epochBlockMapStore,
-		ts:                 v1.txStore,
-		bs:                 v1.blockStore,
-		ls:                 ls,
-		bcls:               bcls,
-		ails:               v1.AddressIndexedLogStore,
-		cfs:                v1.confStore,
-		us:                 v1.UserStore,
-		cs:                 v1.cs,
-		config:             v1.config,
-		disabler:           v1.disabler,
-		pruner:             pruner,
-	}
 }
 
 func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStoreV2 {
@@ -66,13 +52,13 @@ func mustNewStoreV2(db *gorm.DB, config *Config, option StoreOption) *MysqlStore
 	return &MysqlStoreV2{
 		baseStore:          newBaseStore(db),
 		epochBlockMapStore: ebms,
-		ts:                 newTxStore(db),
-		bs:                 newBlockStore(db),
+		txStore:            newTxStore(db),
+		blockStore:         newBlockStore(db),
+		confStore:          newConfStore(db),
+		UserStore:          newUserStore(db),
 		ls:                 newLogStoreV2(db, cs, ebms, pruner.newBnPartitionObsChan),
 		bcls:               newBigContractLogStore(db, cs, ebms, ails, pruner.newBnPartitionObsChan),
 		ails:               ails,
-		cfs:                newConfStore(db),
-		us:                 newUserStore(db),
 		cs:                 cs,
 		config:             config,
 		disabler:           option.Disabler,
@@ -137,10 +123,10 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 		return errors.New("failed to prepare epoch block map partition")
 	}
 
-	return ms.db.Transaction(func(dbTx *gorm.DB) error {
+	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
 		if !ms.disabler.IsChainBlockDisabled() {
 			// save blocks
-			if err := ms.bs.Add(dbTx, dataSlice); err != nil {
+			if err := ms.blockStore.Add(dbTx, dataSlice); err != nil {
 				return errors.WithMessagef(err, "failed to save blocks")
 			}
 		}
@@ -149,7 +135,7 @@ func (ms *MysqlStoreV2) Pushn(dataSlice []*store.EpochData) error {
 		skipRcpt := ms.disabler.IsChainReceiptDisabled()
 		if !skipRcpt || !skipTxn {
 			// save transactions or receipts
-			if err := ms.ts.Add(dbTx, dataSlice, skipTxn, skipRcpt); err != nil {
+			if err := ms.txStore.Add(dbTx, dataSlice, skipTxn, skipRcpt); err != nil {
 				return errors.WithMessage(err, "failed to save transactions")
 			}
 		}
@@ -199,10 +185,10 @@ func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
 	updater := metrics.Registry.Store.Pop("mysql")
 	defer updater.Update()
 
-	return ms.db.Transaction(func(dbTx *gorm.DB) error {
+	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
 		if !ms.disabler.IsChainBlockDisabled() {
 			// remove blocks
-			if err := ms.bs.Remove(dbTx, epochUntil, maxEpoch); err != nil {
+			if err := ms.blockStore.Remove(dbTx, epochUntil, maxEpoch); err != nil {
 				return errors.WithMessage(err, "failed to remove blocks")
 			}
 		}
@@ -211,7 +197,7 @@ func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
 		skipRcpt := ms.disabler.IsChainReceiptDisabled()
 		if !skipRcpt || !skipTxn {
 			// remove transactions or receipts
-			if err := ms.ts.Remove(dbTx, epochUntil, maxEpoch); err != nil {
+			if err := ms.txStore.Remove(dbTx, epochUntil, maxEpoch); err != nil {
 				return errors.WithMessage(err, "failed to remove transactions")
 			}
 		}
@@ -240,7 +226,7 @@ func (ms *MysqlStoreV2) Popn(epochUntil uint64) error {
 		}
 
 		// pop is always due to pivot chain switch, update reorg version too
-		return ms.cfs.createOrUpdateReorgVersion(dbTx)
+		return ms.confStore.createOrUpdateReorgVersion(dbTx)
 	})
 }
 

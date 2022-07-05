@@ -37,7 +37,7 @@ func MustNewDBPruner(db store.Store) *Pruner {
 }
 
 // MustNewKVCachePruner creates an instance of Pruner to prune blockchain data in kv cache
-func MustNewKVCachePruner(cache store.Store) *Pruner {
+func MustNewKVCachePruner(cache store.Prunable) *Pruner {
 	var pc PruneConfig
 	viper.MustUnmarshalKey("prune.cache", &pc)
 	return newPruner("KVPruner", cache, &pc)
@@ -47,12 +47,12 @@ func MustNewKVCachePruner(cache store.Store) *Pruner {
 // It will prune blockchain data in store with epoch as the smallest unit to retain data atomicity.
 type Pruner struct {
 	name        string
-	store       store.Store
+	store       store.Prunable
 	pruneConfig *PruneConfig
 }
 
 // newPruner creates an instance of Pruner to prune blockchain data.
-func newPruner(name string, store store.Store, pc *PruneConfig) *Pruner {
+func newPruner(name string, store store.Prunable, pc *PruneConfig) *Pruner {
 	return &Pruner{name: name, store: store, pruneConfig: pc}
 }
 

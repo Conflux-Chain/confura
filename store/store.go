@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"io"
 	"strings"
 
@@ -37,42 +38,47 @@ type Prunable interface {
 
 // Readable is used for RPC to read cached data from database.
 type Readable interface {
-	GetLogs(filter LogFilter) ([]Log, error)
+	GetLogs(ctx context.Context, filter LogFilterV2) ([]*LogV2, error)
 
-	GetTransaction(txHash types.Hash) (*Transaction, error)
-	GetReceipt(txHash types.Hash) (*TransactionReceipt, error)
+	GetTransaction(ctx context.Context, txHash types.Hash) (*Transaction, error)
+	GetReceipt(ctx context.Context, txHash types.Hash) (*TransactionReceipt, error)
 
-	GetBlocksByEpoch(epochNumber uint64) ([]types.Hash, error)
-	GetBlockByEpoch(epochNumber uint64) (*Block, error)
-	GetBlockSummaryByEpoch(epochNumber uint64) (*BlockSummary, error)
-	GetBlockByHash(blockHash types.Hash) (*Block, error)
-	GetBlockSummaryByHash(blockHash types.Hash) (*BlockSummary, error)
-	GetBlockByBlockNumber(blockNumber uint64) (*Block, error)
-	GetBlockSummaryByBlockNumber(blockNumber uint64) (*BlockSummary, error)
+	GetBlocksByEpoch(ctx context.Context, epochNumber uint64) ([]types.Hash, error)
+	GetBlockByEpoch(ctx context.Context, epochNumber uint64) (*Block, error)
+	GetBlockSummaryByEpoch(ctx context.Context, epochNumber uint64) (*BlockSummary, error)
+	GetBlockByHash(ctx context.Context, blockHash types.Hash) (*Block, error)
+	GetBlockSummaryByHash(ctx context.Context, blockHash types.Hash) (*BlockSummary, error)
+	GetBlockByBlockNumber(ctx context.Context, blockNumber uint64) (*Block, error)
+	GetBlockSummaryByBlockNumber(ctx context.Context, blockNumber uint64) (*BlockSummary, error)
+}
+
+type Configurable interface {
+	// LoadConfig load configurations with specified names
+	LoadConfig(confNames ...string) (map[string]interface{}, error)
+	// StoreConfig stores configuration name to value pair
+	StoreConfig(confName string, confVal interface{}) error
+}
+
+type StackOperable interface {
+	// Push appends epoch data to the store
+	Push(data *EpochData) error
+	Pushn(dataSlice []*EpochData) error
+	// Pop removes epoch data from the store like popping a stack, which is deleting
+	// data from the most recently appended epoch to some old epoch
+	Popn(epochUntil uint64) error
 }
 
 // Store is implemented by any object that persist blockchain data, especially for event logs.
 type Store interface {
 	Readable
 	Prunable
+	Configurable
+	StackOperable
 	io.Closer
 
 	IsRecordNotFound(err error) bool
 
 	GetGlobalEpochRange() (uint64, uint64, error)
-
-	// Push appends epoch data to the store
-	Push(data *EpochData) error
-	Pushn(dataSlice []*EpochData) error
-	// Pop removes epoch data from the store like popping a stack, which is deleting
-	// data from the most recently appended epoch to some old epoch
-	Pop() error
-	Popn(epochUntil uint64) error
-
-	// LoadConfig load configurations with specified names
-	LoadConfig(confNames ...string) (map[string]interface{}, error)
-	// StoreConfig stores configuration name to value pair
-	StoreConfig(confName string, confVal interface{}) error
 }
 
 type CacheStore interface {

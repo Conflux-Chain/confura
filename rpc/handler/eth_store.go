@@ -12,23 +12,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// EthHandler interface delegated to handle eth rpc request
-type EthHandler interface {
-	GetBlockByHash(ctx context.Context, blockHash common.Hash, includeTxs bool) (*web3Types.Block, error)
-	GetBlockByNumber(ctx context.Context, blockNum *web3Types.BlockNumber, includeTxs bool) (*web3Types.Block, error)
-	GetLogs(ctx context.Context, filter store.LogFilter) ([]web3Types.Log, error)
-	GetTransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.Transaction, error)
-	GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error)
-}
-
 // EthStoreHandler implements ethHandler interface to accelerate rpc request handling by
 // loading ETH blockchain data from store
 type EthStoreHandler struct {
-	store store.Store
-	next  EthHandler
+	store store.Readable
+	next  *EthStoreHandler
 }
 
-func NewEthStoreHandler(store store.Store, next EthHandler) *EthStoreHandler {
+func NewEthStoreHandler(store store.Readable, next *EthStoreHandler) *EthStoreHandler {
 	return &EthStoreHandler{store: store, next: next}
 }
 
@@ -45,9 +36,9 @@ func (h *EthStoreHandler) GetBlockByHash(ctx context.Context, blockHash common.H
 	cfxBlockHash := cfxbridge.ConvertHash(blockHash)
 
 	if includeTxs {
-		sblock, err = h.store.GetBlockByHash(cfxBlockHash)
+		sblock, err = h.store.GetBlockByHash(ctx, cfxBlockHash)
 	} else {
-		sblocksum, err = h.store.GetBlockSummaryByHash(cfxBlockHash)
+		sblocksum, err = h.store.GetBlockSummaryByHash(ctx, cfxBlockHash)
 	}
 
 	if err != nil {
@@ -83,9 +74,9 @@ func (h *EthStoreHandler) GetBlockByNumber(ctx context.Context, blockNum *web3Ty
 	var sblocksum *store.BlockSummary
 
 	if includeTxs {
-		sblock, err = h.store.GetBlockByBlockNumber(uint64(*blockNum))
+		sblock, err = h.store.GetBlockByBlockNumber(ctx, uint64(*blockNum))
 	} else {
-		sblocksum, err = h.store.GetBlockSummaryByBlockNumber(uint64(*blockNum))
+		sblocksum, err = h.store.GetBlockSummaryByBlockNumber(ctx, uint64(*blockNum))
 	}
 
 	if err != nil {
@@ -107,16 +98,16 @@ func (h *EthStoreHandler) GetBlockByNumber(ctx context.Context, blockNum *web3Ty
 	return
 }
 
-func (h *EthStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (logs []web3Types.Log, err error) {
+func (h *EthStoreHandler) GetLogs(ctx context.Context, filter store.LogFilterV2) (logs []web3Types.Log, err error) {
 	if store.EthStoreConfig().IsChainLogDisabled() {
 		return nil, store.ErrUnsupported
 	}
 
-	slogs, err := h.store.GetLogs(filter)
+	slogs, err := h.store.GetLogs(ctx, filter)
 	if err == nil {
 		logs = make([]web3Types.Log, len(slogs))
 		for i := 0; i < len(slogs); i++ {
-			logs[i] = *ethbridge.ConvertLog(slogs[i].CfxLog, slogs[i].Extra)
+			logs[i] = *ethbridge.ConvertLog(slogs[i].ToCfxLog())
 		}
 
 		return logs, nil
@@ -134,7 +125,7 @@ func (h *EthStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (
 func (h *EthStoreHandler) GetTransactionByHash(ctx context.Context, txHash common.Hash) (*web3Types.Transaction, error) {
 	cfxTxHash := cfxbridge.ConvertHash(txHash)
 
-	stx, err := h.store.GetTransaction(cfxTxHash)
+	stx, err := h.store.GetTransaction(ctx, cfxTxHash)
 	if err == nil {
 		return ethbridge.ConvertTx(stx.CfxTransaction, stx.Extra), nil
 	}
@@ -149,7 +140,7 @@ func (h *EthStoreHandler) GetTransactionByHash(ctx context.Context, txHash commo
 func (h *EthStoreHandler) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error) {
 	cfxTxHash := cfxbridge.ConvertHash(txHash)
 
-	stxRcpt, err := h.store.GetReceipt(cfxTxHash)
+	stxRcpt, err := h.store.GetReceipt(ctx, cfxTxHash)
 	if err == nil {
 		return ethbridge.ConvertReceipt(stxRcpt.CfxReceipt, stxRcpt.Extra), nil
 	}

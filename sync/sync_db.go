@@ -43,7 +43,7 @@ type DatabaseSyncer struct {
 	// conflux sdk client
 	cfx sdk.ClientOperator
 	// db store
-	db store.Store
+	db *mysql.MysqlStoreV2
 	// epoch number to sync data from
 	epochFrom uint64
 	// maximum number of epochs to sync once
@@ -65,7 +65,7 @@ type DatabaseSyncer struct {
 }
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
-func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db store.Store) *DatabaseSyncer {
+func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStoreV2) *DatabaseSyncer {
 	var conf syncConfig
 	viperutil.MustUnmarshalKey("sync", &conf)
 
@@ -171,30 +171,16 @@ func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 }
 
 func (syncer *DatabaseSyncer) loadLastSyncEpoch() (loaded bool, err error) {
-	if ms, ok := syncer.db.(*mysql.MysqlStore); ok && ms.V2 != nil {
-		maxEpoch, ok, err := ms.V2.MaxEpoch()
-		if err != nil {
-			return false, errors.WithMessage(err, "failed to get max epoch from epoch to block mapping")
-		}
-
-		if ok {
-			syncer.epochFrom = maxEpoch + 1
-		}
-
-		return ok, nil
+	maxEpoch, ok, err := syncer.db.MaxEpoch()
+	if err != nil {
+		return false, errors.WithMessage(err, "failed to get max epoch from epoch to block mapping")
 	}
 
-	_, maxEpoch, err := syncer.db.GetGlobalEpochRange()
-	if err == nil {
+	if ok {
 		syncer.epochFrom = maxEpoch + 1
-		return true, nil
 	}
 
-	if !syncer.db.IsRecordNotFound(err) {
-		return false, errors.WithMessage(err, "failed to read sync epoch range from db")
-	}
-
-	return false, nil
+	return ok, nil
 }
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
@@ -525,24 +511,8 @@ func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
 		return pivotHash, nil
 	}
 
-	if ms, ok := syncer.db.(*mysql.MysqlStore); ok && ms.V2 != nil {
-		pivotHash, _, err := ms.V2.PivotHash(latestEpochNo)
-		return types.Hash(pivotHash), err
-	}
-
-	// load from db store if cache missed
-	pivotBlock, err := syncer.db.GetBlockSummaryByEpoch(latestEpochNo)
-	if err == nil {
-		return pivotBlock.CfxBlockSummary.Hash, nil
-	}
-
-	if syncer.db.IsRecordNotFound(err) {
-		return types.Hash(""), nil
-	}
-
-	return types.Hash(""), errors.WithMessagef(
-		err, "failed to get block by epoch %v", latestEpochNo,
-	)
+	pivotHash, _, err := syncer.db.PivotHash(latestEpochNo)
+	return types.Hash(pivotHash), err
 }
 
 func (syncer *DatabaseSyncer) latestStoreEpoch() uint64 {

@@ -15,13 +15,17 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	errEventLogsTooStale = errors.New("event logs are too stale (already pruned)")
+)
+
 type CfxLogsApiHandlerV2 struct {
-	ms *mysql.MysqlStore
+	ms *mysql.MysqlStoreV2
 
 	prunedHandler *CfxPrunedLogsHandler // optional
 }
 
-func NewCfxLogsApiHandlerV2(ms *mysql.MysqlStore, prunedHandler *CfxPrunedLogsHandler) *CfxLogsApiHandlerV2 {
+func NewCfxLogsApiHandlerV2(ms *mysql.MysqlStoreV2, prunedHandler *CfxPrunedLogsHandler) *CfxLogsApiHandlerV2 {
 	return &CfxLogsApiHandlerV2{ms, prunedHandler}
 }
 
@@ -90,7 +94,7 @@ func (handler *CfxLogsApiHandlerV2) getLogsReorgGuard(
 			return nil, false, err
 		}
 
-		dbLogs, err := handler.ms.GetLogsV2(ctx, dbFilters[i])
+		dbLogs, err := handler.ms.GetLogs(ctx, dbFilters[i])
 
 		// succeeded to get logs from database
 		if err == nil {

@@ -72,7 +72,7 @@ func startSyncService(*cobra.Command, []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
-	storeCtx := mustInitStoreContext(true)
+	storeCtx := mustInitStoreContext()
 	defer storeCtx.Close()
 
 	syncCtx := mustInitSyncContext(storeCtx)
@@ -141,17 +141,9 @@ func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncC
 	// Sync data to db
 	logrus.Info("Start to sync CFX blockchain data into database")
 	syncer := cisync.MustNewDatabaseSyncer(syncCtx.syncCfx, syncCtx.cfxDB)
+
 	go syncer.Sync(ctx, wg)
-
-	if syncCtx.cfxDB.V2 != nil { // prune v2
-		go syncCtx.cfxDB.V2.Prune()
-		return syncer
-	}
-
-	// Prune data from db
-	logrus.Info("Start to prune CFX blockchain data from database")
-	pruner := cisync.MustNewDBPruner(syncCtx.cfxDB)
-	go pruner.Prune(ctx, wg)
+	go syncCtx.cfxDB.Prune()
 
 	return syncer
 }
@@ -182,17 +174,9 @@ func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncC
 	// Sync data to database
 	logrus.Info("Start to sync ETH blockchain data into database")
 	ethSyncer := cisync.MustNewEthSyncer(syncCtx.syncEth, syncCtx.ethDB)
+
 	go ethSyncer.Sync(ctx, wg)
-
-	if syncCtx.ethDB.V2 != nil { // prune v2
-		go syncCtx.ethDB.V2.Prune()
-		return
-	}
-
-	// Prune data from database
-	logrus.Info("Start to prune ETH blockchain data from database")
-	ethdbPruner := cisync.MustNewDBPruner(syncCtx.ethDB)
-	go ethdbPruner.Prune(ctx, wg)
+	go syncCtx.ethDB.Prune()
 }
 
 func startFastSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) {

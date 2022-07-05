@@ -26,8 +26,8 @@ var (
 )
 
 type CfxAPIOption struct {
-	StoreHandler  handler.CfxStoreHandler
-	LogApiHandler *handler.CfxLogsApiHandler
+	StoreHandler  *handler.CfxStoreHandler
+	LogApiHandler *handler.CfxLogsApiHandlerV2
 	Relayer       *relay.TxnRelayer
 }
 
@@ -318,12 +318,10 @@ func (api *cfxAPI) normalizeLogFilter(cfx sdk.ClientOperator, flag store.LogFilt
 		filter.FromEpoch, filter.ToEpoch = epochs[0], epochs[1]
 	}
 
-	// For store v2, filter offset/limit is not supported anymore.
-	// TODO: remove the following reset codes once fullnode v2.0.3 is ready.
-	if api.LogApiHandler != nil && api.LogApiHandler.V2() != nil {
-		filter.Offset = nil
-		filter.Limit = nil
-	}
+	// For store v2, filter offset/limit are not supported anymore, but fullnode doesn't
+	// deprecate it until v2.0.3.
+	// TODO: remove the following codes once fullnode v2.0.3 is ready.
+	filter.Offset, filter.Limit = nil, nil
 
 	return nil
 }
@@ -347,12 +345,6 @@ func (api *cfxAPI) validateLogFilter(flag store.LogFilterType, filter *types.Log
 			return errInvalidLogFilterBlockRange
 		}
 
-		if api.LogApiHandler == nil || api.LogApiHandler.V2() == nil {
-			if count := toBlock - fromBlock + 1; count > store.MaxLogBlockRange {
-				return errExceedLogFilterBlockRangeLimit
-			}
-		}
-
 	case flag&store.LogFilterTypeEpochRange != 0: // validate epoch range log filter
 		epochFrom, _ := filter.FromEpoch.ToInt()
 		epochTo, _ := filter.ToEpoch.ToInt()
@@ -363,19 +355,6 @@ func (api *cfxAPI) validateLogFilter(flag store.LogFilterType, filter *types.Log
 		if ef > et {
 			return errInvalidLogFilterEpochRange
 		}
-
-		if api.LogApiHandler == nil || api.LogApiHandler.V2() == nil {
-			if count := et - ef + 1; count > store.MaxLogEpochRange {
-				return errExceedLogFilterEpochRangeLimit
-			}
-		}
-	}
-
-	// TODO: remove the following reset codes once fullnode v2.0.3 is ready.
-	if filter.Limit != nil && uint64(*filter.Limit) > store.MaxLogLimit {
-		return errors.Errorf(
-			"limit set exceeds max acceptable value %v", store.MaxLogLimit,
-		)
 	}
 
 	return nil

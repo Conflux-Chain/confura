@@ -14,12 +14,12 @@ import (
 )
 
 type EthLogsApiHandlerV2 struct {
-	ms *mysql.MysqlStore
+	ms *mysql.MysqlStoreV2
 
 	networkId atomic.Value
 }
 
-func NewEthLogsApiHandlerV2(ms *mysql.MysqlStore) *EthLogsApiHandlerV2 {
+func NewEthLogsApiHandlerV2(ms *mysql.MysqlStoreV2) *EthLogsApiHandlerV2 {
 	return &EthLogsApiHandlerV2{ms: ms}
 }
 
@@ -82,7 +82,7 @@ func (handler *EthLogsApiHandlerV2) getLogsReorgGuard(
 
 	// query data from database
 	if dbFilter != nil {
-		dbLogs, err := handler.ms.GetLogsV2(ctx, *dbFilter)
+		dbLogs, err := handler.ms.GetLogs(ctx, *dbFilter)
 		if err != nil {
 			// TODO ErrPrunedAlready
 			return nil, false, err

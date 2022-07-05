@@ -53,7 +53,7 @@ func startRpcService(*cobra.Command, []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
-	storeCtx := mustInitStoreContext(false)
+	storeCtx := mustInitStoreContext()
 	defer storeCtx.Close()
 
 	if rpcOpt.cfxEnabled {
@@ -75,10 +75,10 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	router := node.Factory().CreateRouter()
 
 	// Add empty store tolerance
-	var storeHandler handler.CfxStoreHandler
+	var storeHandler *handler.CfxStoreHandler
 	storeNames := []string{"db", "cache"}
 
-	for i, s := range []store.Store{storeCtx.cfxDB, storeCtx.cfxCache} {
+	for i, s := range []store.Readable{storeCtx.cfxDB, storeCtx.cfxCache} {
 		if !util.IsInterfaceValNil(s) {
 			storeHandler = handler.NewCfxCommonStoreHandler(storeNames[i], s, storeHandler)
 		}
@@ -87,7 +87,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	gasHandler := handler.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
 
-	var logsApiHandler *handler.CfxLogsApiHandler
+	var logsApiHandler *handler.CfxLogsApiHandlerV2
 	if storeCtx.cfxDB != nil {
 		var prunedHandler *handler.CfxPrunedLogsHandler
 		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
@@ -98,7 +98,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 			)
 		}
 
-		logsApiHandler = handler.NewCfxLogsApiHandler(storeHandler, prunedHandler, storeCtx.cfxDB)
+		logsApiHandler = handler.NewCfxLogsApiHandlerV2(storeCtx.ethDB, prunedHandler)
 
 		go rate.DefaultRegistryCfx.AutoReload(10*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
 	}
@@ -126,7 +126,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx st
 	// Add empty store tolerance
 	if !util.IsInterfaceValNil(storeCtx.ethDB) {
 		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.ethDB, nil)
-		option.LogApiHandler = handler.NewEthLogsApiHandler(option.StoreHandler, storeCtx.ethDB)
+		option.LogApiHandler = handler.NewEthLogsApiHandlerV2(storeCtx.ethDB)
 
 		go rate.DefaultRegistryEth.AutoReload(10*time.Second, storeCtx.ethDB.LoadRateLimitConfigs)
 	}

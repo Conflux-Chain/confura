@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"context"
+
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
@@ -12,28 +14,29 @@ import (
 )
 
 // Epoch reverted handler function injected support for flexibility and testability
-type epochRevertedChecker func(cfx sdk.ClientOperator, s store.Store, epochNo uint64) (res bool, err error)
-type firstRevertedEpochSearcher func(cfx sdk.ClientOperator, s store.Store, epochRange citypes.RangeUint64) (uint64, error)
-type epochRevertedPruner func(s store.Store, er citypes.RangeUint64) error
+type epochRevertedChecker func(cfx sdk.ClientOperator, s store.StackOperable, epochNo uint64) (res bool, err error)
+type firstRevertedEpochSearcher func(cfx sdk.ClientOperator, s store.StackOperable, epochRange citypes.RangeUint64) (uint64, error)
+type epochRevertedPruner func(s store.StackOperable, er citypes.RangeUint64) error
 
 // Ensure epoch data in store valid such as not reverted etc.,
-func ensureStoreEpochDataOk(cfx sdk.ClientOperator, s store.Store) error {
+func ensureStoreEpochDataOk(cfx sdk.ClientOperator, s store.StackOperable) error {
 	var maxEpoch uint64
 	var err error
 
-	if ms, ok := s.(*mysql.MysqlStore); ok && ms.V2 != nil {
-		maxEpoch, ok, err = ms.V2.MaxEpoch()
-		if err == nil && !ok {
-			err = store.ErrNotFound
+	if ms, ok := s.(*mysql.MysqlStoreV2); ok {
+		maxEpoch, ok, err = ms.MaxEpoch()
+		if err == nil && !ok { // no epoch data existed yet
+			return nil
 		}
 	} else {
+		ss := s.(store.Store)
 		// Get the latest confirmed sync epoch number from store
-		_, maxEpoch, err = s.GetGlobalEpochRange()
-	}
+		_, maxEpoch, err = ss.GetGlobalEpochRange()
 
-	// If there is no epoch data in store yet, nothing needs to be done
-	if s.IsRecordNotFound(err) {
-		return nil
+		// If there is no epoch data in store yet, nothing needs to be done
+		if ss.IsRecordNotFound(err) {
+			return nil
+		}
 	}
 
 	// Otherwise return err
@@ -45,7 +48,7 @@ func ensureStoreEpochDataOk(cfx sdk.ClientOperator, s store.Store) error {
 	logrus.WithField("epochRange", epochRange).Debug("Ensuring epoch data within range ok...")
 
 	// Epoch reverted handler
-	searcher := func(cfx sdk.ClientOperator, s store.Store, epochRange citypes.RangeUint64) (uint64, error) {
+	searcher := func(cfx sdk.ClientOperator, s store.StackOperable, epochRange citypes.RangeUint64) (uint64, error) {
 		return findFirstRevertedEpochInRange(cfx, s, epochRange, checkIfEpochIsReverted)
 	}
 
@@ -53,7 +56,10 @@ func ensureStoreEpochDataOk(cfx sdk.ClientOperator, s store.Store) error {
 }
 
 // Ensure epoch within the specified range not reverted or prune the reverted epoch data
-func ensureEpochRangeNotRerverted(cfx sdk.ClientOperator, s store.Store, epochRange citypes.RangeUint64, searcher firstRevertedEpochSearcher, pruner epochRevertedPruner) error {
+func ensureEpochRangeNotRerverted(
+	cfx sdk.ClientOperator, s store.StackOperable, epochRange citypes.RangeUint64,
+	searcher firstRevertedEpochSearcher, pruner epochRevertedPruner,
+) error {
 	logger := logrus.WithField("epochRange", epochRange)
 	logger.Debug("Ensuring epoch data within range not reverted...")
 
@@ -105,7 +111,9 @@ func ensureEpochRangeNotRerverted(cfx sdk.ClientOperator, s store.Store, epochRa
 }
 
 // Find the first reverted epoch number from a specified epoch range
-func findFirstRevertedEpochInRange(cfx sdk.ClientOperator, s store.Store, er citypes.RangeUint64, checker epochRevertedChecker) (uint64, error) {
+func findFirstRevertedEpochInRange(
+	cfx sdk.ClientOperator, s store.StackOperable, er citypes.RangeUint64, checker epochRevertedChecker,
+) (uint64, error) {
 	// Find the first reverted sync epoch with binary probing
 	start, mid, end, matched := er.From, er.To, er.To, uint64(0)
 	for start <= end && mid >= er.From && mid <= er.To {
@@ -137,9 +145,11 @@ func findFirstRevertedEpochInRange(cfx sdk.ClientOperator, s store.Store, er cit
 }
 
 // Check if the epoch data in store is reverted
-func checkIfEpochIsReverted(cfx sdk.ClientOperator, s store.Store, epochNo uint64) (res bool, err error) {
-	if ms, ok := s.(*mysql.MysqlStore); ok && ms.V2 != nil {
-		pivotHash, ok, err := ms.V2.PivotHash(epochNo)
+func checkIfEpochIsReverted(
+	cfx sdk.ClientOperator, s store.StackOperable, epochNo uint64,
+) (res bool, err error) {
+	if ms, ok := s.(*mysql.MysqlStoreV2); ok {
+		pivotHash, ok, err := ms.PivotHash(epochNo)
 		if err != nil {
 			return false, errors.WithMessage(err, "failed to get epoch pivot hash")
 		}
@@ -157,11 +167,13 @@ func checkIfEpochIsReverted(cfx sdk.ClientOperator, s store.Store, epochNo uint6
 		return types.Hash(pivotHash) != epBlock.BlockHeader.Hash, nil
 	}
 
+	ss := s.(store.Store)
+
 	// Get the sync epoch block from store
-	sBlock, err := s.GetBlockSummaryByEpoch(epochNo)
+	sBlock, err := ss.GetBlockSummaryByEpoch(context.Background(), epochNo)
 	if err != nil {
 		// Epoch data not found in store, take it as not reverted
-		if s.IsRecordNotFound(errors.Cause(err)) {
+		if ss.IsRecordNotFound(errors.Cause(err)) {
 			return false, nil
 		}
 
@@ -184,7 +196,7 @@ func checkIfEpochIsReverted(cfx sdk.ClientOperator, s store.Store, epochNo uint6
 }
 
 // Remove reverted epoch data (blocks, trxs, and logs) from store
-func pruneRevertedEpochData(s store.Store, er citypes.RangeUint64) error {
+func pruneRevertedEpochData(s store.StackOperable, er citypes.RangeUint64) error {
 	numsEpochs := er.To - er.From + 1
 	// Delete at most 200 records per round
 	maxDelete := uint64(200)

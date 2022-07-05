@@ -186,12 +186,6 @@ func loadEpochTxs(ctx context.Context, rc redis.Cmdable, epochNo uint64, rangeSt
 	return ret, nil
 }
 
-// Load epoch logs by log filter from redis
-func loadLogs(ctx context.Context, rc redis.Cmdable, filter store.LogFilter, partitions []string) ([]types.Log, error) {
-	// TODO add implementation here
-	return nil, store.ErrUnsupported
-}
-
 func getMetaEpochRangeField(dt store.EpochDataType) (string, string) {
 	var fromKey, toKey string
 

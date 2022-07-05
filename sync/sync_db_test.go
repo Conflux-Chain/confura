@@ -49,7 +49,7 @@ func TestFindFirstRevertedEpochInRange(t *testing.T) {
 		t.Logf(">>>>>> run testcase %v", i+1)
 
 		// Epoch reverted checker
-		checker := func(cfx sdk.ClientOperator, s store.Store, epochNo uint64) (bool, error) {
+		checker := func(cfx sdk.ClientOperator, s store.StackOperable, epochNo uint64) (bool, error) {
 			t.Logf("check epoch: %v", epochNo)
 			if epochNo >= tc.firstReverted {
 				return true, nil
@@ -101,17 +101,17 @@ func TestEnsureEpochRangeNotRerverted(t *testing.T) {
 		t.Logf(">>>>>> run testcase %v", i+1)
 
 		// Epoch reverted checker
-		checker := func(cfx sdk.ClientOperator, s store.Store, epochNo uint64) (bool, error) {
+		checker := func(cfx sdk.ClientOperator, s store.StackOperable, epochNo uint64) (bool, error) {
 			t.Logf("check epoch: %v", epochNo)
 			if epochNo >= tc.firstReverted {
 				return true, nil
 			}
 			return false, nil
 		}
-		searcher := func(cfx sdk.ClientOperator, s store.Store, epochRange citypes.RangeUint64) (uint64, error) {
+		searcher := func(cfx sdk.ClientOperator, s store.StackOperable, epochRange citypes.RangeUint64) (uint64, error) {
 			return findFirstRevertedEpochInRange(syncer.cfx, syncer.db, epochRange, checker)
 		}
-		pruner := func(s store.Store, epochRange citypes.RangeUint64) error {
+		pruner := func(s store.StackOperable, epochRange citypes.RangeUint64) error {
 			assert.Equal(t, tc.expectedPrunedEpochFrom, epochRange.From)
 			return nil
 		}

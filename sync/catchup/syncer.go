@@ -24,7 +24,7 @@ type Syncer struct {
 	// conflux sdk client delegated to get network status
 	cfx sdk.ClientOperator
 	// db store to persist epoch data
-	db store.Store
+	db store.StackOperable
 	// specifying the epoch range to sync
 	syncRange types.RangeUint64
 	// whether to automatically adjust target sync epoch number to the latest stable epoch,
@@ -87,7 +87,7 @@ func WithBenchmark(benchmark bool) SyncOption {
 	}
 }
 
-func MustNewSyncer(cfx sdk.ClientOperator, db store.Store, opts ...SyncOption) *Syncer {
+func MustNewSyncer(cfx sdk.ClientOperator, db store.StackOperable, opts ...SyncOption) *Syncer {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
@@ -108,7 +108,7 @@ func MustNewSyncer(cfx sdk.ClientOperator, db store.Store, opts ...SyncOption) *
 	return newSyncer(cfx, db, append(newOpts, opts...)...)
 }
 
-func newSyncer(cfx sdk.ClientOperator, db store.Store, opts ...SyncOption) *Syncer {
+func newSyncer(cfx sdk.ClientOperator, db store.StackOperable, opts ...SyncOption) *Syncer {
 	syncer := &Syncer{
 		db: db, cfx: cfx, adaptive: true, minBatchDbRows: 1500,
 	}

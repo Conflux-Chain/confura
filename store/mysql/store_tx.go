@@ -1,17 +1,14 @@
 package mysql
 
 import (
-	"fmt"
+	"context"
 	"math/big"
-	"strings"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/pkg/errors"
 	"gorm.io/gorm"
-	"gorm.io/hints"
 )
 
 const defaultBatchSizeTxnInsert = 500
@@ -38,16 +35,6 @@ func newTx(
 	tx *types.Transaction, receipt *types.TransactionReceipt, txExtra *store.TransactionExtra,
 	rcptExtra *store.ReceiptExtra, skipTx, skipReceipt bool,
 ) *transaction {
-	rcptPtr := receipt
-
-	// Receipt logs are not persisted into db store to save storage space, since
-	// they can be retrieved and assembled from event logs.
-	if len(receipt.Logs) > 0 {
-		rcptCopy := *receipt
-		rcptCopy.Logs = []types.Log{}
-		rcptPtr = &rcptCopy
-	}
-
 	result := &transaction{
 		Epoch: uint64(*receipt.EpochNumber),
 		Hash:  tx.Hash.String(),
@@ -58,7 +45,7 @@ func newTx(
 	}
 
 	if !skipReceipt {
-		result.ReceiptRawData = util.MustMarshalRLP(rcptPtr)
+		result.ReceiptRawData = util.MustMarshalRLP(receipt)
 	}
 
 	result.HashId = util.GetShortIdOfHash(result.Hash)
@@ -105,7 +92,6 @@ func (tx *transaction) parseTxReceiptExtra() *store.ReceiptExtra {
 }
 
 type txStore struct {
-	logPartitioner
 	db *gorm.DB
 }
 
@@ -126,7 +112,7 @@ func (ts *txStore) loadTx(txHash types.Hash) (*transaction, error) {
 	return &tx, nil
 }
 
-func (ts *txStore) GetTransaction(txHash types.Hash) (*store.Transaction, error) {
+func (ts *txStore) GetTransaction(ctx context.Context, txHash types.Hash) (*store.Transaction, error) {
 	tx, err := ts.loadTx(txHash)
 	if err != nil {
 		return nil, err
@@ -140,7 +126,7 @@ func (ts *txStore) GetTransaction(txHash types.Hash) (*store.Transaction, error)
 	}, nil
 }
 
-func (ts *txStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, error) {
+func (ts *txStore) GetReceipt(ctx context.Context, txHash types.Hash) (*store.TransactionReceipt, error) {
 	tx, err := ts.loadTx(txHash)
 	if err != nil {
 		return nil, err
@@ -150,68 +136,6 @@ func (ts *txStore) GetReceipt(txHash types.Hash) (*store.TransactionReceipt, err
 	util.MustUnmarshalRLP(tx.ReceiptRawData, &receipt)
 
 	ptrRcptExtra := tx.parseTxReceiptExtra()
-
-	// If unknown number of event logs (for back compatibility) or no event logs
-	// exists inside transaction receipts, just skip retrieving && assembling
-	// event logs for it.
-	if tx.NumReceiptLogs <= 0 {
-		return &store.TransactionReceipt{
-			CfxReceipt: &receipt, Extra: ptrRcptExtra,
-		}, nil
-	}
-
-	partitions, err := ts.findLogsPartitionsEpochRangeWithinStoreTx(ts.db, tx.Epoch, tx.Epoch)
-	if err != nil {
-		err = errors.WithMessage(err, "failed to get partitions for receipt logs assembling")
-		return nil, err
-	}
-
-	if len(partitions) == 0 { // no partitions found?
-		return nil, errors.New("no partitions found for receipt logs assembling")
-	}
-
-	// TODO: add benchmark to see if adding transaction hash short ID as index in logs table
-	// would bring better performance.
-	blockHashId := util.GetShortIdOfHash(string(receipt.BlockHash))
-	db := ts.db.Where(
-		"epoch = ? AND block_hash_id = ? AND tx_hash = ?", tx.Epoch, blockHashId, tx.Hash,
-	)
-	db = db.Clauses(hints.UseIndex("idx_logs_block_hash_id"))
-	db = db.Table(fmt.Sprintf("logs PARTITION (%v)", strings.Join(partitions, ",")))
-
-	var logs []log
-
-	if err := db.Find(&logs).Error; err != nil {
-		err = errors.WithMessage(err, "failed to get data for receipt logs assembling")
-		return nil, err
-	}
-
-	if len(logs) != tx.NumReceiptLogs { // validate number of assembled receipt logs
-		err := errors.Errorf(
-			"num of assembled receipt logs mismatched, expect %v got %v",
-			tx.NumReceiptLogs, len(logs),
-		)
-		return nil, err
-	}
-
-	var logExts []*store.LogExtra
-	if ptrRcptExtra != nil {
-		logExts = make([]*store.LogExtra, len(logs))
-	}
-
-	rpcLogs := make([]types.Log, 0, len(logs))
-	for i := 0; i < len(logs); i++ {
-		rpcLogs = append(rpcLogs, logs[i].toRPCLog())
-
-		if ptrRcptExtra != nil && len(logs[i].Extra) > 0 {
-			logExts[i] = logs[i].parseLogExtra()
-		}
-	}
-
-	receipt.Logs = rpcLogs
-	if ptrRcptExtra != nil {
-		ptrRcptExtra.LogExts = logExts
-	}
 
 	return &store.TransactionReceipt{
 		CfxReceipt: &receipt, Extra: ptrRcptExtra,

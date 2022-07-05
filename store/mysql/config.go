@@ -17,8 +17,6 @@ import (
 var allModels = []interface{}{
 	&transaction{},
 	&block{},
-	&log{},
-	&epochStats{},
 	&conf{},
 	&User{},
 	&Contract{},
@@ -82,7 +80,7 @@ func MustNewEthStoreConfigFromViper() *Config {
 }
 
 // MustOpenOrCreate creates an instance of store or exits on any erorr.
-func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
+func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStoreV2 {
 	newCreated := config.mustCreateDatabaseIfAbsent()
 
 	db := config.mustNewDB(config.Database)
@@ -103,10 +101,6 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 			logrus.WithError(err).Fatal("Failed to create tables")
 		}
 
-		if err := initLogsPartitions(db); err != nil {
-			logrus.WithError(err).Fatal("Failed to init logs table partitions")
-		}
-
 		ls := NewAddressIndexedLogStore(db, NewContractStore(db), config.AddressIndexedLogPartitions)
 		if _, err := ls.CreatePartitionedTables(); err != nil {
 			logrus.WithError(err).
@@ -125,7 +119,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 
 	logrus.Info("MySQL database initialized")
 
-	return mustNewStore(db, config, option)
+	return mustNewStoreV2(db, config, option)
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {

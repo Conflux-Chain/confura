@@ -31,10 +31,10 @@ var (
 
 // GasStationHandler gas station handler for gas price estimation etc.,
 type GasStationHandler struct {
-	db, cache store.Store
+	db, cache store.Configurable
 }
 
-func NewGasStationHandler(db, cache store.Store) *GasStationHandler {
+func NewGasStationHandler(db, cache store.Configurable) *GasStationHandler {
 	return &GasStationHandler{db: db, cache: cache}
 }
 
