@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm/schema"
 )
 
+// partitionedStore provides basic utitlity for partitioned table operations.
 type partitionedStore struct{}
 
 func (*partitionedStore) getPartitionedTableName(tabler schema.Tabler, partition uint32) string {

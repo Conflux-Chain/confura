@@ -27,4 +27,5 @@ require (
 	gorm.io/gorm v1.22.2
 )
 
+// for debugging development
 // replace github.com/Conflux-Chain/go-conflux-sdk => ../go-conflux-sdk

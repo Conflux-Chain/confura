@@ -15,6 +15,7 @@ type Web3goClient struct {
 	URL string
 }
 
+// EthClientProvider provides evm space client by router.
 type EthClientProvider struct {
 	*clientProvider
 }
@@ -38,13 +39,12 @@ func NewEthClientProvider(router Router) *EthClientProvider {
 	return cp
 }
 
+// GetClientByIP gets client of normal HTTP group by remote IP address.
 func (p *EthClientProvider) GetClientByIP(ctx context.Context) (*Web3goClient, error) {
-	remoteAddr := remoteAddrFromContext(ctx)
-	client, err := p.getClient(remoteAddr, GroupEthHttp)
-
-	return client.(*Web3goClient), err
+	return p.GetClientByIPGroup(ctx, GroupEthHttp)
 }
 
+// GetClientByIPGroup gets client of specific group by remote IP address.
 func (p *EthClientProvider) GetClientByIPGroup(ctx context.Context, group Group) (*Web3goClient, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
 	client, err := p.getClient(remoteAddr, group)
@@ -55,5 +55,6 @@ func (p *EthClientProvider) GetClientByIPGroup(ctx context.Context, group Group)
 func (p *EthClientProvider) GetClientRandom() (*Web3goClient, error) {
 	key := fmt.Sprintf("random_key_%v", rand.Int())
 	client, err := p.getClient(key, GroupEthHttp)
+
 	return client.(*Web3goClient), err
 }

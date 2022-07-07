@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+// NewServer creates node management RPC server
 func NewServer(nf nodeFactory, groupConf map[Group]UrlConfig) *rpc.Server {
 	managers := make(map[Group]*Manager)
 	for k, v := range groupConf {
@@ -17,6 +18,7 @@ func NewServer(nf nodeFactory, groupConf map[Group]UrlConfig) *rpc.Server {
 	})
 }
 
+// api node management RPC APIs.
 type api struct {
 	managers map[Group]*Manager
 }

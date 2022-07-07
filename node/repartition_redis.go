@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// RedisRepartitionResolver implements RepartitionResolver
 type RedisRepartitionResolver struct {
 	client    *redis.Client
 	ttl       time.Duration

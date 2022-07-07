@@ -14,29 +14,44 @@ import (
 )
 
 var (
-	flagVersion       bool // print version and exit
-	nodeServerEnabled bool // node management service
-	rpcServerEnabled  bool // Conflux public RPC service
-	syncServerEnabled bool // data sync/prune service
+	flagVersion       bool
+	nodeServerEnabled bool
+	rpcServerEnabled  bool
+	syncServerEnabled bool
 
 	rootCmd = &cobra.Command{
-		Use:   "conflux-infura",
-		Short: "Conflux infura provides scalable RPC service",
+		Use:   "Confura",
+		Short: "Ethereum Infura like Public RPC Service on Conflux Network.",
 		Run:   start,
 	}
 )
 
 func init() {
-	rootCmd.Flags().BoolVarP(&flagVersion, "version", "v", false, "If true, print version and exit")
+	// print version and exit
+	rootCmd.Flags().BoolVarP(
+		&flagVersion, "version", "v", false, "If true, print version and exit",
+	)
 
-	rootCmd.Flags().BoolVar(&nodeServerEnabled, "nm", false, "whether to start node management service")
-	rootCmd.Flags().BoolVar(&rpcServerEnabled, "rpc", false, "whether to start Conflux public RPC service")
-	rootCmd.Flags().BoolVar(&syncServerEnabled, "sync", false, "whether to start data sync/prune service")
+	// boot flag for node management service
+	rootCmd.Flags().BoolVar(
+		&nodeServerEnabled, "nm", false, "whether to start node management service",
+	)
+
+	// boot flag for public RPC service
+	rootCmd.Flags().BoolVar(
+		&rpcServerEnabled, "rpc", false, "whether to start Confura public RPC service",
+	)
+
+	// boot flag for sync service (accompanied with prune)
+	rootCmd.Flags().BoolVar(
+		&syncServerEnabled, "sync", false, "whether to start data sync/prune service",
+	)
 
 	rootCmd.AddCommand(test.Cmd)
 }
 
 func start(cmd *cobra.Command, args []string) {
+	// dump version
 	if flagVersion {
 		config.DumpVersionInfo()
 		return
@@ -52,19 +67,20 @@ func start(cmd *cobra.Command, args []string) {
 	storeCtx := mustInitStoreContext()
 	defer storeCtx.Close()
 
-	if syncServerEnabled {
+	if syncServerEnabled { // start sync
 		syncCtx := mustInitSyncContext(storeCtx)
 		defer syncCtx.Close()
+
 		startSyncServiceAdaptively(ctx, wg, syncCtx)
 	}
 
-	if rpcServerEnabled {
+	if rpcServerEnabled { // start RPC
 		startNativeSpaceRpcServer(ctx, wg, storeCtx)
 		startEvmSpaceRpcServer(ctx, wg, storeCtx)
 		startNativeSpaceBridgeRpcServer(ctx, wg)
 	}
 
-	if nodeServerEnabled {
+	if nodeServerEnabled { // start node management
 		startNativeSpaceNodeServer(ctx, wg)
 		startEvmSpaceNodeServer(ctx, wg)
 	}

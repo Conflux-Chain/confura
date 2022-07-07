@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	_ store.Store = (*RedisStore)(nil) // ensure redisStore implements Store interface
+	_ store.Store = (*RedisStore)(nil) // ensure RedisStore implements Store interface
 )
 
 type RedisStoreConfig struct {
@@ -25,6 +25,10 @@ type RedisStoreConfig struct {
 	Url       string
 }
 
+// RedisStore aggregation store to cache block/txn/receipt data in Redis.
+// Be noted this would be deprecated in the next few release due to chain data are usually oversized
+// (with some of them even more than several MB). It is totally inefficient for Redis to cache big key
+// under such circumstance.
 type RedisStore struct {
 	ctx       context.Context
 	rdb       *redis.Client
@@ -112,7 +116,7 @@ func (rs *RedisStore) GetNumLogs() (uint64, error) {
 }
 
 func (rs *RedisStore) GetLogs(ctx context.Context, filter store.LogFilter) (logs []*store.Log, err error) {
-	// TODO add implementation
+	// It's impractical to cache && index event logs in Redis.
 	return nil, store.ErrUnsupported
 }
 
@@ -122,7 +126,7 @@ func (rs *RedisStore) GetTransaction(ctx context.Context, txHash types.Hash) (*s
 		return nil, err
 	}
 
-	// TODO: return extra data fields for more extensibility.
+	// TODO: return extention field
 	return &store.Transaction{CfxTransaction: tx}, nil
 }
 
@@ -132,7 +136,7 @@ func (rs *RedisStore) GetReceipt(ctx context.Context, txHash types.Hash) (*store
 		return nil, err
 	}
 
-	// TODO: return extra data fields for more extensibility.
+	// TODO: return extention field
 	return &store.TransactionReceipt{CfxReceipt: receipt}, nil
 }
 
@@ -157,7 +161,7 @@ func (rs *RedisStore) GetBlockSummaryByEpoch(ctx context.Context, epochNumber ui
 		return nil, err
 	}
 
-	// TODO: return extra data fields for more extensibility.
+	// TODO: return extention field
 	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
@@ -171,7 +175,7 @@ func (rs *RedisStore) GetBlockSummaryByHash(ctx context.Context, blockHash types
 		return nil, err
 	}
 
-	// TODO: return extra data fields for more extensibility.
+	// TODO: return extention field
 	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
@@ -185,7 +189,7 @@ func (rs *RedisStore) GetBlockSummaryByBlockNumber(ctx context.Context, blockNum
 		return nil, err
 	}
 
-	// TODO: return extra data fields for more extensibility.
+	// TODO: return extention field
 	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
@@ -202,28 +206,20 @@ func (rs *RedisStore) Pushn(dataSlice []*store.EpochData) error {
 	defer updater.Update()
 
 	_, lastEpoch, err := rs.GetGlobalEpochRange()
-	if rs.IsRecordNotFound(err) { // epoch range not found in redis
+	if rs.IsRecordNotFound(err) {
+		// epoch range not found in redis
 		lastEpoch = citypes.EpochNumberNil
 	} else if err != nil {
 		return errors.WithMessage(err, "failed to get global epoch range from redis")
 	}
-	growFrom := lastEpoch + 1
+
+	// ensure continous epoch
+	if err := store.RequireContinuous(dataSlice, lastEpoch); err != nil {
+		return err
+	}
 
 	watchKeys := make([]string, 0, len(dataSlice))
 	for _, data := range dataSlice {
-		if lastEpoch == citypes.EpochNumberNil {
-			lastEpoch = data.Number
-			growFrom = data.Number
-		} else {
-			lastEpoch++
-		}
-
-		if data.Number != lastEpoch { // ensure continous epoch
-			return errors.WithMessagef(store.ErrContinousEpochRequired,
-				"expected epoch #%v, but #%v got", lastEpoch, data.Number,
-			)
-		}
-
 		watchKeys = append(watchKeys, getEpochBlocksCacheKey(data.Number))
 	}
 
@@ -249,7 +245,7 @@ func (rs *RedisStore) Pushn(dataSlice []*store.EpochData) error {
 			}
 
 			// update max of epoch range
-			if err := rs.updateEpochRangeMax(pipe, lastEpoch, growFrom); err != nil {
+			if err := rs.updateEpochRangeMax(pipe, lastEpoch, dataSlice[0].Number); err != nil {
 				return errors.WithMessage(err, "failed to update epoch range on push")
 			}
 
@@ -358,7 +354,7 @@ func (rs *RedisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKe
 	}
 }
 
-// TODO: store extra epoch data for more data fields extensibility.
+// TODO: store extention json field.
 func (rs *RedisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (store.EpochDataOpNumAlters, error) {
 	opHistory := store.EpochDataOpNumAlters{}
 
@@ -425,7 +421,7 @@ func (rs *RedisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 				opHistory[store.EpochTransaction]++
 			}
 
-			// TODO cache store transaction receipt logs
+			// TODO store transaction receipt logs
 		}
 	}
 
@@ -436,7 +432,6 @@ func (rs *RedisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 			return opHistory, errors.WithMessage(err, "failed to cache epoch to blocks mapping")
 		}
 
-		// !!! order is important (must be after rpush)
 		err := rp.Expire(rs.ctx, epbCacheKey, rs.cacheTime).Err()
 		if err != nil {
 			logrus.WithField("epbCacheKey", epbCacheKey).Info(
@@ -456,7 +451,6 @@ func (rs *RedisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 			return opHistory, errors.WithMessage(err, "failed to cache epoch to transactions mapping")
 		}
 
-		// !!! order is important (must be after rpush)
 		err := rp.Expire(rs.ctx, eptCacheKey, rs.cacheTime).Err()
 		if err != nil {
 			logrus.WithField("eptCacheKey", eptCacheKey).Info(
@@ -621,7 +615,8 @@ func (rs *RedisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64, gr
 			continue
 		}
 
-		if rt == store.EpochLog { // TODO add event logs support
+		// TODO add event logs support
+		if rt == store.EpochLog {
 			continue
 		}
 		fieldFrom, fieldTo := getMetaEpochRangeField(rt)
@@ -732,7 +727,8 @@ func (rs *RedisStore) updateEpochDataCount(rp redis.Pipeliner, opHistory store.E
 
 		if _, err := incrEpochDataCount(rs.ctx, rp, k, v); err != nil {
 			logrus.WithFields(logrus.Fields{
-				"epochDataType": k, "incrCount": v,
+				"epochDataType": k,
+				"incrCount":     v,
 			}).WithError(err).Error("Failed to update epoch data count statistics")
 			return errors.WithMessagef(err, "failed to incr count stats key %v with %v", k, v)
 		}

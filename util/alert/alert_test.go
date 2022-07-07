@@ -11,11 +11,11 @@ import (
 func TestDingTalkEnvConfig(t *testing.T) {
 	mustInitViperFromConfig()
 
-	dtWebHook := "dingtalk_webhook_whatever"
-	dtSecret := "dingtalk_secret_whatever"
+	dtWebHook := "dingtalk_webhook_url"
+	dtSecret := "dingtalk_secret"
 
-	os.Setenv("CI_ALERT_DINGTALK_WEBHOOK", dtWebHook)
-	os.Setenv("CI_ALERT_DINGTALK_SECRET", dtSecret)
+	os.Setenv("INFURA_ALERT_DINGTALK_WEBHOOK", dtWebHook)
+	os.Setenv("INFURA_ALERT_DINGTALK_SECRET", dtSecret)
 
 	assert.Equal(t, viper.GetString("alert.dingtalk.webhook"), dtWebHook)
 	assert.Equal(t, viper.GetString("alert.dingtalk.secret"), dtSecret)

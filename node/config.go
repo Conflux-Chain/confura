@@ -9,8 +9,8 @@ import (
 )
 
 // Node manager component always uses configuration from viper.
-var cfg config
 
+var cfg config
 var urlCfg map[Group]UrlConfig
 var ethUrlCfg map[Group]UrlConfig
 

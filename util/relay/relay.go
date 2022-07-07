@@ -21,9 +21,8 @@ type TxnRelayerConfig struct {
 
 // TxnRelayer relays raw transaction by broadcasting to node pool
 // of different regions to accelerate P2P diffusion.
-// TODO: move this to `go-conflux-util` repository
 type TxnRelayer struct {
-	poolClients []*sdk.Client      // sdk clients representing node pool
+	poolClients []*sdk.Client      // fullnode pool
 	txnQueue    chan hexutil.Bytes // transactions queued to relay
 	config      *TxnRelayerConfig
 }

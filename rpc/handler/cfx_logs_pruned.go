@@ -19,8 +19,12 @@ import (
 
 const thresholdGetLogs = 1
 
-var errQuotaNotEnough = errors.New("quota not enough")
+var (
+	errQuotaNotEnough = errors.New("quota not enough")
+)
 
+// CfxPrunedLogsHandler RPC handler to get pruned event logs from some archive fullnodes
+// in rate limited way or vip mode with dedicated fullnode.
 type CfxPrunedLogsHandler struct {
 	pool       *node.CfxClientProvider
 	store      *mysql.UserStore

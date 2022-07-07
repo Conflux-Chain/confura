@@ -87,7 +87,7 @@ func (cs *ContractStore) GetContractIdByAddress(address string) (uint64, bool, e
 
 // GetContractById gets contract by id from db and also loads the cache.
 //
-// For contract `LogCount` and `LastUpdatedEpoch` fields, they are very mutable
+// For contract `LogCount` and `LastUpdatedEpoch` fields, they are quite mutable
 // while cache maybe rarely updated.
 func (cs *ContractStore) GetContractById(cid uint64) (*Contract, bool, error) {
 	return cs.enforceCache("id = ?", cid)
@@ -158,7 +158,7 @@ func (cs *ContractStore) AddContract(contracts map[string]bool) (int, error) {
 
 // AddContract adds contract for the specified epoch data slice and returns the number of new added contracts.
 func (cs *ContractStore) AddContractByEpochData(slice ...*store.EpochData) (int, error) {
-	contracts := extractContractAddressesOfEpochData(slice...)
+	contracts := extractUniqueContractAddresses(slice...)
 	return cs.AddContract(contracts)
 }
 

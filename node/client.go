@@ -11,27 +11,34 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var ErrClientUnavailable = errors.New("No full node available")
+var (
+	ErrClientUnavailable = errors.New("no full node available")
+)
 
-// clientFactory factory methods to create RPC client
+// clientFactory factory method to create RPC client for fullnode proxy.
 type clientFactory func(url string) (interface{}, error)
 
-// clientProvider provides different RPC client based on user IP to achieve load balance.
-// Generally, it is used by RPC server to delegate RPC requests to full node cluster.
+// clientProvider provides different RPC client based on request IP to achieve load balance
+// or with node group for resource isolation. Generally, it is used by RPC server to delegate
+// RPC requests to full node cluster.
 type clientProvider struct {
 	router  Router
-	clients map[Group]*util.ConcurrentMap // group => node name => RPC client
 	factory clientFactory
 	mutex   sync.Mutex
+
+	// group => node name => RPC client
+	clients map[Group]*util.ConcurrentMap
 }
 
 func newClientProvider(router Router, factory clientFactory) *clientProvider {
 	return &clientProvider{
-		router: router, factory: factory,
+		router:  router,
+		factory: factory,
 		clients: make(map[Group]*util.ConcurrentMap),
 	}
 }
 
+// registerGroup registers node group
 func (p *clientProvider) registerGroup(group Group) *util.ConcurrentMap {
 	if _, ok := p.clients[group]; !ok {
 		p.mutex.Lock()
@@ -45,6 +52,7 @@ func (p *clientProvider) registerGroup(group Group) *util.ConcurrentMap {
 	return p.clients[group]
 }
 
+// getClient gets client based on keyword and node group type.
 func (p *clientProvider) getClient(key string, group Group) (interface{}, error) {
 	clients, ok := p.clients[group]
 	if !ok {

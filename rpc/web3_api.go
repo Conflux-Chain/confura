@@ -6,6 +6,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/rpc/cache"
 )
 
+// web3API provides evm space web3 RPC proxy API.
 type web3API struct{}
 
 // ClientVersion returns the current client version.

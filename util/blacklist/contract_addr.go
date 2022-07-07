@@ -17,7 +17,7 @@ var (
 // BlacklistedAddrInfo is used to store blacklisted contract address info.
 type BlacklistedAddrInfo struct {
 	Address string
-	// epoch until which the contract address is skipped, if 0 means forever.
+	// epoch until which the contract address is ignored, if 0 means forever.
 	Epoch uint64
 }
 
@@ -44,7 +44,6 @@ func init() {
 }
 
 // Check if address blacklisted or not for specific epoch height.
-// TODO: dynamicly load blacklisted contract address from db?
 func IsAddressBlacklisted(addr *cfxaddress.Address, epochs ...uint64) bool {
 	if len(blacklistedAddressSet) == 0 {
 		return false

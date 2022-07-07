@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// RepartitionResolver is implemented by any objects that support repartition
-// when item added or removed in hash ring.
+// RepartitionResolver is implemented to support repartition when item added or removed
+// in the consistent hash ring.
 type RepartitionResolver interface {
 	Get(key uint64) (string, bool)
 	Put(key uint64, value string)

@@ -9,7 +9,9 @@ type ConcurrentMap struct {
 	mu sync.Mutex
 }
 
-func (m *ConcurrentMap) LoadOrStoreFn(key interface{}, factory func(k interface{}) interface{}) (actual interface{}, loaded bool) {
+func (m *ConcurrentMap) LoadOrStoreFn(
+	key interface{}, factory func(k interface{}) interface{},
+) (actual interface{}, loaded bool) {
 	if val, ok := m.Load(key); ok {
 		return val, true
 	}
@@ -28,7 +30,9 @@ func (m *ConcurrentMap) LoadOrStoreFn(key interface{}, factory func(k interface{
 	return val, false
 }
 
-func (m *ConcurrentMap) LoadOrStoreFnErr(key interface{}, factory func(k interface{}) (interface{}, error)) (actual interface{}, loaded bool, err error) {
+func (m *ConcurrentMap) LoadOrStoreFnErr(
+	key interface{}, factory func(k interface{}) (interface{}, error),
+) (actual interface{}, loaded bool, err error) {
 	if val, ok := m.Load(key); ok {
 		return val, true, nil
 	}

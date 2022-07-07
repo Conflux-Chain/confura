@@ -19,7 +19,7 @@ var (
 	_ Node = (*EthNode)(nil)
 )
 
-// Node represents a full node with friendly name and status.
+// Node represents a full node with friendly name and health status.
 type Node interface {
 	consistent.Member
 
@@ -61,6 +61,7 @@ func (n *baseNode) String() string {
 	return n.name
 }
 
+// monitor periodically heartbeats with node to monitor health status
 func (n *baseNode) monitor(ctx context.Context, node Node, hm HealthMonitor) {
 	ticker := time.NewTicker(cfg.Monitor.Interval)
 	defer ticker.Stop()
@@ -84,20 +85,20 @@ func (n *baseNode) Close() {
 	status.Close()
 }
 
-// EthNode represents an EVM space node with friendly name and status.
+// EthNode represents an evm space node with friendly name and health status.
 type EthNode struct {
 	*web3go.Client
 	*baseNode
 }
 
-// NewEthNode creates an instance of EVM space node and start to monitor
+// NewEthNode creates an instance of evm space node and start to monitor
 // node health in a separate goroutine until node closed.
 func NewEthNode(group Group, name, url string, hm HealthMonitor) *EthNode {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	n := &EthNode{
 		baseNode: newBaseNode(name, url, cancel),
-		Client:   rpc.MustNewEthClient(url, rpc.WithClientRetryCount(0)),
+		Client:   rpc.MustNewEthClient(url),
 	}
 
 	n.atomicStatus.Store(NewStatus(group, name))
@@ -107,13 +108,14 @@ func NewEthNode(group Group, name, url string, hm HealthMonitor) *EthNode {
 	return n
 }
 
+// LatestEpochNumber returns the latest block height of the evm space fullnode
 func (n *EthNode) LatestEpochNumber() (uint64, error) {
 	block, err := n.Eth.BlockNumber()
 	if err != nil {
 		return 0, err
 	}
 
-	if block == nil { // this should not happen, but anyway for robust
+	if block == nil { // this shouldn't happen, but just in case...
 		logrus.WithField("node", n).Info("Failed to get latest block number (nil) from eth node")
 		return 0, errors.New("invalid block number")
 	}
@@ -121,20 +123,20 @@ func (n *EthNode) LatestEpochNumber() (uint64, error) {
 	return block.Uint64(), nil
 }
 
-// CfxNode represents a conflux node with friendly name and status.
+// CfxNode represents a core space fullnode with friendly name and health status.
 type CfxNode struct {
 	sdk.ClientOperator
 	*baseNode
 }
 
-// NewCfxNode creates an instance of conflux full node and start to monitor
+// NewCfxNode creates an instance of core space fullnode and start to monitor
 // node health in a separate goroutine until node closed.
 func NewCfxNode(group Group, name, url string, hm HealthMonitor) *CfxNode {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	n := &CfxNode{
 		baseNode:       newBaseNode(name, url, cancel),
-		ClientOperator: rpc.MustNewCfxClient(url, rpc.WithClientRetryCount(0)),
+		ClientOperator: rpc.MustNewCfxClient(url),
 	}
 
 	n.atomicStatus.Store(NewStatus(group, name))
@@ -144,13 +146,14 @@ func NewCfxNode(group Group, name, url string, hm HealthMonitor) *CfxNode {
 	return n
 }
 
+// LatestEpochNumber returns the latest epoch height of the core space fullnode
 func (n *CfxNode) LatestEpochNumber() (uint64, error) {
 	epoch, err := n.GetEpochNumber(types.EpochLatestMined)
 	if err != nil {
 		return 0, err
 	}
 
-	if epoch == nil { // this should not happen, but anyway for robust
+	if epoch == nil { // this should not happen, but just in case...
 		logrus.WithField("node", n).Info("Failed to get latest epoch number (nil) from node")
 		return 0, errors.New("invalid epoch number")
 	}

@@ -29,7 +29,7 @@ var (
 	maxGasStationPriceSafeLow = big.NewInt(10_000_000_000) // (10G)
 )
 
-// GasStationHandler gas station handler for gas price estimation etc.,
+// GasStationHandler RPC handler to serve gas price estimation etc.,
 type GasStationHandler struct {
 	db, cache store.Configurable
 }

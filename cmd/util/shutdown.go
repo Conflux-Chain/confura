@@ -29,8 +29,8 @@ func GracefulShutdown(wg *sync.WaitGroup, cancel context.CancelFunc) {
 	logrus.Info("Shutdown gracefully")
 }
 
-// StartAndGracefulShutdown starts to run the specified task in a goroutine
-// and wait for termination signal to shutdown gracefully.
+// StartAndGracefulShutdown starts to run the specified task in a goroutine and wait for termination
+// signal to shutdown gracefully.
 //
 // Note, this method is not suitable for any non-blocking task that release resources in defer way.
 func StartAndGracefulShutdown(run func(ctx context.Context, wg *sync.WaitGroup)) {

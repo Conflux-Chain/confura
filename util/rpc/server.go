@@ -92,7 +92,9 @@ func (s *Server) MustServe(endpoint string, protocol Protocol) {
 }
 
 // MustServeGraceful serves RPC server in a goroutine until graceful shutdown.
-func (s *Server) MustServeGraceful(ctx context.Context, wg *sync.WaitGroup, endpoint string, protocol Protocol) {
+func (s *Server) MustServeGraceful(
+	ctx context.Context, wg *sync.WaitGroup, endpoint string, protocol Protocol,
+) {
 	wg.Add(1)
 	defer wg.Done()
 

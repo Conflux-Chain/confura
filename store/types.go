@@ -79,7 +79,7 @@ func (edt EpochDataType) ToRemoveOption() EpochRemoveOption {
 	case EpochBlock:
 		return EpochRemoveBlock
 	default:
-		logrus.WithField("name", edt.Name()).Error("Do not to support remove option")
+		logrus.WithField("name", edt.Name()).Error("remove option for data type not supported")
 		return EpochRemoveOption(0x01 << 7)
 	}
 }

@@ -12,6 +12,7 @@ import (
 
 var EthDefault = NewEth()
 
+// EthCache memory cache for some evm space RPC methods
 type EthCache struct {
 	netVersionCache    *expiryCache
 	clientVersionCache *expiryCache

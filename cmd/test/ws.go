@@ -8,19 +8,29 @@ import (
 )
 
 var (
-	psValidConf test.PSVConfig // pubsub validation configuration
-	wsTestCmd   = &cobra.Command{
+	// core space pubsub validation configuration
+	psValidConf test.PSVConfig
+
+	wsTestCmd = &cobra.Command{
 		Use:   "ws",
-		Short: "Test/validate if infura websocket pubsub complies with fullnode",
+		Short: "Test/validate if core space websocket pubsub complies with fullnode",
 		Run:   startWSTest,
 	}
 )
 
 func init() {
-	wsTestCmd.Flags().StringVarP(&psValidConf.FullnodeRpcEndpoint, "fn-endpoint", "f", "", "fullnode rpc endpoint used as benchmark")
+	// fullnode endpoint
+	wsTestCmd.Flags().StringVarP(
+		&psValidConf.FullnodeRpcEndpoint,
+		"fn-endpoint", "f", "", "fullnode rpc endpoint used as benchmark",
+	)
 	wsTestCmd.MarkFlagRequired("fn-endpoint")
 
-	wsTestCmd.Flags().StringVarP(&psValidConf.InfuraRpcEndpoint, "infura-endpoint", "u", "", "infura rpc endpoint to be validated against")
+	// confura RPC endpoint
+	wsTestCmd.Flags().StringVarP(
+		&psValidConf.InfuraRpcEndpoint,
+		"infura-endpoint", "u", "", "infura rpc endpoint to be validated against",
+	)
 	wsTestCmd.MarkFlagRequired("infura-endpoint")
 
 	Cmd.AddCommand(wsTestCmd)
@@ -35,5 +45,6 @@ func startWSTest(cmd *cobra.Command, args []string) {
 
 	validator := test.MustNewPubSubValidator(&psValidConf)
 	defer validator.Destroy()
+
 	util.StartAndGracefulShutdown(validator.Run)
 }

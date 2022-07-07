@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// baseStore provides basic store common operatition.
 type baseStore struct {
 	db *gorm.DB
 }

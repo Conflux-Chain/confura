@@ -9,6 +9,7 @@ import (
 
 var CfxDefault = NewCfx()
 
+// CfxCache memory cache for some core space RPC methods
 type CfxCache struct {
 	*StatusCache
 

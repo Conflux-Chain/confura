@@ -77,7 +77,6 @@ func (w *worker) fetchEpoch(ctx context.Context, epochNo uint64) (*store.EpochDa
 			"epochNo": epochNo, "workerName": w.name,
 		}).WithError(err)
 
-		// TODO: refactor with time interval based logging
 		logf := logger.Debug
 		if try%50 == 0 {
 			logf = logger.Error

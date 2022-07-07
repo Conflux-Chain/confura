@@ -9,10 +9,13 @@ import (
 
 // Implementations for HealthMonitor interface.
 
+// HealthyEpoch returns the middle epoch height collected from managed cluster nodes,
+// which is also regarded as the overall health epoch height.
 func (m *Manager) HealthyEpoch() uint64 {
 	return atomic.LoadUint64(&m.midEpoch)
 }
 
+// ReportEpoch reports latest epoch height of managed node to manager.
 func (m *Manager) ReportEpoch(nodeName string, epoch uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -33,6 +36,7 @@ func (m *Manager) ReportEpoch(nodeName string, epoch uint64) {
 	atomic.StoreUint64(&m.midEpoch, uint64(epochs[len(epochs)/2]))
 }
 
+// ReportUnhealthy reports unhealthy status of managed node to manager.
 func (m *Manager) ReportUnhealthy(nodeName string, remind bool, reason error) {
 	logger := logrus.WithError(reason).WithField("node", nodeName)
 
@@ -49,6 +53,7 @@ func (m *Manager) ReportUnhealthy(nodeName string, remind bool, reason error) {
 	// FIXME update repartition cache if configured
 }
 
+// ReportHealthy reports healthy status of managed node to manager.
 func (m *Manager) ReportHealthy(nodeName string) {
 	// alert
 	logrus.WithField("node", nodeName).Warn("Node became healthy now")

@@ -7,6 +7,7 @@ import (
 	"github.com/openweb3/web3go/types"
 )
 
+// ethTraceAPI provides evm space trace RPC proxy API.
 type ethTraceAPI struct{}
 
 func (api *ethTraceAPI) Block(ctx context.Context, blockNumOrHash types.BlockNumberOrHash) ([]types.LocalizedTrace, error) {

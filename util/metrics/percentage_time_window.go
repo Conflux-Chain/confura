@@ -25,7 +25,8 @@ func NewTimeWindowPercentage(slotInterval time.Duration, numSlots int) Percentag
 	return newTimeWindowPercentage(slotInterval, numSlots)
 }
 
-// GetOrRegisterTimeWindowPercentageDefault returns an existing Percentage or constructs and registers a new time window Percentage.
+// GetOrRegisterTimeWindowPercentageDefault returns an existing Percentage or constructs and
+// registers a new time window Percentage.
 func GetOrRegisterTimeWindowPercentageDefault(name string, args ...interface{}) Percentage {
 	factory := func() Percentage {
 		return NewTimeWindowPercentage(time.Minute, 10)
@@ -34,8 +35,11 @@ func GetOrRegisterTimeWindowPercentageDefault(name string, args ...interface{}) 
 	return getOrRegisterPercentage(factory, name, args...)
 }
 
-// GetOrRegisterTimeWindowPercentage returns an existing Percentage or constructs and registers a new time window Percentage.
-func GetOrRegisterTimeWindowPercentage(slotInterval time.Duration, numSlots int, name string, args ...interface{}) Percentage {
+// GetOrRegisterTimeWindowPercentage returns an existing Percentage or constructs and registers
+// a new time window Percentage.
+func GetOrRegisterTimeWindowPercentage(
+	slotInterval time.Duration, numSlots int, name string, args ...interface{},
+) Percentage {
 	factory := func() Percentage {
 		return NewTimeWindowPercentage(slotInterval, numSlots)
 	}

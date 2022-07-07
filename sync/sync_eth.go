@@ -18,20 +18,18 @@ import (
 )
 
 const (
-	// num of blocks ahead of the latest block to skip sync, which can be used to prevent
-	// frequent store io operation due to chain reorg.
+	// Number of blocks ahead of the latest block to skip sync, which helps prevent
+	// frequent store delete operation due to chain reorg.
 	skipBlocksAheadLatest = 30
 )
 
-// TODO: extract more eth sync config items
 type syncEthConfig struct {
 	FromBlock uint64 `default:"1"`
 	MaxBlocks uint64 `default:"10"`
 	UseBatch  bool   `default:"false"`
 }
 
-// EthSyncer is used to synchronize conflux EVM space blockchain data
-// into db and cache store.
+// EthSyncer is used to synchronize evm space blockchain data into db store.
 type EthSyncer struct {
 	conf *syncEthConfig
 	// EVM space ETH client
@@ -70,7 +68,7 @@ func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 		maxSyncBlocks:       ethConf.MaxBlocks,
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
-		epochPivotWin:       newEpochPivotWindow(dbSyncEpochPivotWinCapacity),
+		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 	}
 
 	// Load last sync block information
@@ -135,7 +133,8 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 		recentBlockNo = recentBlockNo - skipBlocksAheadLatest
 	}
 
-	if syncer.fromBlock > recentBlockNo { // catched up to the most recent block?
+	// catched up to the most recent block?
+	if syncer.fromBlock > recentBlockNo {
 		logrus.WithFields(logrus.Fields{
 			"latestBlockNo": recentBlockNumber.Uint64(),
 			"syncFromBlock": syncer.fromBlock,
@@ -149,7 +148,9 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	syncSize := toBlock - syncer.fromBlock + 1
 
 	logger := logrus.WithFields(logrus.Fields{
-		"syncSize": syncSize, "fromBlock": syncer.fromBlock, "toBlock": toBlock,
+		"syncSize":  syncSize,
+		"fromBlock": syncer.fromBlock,
+		"toBlock":   toBlock,
 	})
 
 	logger.Debug("ETH syncer started to sync with block range")
@@ -186,10 +187,12 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 					parentBlockHash := data.Block.ParentHash.Hex()
 
 					blogger.WithFields(logrus.Fields{
-						"parentBlockHash": parentBlockHash, "latestBlockHash": latestBlockHash,
+						"parentBlockHash": parentBlockHash,
+						"latestBlockHash": latestBlockHash,
 					}).WithError(err).Warn(
 						"ETH syncer failed to revert block data from ethdb store due to parent hash mismatched",
 					)
+
 					return false, errors.WithMessage(err, "failed to revert block data from ethdb")
 				}
 
@@ -208,6 +211,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 				blogger.WithField("i", i).Infof(
 					"ETH syncer truncated batch synced data due to block not continuous for %v", desc,
 				)
+
 				break
 			}
 		}
@@ -224,7 +228,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 		return false, nil
 	}
 
-	// brige for db store logic reuse by converting eth data to epoch data
+	// reuse db store logic by converting eth data to epoch data
 	epochDataSlice := make([]*store.EpochData, 0, len(ethDataSlice))
 	for i := 0; i < len(ethDataSlice); i++ {
 		epochData := syncer.convertToEpochData(ethDataSlice[i])
@@ -335,8 +339,8 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 	return pivotHash, err
 }
 
-// convertToEpochData converts ETH block data to Conflux epoch data. This is used to bridge eth
-// block data with epoch data to reduce redundant codes eg., store logic.
+// convertToEpochData converts evm space block data to core space epoch data. This is used to bridge
+// eth block data with epoch data to reuse code logic eg., db store logic.
 func (syncer *EthSyncer) convertToEpochData(ethData *store.EthData) *store.EpochData {
 	epochData := &store.EpochData{
 		Number:      ethData.Number,

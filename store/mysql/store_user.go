@@ -2,7 +2,8 @@ package mysql
 
 import "gorm.io/gorm"
 
-// User represents a VIP user that provide specific archive node to query historical event logs.
+// User represents a VIP user that provide specific archive node to query historical
+// event logs.
 type User struct {
 	ID          uint32
 	Name        string `gorm:"size:256;not null;unique"`

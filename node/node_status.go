@@ -27,7 +27,7 @@ type HealthMonitor interface {
 	ReportHealthy(nodeName string)
 }
 
-// Status represents the node status, including current epoch number and health.
+// Status represents the node status, including current epoch number and health status.
 type Status struct {
 	nodeName string
 
@@ -36,6 +36,7 @@ type Status struct {
 	latestStateEpoch uint64
 	successCounter   uint64
 	failureCounter   uint64
+
 	unhealthy        bool
 	unhealthReportAt time.Time
 
@@ -56,6 +57,7 @@ func NewStatus(group Group, nodeName string) Status {
 	}
 }
 
+// Update heartbeats with node and updates health status.
 func (s *Status) Update(n Node, monitor HealthMonitor) {
 	s.heartbeat(n)
 	s.updateHealth(monitor)
@@ -105,6 +107,7 @@ func (s *Status) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&scopy)
 }
 
+// heartbeat heartbeats with node to update status.
 func (s *Status) heartbeat(n Node) {
 	start := time.Now()
 	epoch, err := n.LatestEpochNumber()
@@ -124,6 +127,7 @@ func (s *Status) heartbeat(n Node) {
 	}
 }
 
+// updateHealth reports health status to monitor.
 func (s *Status) updateHealth(monitor HealthMonitor) {
 	reason := s.checkHealth(monitor.HealthyEpoch())
 
@@ -155,6 +159,7 @@ func (s *Status) updateHealth(monitor HealthMonitor) {
 	}
 }
 
+// checkHealth checks health status with collected node information.
 func (s *Status) checkHealth(targetEpoch uint64) error {
 	// RPC failures
 	if s.failureCounter >= cfg.Monitor.Unhealth.Failures {
@@ -183,9 +188,8 @@ func (s *Status) Close() {
 }
 
 type statusMetrics struct {
-	// metric names
 	latency      string // ping latency via cfx_epochNumber/eth_blockNumber
-	availability string
+	availability string // node availability percent
 }
 
 func newStatusMetrics(latency, availability string) *statusMetrics {

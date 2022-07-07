@@ -12,8 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// EthStoreHandler implements ethHandler interface to accelerate rpc request handling by
-// loading ETH blockchain data from store
+// EthStoreHandler RPC handler to get block/txn/receipt data from store.
 type EthStoreHandler struct {
 	store store.Readable
 	next  *EthStoreHandler

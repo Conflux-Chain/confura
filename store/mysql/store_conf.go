@@ -15,7 +15,7 @@ const (
 	MysqlConfKeyReorgVersion = "reorg.version"
 )
 
-// conf configuration tables
+// configuration tables
 type conf struct {
 	ID        uint32
 	Name      string `gorm:"unique;size:128;not null"` // config name

@@ -13,6 +13,7 @@ import (
 	"github.com/openweb3/web3go/types"
 )
 
+// EthLogsApiHandler RPC handler to get evm space event logs from store or fullnode.
 type EthLogsApiHandler struct {
 	ms *mysql.MysqlStore
 

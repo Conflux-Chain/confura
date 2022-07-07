@@ -40,7 +40,7 @@ func updateEthStoreHitRatio(method string, hit bool) {
 	metrics.Registry.RPC.StoreHit(method, "store").Mark(hit)
 }
 
-// ethAPI provides ethereum relative API within EVM space according to:
+// ethAPI provides Ethereum relative API within evm space according to:
 // https://github.com/Pana/conflux-doc/blob/master/docs/evm_space_zh.md
 type ethAPI struct {
 	EthAPIOption

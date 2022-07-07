@@ -5,42 +5,51 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	cmdutil "github.com/conflux-chain/conflux-infura/cmd/util"
 	"github.com/conflux-chain/conflux-infura/node"
 	"github.com/conflux-chain/conflux-infura/rpc"
 	"github.com/conflux-chain/conflux-infura/rpc/handler"
-	"github.com/conflux-chain/conflux-infura/store"
 	"github.com/conflux-chain/conflux-infura/store/redis"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/conflux-chain/conflux-infura/util/rate"
 	"github.com/conflux-chain/conflux-infura/util/relay"
 	rpcutil "github.com/conflux-chain/conflux-infura/util/rpc"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
-type rpcOption struct {
-	cfxEnabled       bool
-	ethEnabled       bool
-	cfxBridgeEnabled bool
-}
-
 var (
-	rpcOpt rpcOption
+	// RPC boot options
+	rpcOpt struct {
+		cfxEnabled       bool
+		ethEnabled       bool
+		cfxBridgeEnabled bool
+	}
 
 	rpcCmd = &cobra.Command{
 		Use:   "rpc",
-		Short: "Start RPC service, including CFX, ETH and CfxBridge RPC servers",
+		Short: "Start RPC service, including core space, evm space and CfxBridge RPC servers",
 		Run:   startRpcService,
 	}
 )
 
 func init() {
-	rpcCmd.Flags().BoolVar(&rpcOpt.cfxEnabled, "cfx", false, "Start CFX space RPC server")
-	rpcCmd.Flags().BoolVar(&rpcOpt.ethEnabled, "eth", false, "Start ETH space RPC server")
-	rpcCmd.Flags().BoolVar(&rpcOpt.cfxBridgeEnabled, "cfxBridge", false, "Start CFX bridge RPC server")
+	// boot flag for core space
+	rpcCmd.Flags().BoolVar(
+		&rpcOpt.cfxEnabled, "cfx", false, "Start core space RPC server",
+	)
+
+	// boot flag for evm space
+	rpcCmd.Flags().BoolVar(
+		&rpcOpt.ethEnabled, "eth", false, "Start evm space RPC server",
+	)
+
+	// boot flag for core space bridge
+	rpcCmd.Flags().BoolVar(
+		&rpcOpt.cfxBridgeEnabled, "cfxBridge", false, "Start core space bridge RPC server",
+	)
 
 	rootCmd.AddCommand(rpcCmd)
 }
@@ -56,40 +65,44 @@ func startRpcService(*cobra.Command, []string) {
 	storeCtx := mustInitStoreContext()
 	defer storeCtx.Close()
 
-	if rpcOpt.cfxEnabled {
+	if rpcOpt.cfxEnabled { // start core space RPC
 		startNativeSpaceRpcServer(ctx, &wg, storeCtx)
 	}
 
-	if rpcOpt.ethEnabled {
+	if rpcOpt.ethEnabled { // start evm space RPC
 		startEvmSpaceRpcServer(ctx, &wg, storeCtx)
 	}
 
-	if rpcOpt.cfxBridgeEnabled {
+	if rpcOpt.cfxBridgeEnabled { // start core space bridge RPC
 		startNativeSpaceBridgeRpcServer(ctx, &wg)
 	}
 
 	cmdutil.GracefulShutdown(&wg, cancel)
 }
 
+// startNativeSpaceRpcServer starts core space RPC server
 func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx storeContext) {
 	router := node.Factory().CreateRouter()
-
-	// Add empty store tolerance
-	var storeHandler *handler.CfxStoreHandler
-	storeNames := []string{"db", "cache"}
-
-	for i, s := range []store.Readable{storeCtx.cfxDB, storeCtx.cfxCache} {
-		if !util.IsInterfaceValNil(s) {
-			storeHandler = handler.NewCfxCommonStoreHandler(storeNames[i], s, storeHandler)
-		}
+	option := rpc.CfxAPIOption{
+		Relayer: relay.MustNewTxnRelayerFromViper(),
 	}
 
-	gasHandler := handler.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
-	exposedModules := viper.GetStringSlice("rpc.exposedModules")
-
-	var logsApiHandler *handler.CfxLogsApiHandler
+	// initialize store handler
 	if storeCtx.cfxDB != nil {
+		option.StoreHandler = handler.NewCfxCommonStoreHandler("db", storeCtx.cfxDB, option.StoreHandler)
+	}
+
+	if storeCtx.cfxCache != nil {
+		option.StoreHandler = handler.NewCfxCommonStoreHandler("cache", storeCtx.cfxCache, option.StoreHandler)
+	}
+
+	// initialize gas station handler
+	gasHandler := handler.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
+
+	if storeCtx.cfxDB != nil {
+		// initialize pruned logs handler
 		var prunedHandler *handler.CfxPrunedLogsHandler
+
 		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
 			prunedHandler = handler.NewCfxPrunedLogsHandler(
 				node.NewCfxClientProvider(router),
@@ -98,54 +111,61 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 			)
 		}
 
-		logsApiHandler = handler.NewCfxLogsApiHandler(storeCtx.ethDB, prunedHandler)
+		// initialize logs api handler
+		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.ethDB, prunedHandler)
 
-		go rate.DefaultRegistryCfx.AutoReload(10*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
+		// periodically reload rate limit settings from db
+		go rate.DefaultRegistryCfx.AutoReload(15*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
 	}
 
-	option := rpc.CfxAPIOption{
-		StoreHandler:  storeHandler,
-		LogApiHandler: logsApiHandler,
-		Relayer:       relay.MustNewTxnRelayerFromViper(),
-	}
-
+	// initialize RPC server
+	exposedModules := viper.GetStringSlice("rpc.exposedModules")
 	server := rpc.MustNewNativeSpaceServer(router, gasHandler, exposedModules, option)
 
+	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("rpc.endpoint")
 	go server.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
 
+	// server Websocket endpoint
 	if wsEndpoint := viper.GetString("rpc.wsEndpoint"); len(wsEndpoint) > 0 {
 		go server.MustServeGraceful(ctx, wg, wsEndpoint, rpcutil.ProtocolWS)
 	}
 }
 
+// startEvmSpaceRpcServer starts evm space RPC server
 func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx storeContext) {
 	var option rpc.EthAPIOption
 	router := node.EthFactory().CreateRouter()
 
-	// Add empty store tolerance
-	if !util.IsInterfaceValNil(storeCtx.ethDB) {
+	if storeCtx.ethDB != nil {
+		// initialize store handler
 		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.ethDB, nil)
+		// initialize logs api handler
 		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.ethDB)
 
+		// periodically reload rate limit settings from db
 		go rate.DefaultRegistryEth.AutoReload(10*time.Second, storeCtx.ethDB.LoadRateLimitConfigs)
 	}
 
+	// initialize RPC server
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
 	server := rpc.MustNewEvmSpaceServer(router, exposedModules, option)
 
+	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("ethrpc.endpoint")
 	go server.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
 
+	// serve Websocket endpoint
 	if wsEndpoint := viper.GetString("ethrpc.wsEndpoint"); len(wsEndpoint) > 0 {
 		go server.MustServeGraceful(ctx, wg, wsEndpoint, rpcutil.ProtocolWS)
 	}
 }
 
+// startNativeSpaceBridgeRpcServer starts core space bridge RPC server
 func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup) {
 	var config rpc.CfxBridgeServerConfig
-	viperutil.MustUnmarshalKey("rpc.cfxBridge", &config)
 
+	viperutil.MustUnmarshalKey("rpc.cfxBridge", &config)
 	logrus.WithField("config", config).Info("Start to run cfx bridge rpc server")
 
 	server := rpc.MustNewNativeSpaceBridgeServer(&config)

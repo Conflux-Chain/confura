@@ -27,7 +27,7 @@ type contractLog struct {
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
 	LogIndex    uint64 `gorm:"not null"`
-	Extra       []byte `gorm:"type:mediumText"` // extra data in JSON format
+	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
 func (cl contractLog) TableName() string {
@@ -59,9 +59,10 @@ func newBigContractLogStore(
 }
 
 // preparePartition create new contract log partitions for the big contract if necessary.
-// Also migrates event logs form address indexed table to separate contract specified log table for the initial partitioning.
+// Also migrates event logs from address indexed table to separate contract specified log table
+// for the initial partitioning.
 func (bcls *bigContractLogStore) preparePartitions(dataSlice []*store.EpochData) (map[uint64]bnPartition, error) {
-	contractAddrs := extractContractAddressesOfEpochData(dataSlice...)
+	contractAddrs := extractUniqueContractAddresses(dataSlice...)
 	contract2BnPartitions := make(map[uint64]bnPartition)
 
 	for caddr := range contractAddrs {

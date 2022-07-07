@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+// posAPI provides core space POS RPC proxy API.
 type posAPI struct{}
 
 func (api *posAPI) GetStatus(ctx context.Context) (postypes.Status, error) {

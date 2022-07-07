@@ -14,7 +14,7 @@ import (
 // API describes the set of methods offered over the RPC interface
 type API struct {
 	Namespace string      // namespace under which the rpc methods of Service are exposed
-	Version   string      // api version for DApp's
+	Version   string      // api version
 	Service   interface{} // receiver instance which holds the methods
 	Public    bool        // indication if the methods must be considered safe for public use
 }
@@ -54,7 +54,7 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 	return filteredApis, nil
 }
 
-// nativeSpaceApis returns the collection of built-in RPC APIs for native space.
+// nativeSpaceApis returns the collection of built-in RPC APIs for core space.
 func nativeSpaceApis(
 	clientProvider *node.CfxClientProvider, gashandler *handler.GasStationHandler, option ...CfxAPIOption,
 ) []API {
@@ -125,7 +125,7 @@ func evmSpaceApis(clientProvider *node.EthClientProvider, option ...EthAPIOption
 	}, nil
 }
 
-// nativeSpaceBridgeApis adapts EVM space RPCs to native space RPCs.
+// nativeSpaceBridgeApis adapts evm space RPCs to core space RPCs.
 func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 	// TODO configure cluster for CFX bridge?
 	eth, err := web3go.NewClient(ethNodeURL)

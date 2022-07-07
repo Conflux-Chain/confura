@@ -6,6 +6,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 )
 
+// traceAPI provides core space trace RPC proxy API.
 type traceAPI struct{}
 
 func (api *traceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.LocalizedBlockTrace, error) {

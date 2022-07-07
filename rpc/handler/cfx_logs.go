@@ -19,6 +19,7 @@ var (
 	errEventLogsTooStale = errors.New("event logs are too stale (already pruned)")
 )
 
+// CfxLogsApiHandler RPC handler to get core space event logs from store or fullnode.
 type CfxLogsApiHandler struct {
 	ms *mysql.MysqlStore
 

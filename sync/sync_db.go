@@ -21,10 +21,10 @@ import (
 
 const (
 	// default capacity setting for pivot info window
-	dbSyncEpochPivotWinCapacity = 400
+	syncPivotInfoWinCapacity = 50
 )
 
-// TODO: extract more sync config items
+// db sync configuration
 type syncConfig struct {
 	FromEpoch uint64 `default:"0"`
 	MaxEpochs uint64 `default:"10"`
@@ -80,7 +80,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 		lastSubEpochNo:      citypes.EpochNumberNil,
 		pivotSwitchEpochCh:  make(chan uint64, conf.Sub.Buffer),
 		checkPointCh:        make(chan bool, 2),
-		epochPivotWin:       newEpochPivotWindow(dbSyncEpochPivotWinCapacity),
+		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 	}
 
 	// Ensure epoch data validity in database
@@ -336,7 +336,7 @@ func (syncer *DatabaseSyncer) doCheckPoint() error {
 		return errors.WithMessage(err, "failed to reload last sync point")
 	}
 
-	syncer.epochPivotWin.popn(syncer.latestStoreEpoch())
+	syncer.epochPivotWin.popn(syncer.epochFrom)
 
 	return nil
 }
@@ -379,13 +379,15 @@ func (syncer *DatabaseSyncer) onEpochReceived(epoch types.WebsocketEpochResponse
 }
 
 func (syncer *DatabaseSyncer) onEpochSubStart() {
-	if atomic.LoadUint32(&syncer.catchupCompleted) != 1 { // not ready for sync yet
+	if atomic.LoadUint32(&syncer.catchupCompleted) != 1 {
+		// not ready for sync yet
 		return
 	}
 
 	logrus.Debug("DB sync onEpochSubStart event received")
 
-	atomic.StoreUint64(&(syncer.lastSubEpochNo), citypes.EpochNumberNil) // reset lastSubEpochNo
+	// reset lastSubEpochNo
+	atomic.StoreUint64(&(syncer.lastSubEpochNo), citypes.EpochNumberNil)
 	syncer.triggerCheckpoint()
 }
 
@@ -504,6 +506,10 @@ func (syncer *DatabaseSyncer) detectPivotSwitchFromPubsub(epoch *types.Websocket
 }
 
 func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
+	if syncer.epochFrom == 0 { // no epoch synchronized yet
+		return "", nil
+	}
+
 	latestEpochNo := syncer.latestStoreEpoch()
 
 	// load from in-memory cache first

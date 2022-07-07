@@ -6,6 +6,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/rpc/cache"
 )
 
+// netAPI provides evm space net RPC proxy API.
 type netAPI struct{}
 
 // Version returns the current network id.

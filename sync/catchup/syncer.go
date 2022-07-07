@@ -15,9 +15,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Syncer accelerates epoch data catch-up using concurrently workers.
-// Specifically, each worker will be dispatched as round-robin load
-// balancing.
+// Syncer accelerates core space epoch data catch-up using concurrently workers.
+// Specifically, each worker will be dispatched as round-robin load balancing.
 type Syncer struct {
 	// goroutine workers to fetch epoch data concurrently
 	workers []*worker
@@ -191,8 +190,7 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 	var state persistState
 
 	defer wg.Done()
-	// do last db write anyway since there may be some epochs not
-	// persisted yet.
+	// do last db write anyway since there may be some epochs not persisted yet.
 	defer s.persist(&state)
 
 	for eno := start; eno <= end; {
@@ -248,7 +246,7 @@ func (s *persistState) numEpochs() int {
 }
 
 func (s *persistState) update(epochData *store.EpochData) (int, int) {
-	totalDbRows, storeDbRows := epochData.CalculateDbRows()
+	totalDbRows, storeDbRows := countDbRows(epochData)
 
 	s.epochs = append(s.epochs, epochData)
 	s.totalDbRows += totalDbRows
@@ -305,10 +303,9 @@ func (s *Syncer) updateEpochTo(ctx context.Context) bool {
 			return true
 		}
 
-		// TODO: refactor with time interval based logging
 		logger := s.logger().WithError(err)
-
 		logf := logger.Debug
+
 		if try%50 == 0 {
 			logf = logger.Error
 		}
@@ -341,4 +338,34 @@ func (s *Syncer) interrupted(ctx context.Context) bool {
 	}
 
 	return false
+}
+
+// countDbRows count total db rows and to be stored db row from epoch data.
+func countDbRows(epoch *store.EpochData) (totalDbRows int, storeDbRows int) {
+	storeDisabler := store.StoreConfig()
+
+	// db rows for block
+	totalDbRows += len(epoch.Blocks)
+	if !storeDisabler.IsChainBlockDisabled() {
+		storeDbRows += len(epoch.Blocks)
+	}
+
+	// db rows for txs
+	totalDbRows += len(epoch.Receipts)
+	if !storeDisabler.IsChainReceiptDisabled() || !storeDisabler.IsChainTxnDisabled() {
+		storeDbRows += len(epoch.Receipts)
+	}
+
+	numLogs := 0
+	for _, rcpt := range epoch.Receipts {
+		numLogs += len(rcpt.Logs)
+	}
+
+	// db rows for logs
+	totalDbRows += numLogs
+	if !storeDisabler.IsChainLogDisabled() {
+		storeDbRows += numLogs
+	}
+
+	return
 }

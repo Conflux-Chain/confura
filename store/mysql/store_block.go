@@ -10,7 +10,9 @@ import (
 	"gorm.io/gorm"
 )
 
-const defaultBatchSizeBlockInsert = 500
+const (
+	defaultBatchSizeBlockInsert = 500
+)
 
 type block struct {
 	ID          uint64
@@ -21,7 +23,7 @@ type block struct {
 	Pivot       bool   `gorm:"not null"`
 	RawData     []byte `gorm:"type:MEDIUMBLOB;not null"`
 	RawDataLen  uint64 `gorm:"not null"`
-	Extra       []byte `gorm:"type:text"` // dynamic fields within json string for extention
+	Extra       []byte `gorm:"type:text"` // extention json field
 }
 
 func newBlock(data *types.Block, pivot bool, extra *store.BlockExtra) *block {
@@ -108,7 +110,7 @@ func (bs *blockStore) GetBlocksByEpoch(ctx context.Context, epochNumber uint64) 
 		result = append(result, types.Hash(hash))
 	}
 
-	if len(result) == 0 { // no data in db since each epoch has at least 1 block (pivot block)
+	if len(result) == 0 { // each epoch has at least 1 block (pivot block)
 		return result, gorm.ErrRecordNotFound
 	}
 
@@ -116,7 +118,7 @@ func (bs *blockStore) GetBlocksByEpoch(ctx context.Context, epochNumber uint64) 
 }
 
 func (bs *blockStore) GetBlockByEpoch(ctx context.Context, epochNumber uint64) (*store.Block, error) {
-	// TODO Cannot get tx from db in advance, since only executed txs saved in db
+	// TODO Cannot get txn from db in advance, since only executed transactions saved in db
 	return nil, store.ErrUnsupported
 }
 

@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	txnStatusFailed  = uint64(0) // ethereum tx status `failed`
-	txnStatusSuccess = uint64(1) // ethereum tx status `success`
+	txnStatusFailed  = uint64(0) // Ethereum tx status `failed`
+	txnStatusSuccess = uint64(1) // Ethereum tx status `success`
 )
 
 // convert cfx address => eth address

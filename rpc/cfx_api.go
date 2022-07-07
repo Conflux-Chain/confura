@@ -20,7 +20,6 @@ import (
 )
 
 var (
-	// Flyweight objects
 	emptyEpochs = []*types.Epoch{}
 	emptyLogs   = []types.Log{}
 )
@@ -31,6 +30,7 @@ type CfxAPIOption struct {
 	Relayer       *relay.TxnRelayer
 }
 
+// cfxAPI provides main proxy API for core space.
 type cfxAPI struct {
 	CfxAPIOption
 	provider         *node.CfxClientProvider
@@ -275,6 +275,7 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 		logrus.WithFields(logrus.Fields{
 			"filter": filter, "hitStore": hitStore,
 		}).WithError(err).Debug("Delegated `cfx_getLogs` to log api handler")
+
 		api.collectHitStats("cfx_getLogs", hitStore)
 
 		if logs == nil { // uniform empty logs

@@ -7,6 +7,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/util/rpc"
 )
 
+// CfxClientProvider provides core space client by router.
 type CfxClientProvider struct {
 	*clientProvider
 }
@@ -25,17 +26,12 @@ func NewCfxClientProvider(router Router) *CfxClientProvider {
 	return cp
 }
 
+// GetClientByIP gets client of normal HTTP group by remote IP address.
 func (p *CfxClientProvider) GetClientByIP(ctx context.Context) (sdk.ClientOperator, error) {
-	remoteAddr := remoteAddrFromContext(ctx)
-
-	client, err := p.getClient(remoteAddr, GroupCfxHttp)
-	if err != nil {
-		return nil, err
-	}
-
-	return client.(sdk.ClientOperator), nil
+	return p.GetClientByIPGroup(ctx, GroupCfxHttp)
 }
 
+// GetClientByIPGroup gets client of specific group by remote IP address.
 func (p *CfxClientProvider) GetClientByIPGroup(ctx context.Context, group Group) (sdk.ClientOperator, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
 

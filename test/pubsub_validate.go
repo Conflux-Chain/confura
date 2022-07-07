@@ -55,7 +55,8 @@ func MustNewPubSubValidator(conf *PSVConfig) *PubSubValidator {
 }
 
 func (validator *PubSubValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
-	logrus.WithField("conf", validator.conf).Info("Pubsub validator running to validate epoch data...")
+	logrus.WithField("conf", validator.conf).
+		Info("Pubsub validator running to validate epoch data...")
 
 	// newHeads pubsub validation
 	validator.validatePubSubNewHeads()
@@ -96,7 +97,8 @@ func (validator *PubSubValidator) validatePubSubNewHeads() {
 			var valErr error // validation error
 
 			if err := calibrate(); err != nil {
-				logrus.WithError(err).Error("Pubsub validator failed to calibrate newHeads pubsub")
+				logrus.WithError(err).
+					Error("Pubsub validator failed to calibrate newHeads pubsub")
 			}
 
 			select {
@@ -107,15 +109,18 @@ func (validator *PubSubValidator) validatePubSubNewHeads() {
 				infuraCtx.rBuf.Enqueue(inh)
 				valErr = validate()
 			case err := <-fnCtx.errCh:
-				logrus.WithError(err).Error("Pubsub validator newHeads pubsub error of fullnode")
+				logrus.WithError(err).
+					Error("Pubsub validator newHeads pubsub error of fullnode")
 				reset()
 			case err := <-infuraCtx.errCh:
-				logrus.WithError(err).Error("Pubsub validator newHeads pubsub error of infura")
+				logrus.WithError(err).
+					Error("Pubsub validator newHeads pubsub error of infura")
 				reset()
 			}
 
 			if valErr != nil {
-				logrus.WithError(valErr).Error("Pubsub validator failed to validate newHeads pubsub")
+				logrus.WithError(valErr).
+					Error("Pubsub validator failed to validate newHeads pubsub")
 			}
 		}
 	})
@@ -133,7 +138,8 @@ func (validator *PubSubValidator) pubSubNewHeadsWithContext(psvCtx *pubsubValida
 	for {
 		csub, nhCh, err := subFunc()
 		if err != nil {
-			logger.WithError(err).Error("Pubsub validator failed to do newHeads pubsub subscription")
+			logger.WithError(err).
+				Error("Pubsub validator failed to do newHeads pubsub subscription")
 			time.Sleep(time.Second * 2)
 			continue
 		}
@@ -143,7 +149,8 @@ func (validator *PubSubValidator) pubSubNewHeadsWithContext(psvCtx *pubsubValida
 		for psvCtx.getStatus() {
 			select {
 			case err = <-csub.Err():
-				logger.WithError(err).Error("Pubsub validator newHeads pubsub subscription error")
+				logger.WithError(err).
+					Error("Pubsub validator newHeads pubsub subscription error")
 				csub.Unsubscribe()
 
 				if psvCtx.setStatus(false) {
@@ -182,7 +189,8 @@ func (validator *PubSubValidator) validatePubSubEpochs(subEpochType *types.Epoch
 			var valErr error // validation error
 
 			if err := calibrate(); err != nil {
-				logger.WithError(err).Error("Pubsub validator failed to calibrate epochs pubsub")
+				logger.WithError(err).
+					Error("Pubsub validator failed to calibrate epochs pubsub")
 			}
 
 			select {
@@ -193,15 +201,18 @@ func (validator *PubSubValidator) validatePubSubEpochs(subEpochType *types.Epoch
 				infuraCtx.rBuf.Enqueue(inh)
 				valErr = validate()
 			case err := <-fnCtx.errCh:
-				logger.WithError(err).Error("Pubsub validator epochs pubsub error of fullnode")
+				logger.WithError(err).
+					Error("Pubsub validator epochs pubsub error of fullnode")
 				reset()
 			case err := <-infuraCtx.errCh:
-				logger.WithError(err).Error("Pubsub validator epochs pubsub error of infura")
+				logger.WithError(err).
+					Error("Pubsub validator epochs pubsub error of infura")
 				reset()
 			}
 
 			if valErr != nil {
-				logger.WithError(valErr).Error("Pubsub validator failed to validate epochs pubsub")
+				logger.WithError(valErr).
+					Error("Pubsub validator failed to validate epochs pubsub")
 			}
 		}
 	})
@@ -223,7 +234,8 @@ func (validator *PubSubValidator) pubSubEpochsWithContext(psvCtx *pubsubValidati
 	for {
 		csub, epochCh, err := subFunc()
 		if err != nil {
-			logger.WithError(err).Error("Pubsub validator failed to do epochs pubsub subscription")
+			logger.WithError(err).
+				Error("Pubsub validator failed to do epochs pubsub subscription")
 			time.Sleep(time.Second * 2)
 			continue
 		}
@@ -233,7 +245,8 @@ func (validator *PubSubValidator) pubSubEpochsWithContext(psvCtx *pubsubValidati
 		for psvCtx.getStatus() {
 			select {
 			case err = <-csub.Err():
-				logger.WithError(err).Error("Pubsub validator epochs pubsub subscription error")
+				logger.WithError(err).
+					Error("Pubsub validator epochs pubsub subscription error")
 				csub.Unsubscribe()
 
 				if psvCtx.setStatus(false) {
@@ -310,7 +323,9 @@ func (validator *PubSubValidator) resetWithContext(fnCtx, infuraCtx *pubsubValid
 func (validator *PubSubValidator) validateWithContext(fnCtx, infuraCtx *pubsubValidationContext) error {
 	fnBufSize, infuraBufSize := fnCtx.rBuf.ContentSize(), infuraCtx.rBuf.ContentSize()
 	logger := logrus.WithFields(logrus.Fields{
-		"fnBufSize": fnBufSize, "infuraBufSize": infuraBufSize, "ctxChType": fnCtx.etype,
+		"fnBufSize":     fnBufSize,
+		"infuraBufSize": infuraBufSize,
+		"ctxChType":     fnCtx.etype,
 	})
 
 	if fnBufSize == 0 || infuraBufSize == 0 {
@@ -330,7 +345,8 @@ func (validator *PubSubValidator) validateWithContext(fnCtx, infuraCtx *pubsubVa
 			infuraValStr, _ := json.Marshal(infuraVal)
 
 			logrus.WithFields(logrus.Fields{
-				"fnVal": fnValStr, "infuraVal": infuraValStr,
+				"fnVal":     fnValStr,
+				"infuraVal": infuraValStr,
 			}).Error("Pubsub validator validation result not matched")
 
 			return errResultNotMatched
@@ -350,7 +366,8 @@ func (validator *PubSubValidator) doCalibrate(fnCtx, infuraCtx *pubsubValidation
 	minSubSize := minCommonSubArraySize
 
 	logger := logrus.WithFields(logrus.Fields{
-		"fnBufSize": fnBufSize, "infuraBufSize": infuraBufSize,
+		"fnBufSize":     fnBufSize,
+		"infuraBufSize": infuraBufSize,
 	})
 
 	if fnBufSize < minSubSize || infuraBufSize < minSubSize {
@@ -363,10 +380,13 @@ func (validator *PubSubValidator) doCalibrate(fnCtx, infuraCtx *pubsubValidation
 	i, j, l := findFirstCommonSubArrayOfLength(fnArr, infuraArr, minSubSize)
 
 	logger.WithFields(logrus.Fields{
-		"fnStartPos": i, "infuraStartPos": j, "commonLength": l,
+		"fnStartPos":     i,
+		"infuraStartPos": j,
+		"commonLength":   l,
 	}).Debug("Pubsub validator found first common subarray joint points")
 
-	if l >= minSubSize { // left trim elements until first non-common element from ring buffer
+	// left trim elements until first non-common element from ring buffer
+	if l >= minSubSize {
 		for i += l; i > 0; i-- {
 			fnCtx.rBuf.Dequeue()
 		}
@@ -390,11 +410,16 @@ type pubsubValidationContext struct {
 	rBuf    *ring.Ring         // ring buffer to hold data for comparision
 }
 
-func newPubSubValidationContext(cfx sdk.ClientOperator, channel interface{}) *pubsubValidationContext {
+func newPubSubValidationContext(
+	cfx sdk.ClientOperator, channel interface{},
+) *pubsubValidationContext {
 	// check type of channel first
 	chanVal := reflect.ValueOf(channel)
-	if chanVal.Kind() != reflect.Chan || chanVal.Type().ChanDir()&reflect.SendDir == 0 || chanVal.IsNil() {
-		logrus.Fatal("Pubsub validation context subscription channel must be a writable channel and not be nil")
+	if chanVal.Kind() != reflect.Chan ||
+		chanVal.Type().ChanDir()&reflect.SendDir == 0 || chanVal.IsNil() {
+		logrus.Fatal(
+			"Pubsub validation context subscription channel must be a writable channel and not be nil",
+		)
 	}
 
 	rbuf := &ring.Ring{}
@@ -459,10 +484,11 @@ func (ctx *pubsubValidationContext) notify(result interface{}) bool {
 	return false
 }
 
-// findFirstCommonSubArrayOfLength finds starting positions of the first common subarray with at least
+// findFirstCommonSubArrayOfLength finds starting position of the first common subarray with at least
 // specified length between two slice using brute force algorithm.
 // This is a typical LCS(longest common subarray) problem, the time complexicity for this brute force
 // algorithm is O(M*N*min(M,N)) where M,N are the lengths of both slices.
+//
 // TODO Improve the performance using "Binary Search with Rolling Hash" algorithm if necessary,
 // which can be referenced to:
 // https://massivealgorithms.blogspot.com/2018/12/leetcode-718-maximum-length-of-repeated.html

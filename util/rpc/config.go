@@ -14,7 +14,7 @@ var (
 type clientConfig struct {
 	WS              string
 	Http            string
-	Retry           int           `default:"3"`
+	Retry           int
 	RetryInterval   time.Duration `default:"1s"`
 	RequestTimeout  time.Duration `default:"3s"`
 	MaxConnsPerHost int           `default:"1024"`
@@ -68,7 +68,7 @@ func WithClientHookMetrics(hook bool) ClientOption {
 	}
 }
 
-func Init() {
+func init() {
 	viper.MustUnmarshalKey("cfx", &cfxClientCfg)
 	viper.MustUnmarshalKey("eth", &ethClientCfg)
 }

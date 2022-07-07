@@ -16,7 +16,6 @@ import (
 )
 
 var (
-	// flyweight instance for empty EpochData
 	emptyEpochData = EpochData{}
 
 	errBlockValidationFailed      = errors.New("epoch block validation failed")
@@ -59,36 +58,6 @@ type EpochData struct {
 	ReceiptExts map[types.Hash]*ReceiptExtra
 }
 
-// CalculateDbRows calculates total db rows and to be stored db rows
-func (epoch *EpochData) CalculateDbRows() (totalDbRows int, storeDbRows int) {
-	storeDisabler := StoreConfig()
-
-	// db rows for block
-	totalDbRows += len(epoch.Blocks)
-	if !storeDisabler.IsChainBlockDisabled() {
-		storeDbRows += len(epoch.Blocks)
-	}
-
-	// db rows for txs
-	totalDbRows += len(epoch.Receipts)
-	if !storeDisabler.IsChainReceiptDisabled() || !storeDisabler.IsChainTxnDisabled() {
-		storeDbRows += len(epoch.Receipts)
-	}
-
-	numLogs := 0
-	for _, rcpt := range epoch.Receipts {
-		numLogs += len(rcpt.Logs)
-	}
-
-	// db rows for logs
-	totalDbRows += numLogs
-	if !storeDisabler.IsChainLogDisabled() {
-		storeDbRows += numLogs
-	}
-
-	return
-}
-
 func (epoch *EpochData) GetPivotBlock() *types.Block {
 	return epoch.Blocks[len(epoch.Blocks)-1]
 }
@@ -124,7 +93,6 @@ func (epoch *EpochData) IsContinuousTo(prev *EpochData) (continuous bool, desc s
 }
 
 // QueryEpochData queries blockchain data for the specified epoch number.
-// TODO better to use batch API to return all if performance is low in case of high TPS.
 func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (EpochData, error) {
 	updater := metrics.Registry.Sync.QueryEpochData("cfx")
 	defer updater.Update()
@@ -160,15 +128,16 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 	anyBlockExecuted := false
 	for _, hash := range blockHashes {
 		block, err := cfx.GetBlockByHashWithPivotAssumption(hash, pivotHash, hexutil.Uint64(epochNumber))
-		if err == nil { // validate block first if no error
+		if err == nil {
+			// validate block first if no error
 			err = validateBlock(&block, epochNumber, hash)
 		}
 
 		if checkPivotSwitchWithError(err) { // check pivot switch
-			l := logger.WithFields(
-				logrus.Fields{"blockHash": hash, "blockHeader": &(block.BlockHeader)},
-			)
-			l.WithError(err).Info(
+			logger.WithFields(logrus.Fields{
+				"blockHash":   hash,
+				"blockHeader": &(block.BlockHeader),
+			}).WithError(err).Info(
 				"Failed to get block by hash with pivot assumption (regarded as pivot switch)",
 			)
 
@@ -179,10 +148,7 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 			return emptyEpochData, errors.WithMessagef(err, "failed to get block by hash %v", hash)
 		}
 
-		if !anyBlockExecuted && !util.IsEmptyBlock(&block) {
-			anyBlockExecuted = true
-		}
-
+		anyBlockExecuted = anyBlockExecuted || !util.IsEmptyBlock(&block)
 		blocks = append(blocks, &block)
 	}
 
@@ -228,7 +194,7 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 
 			var receipt *types.TransactionReceipt
 			if useBatch {
-				// If epoch not executed yet, cfx_getEpochReceipts will always return null no matter what block hash passed in
+				// If epoch not executed yet, cfx_getEpochReceipts will always return nil no matter what block hash passed in
 				// as assumptive pivot hash due to fullnode RPC implementation. While we have some executed transaction but
 				// unexecuted receipt here, it is definitely resulted by pivot switch.
 				if epochReceipts == nil {
@@ -264,16 +230,11 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 			}
 
 			if err := validateTxsReceipt(receipt, epochNumber, block, &tx); err != nil {
-				logger.WithError(err).Info(
-					"Failed to get transaction receipt (regarded as pivot switch)",
-				)
+				logger.WithError(err).Info("Failed to get transaction receipt (regarded as pivot switch)")
 
-				return emptyEpochData, errors.WithMessage(
-					ErrEpochPivotSwitched, err.Error(),
-				)
+				return emptyEpochData, errors.WithMessage(ErrEpochPivotSwitched, err.Error())
 			}
 
-			// TODO enhance full node RPC to return receipts by block hash
 			var txLogIndex uint64
 			logs := make([]types.Log, 0, len(receipt.Logs))
 			for _, log := range receipt.Logs {
@@ -284,7 +245,7 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 				log.LogIndex = types.NewBigInt(logIndex)
 				log.TransactionLogIndex = types.NewBigInt(txLogIndex)
 
-				// skip blacklisted address
+				// skip blacklisted address eg., POINTS token
 				if !blacklist.IsAddressBlacklisted(&log.Address, epochNumber) {
 					logs = append(logs, log)
 				}
@@ -292,7 +253,8 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 				txLogIndex++
 				logIndex++
 			}
-			receipt.Logs = logs // replace the origin logs
+			// replace the origin logs
+			receipt.Logs = logs
 
 			receipts[tx.Hash] = receipt
 		}

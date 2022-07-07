@@ -14,6 +14,7 @@ var (
 	ethOnce    sync.Once
 )
 
+// Factory returns core space instance factory
 func Factory() *factory {
 	cfxOnce.Do(func() {
 		cfxFactory = newFactory(
@@ -27,6 +28,7 @@ func Factory() *factory {
 	return cfxFactory
 }
 
+// EthFactory returns evm space instance factory
 func EthFactory() *factory {
 	ethOnce.Do(func() {
 		ethFactory = newFactory(
@@ -40,7 +42,7 @@ func EthFactory() *factory {
 	return ethFactory
 }
 
-// factory to create Conflux or EVM space struct suites.
+// factory creates router and RPC server.
 type factory struct {
 	nodeRpcUrl     string
 	rpcSrvEndpoint string
@@ -57,10 +59,12 @@ func newFactory(nf nodeFactory, rpcSrvEndpoint string, groupConf map[Group]UrlCo
 	}
 }
 
+// CreatRpcServer creates node manager RPC server
 func (f *factory) CreatRpcServer() (*rpc.Server, string) {
 	return NewServer(f.nodeFactory, f.groupConf), f.rpcSrvEndpoint
 }
 
+// CreateRouter creates node router
 func (f *factory) CreateRouter() Router {
 	return MustNewRouter(cfg.Router.RedisURL, f.nodeRpcUrl, f.groupConf)
 }

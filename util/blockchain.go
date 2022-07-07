@@ -77,7 +77,9 @@ func ConvertToNumberedEpoch(cfx sdk.ClientOperator, epoch *types.Epoch) (*types.
 
 	epochNum, err := cfx.GetEpochNumber(epoch)
 	if err != nil {
-		return nil, errors.WithMessagef(err, "failed to get epoch number for named epoch %v", epoch)
+		return nil, errors.WithMessagef(
+			err, "failed to get epoch number for named epoch %v", epoch,
+		)
 	}
 
 	return types.NewEpochNumber(epochNum), nil
@@ -95,7 +97,9 @@ func ConvertToHashSlice(ss []string) []types.Hash {
 }
 
 // NormalizeEthBlockNumber normalizes ETH block number to be positive if necessary
-func NormalizeEthBlockNumber(w3c *web3go.Client, blockNum *rpc.BlockNumber, hardforkBlockNumber rpc.BlockNumber) (*rpc.BlockNumber, error) {
+func NormalizeEthBlockNumber(
+	w3c *web3go.Client, blockNum *rpc.BlockNumber, hardforkBlockNumber rpc.BlockNumber,
+) (*rpc.BlockNumber, error) {
 	if blockNum == nil {
 		return nil, errors.New("block number must be provided")
 	}

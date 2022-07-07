@@ -14,6 +14,7 @@ import (
 	gormLogger "gorm.io/gorm/logger"
 )
 
+// auto migrating table models
 var allModels = []interface{}{
 	&transaction{},
 	&block{},
@@ -39,7 +40,7 @@ type Config struct {
 	MaxOpenConns    int           `default:"10"`
 	MaxIdleConns    int           `default:"10"`
 
-	AddressIndexedLogEnabled    bool
+	AddressIndexedLogEnabled    bool   `default:"true"`
 	AddressIndexedLogPartitions uint32 `default:"100"`
 
 	MaxBnRangedArchiveLogPartitions uint32 `default:"5"`
@@ -126,11 +127,13 @@ func (config *Config) mustNewDB(database string) *gorm.DB {
 	logrusLogLevel := logrus.GetLevel()
 	gLogLevel := gormLogger.Warn
 
-	switch { // map log level of logrus to that of gorm
+	// map log level of logrus to that of gorm
+	switch {
 	case logrusLogLevel <= logrus.ErrorLevel:
 		gLogLevel = gormLogger.Error
 	case logrusLogLevel >= logrus.DebugLevel:
-		gLogLevel = gormLogger.Info // gorm info log level is kind of too verbose
+		// gorm info log level is kind of too verbose
+		gLogLevel = gormLogger.Info
 	}
 
 	// create gorm logger by customizing the default logger
@@ -139,7 +142,7 @@ func (config *Config) mustNewDB(database string) *gorm.DB {
 		gormLogger.Config{
 			SlowThreshold:             time.Millisecond * 200, // slow SQL threshold (200ms)
 			LogLevel:                  gLogLevel,              // log level
-			IgnoreRecordNotFoundError: true,                   // never logging on ErrRecordNotFound error, otherwise logs may grow exploded
+			IgnoreRecordNotFoundError: true,                   // never logging on ErrRecordNotFound error
 			Colorful:                  true,                   // use colorful print
 		},
 	)

@@ -10,7 +10,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/util/rpc"
 )
 
-// nodeFactory factory methods to create node instance
+// nodeFactory factory method to create node instance
 type nodeFactory func(group Group, name, url string, hm HealthMonitor) (Node, error)
 
 // Manager manages full node cluster, including:
@@ -58,6 +58,7 @@ func NewManagerWithRepartition(group Group, nf nodeFactory, urls []string, resol
 	return &manager
 }
 
+// Add adds fullnode to monitor
 func (m *Manager) Add(url string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -70,6 +71,7 @@ func (m *Manager) Add(url string) {
 	}
 }
 
+// Remove removes monitored fullnode
 func (m *Manager) Remove(url string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -83,6 +85,7 @@ func (m *Manager) Remove(url string) {
 	}
 }
 
+// Get gets monitored fullnode from url
 func (m *Manager) Get(url string) Node {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -91,6 +94,7 @@ func (m *Manager) Get(url string) Node {
 	return m.nodes[nodeName]
 }
 
+// List lists all monitored fullnodes
 func (m *Manager) List() []Node {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -104,6 +108,7 @@ func (m *Manager) List() []Node {
 	return nodes
 }
 
+// String implements stringer interface
 func (m *Manager) String() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

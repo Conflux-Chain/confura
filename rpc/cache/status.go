@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+// StatusCache memory cache for core space status related RPC method suites.
 type StatusCache struct {
 	inner *nodeExpiryCaches
 }

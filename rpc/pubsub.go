@@ -47,7 +47,7 @@ var (
 
 type delegateSubFilter func(item interface{}) bool // result filter for delegate subscription
 
-// delegateSubscription is a subscription established through the delegateClient's Subscribe methods.
+// delegateSubscription is a subscription established through the delegateClient's `Subscribe` methods.
 type delegateSubscription struct {
 	dCtx     *delegateContext
 	subId    rpc.ID              // rpc subscription ID

@@ -18,15 +18,20 @@ import (
 type Group string
 
 const (
-	// Note, must begin with cfx or eth as space name for metrics
+	// Note, group name must begin with cfx or eth as space name for metrics
+
+	// core space fullnode groups
 	GroupCfxHttp     = "cfxhttp"
 	GroupCfxWs       = "cfxws"
 	GroupCfxLogs     = "cfxlog"
 	GroupCfxArchives = "cfxarchives"
-	GroupEthHttp     = "ethhttp"
-	GroupEthLogs     = "ethlogs"
+
+	// evm space fullnode groups
+	GroupEthHttp = "ethhttp"
+	GroupEthLogs = "ethlogs"
 )
 
+// Space parses space from group name
 func (g Group) Space() string {
 	if strings.HasPrefix(string(g), "eth") {
 		return "eth"
@@ -100,7 +105,8 @@ type chainedRouter struct {
 
 func NewChainedRouter(groupConf map[Group]UrlConfig, routers ...Router) Router {
 	return &chainedRouter{
-		groupConf: groupConf, routers: routers,
+		groupConf: groupConf,
+		routers:   routers,
 	}
 }
 

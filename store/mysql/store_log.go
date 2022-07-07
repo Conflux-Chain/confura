@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	// entity name for block number partitioned logs
+	// entity name for block number partitioned event logs
 	bnPartitionedLogEntity = "logs"
 	// volume size per log partition
 	bnPartitionedLogVolumeSize = 10_000_000
@@ -27,7 +27,7 @@ type log struct {
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
 	LogIndex    uint64 `gorm:"not null"`
-	Extra       []byte `gorm:"type:mediumText"` // extra data in JSON format
+	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
 func (log) TableName() string {
@@ -224,8 +224,8 @@ func (ls *logStore) GetBnPartitionedLogs(filter LogFilter, partition bnPartition
 	return res, err
 }
 
-// extractContractAddressesOfEpochData extracts unique contract addresses of event logs within epoch data slice.
-func extractContractAddressesOfEpochData(slice ...*store.EpochData) map[string]bool {
+// extractUniqueContractAddresses extracts unique contract addresses of event logs within epoch data slice.
+func extractUniqueContractAddresses(slice ...*store.EpochData) map[string]bool {
 	contracts := make(map[string]bool)
 
 	for _, data := range slice {

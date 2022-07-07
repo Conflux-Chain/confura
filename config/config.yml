@@ -1,14 +1,14 @@
 rpc:
   exposedModules: []
   endpoint: ":22537"
-  #wsEndpoint: ":22535"
+  # wsEndpoint: ":22535"
   cfxBridge:
     ethNode: http://evmtestnet.confluxrpc.com
     cfxNode: http://test.confluxrpc.com
     # exposedModules: []
     # endpoint: ":32537"
   # throttling:
-    # redisUrl: redis://<user>:<pass>@localhost:6379/<db>
+  #   redisUrl: redis://<user>:<pass>@localhost:6379/<db>
 ethrpc:
   exposedModules: []
   endpoint: ":28545"
@@ -16,49 +16,44 @@ ethrpc:
 cfx:
   ws: ws://test.confluxrpc.com/ws
   http: http://test.confluxrpc.com
-  retry: 3
+  retry: 0
   retryInterval: 1s
   requestTimeout: 3s
-  maxConnsPerHost: 1024 # optionally limits the total number of connections per host
+  maxConnsPerHost: 1024 # max connections per fullnode
 eth:
   http: http://evmtestnet.confluxrpc.com
   retry: 3
   retryInterval: 1s
   requestTimeout: 3s
-  maxConnsPerHost: 1024 # optionally limits the total number of connections per host
+  maxConnsPerHost: 1024 # max connections per fullnode
 sync:
-  poll:
-    interval: 300ms
   sub:
     buffer: 1000
-#  useBatch: false  # Whether to use epoch_getEpochReceipts to batch get receipts
-#  fromEpoch: 0     # The epoch number from which to sync core space
-#  maxEpochs: 10    # Maximum number of epochs to batch sync epoch data once
-  blackListAddrs: > # Blacklisted contract address(es) of which event logs will be skipped
+  # useBatch: false  # Whether to use `epoch_getEpochReceipts` to batch get receipts
+  # fromEpoch: 0     # The epoch number from which to sync core space
+  # maxEpochs: 10    # Maximum number of epochs to batch sync epoch data once
+  blackListAddrs: >  # Blacklisted contract address(es) whose event logs will be ignored
     [
       {"address": "cfx:acav5v98np8t3m66uw7x61yer1ja1jm0dpzj1zyzxv", "epoch": 0}
     ]
-#  eth:
-#    useBatch: false # Whether to use parity_getBlockReceipts to batch get receipts
-#    fromBlock: 1    # The block number from which to sync eSpace
-#    maxBlocks: 10   # Maximum number of blocks to batch sync ETH data once
-#  catchup:
-#    # Pool of fullnodes for catching up. There will be 1 goroutine per full node or
-#    # the catch up will be disabled if none configured.
-#    cfxPool: [http://test.confluxrpc.com]
-#    dbRowsThreshold: 2500 # Threshold for number of db rows per batch persistence
-#    maxDbRows: 7500       # Max number of db rows collected before persistence to restrict memory usage
-#    workerChanSize: 5     # Capacity of channel per worker to buffer queried epoch data
-nearhead:
-  cap: 100000
-  logLimit: 3000
+  # eth:
+  #   useBatch: false # Whether to use `parity_getBlockReceipts` to batch get receipts
+  #   fromBlock: 1    # The block number from which to sync eSpace
+  #   maxBlocks: 10   # Maximum number of blocks to batch sync ETH data once
+  # catchup:
+  #   # Pool of fullnodes for catching up. There will be 1 goroutine per full node or
+  #   # the catch up will be disabled if none configured.
+  #   cfxPool: [http://test.confluxrpc.com]
+  #   dbRowsThreshold: 2500 # Threshold for number of db rows per batch persistence
+  #   maxDbRows: 7500       # Max number of db rows collected before persistence to restrict memory usage
+  #   workerChanSize: 5     # Capacity of channel per worker to buffer queried epoch data
 # metrics:
 #   enabled: true
 #   influxdb:
 #     host: http://127.0.0.1:8086
 #     db: infura_test
-#     username: ''
-#     password: ''
+#     username:
+#     password:
 #   report:
 #     enabled: false
 #     interval: 10s
@@ -69,46 +64,43 @@ nearhead:
 #   mysql:
 #     enabled: false
 #     host: 127.0.0.1:3306
-#     username: ''
-#     password: ''
+#     username:
+#     password:
 #     database: conflux_infura
 #     connMaxLifeTime: 3m
 #     maxOpenConns: 10
 #     maxIdleConns: 10
-#     addressIndexedLogEnabled: false
+#     addressIndexedLogEnabled: true
 #     addressIndexedLogPartitions: 100
 #     # max number of archive log partitions ranged by block number to maintain. Once exceeded,
-#     # data will be pruned from the oldest partition to keep max archive log partitions.
+#     # data will be pruned from the oldest partition to keep the max archive limit.
 #     maxBnRangedArchiveLogPartitions: 5
-  # redis:
-  #   enabled: false
-  #   cacheTime: 12h
-  #   url: redis://<user>:<pass>@localhost:6379/<db>
-  # disables: [block,transaction,receipt] # disabled chain data types within store, available options are: `block`, `transaction`, `receipt` and `log`
+#   redis:
+#     enabled: false
+#     cacheTime: 12h
+#     url: redis://<user>:<pass>@localhost:6379/<db>
+#   # chain data types ignored to be saved within store, available options are:
+#   # `block`, `transaction`, `receipt` and `log`
+#   disables: [block,transaction,receipt]
 # ethstore:
-  # mysql:
-    # enabled: false
-    # dsn: user:password@tcp(127.0.0.1:3306)/conflux_infura_eth?parseTime=true
-    # connMaxLifeTime: 3m
-    # maxOpenConns: 10
-    # maxIdleConns: 10
-  # disables: [block,transaction,receipt] # disabled chain data types within store, available options are: `block`, `transaction`, `receipt` and `log`
+#   mysql:
+#     enabled: false
+#     dsn: user:password@tcp(127.0.0.1:3306)/conflux_infura_eth?parseTime=true
+#     connMaxLifeTime: 3m
+#     maxOpenConns: 10
+#     maxIdleConns: 10
+#   # chain data types ignored to be saved within store, available options are:
+#   # `block`, `transaction`, `receipt` and `log`
+#   disables: [block,transaction,receipt]
 # alert:
 #   customTags: [testnet,dev]
 #   dingtalk:
 #     enabled: false
-#     webhook: INFURA_ALERT_DINGTALK_WEBHOOK
-#     secret: INFURA_ALERT_DINGTALK_SECRET
+#     webhook: https://oapi.dingtalk.com/robot/send?access_token=${your_access_token}
+#     secret:  ${your_access_secret}
 #     atMobiles: []
 #     isAtAll: false
 prune:
-  db:
-    interval: 30s
-    maxEpochs: 10
-    threshold:
-      maxBlocks: 20000000
-      maxTxs: 20000000
-      maxLogs: 20000000
   cache:
     interval: 30s
     maxEpochs: 10
@@ -117,9 +109,9 @@ prune:
       maxTxs: 100000
       maxLogs: 100000
 node:
-  urls: [http://test.confluxrpc.com,http://portal-test.confluxrpc.com]
+  urls: [http://test.confluxrpc.com]
   ethurls: [http://evmtestnet.confluxrpc.com]
-  logNodes: [http://test.confluxrpc.com,http://portal-test.confluxrpc.com]
+  logNodes: [http://test.confluxrpc.com]
   ethLogNodes: [http://evmtestnet.confluxrpc.com]
   # wsUrls: [ws://test.confluxrpc.com/ws]
   # archiveNodes: []
@@ -140,13 +132,13 @@ node:
   # endpoint: ":22530"
   # ethEndpoint: ":28530"
   # router:
-  #   redisUrl: ''
-  #   nodeRpcUrl: ''
-  #   ethNodeRpcUrl: ''
+  #   redisUrl:
+  #   nodeRpcUrl:
+  #   ethNodeRpcUrl:
   #   chainedFailover:
-  #     url: ''
-  #     wsUrl: ''
-  #     ethUrl: ''
+  #     url:
+  #     wsUrl:
+  #     ethUrl:
 # relay:
 #   bufferSize: 2000
 #   concurrency: 1

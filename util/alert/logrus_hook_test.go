@@ -11,7 +11,7 @@ import (
 
 func mustInitViperFromConfig() {
 	viper.AutomaticEnv()
-	viper.SetEnvPrefix("ci")
+	viper.SetEnvPrefix("infura")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	viper.SetConfigName("config")
@@ -29,7 +29,7 @@ func TestLogrusAddHooks(t *testing.T) {
 	hookLevels := []logrus.Level{logrus.FatalLevel, logrus.WarnLevel, logrus.ErrorLevel}
 	logrus.AddHook(NewLogrusAlertHook(hookLevels))
 
-	// Need to manually check if sent the fatal message to dingtalk group chat
+	// Need to manually check if the message sent to dingtalk group chat
 	logrus.Warn("Test logrus add hooks warn")
 	logrus.Error("Test logrus add hooks error")
 	logrus.Fatal("Test logrus add hooks fatal")

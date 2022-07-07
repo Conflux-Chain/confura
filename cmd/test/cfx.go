@@ -11,33 +11,55 @@ import (
 )
 
 var (
-	validConf test.EVConfig // epoch data validation configuration
-	testCmd   = &cobra.Command{
+	// core space epoch data validation configuration
+	validConf test.EVConfig
+
+	testCmd = &cobra.Command{
 		Use:   "cfx",
-		Short: "Test/validate if infura epoch data complies with fullnode",
+		Short: "Test/validate if core space epoch data complies with fullnode",
 		Run:   startTest,
 	}
 )
 
 func init() {
-	testCmd.Flags().StringVarP(&validConf.FullnodeRpcEndpoint, "fn-endpoint", "f", "", "fullnode rpc endpoint used as benchmark")
+	// fullnode endpoint URL
+	testCmd.Flags().StringVarP(
+		&validConf.FullnodeRpcEndpoint,
+		"fn-endpoint", "f", "", "fullnode rpc endpoint used as benchmark",
+	)
 	testCmd.MarkFlagRequired("fn-endpoint")
 
-	testCmd.Flags().StringVarP(&validConf.InfuraRpcEndpoint, "infura-endpoint", "u", "", "infura rpc endpoint to be validated against")
+	// confura RPC endpoint
+	testCmd.Flags().StringVarP(
+		&validConf.InfuraRpcEndpoint,
+		"infura-endpoint", "u", "", "infura rpc endpoint to be validated against",
+	)
 	testCmd.MarkFlagRequired("infura-endpoint")
 
+	// start point of epoch
 	testCmd.Flags().Uint64VarP(
-		&validConf.EpochScanFrom, "start-epoch", "e", math.MaxUint64, "the epoch from where scan validation will start",
+		&validConf.EpochScanFrom,
+		"start-epoch", "e", math.MaxUint64, "the epoch from where scan validation will start",
 	)
+
+	// scan interval
 	testCmd.Flags().DurationVarP(
-		&validConf.ScanInterval, "scan-interval", "c", 1*time.Second, "the interval for each scan validation",
+		&validConf.ScanInterval,
+		"scan-interval", "c", 1*time.Second, "the interval for each scan validation",
 	)
+
+	// sampling interval
 	testCmd.Flags().DurationVarP(
-		&validConf.SamplingInterval, "sampling-interval", "a", 10*time.Second, "the interval for each sampling validation",
+		&validConf.SamplingInterval,
+		"sampling-interval", "a", 10*time.Second, "the interval for each sampling validation",
 	)
+
+	// sampling epoch type
 	testCmd.Flags().StringVarP(
-		&validConf.SamplingEpochType, "sampling-epoch-type", "t", "lf",
-		"sampling epoch type: lm(latest_mined)/ls(latest_state)/lc(latest_confirmed)/lf(latest_finalized)/lcp(latest_checkpoint)",
+		&validConf.SamplingEpochType,
+		"sampling-epoch-type", "t", "lf", `sampling epoch type: 
+			lm(latest_mined)/ls(latest_state)/lc(latest_confirmed)/lf(latest_finalized)/lcp(latest_checkpoint)
+		`,
 	)
 
 	Cmd.AddCommand(testCmd)

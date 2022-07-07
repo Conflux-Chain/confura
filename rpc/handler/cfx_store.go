@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+// CfxStoreHandler RPC handler to get block/txn/receipt data from store.
 type CfxStoreHandler struct {
 	sname string // store name
 	store store.Readable
@@ -153,11 +154,7 @@ func (h *CfxStoreHandler) GetTransactionReceipt(
 }
 
 func (h *CfxStoreHandler) collectHitStats(method string, err error) {
-	if errors.Is(err, store.ErrUnsupported) { // ignore unsupported samples
-		return
+	if !errors.Is(err, store.ErrUnsupported) { // ignore unsupported samples
+		metrics.Registry.RPC.StoreHit(method, h.sname).Mark(err == nil)
 	}
-
-	hitStore := (err == nil) || errors.Is(err, store.ErrGetLogsResultSetTooLarge)
-
-	metrics.Registry.RPC.StoreHit(method, h.sname).Mark(hitStore)
 }

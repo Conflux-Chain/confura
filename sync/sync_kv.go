@@ -22,7 +22,7 @@ const (
 	decayedEpochGapThreshold = 20000
 )
 
-// KVCacheSyncer is used to sync blockchain data into kv cache against
+// KVCacheSyncer is used to sync core space blockchain data into kv cache against
 // the latest state epoch.
 type KVCacheSyncer struct {
 	conf *syncConfig
@@ -69,10 +69,10 @@ func MustNewKVCacheSyncer(cfx sdk.ClientOperator, cache store.CacheStore) *KVCac
 		lastSubEpochNo:      citypes.EpochNumberNil,
 		subEpochCh:          make(chan uint64, conf.Sub.Buffer),
 		checkPointCh:        make(chan bool, 2),
-		epochPivotWin:       newEpochPivotWindow(dbSyncEpochPivotWinCapacity),
+		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 	}
 
-	// Ensure epoch data validity in redis
+	// Ensure epoch data validity in cache
 	if err := ensureStoreEpochDataOk(cfx, cache); err != nil {
 		logrus.WithError(err).Fatal(
 			"KV syncer failed to ensure epoch data validity in redis",
@@ -150,7 +150,7 @@ func (syncer *KVCacheSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	}
 }
 
-// Do epoch data checking for synchronized epoch data in cache
+// doCheckPoint pubsub checkpoint to validate epoch data in cache
 func (syncer *KVCacheSyncer) doCheckPoint() error {
 	logger := logrus.WithFields(logrus.Fields{
 		"syncWindow":     syncer.syncWindow,
@@ -175,7 +175,7 @@ func (syncer *KVCacheSyncer) doCheckPoint() error {
 		return errors.WithMessage(err, "failed to reload last sync point")
 	}
 
-	syncer.epochPivotWin.popn(syncer.latestStoreEpoch())
+	syncer.epochPivotWin.popn(syncer.syncWindow.epochFrom)
 
 	return nil
 }
@@ -256,7 +256,6 @@ func (syncer *KVCacheSyncer) handleNewEpoch(newEpoch uint64, syncTicker *time.Ti
 	return nil
 }
 
-// Sync data once for batch.
 func (syncer *KVCacheSyncer) syncOnce() error {
 	logger := logrus.WithField("syncWindow", syncer.syncWindow)
 
@@ -267,7 +266,10 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 
 	syncFrom, syncSize := syncer.syncWindow.peekShrinkFrom(uint32(syncer.maxSyncEpochs))
 
-	logger = logger.WithFields(logrus.Fields{"syncFrom": syncFrom, "syncSize": syncSize})
+	logger = logger.WithFields(logrus.Fields{
+		"syncFrom": syncFrom,
+		"syncSize": syncSize,
+	})
 	logger.Debug("Cache syncer starting to sync epoch(s)...")
 
 	epochDataSlice := make([]*store.EpochData, 0, syncSize)
@@ -292,24 +294,26 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 			latestPivotHash, err := syncer.getStoreLatestPivotHash()
 			if err != nil {
 				eplogger.WithError(err).Error(
-					"Cache syncer failed to get latest pivot hash from redis for parent hash check",
+					"Cache syncer failed to get latest pivot hash from cache for parent hash check",
 				)
 				return errors.WithMessage(err, "failed to get latest pivot hash")
 			}
 
 			if len(latestPivotHash) > 0 && data.GetPivotBlock().ParentHash != latestPivotHash {
-				eplogger.WithFields(logrus.Fields{
-					"latestStoreEpoch": syncFrom - 1,
-					"latestPivotHash":  latestPivotHash,
-				}).Info("Cache syncer popping latest epoch from redis store due to parent hash mismatched")
+				latestStoreEpoch := syncer.latestStoreEpoch()
 
-				if err := syncer.pivotSwitchRevert(syncFrom - 1); err != nil {
+				eplogger.WithFields(logrus.Fields{
+					"latestStoreEpoch": latestStoreEpoch,
+					"latestPivotHash":  latestPivotHash,
+				}).Info("Cache syncer popping latest epoch from cache store due to parent hash mismatched")
+
+				if err := syncer.pivotSwitchRevert(latestStoreEpoch); err != nil {
 					eplogger.WithError(err).Error(
-						"Cache syncer failed to pop latest epoch from redis store due to parent hash mismatched",
+						"Cache syncer failed to pop latest epoch from cache store due to parent hash mismatched",
 					)
 
 					return errors.WithMessage(
-						err, "failed to pop latest epoch from redis store due to parent hash mismatched",
+						err, "failed to pop latest epoch from cache store due to parent hash mismatched",
 					)
 				}
 
@@ -341,8 +345,8 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 	}
 
 	if err := syncer.cache.Pushn(epochDataSlice); err != nil {
-		logger.WithError(err).Error("Cache syncer failed to push epoch data to redis store")
-		return errors.WithMessage(err, "failed to push epoch data to redis store")
+		logger.WithError(err).Error("Cache syncer failed to push epoch data to cache store")
+		return errors.WithMessage(err, "failed to push epoch data to cache store")
 	}
 
 	for _, epdata := range epochDataSlice { // cache epoch pivot info for late use
@@ -366,8 +370,7 @@ func (syncer *KVCacheSyncer) syncOnce() error {
 	return nil
 }
 
-// Validate new received epoch from pubsub to check if it's continous to the last received
-// subscription epoch number or pivot switched.
+// Validate new received epoch from pubsub to check if it's continous to the last one or pivot chain switch.
 func (syncer *KVCacheSyncer) validateNewReceivedEpoch(epoch *types.WebsocketEpochResponse) error {
 	newEpoch := epoch.EpochNumber.ToInt().Uint64()
 
@@ -375,7 +378,8 @@ func (syncer *KVCacheSyncer) validateNewReceivedEpoch(epoch *types.WebsocketEpoc
 	lastSubEpochNo := atomic.LoadUint64(addrPtr)
 
 	logger := logrus.WithFields(logrus.Fields{
-		"newEpoch": newEpoch, "lastSubEpochNo": lastSubEpochNo,
+		"newEpoch":       newEpoch,
+		"lastSubEpochNo": lastSubEpochNo,
 	})
 
 	switch {

@@ -6,28 +6,29 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/conflux-chain/conflux-infura/util/alert"
 	"github.com/conflux-chain/conflux-infura/util/metrics"
-	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
-	// For go-ethereum v1.0.15, node pkg imports internal/debug pkg which will inits
-	// log root with a log.GlogHandler.
-	// Sadly if we import node pkg somewhere else, it will overrides our custom handler
-	// defined within function `adaptGethLogger`.
+	// For go-ethereum v1.0.15, node pkg imports internal/debug pkg which will inits log root
+	// with `log.GlogHandler`. If we import node pkg from somewhere else, it will override our
+	// custom handler defined within function `adaptGethLogger`.
 	_ "github.com/ethereum/go-ethereum/node"
 )
 
-// Read system enviroment variables prefixed with "INFURA_"
-// eg., INFURA__LOG_LEVEL will override "log.level" config item from config file
+// Read system enviroment variables prefixed with "INFURA".
+// eg., `INFURA_LOG_LEVEL` will override "log.level" config item from the config file.
 const viperEnvPrefix = "infura"
 
 func init() {
+	// init viper
 	viper.MustInit(viperEnvPrefix)
+	// init logger
 	initLogger()
+	// init metrics
 	metrics.Init()
+	// init alert
 	alert.InitDingRobot()
-	rpc.Init()
 }
 
 func initLogger() {
@@ -37,7 +38,7 @@ func initLogger() {
 	}
 	viper.MustUnmarshalKey("log", &config)
 
-	// Set log level
+	// set log level
 	level, err := logrus.ParseLevel(config.Level)
 	if err != nil {
 		logrus.WithError(err).Fatalf("invalid log level configured: %v", config.Level)
@@ -51,17 +52,19 @@ func initLogger() {
 		})
 	}
 
-	// Add alert hook for logrus fatal/warn/error level
+	// add alert hook for logrus fatal/warn/error level
 	hookLevels := []logrus.Level{logrus.FatalLevel, logrus.WarnLevel, logrus.ErrorLevel}
 	logrus.AddHook(alert.NewLogrusAlertHook(hookLevels))
 
-	// Customize logger here...
+	// customize logger here...
 	adaptGethLogger()
 }
 
-// adaptGethLogger adapt geth logger (which is used by go sdk) to get along with logrus.
+// adaptGethLogger adapt geth logger (which is used by go sdk) to be attached to logrus.
 func adaptGethLogger() {
 	formatter := log.TerminalFormat(false)
+
+	// geth level => logrus levl
 	logrusLevelsMap := map[log.Lvl]logrus.Level{
 		log.LvlCrit:  logrus.FatalLevel,
 		log.LvlError: logrus.ErrorLevel,

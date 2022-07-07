@@ -113,7 +113,8 @@ func MustNewEthValidator(conf *EthValidConfig) *EthValidator {
 }
 
 func (validator *EthValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
-	logrus.WithField("blockFrom", validator.conf.ScanFromBlock).Info("ETH validator running to validate block data...")
+	logrus.WithField("blockFrom", validator.conf.ScanFromBlock).
+		Info("ETH validator running to validate block data...")
 
 	wg.Add(1)
 	defer wg.Done()
@@ -131,8 +132,10 @@ func (validator *EthValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 	scanTicker := time.NewTicker(validator.conf.ScanInterval)
 	defer scanTicker.Stop()
 
-	scanValidFailures := 0    // mark how many failure times for scanning validation
-	maxScanValidFailures := 5 // the maximum failure times for scanning validation, once exceeded, panic will be triggered
+	// mark how many failure times for scanning validation
+	scanValidFailures := 0
+	// the maximum failure times for scanning validation, once exceeded, panic will be triggered
+	maxScanValidFailures := 5
 
 	for {
 		select {
@@ -188,20 +191,24 @@ func (validator *EthValidator) doSampling() error {
 	}).Debug("ETH validator sampled random nearhead block for validation")
 
 	err = validator.validateEthBlock(blockNo)
+
 	// Since nearhead block revert are of high possibility due to chain reorg,
 	// we'd better do some retrying before determining the final validation result.
 	for i := 1; i <= samplingValidationRetries && errors.Is(err, errResultNotMatched); i++ {
 		time.Sleep(samplingValidationSleepDuration)
 
 		err = validator.validateEthBlock(blockNo)
-		logrus.WithField("block", blockNo).WithError(err).Infof("ETH validator sampling validation retried %v time(s)", i)
+		logrus.WithField("block", blockNo).
+			WithError(err).
+			Infof("ETH validator sampling validation retried %v time(s)", i)
 	}
 
 	return errors.WithMessagef(err, "failed to validate block #%v", blockNo)
 }
 
 func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
-	logrus.WithField("blockFrom", validator.conf.ScanFromBlock).Debug("ETH validation ticking to scan for validation...")
+	logrus.WithField("blockFrom", validator.conf.ScanFromBlock).
+		Debug("ETH validation ticking to scan for validation...")
 
 	// Fetch latest block from fullnode
 	block, err := validator.fn.Eth.BlockNumber()
@@ -221,12 +228,15 @@ func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
 	}
 
 	if err := validator.validateEthBlock(validator.conf.ScanFromBlock); err != nil {
-		return errors.WithMessagef(err, "failed to validate block #%v", validator.conf.ScanFromBlock)
+		return errors.WithMessagef(
+			err, "failed to validate block #%v", validator.conf.ScanFromBlock,
+		)
 	}
 
 	validator.conf.ScanFromBlock++
 
-	if validator.conf.ScanFromBlock%1000 == 0 { // periodly save the scaning progress per 1000 blocks in case of data lost
+	// periodly save the scaning progress per 1000 blocks in case of data lost
+	if validator.conf.ScanFromBlock%1000 == 0 {
 		validator.saveScanCursor()
 	}
 
@@ -287,7 +297,9 @@ func (validator *EthValidator) validateEthBlock(blockNo uint64) error {
 	return nil
 }
 
-func (validator *EthValidator) doValidate(fnCall, infuraCall func() (interface{}, error)) (*matchInfo, error) {
+func (validator *EthValidator) doValidate(
+	fnCall, infuraCall func() (interface{}, error),
+) (*matchInfo, error) {
 	var wg sync.WaitGroup
 	var res1, res2 interface{}
 	var err1, err2 error
@@ -331,7 +343,7 @@ func (validator *EthValidator) doValidate(fnCall, infuraCall func() (interface{}
 	return mi, nil
 }
 
-// Validate eth_getBlockByNumber (includeTxs = true)
+// Validate `eth_getBlockByNumber` (includeTxs = true)
 func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) (*types.Block, error) {
 	var b1, b2 *types.Block
 	var err1, err2 error
@@ -358,14 +370,19 @@ func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) (*typ
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "blockNumer": blockNumer,
-		}).WithError(err).Info("ETH validator failed to validate eth_getBlockByNumber (includeTxs = true)")
-		return b1, errors.WithMessagef(err, "failed to validate eth_getBlockByNumber (includeTxs = true) by number %v", blockNumer)
+		}).WithError(err).Info(
+			"ETH validator failed to validate eth_getBlockByNumber (includeTxs = true)",
+		)
+
+		return b1, errors.WithMessagef(
+			err, "failed to validate eth_getBlockByNumber (includeTxs = true) by number %v", blockNumer,
+		)
 	}
 
 	return b1, nil
 }
 
-// Validate eth_getBlockByNumber (includeTxs = false)
+// Validate `eth_getBlockByNumber` (includeTxs = false)
 func (validator *EthValidator) validateGetBlockSummaryByNumber(blockNumer uint64) error {
 	fnCall := func() (interface{}, error) {
 		b1, err1 := validator.fn.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), false)
@@ -386,15 +403,21 @@ func (validator *EthValidator) validateGetBlockSummaryByNumber(blockNumer uint64
 	mi, err := validator.doValidate(fnCall, infuraCall)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"matchInfo": mi, "blockNumer": blockNumer,
-		}).WithError(err).Info("ETH validator failed to validate eth_getBlockByNumber (includeTxs = false)")
-		return errors.WithMessagef(err, "failed to validate eth_getBlockByNumber (includeTxs = false) by number %v", blockNumer)
+			"matchInfo":  mi,
+			"blockNumer": blockNumer,
+		}).WithError(err).Info(
+			"ETH validator failed to validate eth_getBlockByNumber (includeTxs = false)",
+		)
+
+		return errors.WithMessagef(
+			err, "failed to validate eth_getBlockByNumber (includeTxs = false) by number %v", blockNumer,
+		)
 	}
 
 	return nil
 }
 
-// Validate eth_getTransactionReceipt
+// Validate `eth_getTransactionReceipt`
 func (validator *EthValidator) validateGetTransactionReceipt(txHash common.Hash) (*types.Receipt, error) {
 	var rcpt1, rcpt2 *types.Receipt
 	var err1, err2 error
@@ -422,13 +445,16 @@ func (validator *EthValidator) validateGetTransactionReceipt(txHash common.Hash)
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "txHash": txHash.Hex(),
 		}).WithError(err).Info("ETH validator failed to validate eth_getTransactionReceipt")
-		return nil, errors.WithMessagef(err, "failed to validate eth_getTransactionReceipt by hash %v", txHash.Hex())
+
+		return nil, errors.WithMessagef(
+			err, "failed to validate eth_getTransactionReceipt by hash %v", txHash.Hex(),
+		)
 	}
 
 	return rcpt1, nil
 }
 
-// Validate eth_getTransactionByHash
+// Validate `eth_getTransactionByHash`
 func (validator *EthValidator) validateGetTransactionByHash(txHash common.Hash) error {
 	fnCall := func() (interface{}, error) {
 		tx1, err1 := validator.fn.Eth.TransactionByHash(txHash)
@@ -451,13 +477,16 @@ func (validator *EthValidator) validateGetTransactionByHash(txHash common.Hash) 
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "txHash": txHash.Hex(),
 		}).WithError(err).Info("ETH validator failed to validate eth_getTransactionByHash")
-		return errors.WithMessagef(err, "failed to validate eth_getTransactionByHash by hash %v", txHash.Hex())
+
+		return errors.WithMessagef(
+			err, "failed to validate eth_getTransactionByHash by hash %v", txHash.Hex(),
+		)
 	}
 
 	return nil
 }
 
-// Validate eth_getBlockByHash (includeTxs = true)
+// Validate `eth_getBlockByHash` (includeTxs = true)
 func (validator *EthValidator) validateGetBlockByHash(blockHash common.Hash) error {
 	fnCall := func() (interface{}, error) {
 		b1, err1 := validator.fn.Eth.BlockByHash(blockHash, true)
@@ -480,13 +509,16 @@ func (validator *EthValidator) validateGetBlockByHash(blockHash common.Hash) err
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "blockHash": blockHash.Hex(),
 		}).WithError(err).Info("ETH validator failed to validate eth_getBlockByHash (includeTxs = true)")
-		return errors.WithMessagef(err, "failed to validate eth_getBlockByHash (includeTxs = true) by hash %v", blockHash)
+
+		return errors.WithMessagef(
+			err, "failed to validate eth_getBlockByHash (includeTxs = true) by hash %v", blockHash,
+		)
 	}
 
 	return nil
 }
 
-// Validate eth_getBlockByHash (includeTxs = false)
+// Validate `eth_getBlockByHash` (includeTxs = false)
 func (validator *EthValidator) validateGetBlockSummaryByHash(blockHash common.Hash) error {
 	fnCall := func() (interface{}, error) {
 		bs1, err1 := validator.fn.Eth.BlockByHash(blockHash, false)
@@ -509,14 +541,19 @@ func (validator *EthValidator) validateGetBlockSummaryByHash(blockHash common.Ha
 		logrus.WithFields(logrus.Fields{
 			"matchInfo": mi, "blockHash": blockHash.Hex(),
 		}).WithError(err).Info("ETH validator failed to validate eth_getBlockByHash (includeTxs = false)")
-		return errors.WithMessagef(err, "failed to validate eth_getBlockByHash (includeTxs = false) by hash %v", blockHash.Hex())
+
+		return errors.WithMessagef(
+			err, "failed to validate eth_getBlockByHash (includeTxs = false) by hash %v", blockHash.Hex(),
+		)
 	}
 
 	return nil
 }
 
-// Validate eth_getLogs
-func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.Hash, someReceipt *types.Receipt) error {
+// Validate `eth_getLogs`
+func (validator *EthValidator) validateGetLogs(
+	blockNo uint64, blockHash common.Hash, someReceipt *types.Receipt,
+) error {
 	var someContractAddrs []common.Address
 	var someTopics [][]common.Hash
 
@@ -555,7 +592,9 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 	}
 
 	if err := validator.doValidateGetLogs(&filterByBlockNums); err != nil {
-		logger.WithField("filterByBlockNums", filterByBlockNums).WithError(err).Info("ETH validator failed to validate eth_getLogs")
+		logger.WithField("filterByBlockNums", filterByBlockNums).
+			WithError(err).
+			Info("ETH validator failed to validate eth_getLogs")
 		return errors.WithMessagef(err, "failed to validate eth_getLogs")
 	}
 
@@ -564,7 +603,10 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 		filterByBlockNums.Topics = someTopics
 
 		if err := validator.doValidateGetLogs(&filterByBlockNums); err != nil {
-			logger.WithField("filterByBlockNumsWithAddr", filterByBlockNums).WithError(err).Info("ETH validator failed to validate eth_getLogs")
+			logger.WithField("filterByBlockNumsWithAddr", filterByBlockNums).
+				WithError(err).
+				Info("ETH validator failed to validate eth_getLogs")
+
 			return errors.WithMessagef(err, "failed to validate eth_getLogs")
 		}
 	}
@@ -584,7 +626,9 @@ func (validator *EthValidator) validateGetLogs(blockNo uint64, blockHash common.
 		filterByBlockHash.Topics = someTopics
 
 		if err := validator.doValidateGetLogs(&filterByBlockHash); err != nil {
-			logger.WithField("filterByBlockHashWithAddr", filterByBlockHash).WithError(err).Info("ETH validator failed to validate eth_getLogs")
+			logger.WithField("filterByBlockHashWithAddr", filterByBlockHash).
+				WithError(err).
+				Info("ETH validator failed to validate eth_getLogs")
 			return errors.WithMessagef(err, "failed to validate eth_getLogs")
 		}
 	}

@@ -23,6 +23,7 @@ type StoreOption struct {
 	Disabler store.StoreDisabler
 }
 
+// MysqlStore aggregation store for chain data persistence operation.
 type MysqlStore struct {
 	*baseStore
 	*epochBlockMapStore
@@ -312,6 +313,7 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 		}
 	}
 
+	// merge && sort log result
 	sort.Sort(store.LogSlice(result))
 
 	return result, nil

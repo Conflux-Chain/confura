@@ -7,6 +7,7 @@ import (
 	"github.com/conflux-chain/conflux-infura/types"
 )
 
+// gasStationAPI provides core space gasstation API.
 type gasStationAPI struct {
 	handler *handler.GasStationHandler
 }

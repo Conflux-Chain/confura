@@ -13,7 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// EthData wraps the blockchain data of an ETH block.
+// EthData wraps the evm space blockchain data.
 type EthData struct {
 	Number   uint64                             // block number
 	Block    *web3Types.Block                   // block body
@@ -79,8 +79,8 @@ func queryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthDa
 	}
 
 	txReceipts := map[common.Hash]*web3Types.Receipt{}
-
 	blockTxs := block.Transactions.Transactions()
+
 	for i := 0; i < len(blockTxs); i++ {
 		txHash := blockTxs[i].Hash
 		blogger := logger.WithFields(logrus.Fields{"txHash": txHash, "i": i})

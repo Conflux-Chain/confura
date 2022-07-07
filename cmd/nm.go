@@ -11,24 +11,30 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type nmOption struct {
-	cfxEnabled bool
-	ethEnabled bool
-}
-
 var (
-	nmOpt nmOption
+	// node management boot options
+	nmOpt struct {
+		cfxEnabled bool
+		ethEnabled bool
+	}
 
 	nmCmd = &cobra.Command{
 		Use:   "nm",
-		Short: "Start node manager service, including CFX, ETH node managers",
+		Short: "Start node management service, including core space and evm space node managers",
 		Run:   startNodeManagerService,
 	}
 )
 
 func init() {
-	nmCmd.Flags().BoolVar(&nmOpt.cfxEnabled, "cfx", false, "Start CFX space node manager server")
-	nmCmd.Flags().BoolVar(&nmOpt.ethEnabled, "eth", false, "Start ETH space node manager server")
+	// boot flag for core space
+	nmCmd.Flags().BoolVar(
+		&nmOpt.cfxEnabled, "cfx", false, "Start core space node manager server",
+	)
+
+	// boot flag for evm space
+	nmCmd.Flags().BoolVar(
+		&nmOpt.ethEnabled, "eth", false, "Start evm space node manager server",
+	)
 
 	rootCmd.AddCommand(nmCmd)
 }

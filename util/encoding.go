@@ -21,7 +21,9 @@ func MustMarshalJson(v interface{}) []byte {
 
 func MustUnmarshalJson(data []byte, v interface{}) {
 	if err := json.Unmarshal(data, v); err != nil {
-		logrus.WithError(err).Fatalf("Failed to unmarshal JSON data, v = %v, data = %x", v, data)
+		logrus.WithError(err).Fatalf(
+			"Failed to unmarshal JSON data, v = %v, data = %x", v, data,
+		)
 	}
 }
 
@@ -40,6 +42,8 @@ func MustMarshalRLP(v interface{}) []byte {
 
 func MustUnmarshalRLP(data []byte, v interface{}) {
 	if err := rlp.DecodeBytes(data, v); err != nil {
-		logrus.WithError(err).Fatalf("Failed to unmarshal RLP data, v = %v, data = %x", v, data)
+		logrus.WithError(err).Fatalf(
+			"Failed to unmarshal RLP data, v = %v, data = %x", v, data,
+		)
 	}
 }

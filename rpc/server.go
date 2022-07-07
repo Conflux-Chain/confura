@@ -9,13 +9,13 @@ import (
 )
 
 const (
-	nativeSpaceRpcServerName = "native_space_rpc"
+	nativeSpaceRpcServerName = "core_space_rpc"
 	evmSpaceRpcServerName    = "evm_space_rpc"
 
-	nativeSpaceBridgeRpcServerName = "native_space_bridge_rpc"
+	nativeSpaceBridgeRpcServerName = "core_space_bridge_rpc"
 )
 
-// MustNewNativeSpaceServer new native space RPC server by specifying router, handler
+// MustNewNativeSpaceServer new core space RPC server by specifying router, handler
 // and exposed modules.  Argument exposedModules is a list of API modules to expose
 // via the RPC interface. If the module list is empty, all RPC API endpoints designated
 // public will be exposed.
@@ -23,7 +23,7 @@ func MustNewNativeSpaceServer(
 	router infuraNode.Router, gashandler *handler.GasStationHandler,
 	exposedModules []string, option ...CfxAPIOption,
 ) *rpc.Server {
-	// retrieve all available native space rpc apis
+	// retrieve all available core space rpc apis
 	clientProvider := infuraNode.NewCfxClientProvider(router)
 	allApis := nativeSpaceApis(clientProvider, gashandler, option...)
 
@@ -39,13 +39,13 @@ func MustNewNativeSpaceServer(
 	return rpc.MustNewServer(nativeSpaceRpcServerName, exposedApis, middleware)
 }
 
-// MustNewEvmSpaceServer new EVM space RPC server by specifying router, and exposed modules.
+// MustNewEvmSpaceServer new evm space RPC server by specifying router, and exposed modules.
 // `exposedModules` is a list of API modules to expose via the RPC interface. If the module
 // list is empty, all RPC API endpoints designated public will be exposed.
 func MustNewEvmSpaceServer(
 	router infuraNode.Router, exposedModules []string, option ...EthAPIOption,
 ) *rpc.Server {
-	// retrieve all available EVM space rpc apis
+	// retrieve all available evm space rpc apis
 	clientProvider := infuraNode.NewEthClientProvider(router)
 	allApis, err := evmSpaceApis(clientProvider, option...)
 	if err != nil {

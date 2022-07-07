@@ -23,8 +23,8 @@ type transaction struct {
 	ReceiptRawData    []byte `gorm:"type:MEDIUMBLOB"`
 	ReceiptRawDataLen uint64 `gorm:"not null"`
 	NumReceiptLogs    int    `gorm:"not null"`
-	Extra             []byte `gorm:"type:text"` // dynamic fields within json string for txn extention
-	ReceiptExtra      []byte `gorm:"type:text"` // dynamic fields within json string for receipt extention
+	Extra             []byte `gorm:"type:text"` // txn extention json field
+	ReceiptExtra      []byte `gorm:"type:text"` // receipt extention json field
 }
 
 func (transaction) TableName() string {

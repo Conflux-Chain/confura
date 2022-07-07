@@ -29,13 +29,6 @@ type PruneThresHold struct {
 	MaxLogs   uint64 `mapstructure:"maxLogs"`   // max number of logs to trigger log pruning
 }
 
-// MustNewDBPruner creates an instance of Pruner to prune blockchain data in database
-func MustNewDBPruner(db store.Store) *Pruner {
-	var pc PruneConfig
-	viper.MustUnmarshalKey("prune.db", &pc)
-	return newPruner("DBPruner", db, &pc)
-}
-
 // MustNewKVCachePruner creates an instance of Pruner to prune blockchain data in kv cache
 func MustNewKVCachePruner(cache store.Prunable) *Pruner {
 	var pc PruneConfig
