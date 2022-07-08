@@ -1,5 +1,5 @@
 # The output binary name
-BINARY=bin/conflux-infura
+BINARY=bin/confura
 
 # Values to pass for VERSION and BUILD etc.,
 # eg., git tag 1.0.1 then git commit -am "One more change after the tags"
