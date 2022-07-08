@@ -1,87 +1,162 @@
+# Core space RPC proxy server configurations
 rpc:
+  # Available exposed modules are `cfx`, `txpool`, `pos`, `trace`, `gasstation`,
+  # if left empty all public APIs will be exposed.
   exposedModules: []
+  # Served HTTP endpoint
   endpoint: ":22537"
+  # Served websocket endpoint
   # wsEndpoint: ":22535"
+  # Core space bridge server configurations
   cfxBridge:
+    # EVM space fullnode endpoint
     ethNode: http://evmtestnet.confluxrpc.com
+    # core space fullnode endpoint
     cfxNode: http://test.confluxrpc.com
+    # Available exposed modules are `cfx`, `txpool`, `trace`, if empty all APIs will be exposed.
     # exposedModules: []
+    # Served HTTP endpoint
     # endpoint: ":32537"
+  # # Throttling configurations for requesting pruned event logs from archive fullnode
   # throttling:
+  #   # Redis used for throttling based on reference counter
   #   redisUrl: redis://<user>:<pass>@localhost:6379/<db>
+
+# EVM space RPC proxy server configurations
 ethrpc:
+  # Available exposed modules are `eth`, `web3`, `net`, `trace`, `parity`,
+  # if left empty all public APIs will be exposed.
   exposedModules: []
+  # Served HTTP endpoint
   endpoint: ":28545"
+  # Served websocket endpoint
   #wsEndpoint: ":28535"
+
+# Core space SDK client configurations
 cfx:
+  # Fullnode websocket endpoint
   ws: ws://test.confluxrpc.com/ws
+  # Fullnode HTTP endpoint
   http: http://test.confluxrpc.com
+  # Retry times if failure, if 0 never
   retry: 0
+  # Interval duration before each retry
   retryInterval: 1s
+  # Requestion timeout duration
   requestTimeout: 3s
-  maxConnsPerHost: 1024 # max connections per fullnode
+  # Max connections allowed per fullnode
+  maxConnsPerHost: 1024
+
+# EVM space SDK client configurations
 eth:
+  # Fullnode HTTP endpoint
   http: http://evmtestnet.confluxrpc.com
-  retry: 3
+  # Retry times if failure, if 0 never
+  retry: 0
+  # Interval duration before each retry
   retryInterval: 1s
+  # Requestion timeout duration
   requestTimeout: 3s
-  maxConnsPerHost: 1024 # max connections per fullnode
+  # Max connections allowed per fullnode
+  maxConnsPerHost: 1024
+
+# Blockchain sync configurations
 sync:
+  # Core space sync configurations
+  #
+  # Pub/Sub configurations
   sub:
+    # Channel size to buffer notified epoch response
     buffer: 1000
-  # useBatch: false  # Whether to use `epoch_getEpochReceipts` to batch get receipts
-  # fromEpoch: 0     # The epoch number from which to sync core space
-  # maxEpochs: 10    # Maximum number of epochs to batch sync epoch data once
-  blackListAddrs: >  # Blacklisted contract address(es) whose event logs will be ignored
+  # # Whether to use `epoch_getEpochReceipts` to batch get receipts
+  # useBatch: false
+  # # The epoch number from which to sync core space
+  # fromEpoch: 0
+  # # Maximum number of epochs to batch sync once
+  # maxEpochs: 10
+  # Blacklisted contract address(es) whose event logs will be ignored until some specific
+  # epoch height, with 0 means always.
+  blackListAddrs: >
     [
       {"address": "cfx:acav5v98np8t3m66uw7x61yer1ja1jm0dpzj1zyzxv", "epoch": 0}
     ]
-  # eth:
-  #   useBatch: false # Whether to use `parity_getBlockReceipts` to batch get receipts
-  #   fromBlock: 1    # The block number from which to sync eSpace
-  #   maxBlocks: 10   # Maximum number of blocks to batch sync ETH data once
+  # # Fast cache-up sync configuration
   # catchup:
-  #   # Pool of fullnodes for catching up. There will be 1 goroutine per full node or
-  #   # the catch up will be disabled if none configured.
+  #   # Pool of fullnodes for catching up. There will be 1 goroutine per fullnode or
+  #   # the catch up will be disabled if none fullnode provided.
   #   cfxPool: [http://test.confluxrpc.com]
-  #   dbRowsThreshold: 2500 # Threshold for number of db rows per batch persistence
-  #   maxDbRows: 7500       # Max number of db rows collected before persistence to restrict memory usage
-  #   workerChanSize: 5     # Capacity of channel per worker to buffer queried epoch data
+  #   # Threshold for number of db rows per batch persistence
+  #   dbRowsThreshold: 2500
+  #   # Max number of db rows collected before persistence to restrict memory usage
+  #   maxDbRows: 7500
+  #   # Capacity of channel per worker to buffer queried epoch data
+  #   workerChanSize: 5
+
+  # # EVM space sync configurations
+  # eth:
+  #   # Whether to use `parity_getBlockReceipts` to batch get receipts
+  #   useBatch: false
+  #   # The block number from which to sync evm space, better use the evm space hardfork point:
+  #   # for mainnet it is 36935000, for testnet it is 61465000
+  #   fromBlock: 61465000
+  #   # Maximum number of blocks to batch sync ETH data once
+  #   maxBlocks: 10
+
+# # Metrics configurations
 # metrics:
+#   # Whether to collect metrics
 #   enabled: true
+#   # InfluxDB configurations
 #   influxdb:
 #     host: http://127.0.0.1:8086
-#     db: infura_test
-#     username:
-#     password:
+#     db: confura
+#     username: root
+#     password: root
 #   report:
+#     # Whether to report collected metrics to InfluxDB periodly
 #     enabled: false
 #     interval: 10s
+
+# # Logs configurations
 # log:
+#   # Available levels are `trace`, `debug`, `info`, `error` and `fatal` 
 #   level: info
 #   forceColor: false
+
+# # Core space store configurations
 # store:
+#   # MySQL database configurations
 #   mysql:
+#     # Whether to use MySQL store
 #     enabled: false
 #     host: 127.0.0.1:3306
-#     username:
-#     password:
-#     database: conflux_infura
+#     username: root
+#     password: root
+#     database: confura
+#     # Refer to gorm configurations
 #     connMaxLifeTime: 3m
 #     maxOpenConns: 10
 #     maxIdleConns: 10
+#     # Whether to use event log partitions hashed by contract address
 #     addressIndexedLogEnabled: true
+#     # Number of partitions for address indexed event log table, valid only if above option enabled
 #     addressIndexedLogPartitions: 100
-#     # max number of archive log partitions ranged by block number to maintain. Once exceeded,
-#     # data will be pruned from the oldest partition to keep the max archive limit.
+#     # Max number of archive log partitions ranged by block number to maintain. Once exceeded,
+#     # partitions will be dropped one by one from the oldest to keep the max archive limit.
 #     maxBnRangedArchiveLogPartitions: 5
+#   # Redis configurations
 #   redis:
+#      # Whether to use redis store
 #     enabled: false
+#     # Cache expiry duration
 #     cacheTime: 12h
 #     url: redis://<user>:<pass>@localhost:6379/<db>
-#   # chain data types ignored to be saved within store, available options are:
+#   # Chain data types ignored to be persisted within store, available options are:
 #   # `block`, `transaction`, `receipt` and `log`
 #   disables: [block,transaction,receipt]
+
+# EVM space store configurations
+# Please refer to core space store configurations
 # ethstore:
 #   mysql:
 #     enabled: false
@@ -89,60 +164,99 @@ sync:
 #     connMaxLifeTime: 3m
 #     maxOpenConns: 10
 #     maxIdleConns: 10
-#   # chain data types ignored to be saved within store, available options are:
-#   # `block`, `transaction`, `receipt` and `log`
+#     addressIndexedLogEnabled: true
+#     addressIndexedLogPartitions: 100
+#     maxBnRangedArchiveLogPartitions: 5
 #   disables: [block,transaction,receipt]
+
+# # Alert configurations
 # alert:
+#   # Distinguishing tags
 #   customTags: [testnet,dev]
+#   # DingTalk integration configurations
 #   dingtalk:
 #     enabled: false
 #     webhook: https://oapi.dingtalk.com/robot/send?access_token=${your_access_token}
 #     secret:  ${your_access_secret}
 #     atMobiles: []
 #     isAtAll: false
-prune:
-  cache:
-    interval: 30s
-    maxEpochs: 10
-    threshold:
-      maxBlocks: 100000
-      maxTxs: 100000
-      maxLogs: 100000
+
+# # Prune configurations
+# prune:
+#   # Cache prune configurations
+#   cache:
+#     # Monitoring interval
+#     interval: 30s
+#     # Max number of epochs to prune per time in case of IO hogging
+#     maxEpochs: 10
+#     # Threshold to trigger data prune
+#     threshold:
+#       maxBlocks: 100000
+#       maxTxs: 100000
+#       maxLogs: 100000
+
+# Node management configurations
 node:
+  # Group `cfxhttp` fullnodes
   urls: [http://test.confluxrpc.com]
-  ethurls: [http://evmtestnet.confluxrpc.com]
-  logNodes: [http://test.confluxrpc.com]
-  ethLogNodes: [http://evmtestnet.confluxrpc.com]
+  # Group `cfxws` fullnodes
   # wsUrls: [ws://test.confluxrpc.com/ws]
+  # Group `cfxlog` fullnodes
+  logNodes: [http://test.confluxrpc.com]
+  # Group `cfxarchives` fullnodes
   # archiveNodes: []
+  # Group `ethhttp` fullnodes
+  ethurls: [http://evmtestnet.confluxrpc.com]
+  # Group `ethlogs` fullnodes
+  ethLogNodes: [http://evmtestnet.confluxrpc.com]
+  # # Consitent hash ring configurations
   # hashRing:
   #   partitionCount: 15739
   #   replicationFactor: 51
   #   load: 1.25
+  # # Health monitoring configurations
   # monitor:
   #   interval: 1s
+  #   # Unhealth conditions
   #   unhealth:
   #     failures: 3
   #     epochsFallBehind: 30
   #     latencyPercentile: 0.9
   #     maxLatency: 3s
+  #   # Recovering conditions
   #   recover:
   #     remindInterval: 5m
   #     successCounter: 60
+  # # Served HTTP endpoint for core space
   # endpoint: ":22530"
+  # # Served HTTP endpoint for evm space
   # ethEndpoint: ":28530"
+  # # Chained routers configurations
   # router:
-  #   redisUrl:
-  #   nodeRpcUrl:
-  #   ethNodeRpcUrl:
+  #   # Redis used for `RedisRouter`
+  #   redisUrl: redis://<user>:<pass>@localhost:6379/<db>
+  #   # Node manager RPC endpoint for `NodeRpcRouter`
+  #   nodeRpcUrl: http://127.0.0.1:22530
+  #   # EVM space node manager RPC endpoint for `NodeRpcRouter`
+  #   ethNodeRpcUrl: http://127.0.0.1:28530
+  #   # Failover fullnode configuration
   #   chainedFailover:
+  #     # Failover fullnode if group `cfxhttp` is capsized
   #     url:
+  #     # Failover fullnode if group `cfxws` is capsized
   #     wsUrl:
+  #     # Failover fullnode if group `ethhttp` is capsized
   #     ethUrl:
+
+# # Transaction relay configurtions
 # relay:
+#   # Channel size to buffer relay transaction
 #   bufferSize: 2000
+#   # Number of go-routines to relay transaction
 #   concurrency: 1
-#   retry: 3
+#   # Request settings for SDK client
+#   retry: 0
 #   retryInterval: 1s
 #   requestTimeout: 3s
+#   # List of core space fullnodes to be broadcasted.
 #   nodeUrls: []
