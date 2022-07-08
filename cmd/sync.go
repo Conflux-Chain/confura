@@ -38,22 +38,22 @@ var (
 func init() {
 	// boot flag for core space DB sync
 	syncCmd.Flags().BoolVar(
-		&syncOpt.dbSyncEnabled, "db", false, "Start core space DB sync server",
+		&syncOpt.dbSyncEnabled, "db", false, "start core space DB sync server",
 	)
 
 	// boot flag for core space DB sync
 	syncCmd.Flags().BoolVar(
-		&syncOpt.kvSyncEnabled, "kv", false, "Start core space KV sync server",
+		&syncOpt.kvSyncEnabled, "kv", false, "start core space KV sync server",
 	)
 
 	// boot flag for evm space sync
 	syncCmd.Flags().BoolVar(
-		&syncOpt.ethSyncEnabled, "eth", false, "Start ETH sync server",
+		&syncOpt.ethSyncEnabled, "eth", false, "start ETH sync server",
 	)
 
 	// boot flag for core space fast catch-up
 	syncCmd.Flags().BoolVar(
-		&syncOpt.catchupEnabled, "catchup", false, "Start core space fast catchup server",
+		&syncOpt.catchupEnabled, "catchup", false, "start core space fast catchup server",
 	)
 
 	// load fast catchup settings from command line arguments

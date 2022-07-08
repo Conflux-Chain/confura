@@ -28,12 +28,12 @@ var (
 func init() {
 	// boot flag for core space
 	nmCmd.Flags().BoolVar(
-		&nmOpt.cfxEnabled, "cfx", false, "Start core space node manager server",
+		&nmOpt.cfxEnabled, "cfx", false, "start core space node manager server",
 	)
 
 	// boot flag for evm space
 	nmCmd.Flags().BoolVar(
-		&nmOpt.ethEnabled, "eth", false, "Start evm space node manager server",
+		&nmOpt.ethEnabled, "eth", false, "start evm space node manager server",
 	)
 
 	rootCmd.AddCommand(nmCmd)

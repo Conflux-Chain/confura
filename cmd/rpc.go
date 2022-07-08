@@ -38,17 +38,17 @@ var (
 func init() {
 	// boot flag for core space
 	rpcCmd.Flags().BoolVar(
-		&rpcOpt.cfxEnabled, "cfx", false, "Start core space RPC server",
+		&rpcOpt.cfxEnabled, "cfx", false, "start core space RPC server",
 	)
 
 	// boot flag for evm space
 	rpcCmd.Flags().BoolVar(
-		&rpcOpt.ethEnabled, "eth", false, "Start evm space RPC server",
+		&rpcOpt.ethEnabled, "eth", false, "start evm space RPC server",
 	)
 
 	// boot flag for core space bridge
 	rpcCmd.Flags().BoolVar(
-		&rpcOpt.cfxBridgeEnabled, "cfxBridge", false, "Start core space bridge RPC server",
+		&rpcOpt.cfxBridgeEnabled, "cfxBridge", false, "start core space bridge RPC server",
 	)
 
 	rootCmd.AddCommand(rpcCmd)

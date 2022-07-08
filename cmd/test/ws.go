@@ -8,12 +8,12 @@ import (
 )
 
 var (
-	// core space pubsub validation configuration
+	// core space Pub/Sub validation configuration
 	psValidConf test.PSVConfig
 
 	wsTestCmd = &cobra.Command{
 		Use:   "ws",
-		Short: "Test/validate if core space websocket pubsub complies with fullnode",
+		Short: "validate if epoch data from core space websocket Pub/Sub proxy complies with fullnode",
 		Run:   startWSTest,
 	}
 )

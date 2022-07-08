@@ -16,7 +16,7 @@ var (
 
 	ethTestCmd = &cobra.Command{
 		Use:   "eth",
-		Short: "Test/validate if evm space block data complies with fullnode",
+		Short: "validate if epoch data from evm space JSON-RPC proxy complies with fullnode",
 		Run:   startEthTest,
 	}
 )

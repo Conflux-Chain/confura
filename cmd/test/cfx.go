@@ -16,7 +16,7 @@ var (
 
 	testCmd = &cobra.Command{
 		Use:   "cfx",
-		Short: "Test/validate if core space epoch data complies with fullnode",
+		Short: "validate if epoch data from core space JSON-RPC proxy complies with fullnode",
 		Run:   startTest,
 	}
 )

@@ -20,7 +20,7 @@ var (
 	syncServerEnabled bool
 
 	rootCmd = &cobra.Command{
-		Use:   "Confura",
+		Use:   "confura",
 		Short: "Ethereum Infura like Public RPC Service on Conflux Network.",
 		Run:   start,
 	}
