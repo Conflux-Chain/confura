@@ -1,0 +1,147 @@
+version: '3.7'
+
+services:
+  # node management
+  node-management:
+    build: .
+    image: conflux/confura:latest
+    command: nm --cfx
+    ports:
+      - 22530:22530
+    restart: unless-stopped
+    environment:
+      - INFURA_LOG_LEVEL=debug
+    container_name: confura-node-management
+
+  ethnode-management:
+    image: conflux/confura:latest
+    command: nm --eth
+    ports:
+      - 28530:28530
+    restart: unless-stopped
+    environment:
+      - INFURA_LOG_LEVEL=debug
+    container_name: confura-ethnode-management
+
+  # blockchain sync
+  chain-sync:
+    image: conflux/confura:latest
+    command: sync --db --kv
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    environment:
+      - INFURA_LOG_LEVEL=debug
+      - INFURA_STORE_MYSQL_ENABLED=true
+      - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_cfx?parseTime=true
+      - INFURA_STORE_REDIS_ENABLED=true
+      - INFURA_STORE_REDIS_URL=redis://redis:6379/0
+    container_name: confura-sync
+
+  ethchain-sync:
+    image: conflux/confura:latest
+    command: sync --eth
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      - INFURA_LOG_LEVEL=debug
+      - INFURA_ETHSTORE_MYSQL_ENABLED=true
+      - INFURA_ETHSTORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_eth?parseTime=true
+      - INFURA_SYNC_ETH_FROMBLOCK=36935000
+    container_name: confura-ethsync
+
+  # rpc proxy
+  rpc-proxy:
+    image: conflux/confura:latest
+    command: rpc --cfx
+    ports:
+      - "22537:22537"
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+      - node-management
+    environment:
+      - INFURA_LOG_LEVEL=debug
+      - INFURA_STORE_MYSQL_ENABLED=true
+      - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_cfx?parseTime=true
+      - INFURA_STORE_REDIS_ENABLED=true
+      - INFURA_STORE_REDIS_URL=redis://redis:6379/0
+      - INFURA_NODE_ROUTER_NODERPCURL=http://node-management:22530
+    container_name: confura-rpc
+
+  ethrpc-proxy:
+    image: conflux/confura:latest
+    command: rpc --eth
+    ports:
+      - "28545:28545"
+    restart: unless-stopped
+    depends_on:
+      - db
+      - ethnode-management
+    environment:
+      - INFURA_LOG_LEVEL=debug
+      - INFURA_STORE_MYSQL_ENABLED=true
+      - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_eth?parseTime=true
+      - INFURA_NODE_ROUTER_ETHNODERPCURL=http://ethnode-management:28530
+    container_name: confura-ethrpc
+
+  # data validator
+  data-validator:
+    image: conflux/confura:latest
+    command: test cfx -f http://test.confluxrpc.com -u http://rpc-proxy:22537
+    restart: on-failure:3
+    volumes:
+      - validator-data:/root
+    depends_on:
+      - rpc-proxy
+      - chain-sync
+    environment:
+      - INFURA_LOG_LEVEL=debug
+    container_name: confura-data-validator
+
+  ethdata-validator:
+    image: conflux/confura:latest
+    command: test eth -f http://evmtestnet.confluxrpc.com -u http://ethrpc-proxy:28545 -b 36935000
+    restart: on-failure:3
+    volumes:
+      - validator-data:/root
+    depends_on:
+      - ethrpc-proxy
+      - ethchain-sync
+    environment:
+      - INFURA_LOG_LEVEL=debug
+    container_name: confura-ethdata-validator
+
+  # middlewares
+  db:
+    image: mysql:5.7
+    ports:
+      - "3306"
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+    volumes:
+      - db-data:/var/lib/mysql
+    container_name: confura-database
+
+  redis:
+    image: redis:6.2
+    ports:
+      - "6379"
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    container_name: confura-redis
+
+# others
+networks:
+  default:
+    name: confura-internal
+
+volumes:
+  db-data: {}
+  redis-data: {}
+  validator-data: {}
