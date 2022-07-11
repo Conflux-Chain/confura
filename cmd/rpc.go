@@ -112,7 +112,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 		}
 
 		// initialize logs api handler
-		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.ethDB, prunedHandler)
+		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.cfxDB, prunedHandler)
 
 		// periodically reload rate limit settings from db
 		go rate.DefaultRegistryCfx.AutoReload(15*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
