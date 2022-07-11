@@ -8,7 +8,7 @@ Official implementation of an Ethereum Infura equivalent public RPC service on C
 [2]: LICENSE
 
 ## Prerequisites
-___
+
 
 ### Hardware Requirements
 
@@ -36,7 +36,7 @@ Confura can even be run without any third party dependencies. But depending on w
 * Grafana v8.0.x+ *(metrics dashboard)*
 
 ## Building the source
-___
+
 Building Confura requires a Go (version 1.15 or later) compiler. Once the dependencies are installed, run
 
 ```shell
@@ -52,7 +52,7 @@ make build
 An executable binary named *`confura`* will be generated in the project *`bin`* directory.
 
 ## Configuration
-___
+
 
 Confura will load configurations from `config.yml` or `config/config.yml` under current directory at startup. You can use the [config.yml](config/config.yml) within our project as basic template, which has bunch of helpful comments to make it easy to customize accordingly to your needs.
 
@@ -65,7 +65,7 @@ export INFURA_RPC_ENDPOINT=":32537"
 This will override value for the config item of path `rpc.endpoint` within the configuration file as `":32537"`.
 
 ## Running Confura
-___
+
 
 Confura is comprised of serveral components as below:
 
@@ -203,7 +203,7 @@ confura-sync                 ./confura sync --db --kv         Up
 ```
 
 ## Contribution
-___
+
 
 Thank you for considering to help out with the source code! We welcome contributions from anyone on the internet, and are grateful for even the smallest of fixes!
 
@@ -220,5 +220,5 @@ Please make sure your contributions adhere to our coding guidelines:
    * E.g. "cfx sync: add nearhead memory cache"
 
 ## License
-___
+
 This project is licensed under the [MIT License](LICENSE).
