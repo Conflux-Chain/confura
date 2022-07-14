@@ -103,7 +103,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		// ensure fullnode delegation is rational
-		if err := handler.checkFullnodeLogFilter(filter); err != nil {
+		if err := handler.checkFullnodeLogFilter(fnFilter); err != nil {
 			return nil, false, err
 		}
 
