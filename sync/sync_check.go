@@ -3,12 +3,12 @@ package sync
 import (
 	"context"
 
+	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/store/mysql"
+	citypes "github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/store/mysql"
-	citypes "github.com/conflux-chain/conflux-infura/types"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )

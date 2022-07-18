@@ -1,7 +1,7 @@
 package rpc
 
 import (
-	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/Conflux-Chain/confura/store"
 	"github.com/pkg/errors"
 )
 

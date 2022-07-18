@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	ring "github.com/zealws/golang-ring"

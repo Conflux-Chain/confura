@@ -1,8 +1,8 @@
 package node
 
 import (
-	"github.com/conflux-chain/conflux-infura/util"
-	"github.com/conflux-chain/conflux-infura/util/rpc"
+	"github.com/Conflux-Chain/confura/util"
+	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 

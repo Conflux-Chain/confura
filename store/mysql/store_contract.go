@@ -1,7 +1,7 @@
 package mysql
 
 import (
-	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/Conflux-Chain/confura/store"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"

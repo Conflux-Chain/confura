@@ -5,9 +5,9 @@ import (
 	"io"
 	"sort"
 
-	"github.com/conflux-chain/conflux-infura/store"
-	citypes "github.com/conflux-chain/conflux-infura/types"
-	"github.com/conflux-chain/conflux-infura/util/metrics"
+	"github.com/Conflux-Chain/confura/store"
+	citypes "github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )

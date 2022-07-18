@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
-	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/types"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )

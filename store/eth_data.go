@@ -5,7 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/conflux-chain/conflux-infura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go"
 	web3Types "github.com/openweb3/web3go/types"

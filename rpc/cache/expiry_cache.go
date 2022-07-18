@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/Conflux-Chain/confura/util"
 )
 
 // for atomic load/store in cache.

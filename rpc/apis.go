@@ -1,12 +1,12 @@
 package rpc
 
 import (
+	"github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
+	"github.com/Conflux-Chain/confura/rpc/handler"
+	"github.com/Conflux-Chain/confura/util/metrics/service"
+	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/conflux-chain/conflux-infura/node"
-	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
-	"github.com/conflux-chain/conflux-infura/rpc/handler"
-	"github.com/conflux-chain/conflux-infura/util/metrics/service"
-	"github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 )

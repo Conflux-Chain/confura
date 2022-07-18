@@ -4,9 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/conflux-chain/conflux-infura/util"
-	"github.com/conflux-chain/conflux-infura/util/rpc"
-	"github.com/conflux-chain/conflux-infura/util/rpc/handlers"
+	"github.com/Conflux-Chain/confura/util"
+	"github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )

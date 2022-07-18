@@ -18,8 +18,8 @@ import (
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/types"
 
-	citypes "github.com/conflux-chain/conflux-infura/types"
-	"github.com/conflux-chain/conflux-infura/util"
+	citypes "github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"

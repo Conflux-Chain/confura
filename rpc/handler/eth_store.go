@@ -3,10 +3,10 @@ package handler
 import (
 	"context"
 
-	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
-	"github.com/conflux-chain/conflux-infura/rpc/ethbridge"
-	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
+	"github.com/Conflux-Chain/confura/rpc/ethbridge"
+	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/ethereum/go-ethereum/common"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"

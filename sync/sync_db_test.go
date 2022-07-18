@@ -4,9 +4,9 @@ import (
 	"math"
 	"testing"
 
+	"github.com/Conflux-Chain/confura/store"
+	citypes "github.com/Conflux-Chain/confura/types"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/conflux-chain/conflux-infura/store"
-	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/stretchr/testify/assert"
 )
 

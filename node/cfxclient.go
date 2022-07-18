@@ -3,8 +3,8 @@ package node
 import (
 	"context"
 
+	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/conflux-chain/conflux-infura/util/rpc"
 )
 
 // CfxClientProvider provides core space client by router.

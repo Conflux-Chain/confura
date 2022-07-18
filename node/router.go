@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
-	rpcutil "github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"

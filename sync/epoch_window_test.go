@@ -3,7 +3,7 @@ package sync
 import (
 	"testing"
 
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/stretchr/testify/assert"
 )
 

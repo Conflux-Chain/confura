@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/util/rpc/handlers"
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"

@@ -1,8 +1,8 @@
 package test
 
 import (
-	"github.com/conflux-chain/conflux-infura/cmd/util"
-	"github.com/conflux-chain/conflux-infura/test"
+	"github.com/Conflux-Chain/confura/cmd/util"
+	"github.com/Conflux-Chain/confura/test"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

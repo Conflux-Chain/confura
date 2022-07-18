@@ -3,7 +3,7 @@ package mysql
 import (
 	"database/sql"
 
-	"github.com/conflux-chain/conflux-infura/store"
+	"github.com/Conflux-Chain/confura/store"
 	"gorm.io/gorm"
 )
 

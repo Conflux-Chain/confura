@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/metrics"
 )
 
 const Namespace = "metrics"

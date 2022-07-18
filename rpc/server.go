@@ -1,10 +1,10 @@
 package rpc
 
 import (
-	infuraNode "github.com/conflux-chain/conflux-infura/node"
-	"github.com/conflux-chain/conflux-infura/rpc/handler"
-	"github.com/conflux-chain/conflux-infura/util/rate"
-	"github.com/conflux-chain/conflux-infura/util/rpc"
+	infuraNode "github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/rpc/handler"
+	"github.com/Conflux-Chain/confura/util/rate"
+	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/sirupsen/logrus"
 )
 

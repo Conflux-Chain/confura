@@ -5,10 +5,10 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"github.com/conflux-chain/conflux-infura/rpc/ethbridge"
-	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/store/mysql"
-	"github.com/conflux-chain/conflux-infura/util/metrics"
+	"github.com/Conflux-Chain/confura/rpc/ethbridge"
+	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/store/mysql"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
 )

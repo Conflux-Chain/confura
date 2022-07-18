@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/types"
+	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"

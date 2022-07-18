@@ -3,9 +3,9 @@ package ethbridge
 import (
 	"math/big"
 
+	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/util"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethTypes "github.com/ethereum/go-ethereum/core/types"

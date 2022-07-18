@@ -3,9 +3,9 @@ package config
 import (
 	"strings"
 
+	"github.com/Conflux-Chain/confura/util/alert"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
-	"github.com/conflux-chain/conflux-infura/util/alert"
-	"github.com/conflux-chain/conflux-infura/util/metrics"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

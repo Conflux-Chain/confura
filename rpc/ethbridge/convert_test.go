@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/conflux-chain/conflux-infura/rpc/cfxbridge"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"

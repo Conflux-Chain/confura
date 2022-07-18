@@ -3,9 +3,9 @@ package mysql
 import (
 	"context"
 
-	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/types"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )

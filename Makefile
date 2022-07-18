@@ -11,7 +11,7 @@ BUILD_DATE=`date +%FT%T%z`
 GIT_COMMIT=`git rev-parse HEAD`
 
 # Setup the -ldflags option for go build here, interpolate the variable values
-PKG=github.com/conflux-chain/conflux-infura/config
+PKG=github.com/Conflux-Chain/confura/config
 LDFLAGS=-ldflags "-w -s -X ${PKG}.Version=${VERSION} -X ${PKG}.BuildDate=${BUILD_DATE} -X ${PKG}.GitCommit=${GIT_COMMIT}"
 
 # Build the project

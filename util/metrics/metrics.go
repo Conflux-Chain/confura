@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/go-rpc-provider/utils"
 )

@@ -3,8 +3,8 @@ package mysql
 import (
 	"database/sql"
 
-	"github.com/conflux-chain/conflux-infura/store"
-	citypes "github.com/conflux-chain/conflux-infura/types"
+	"github.com/Conflux-Chain/confura/store"
+	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )

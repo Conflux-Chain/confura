@@ -3,9 +3,9 @@ package handler
 import (
 	"math/big"
 
-	"github.com/conflux-chain/conflux-infura/store"
-	itypes "github.com/conflux-chain/conflux-infura/types"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/Conflux-Chain/confura/store"
+	itypes "github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/sirupsen/logrus"
 )

@@ -6,9 +6,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/conflux-chain/conflux-infura/cmd/test"
-	"github.com/conflux-chain/conflux-infura/cmd/util"
-	"github.com/conflux-chain/conflux-infura/config"
+	"github.com/Conflux-Chain/confura/cmd/test"
+	"github.com/Conflux-Chain/confura/cmd/util"
+	"github.com/Conflux-Chain/confura/config"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

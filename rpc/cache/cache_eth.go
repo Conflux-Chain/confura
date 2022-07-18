@@ -4,8 +4,8 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/node"
-	"github.com/conflux-chain/conflux-infura/util/rpc"
+	"github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/web3go"
 )

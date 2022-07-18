@@ -3,8 +3,8 @@ package rpc
 import (
 	"context"
 
-	"github.com/conflux-chain/conflux-infura/rpc/handler"
-	"github.com/conflux-chain/conflux-infura/types"
+	"github.com/Conflux-Chain/confura/rpc/handler"
+	"github.com/Conflux-Chain/confura/types"
 )
 
 // gasStationAPI provides core space gasstation API.

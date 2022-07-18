@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/conflux-chain/conflux-infura/util/rpc/handlers"
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/openweb3/go-rpc-provider"
 )
 

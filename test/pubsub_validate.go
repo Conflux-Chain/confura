@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	rpcutil "github.com/conflux-chain/conflux-infura/util/rpc"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 	ring "github.com/zealws/golang-ring"

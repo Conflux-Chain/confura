@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/conflux-chain/conflux-infura/util/rpc"
+	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/openweb3/web3go"
 )
 

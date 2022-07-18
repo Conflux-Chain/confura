@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
-	"github.com/conflux-chain/conflux-infura/store"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )

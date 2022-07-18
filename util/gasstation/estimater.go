@@ -4,9 +4,9 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/conflux-chain/conflux-infura/util"
 	"github.com/montanaflynn/stats"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/conflux-chain/conflux-infura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/go-rpc-provider"
 )
 

@@ -1,8 +1,8 @@
 package sync
 
 import (
-	"github.com/conflux-chain/conflux-infura/types"
-	"github.com/conflux-chain/conflux-infura/util"
+	"github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/util"
 )
 
 // epochWindow maintains a continuous epoch window with a fixed size capacity.

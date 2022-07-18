@@ -1,8 +1,8 @@
 package sync
 
 import (
+	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	citypes "github.com/conflux-chain/conflux-infura/types"
 	"github.com/pkg/errors"
 )
 

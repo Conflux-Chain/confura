@@ -3,7 +3,7 @@ package node
 import (
 	"sync"
 
-	"github.com/conflux-chain/conflux-infura/util/rpc"
+	"github.com/Conflux-Chain/confura/util/rpc"
 )
 
 var (

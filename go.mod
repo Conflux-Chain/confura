@@ -1,4 +1,4 @@
-module github.com/conflux-chain/conflux-infura
+module github.com/Conflux-Chain/confura
 
 go 1.15
 
