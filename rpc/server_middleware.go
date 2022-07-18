@@ -21,6 +21,10 @@ const (
 func init() {
 	// middlewares executed in order
 
+	// panic recovery
+	rpc.HookHandleBatch(middlewares.RecoverBatch)
+	rpc.HookHandleCallMsg(middlewares.Recover)
+
 	// rate limit
 	rpc.HookHandleBatch(middlewares.RateLimitBatch)
 	rpc.HookHandleCallMsg(middlewares.RateLimit)
