@@ -207,7 +207,6 @@ type EthLogFilter struct {
 	BlockHashes *common.Hash // eth space only accept a single block hash as filter
 	Address     []EthAddress
 	Topics      [][]common.Hash
-	Limit       *hexutil.Uint64
 }
 
 func (filter *EthLogFilter) ToFilterQuery() ethTypes.FilterQuery {
@@ -220,11 +219,6 @@ func (filter *EthLogFilter) ToFilterQuery() ethTypes.FilterQuery {
 
 	for i := range filter.Address {
 		query.Addresses = append(query.Addresses, filter.Address[i].value)
-	}
-
-	if filter.Limit != nil {
-		limit := uint(*filter.Limit)
-		query.Limit = &limit
 	}
 
 	return query
