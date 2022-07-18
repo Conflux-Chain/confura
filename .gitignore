@@ -15,4 +15,7 @@
 # vendor/
 
 go.sum
-conflux-infura
+
+# Build binary
+./bin
+confura
