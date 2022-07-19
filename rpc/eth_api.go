@@ -484,11 +484,6 @@ func (api *ethAPI) normalizeLogFilter(w3c *web3go.Client, flag store.LogFilterTy
 		filter.FromBlock, filter.ToBlock = blocks[0], blocks[1]
 	}
 
-	// For store v2, filter offset/limit is not supported anymore but fullnode doesn't
-	// deprecate it until v2.0.3.
-	// TODO: remove the following codes once fullnode v2.0.3 is ready.
-	filter.Limit = nil
-
 	return nil
 }
 

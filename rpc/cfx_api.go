@@ -296,9 +296,9 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 func (api *cfxAPI) normalizeLogFilter(cfx sdk.ClientOperator, flag store.LogFilterType, filter *types.LogFilter) error {
 	// set default epoch range if not set and convert to numbered epoch if necessary
 	if flag&store.LogFilterTypeEpochRange != 0 {
-		// if no from epoch provided, set latest checkpoint epoch as default
+		// if no from epoch provided, set latest state epoch as default
 		if filter.FromEpoch == nil {
-			filter.FromEpoch = types.EpochLatestCheckpoint
+			filter.FromEpoch = types.EpochLatestState
 		}
 
 		// if no to epoch provided, set latest state epoch as default
@@ -318,11 +318,6 @@ func (api *cfxAPI) normalizeLogFilter(cfx sdk.ClientOperator, flag store.LogFilt
 
 		filter.FromEpoch, filter.ToEpoch = epochs[0], epochs[1]
 	}
-
-	// For store v2, filter offset/limit are not supported anymore, but fullnode doesn't
-	// deprecate it until v2.0.3.
-	// TODO: remove the following codes once fullnode v2.0.3 is ready.
-	filter.Offset, filter.Limit = nil, nil
 
 	return nil
 }
