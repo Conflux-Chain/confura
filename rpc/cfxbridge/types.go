@@ -2,6 +2,8 @@ package cfxbridge
 
 import (
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -10,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	ethTypes "github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 )
 
 // EthBlockNumber accepts number and epoch tag latest_state, other values are invalid, e.g. latest_confirmed.
@@ -222,4 +225,119 @@ func (filter *EthLogFilter) ToFilterQuery() ethTypes.FilterQuery {
 	}
 
 	return query
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (l *EthLogFilter) UnmarshalJSON(data []byte) error {
+	type tmpLogFilter struct {
+		FromEpoch   *EthBlockNumber `json:"fromEpoch,omitempty"`
+		ToEpoch     *EthBlockNumber `json:"toEpoch,omitempty"`
+		BlockHashes *common.Hash    `json:"blockHashes,omitempty"`
+		Address     interface{}     `json:"address,omitempty"`
+		Topics      []interface{}   `json:"topics,omitempty"`
+	}
+
+	t := tmpLogFilter{}
+	if err := json.Unmarshal(data, &t); err != nil {
+		return err
+	}
+
+	var err error
+	l.FromEpoch = t.FromEpoch
+	l.ToEpoch = t.ToEpoch
+	l.BlockHashes = t.BlockHashes
+	if l.Address, err = resolveToAddresses(t.Address); err != nil {
+		return err
+	}
+	if l.Topics, err = resolveToTopicsList(t.Topics); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func resolveToAddresses(val interface{}) ([]EthAddress, error) {
+	// if val is nil, return
+	if val == nil {
+		return nil, nil
+	}
+
+	// if val is string, new address and return
+	if addrStr, ok := val.(string); ok {
+		var addr EthAddress
+		if err := json.Unmarshal([]byte(fmt.Sprintf(`"%v"`, addrStr)), &addr); err != nil {
+			return nil, errors.Wrapf(err, "failed to create address by %v", addrStr)
+		}
+
+		return []EthAddress{addr}, nil
+	}
+
+	// if val is string slice, new every item to cfxaddress
+	if addrStrList, ok := val.([]interface{}); ok {
+		addrList := make([]EthAddress, 0)
+		for _, v := range addrStrList {
+			vStr, ok := v.(string)
+			if !ok {
+				return nil, errors.Errorf("could not conver type %v to address", reflect.TypeOf(v))
+			}
+
+			var addr EthAddress
+			if err := json.Unmarshal([]byte(fmt.Sprintf(`"%v"`, vStr)), &addr); err != nil {
+				return nil, errors.Wrapf(err, "failed to create address by %v", v)
+			}
+
+			addrList = append(addrList, addr)
+		}
+
+		return addrList, nil
+	}
+
+	return nil, errors.Errorf("failed to unmarshal %#v to address or address list", val)
+}
+
+func resolveToTopicsList(val []interface{}) ([][]common.Hash, error) {
+	// if val is nil, return
+	if val == nil {
+		return nil, nil
+	}
+
+	// otherwise, convert every item to topics
+	topicsList := make([][]common.Hash, 0)
+
+	for _, v := range val {
+		hashes, err := resolveToHashes(v)
+		if err != nil {
+			return nil, err
+		}
+		topicsList = append(topicsList, hashes)
+	}
+	return topicsList, nil
+}
+
+func resolveToHashes(val interface{}) ([]common.Hash, error) {
+	// if val is nil, return
+	if val == nil {
+		return nil, nil
+	}
+
+	// if val is string, return
+	if hashStr, ok := val.(string); ok {
+		return []common.Hash{common.HexToHash(hashStr)}, nil
+	}
+
+	// if val is string slice, append every item
+	if addrStrList, ok := val.([]interface{}); ok {
+		addrList := make([]common.Hash, 0)
+		for _, v := range addrStrList {
+			vStr, ok := v.(string)
+			if !ok {
+				return nil, errors.Errorf("could not conver type %v to hash", reflect.TypeOf(v))
+			}
+
+			addrList = append(addrList, common.HexToHash(vStr))
+		}
+		return addrList, nil
+	}
+
+	return nil, errors.Errorf("failed to convert %v to hash or hashes", val)
 }
