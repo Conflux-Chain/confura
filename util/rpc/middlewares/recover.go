@@ -13,30 +13,6 @@ var (
 	errMiddlewareCrashed = errors.New("RPC middleware crashed")
 )
 
-func RecoverBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
-	return func(ctx context.Context, msgs []*rpc.JsonRpcMessage) (resp []*rpc.JsonRpcMessage) {
-		defer func() {
-			if err := recover(); err != nil {
-				var inputMsgs []*humanReadableRpcMessage
-
-				for i := range msgs {
-					inputMsgs = append(inputMsgs, newHumanReadableRpcMessage(msgs[i]))
-					resp = append(resp, msgs[i].ErrorResponse(errMiddlewareCrashed))
-				}
-
-				debug.PrintStack()
-
-				logrus.WithFields(logrus.Fields{
-					"inputMsg": inputMsgs,
-					"panicErr": err,
-				}).Error("RPC middleware panic recovered")
-			}
-		}()
-
-		return next(ctx, msgs)
-	}
-}
-
 func Recover(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) (resp *rpc.JsonRpcMessage) {
 		defer func() {

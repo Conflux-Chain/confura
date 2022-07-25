@@ -22,7 +22,6 @@ func init() {
 	// middlewares executed in order
 
 	// panic recovery
-	rpc.HookHandleBatch(middlewares.RecoverBatch)
 	rpc.HookHandleCallMsg(middlewares.Recover)
 
 	// rate limit
@@ -39,6 +38,9 @@ func init() {
 
 	// cfx/eth client
 	rpc.HookHandleCallMsg(clientMiddleware)
+
+	// invalid json rpc request without `ID``
+	rpc.HookHandleCallMsg(rpc.PreventMessagesWithouID)
 }
 
 // Inject values into context for static RPC call middlewares, e.g. rate limit
