@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -63,7 +62,7 @@ func newDelegateSubscription(dCtx *delegateContext, subId rpc.ID, channel interf
 	// check type of channel first
 	chanVal := reflect.ValueOf(channel)
 	if chanVal.Kind() != reflect.Chan || chanVal.Type().ChanDir()&reflect.SendDir == 0 || chanVal.IsNil() {
-		logrus.Fatal("Delegate subscription channel must be a writable channel and not be nil")
+		panic("Delegate subscription channel must be a writable channel and not be nil")
 	}
 
 	return &delegateSubscription{
@@ -81,7 +80,7 @@ func (sub *delegateSubscription) deliver(result interface{}) bool {
 	// filter result before deliver
 	for _, blacklist := range sub.filters {
 		if blacklist(result) {
-			logrus.WithField("result", fmt.Sprintf("%#v", result)).Debug("Blacklisted to deliver from delegate subscription")
+			logrus.WithField("result", result).Debug("Blacklisted to deliver from delegate subscription")
 			return false
 		}
 	}
@@ -150,7 +149,7 @@ func (dctx *delegateContext) getStatus() delegateStatus {
 }
 
 func (dctx *delegateContext) setStatus(status delegateStatus) {
-	atomic.StoreUint32((*uint32)(&dctx.status), uint32(delegateStatusOK))
+	atomic.StoreUint32((*uint32)(&dctx.status), uint32(status))
 }
 
 func (dctx *delegateContext) registerDelegateSub(subId rpc.ID, channel interface{}, filters ...delegateSubFilter) *delegateSubscription {
@@ -265,7 +264,7 @@ func (client *delegateClient) proxySubscribeNewHeads(dctx *delegateContext) {
 		dctx.setStatus(delegateStatusOK)
 		for dctx.getStatus() == delegateStatusOK {
 			select {
-			case err = <-csub.Err(): // FIXME bug with go sdk which will hang for a few minutes even the internet is cut off
+			case err = <-csub.Err():
 				logrus.WithError(err).Error("Cfx newHeads delegate subscription error")
 				csub.Unsubscribe()
 
@@ -313,7 +312,7 @@ func (client *delegateClient) proxySubscribeEpochs(dctx *delegateContext) {
 		dctx.setStatus(delegateStatusOK)
 		for dctx.getStatus() == delegateStatusOK {
 			select {
-			case err = <-csub.Err(): // FIXME bug with go sdk which will hang for a few minutes even the internet is cut off
+			case err = <-csub.Err():
 				logrus.WithError(err).Error("Cfx epochs delegate subscription error")
 				csub.Unsubscribe()
 
@@ -359,7 +358,7 @@ func (client *delegateClient) proxySubscribeLogs(dctx *delegateContext) {
 		dctx.setStatus(delegateStatusOK)
 		for dctx.getStatus() == delegateStatusOK {
 			select {
-			case err = <-csub.Err(): // FIXME bug with go sdk which will hang for a few minutes even the internet is cut off
+			case err = <-csub.Err():
 				logrus.WithError(err).Error("Cfx logs delegate subscription error")
 				csub.Unsubscribe()
 
@@ -411,6 +410,20 @@ func matchLogFilterAddr(log *types.SubscriptionLog, filter *types.LogFilter) boo
 	}
 
 	return len(filter.Address) == 0
+}
+
+func isEmptyLogFilter(filter types.LogFilter) bool {
+	if len(filter.Address) > 0 {
+		return false
+	}
+
+	for i := range filter.Topics {
+		if len(filter.Topics[i]) > 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 // rpcClientFromContext returns the rpc client value stored in ctx, if any.
