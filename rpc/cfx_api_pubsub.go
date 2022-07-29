@@ -148,6 +148,8 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 
 // Logs creates a subscription that fires for all new log that match the given filter criteria.
 func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subscription, error) {
+	metrics.Registry.PubSub.InputLogFilter("cfx").Mark(!isEmptyLogFilter(filter))
+
 	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
 	if !supported {
 		logrus.WithError(err).Error("Logs pubsub notification unsupported")
@@ -171,8 +173,6 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 	}
 
 	logger := logrus.WithField("rpcSubID", rpcSub.ID)
-
-	metrics.Registry.PubSub.InputLogFilter("cfx").Mark(!isEmptyLogFilter(filter))
 
 	nodeName := rpcutil.Url2NodeName(psCtx.cfx.GetNodeURL())
 	counter := metrics.Registry.PubSub.Sessions("cfx", "logs", nodeName)
