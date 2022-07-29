@@ -4,6 +4,7 @@ import (
 	"fmt"
 	stdLog "log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
@@ -95,6 +96,29 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 		}
 
 		newCreated = (len(tables) == 0)
+
+		// fix patch to alter table name:
+		// 1. rename `logs` to `logs_deprecated`
+		// 2. rename table `logs_v2_x` to `logs_x`
+		for _, tbl := range tables {
+			if tbl != "logs" && !strings.HasPrefix(tbl, "logs_v2_") {
+				continue
+			}
+
+			var newTbl string
+			if tbl == "logs" {
+				newTbl = "logs_deprecated"
+			} else {
+				newTbl = strings.ReplaceAll(tbl, "_v2_", "_")
+			}
+
+			err := db.Migrator().RenameTable(tbl, newTbl)
+			logrus.WithFields(logrus.Fields{
+				"database":     config.Database,
+				"oldTableName": tbl,
+				"newTableName": newTbl,
+			}).WithError(err).Info("Database table renamed")
+		}
 	}
 
 	if newCreated {
