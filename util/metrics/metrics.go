@@ -12,10 +12,11 @@ import (
 var Registry Metrics
 
 type Metrics struct {
-	RPC   RpcMetrics
-	Sync  SyncMetrics
-	Store StoreMetrics
-	Nodes NodeManagerMetrics
+	RPC    RpcMetrics
+	PubSub PubSubMetrics
+	Sync   SyncMetrics
+	Store  StoreMetrics
+	Nodes  NodeManagerMetrics
 }
 
 // RPC metrics
@@ -167,4 +168,15 @@ func (*NodeManagerMetrics) NodeLatency(space, group, node string) string {
 
 func (*NodeManagerMetrics) NodeAvailability(space, group, node string) string {
 	return fmt.Sprintf("infura/nodes/%v/availability/%v/%v", space, group, node)
+}
+
+// PubSub metrics
+type PubSubMetrics struct{}
+
+func (*PubSubMetrics) Sessions(space, topic, node string) metrics.Counter {
+	return GetOrRegisterCounter("infura/pubsub/%v/sessions/%v/%v", space, topic, node)
+}
+
+func (*PubSubMetrics) InputLogFilter(space string) Percentage {
+	return GetOrRegisterTimeWindowPercentageDefault("infura/pubsub/%v/input/logFilter", space)
 }
