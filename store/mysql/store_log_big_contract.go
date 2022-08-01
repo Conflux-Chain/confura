@@ -8,6 +8,7 @@ import (
 	"github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -167,7 +168,7 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 		}
 
 		// expand partition block number range
-		if err := bcls.expandBnRange(dbTx, clEntity, int(partition.Index), bnMin, bnMax); err != nil {
+		if err := bcls.expandBnRange(dbTx, clEntity, int(partition.Index), 0, bnMax); err != nil {
 			return errors.WithMessage(err, "failed to expand partition bn range")
 		}
 
@@ -176,6 +177,15 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 		if err != nil {
 			return errors.WithMessage(err, "failed to update contract log partition count")
 		}
+
+		logrus.WithFields(logrus.Fields{
+			"contract":          contract,
+			"aiTableName":       aiTableName,
+			"clTableName":       clTableName,
+			"bnMin":             bnMin,
+			"bnMax":             bnMax,
+			"totalMigratedLogs": res.RowsAffected,
+		}).Info("Address indexed event logs migrated to big contract event logs table")
 
 		return nil
 	})
