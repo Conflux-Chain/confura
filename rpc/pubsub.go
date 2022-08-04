@@ -256,12 +256,14 @@ func (client *delegateClient) proxySubscribeNewHeads(dctx *delegateContext) {
 		return sub, nhCh, err
 	}
 
+	logger := logrus.WithField("nodeURL", client.GetNodeURL())
+
 	for {
 		csub, nhCh, err := subFunc()
 		for failures := 0; err != nil; { // resub until suceess
 			if failures++; failures%maxProxyDelegateSubFailures == 0 {
 				// trigger error for every few failures
-				logrus.WithField("failures", failures).
+				logger.WithField("failures", failures).
 					WithError(err).Error("Failed to try too many newHeads proxy subscriptions")
 				time.Sleep(time.Second)
 			}
@@ -269,13 +271,13 @@ func (client *delegateClient) proxySubscribeNewHeads(dctx *delegateContext) {
 			csub, nhCh, err = subFunc()
 		}
 
-		logrus.Info("Started newHeads proxy subscription")
+		logger.Info("Started newHeads proxy subscription")
 
 		dctx.setStatus(delegateStatusOK)
 		for dctx.getStatus() == delegateStatusOK {
 			select {
 			case err = <-csub.Err():
-				logrus.WithError(err).Info("Cfx newHeads delegate subscription error")
+				logger.WithError(err).Info("Cfx newHeads delegate subscription error")
 				csub.Unsubscribe()
 
 				dctx.setStatus(delegateStatusErr)
@@ -311,29 +313,32 @@ func (client *delegateClient) proxySubscribeEpochs(dctx *delegateContext) {
 		return sub, epochCh, err
 	}
 
+	logger := logrus.WithFields(logrus.Fields{
+		"nodeURL":      client.GetNodeURL(),
+		"subEpochType": dctx.epoch,
+	})
+
 	for {
 		csub, epochCh, err := subFunc()
 		for failures := 0; err != nil; { // resub until suceess
 			if failures++; failures%maxProxyDelegateSubFailures == 0 {
 				// trigger error for every few failures
-				logrus.WithFields(logrus.Fields{
-					"failures": failures, "subEpochType": dctx.epoch,
-				}).WithError(err).Error("Failed to try too many epochs proxy subscriptions")
+				logger.WithField("failures", failures).
+					WithError(err).
+					Error("Failed to try too many epochs proxy subscriptions")
 				time.Sleep(time.Second)
 			}
 
 			csub, epochCh, err = subFunc()
 		}
 
-		logrus.Info("Started epochs proxy subscription")
+		logger.Info("Started epochs proxy subscription")
 
 		dctx.setStatus(delegateStatusOK)
 		for dctx.getStatus() == delegateStatusOK {
 			select {
 			case err = <-csub.Err():
-				logrus.WithField("subEpochType", dctx.epoch).
-					WithError(err).
-					Info("Cfx epochs delegate subscription error")
+				logger.WithError(err).Info("Cfx epochs delegate subscription error")
 				csub.Unsubscribe()
 
 				dctx.setStatus(delegateStatusErr)
@@ -367,12 +372,14 @@ func (client *delegateClient) proxySubscribeLogs(dctx *delegateContext) {
 		return sub, logsCh, err
 	}
 
+	logger := logrus.WithField("nodeURL", client.GetNodeURL())
+
 	for {
 		csub, logsCh, err := subFunc()
 		for failures := 0; err != nil; { // resub until suceess
 			if failures++; failures%maxProxyDelegateSubFailures == 0 {
 				// trigger error for every few failures
-				logrus.WithField("failures", failures).
+				logger.WithField("failures", failures).
 					WithError(err).Error("Failed to try too many logs proxy subscriptions")
 				time.Sleep(time.Second)
 			}
@@ -380,13 +387,13 @@ func (client *delegateClient) proxySubscribeLogs(dctx *delegateContext) {
 			csub, logsCh, err = subFunc()
 		}
 
-		logrus.Info("Started logs proxy subscription")
+		logger.Info("Started logs proxy subscription")
 
 		dctx.setStatus(delegateStatusOK)
 		for dctx.getStatus() == delegateStatusOK {
 			select {
 			case err = <-csub.Err():
-				logrus.WithError(err).Info("Cfx logs delegate subscription error")
+				logger.WithError(err).Info("Cfx logs delegate subscription error")
 				csub.Unsubscribe()
 
 				dctx.setStatus(delegateStatusErr)
