@@ -338,9 +338,7 @@ func (client *delegateClient) proxySubscribeEpochs(dctx *delegateContext) {
 		for dctx.getStatus() == delegateStatusOK {
 			select {
 			case err = <-csub.Err():
-				logger.WithField("subEpochType", dctx.epoch).
-					WithError(err).
-					Info("Cfx epochs delegate subscription error")
+				logger.WithError(err).Info("Cfx epochs delegate subscription error")
 				csub.Unsubscribe()
 
 				dctx.setStatus(delegateStatusErr)
