@@ -1,14 +1,37 @@
 # Confura
 
-Official implementation of an Ethereum Infura equivalent public RPC service on Conflux Network.
+Implementation of an Ethereum Infura equivalent public RPC service on Conflux Network.
 
 [![MIT licensed][1]][2]
 
 [1]: https://img.shields.io/badge/license-MIT-blue.svg
 [2]: LICENSE
 
-## Prerequisites
+### Why Confura
 
+Comparatively running your full node, Confura makes it easy to build a high performance, scalable and available RPC service by providing some augmented features.
+
+#### RPC Improvement
+
+- Expiry cache for some high frequency RPC methods such as `cfx_getStatus` and `cfx_epochNumber`.
+- Off-chain index of event logs, by which `getLogs` (both `cfx_getLogs` and `eth_getLogs`) are handled rather than directly by a full node. This index is backed by a traditional database, which allows us to index and query on more data, without the added overhead of false positives experienced with a bloom filter on full node. All event logs (with total amount less than 10,000) of some contract can even be retrieved within single request.
+
+#### Node Cluster Management
+
+- Health monitoring to eliminate unhealthy nodes of which latest block height lags behind the overall average, or heartbeat RPC failures or timeout limit exceeded.
+- Consistent hashing load balancing by remote IP address.
+- Workloads isolation by dedicated node pools.
+- JSON-RPC to manage (add/list/delete) node.
+
+#### Rate Limit
+
+- API rate limit per RPC method using token bucket algorithm.
+
+#### Metrics
+
+* Component instrumentation && monitoring using RED method.
+
+## Prerequisites
 
 ### Hardware Requirements
 
@@ -53,7 +76,6 @@ An executable binary named *`confura`* will be generated in the project *`bin`* 
 
 ## Configuration
 
-
 Confura will load configurations from `config.yml` or `config/config.yml` under current directory at startup. You can use the [config.yml](config/config.yml) within our project as basic template, which has bunch of helpful comments to make it easy to customize accordingly to your needs.
 
 As an alternative to modifying the numerous config items in the configuration file, you can also use environment variables. Environment variables prefixed `"INFURA_"` will try to overide the config item defined by the path with all its parts split by underscore.
@@ -65,7 +87,6 @@ export INFURA_RPC_ENDPOINT=":32537"
 This will override value for the config item of path `rpc.endpoint` within the configuration file as `":32537"`.
 
 ## Running Confura
-
 
 Confura is comprised of serveral components as below:
 
@@ -201,6 +222,11 @@ confura-redis                docker-entrypoint.sh redis ...   Up       0.0.0.0:5
 confura-rpc                  ./confura rpc --cfx              Up       0.0.0.0:22537->22537/tcp,:::22537->22537/tcp
 confura-sync                 ./confura sync --db --kv         Up   
 ```
+
+## TODO
+
+- [ ] Add in-memory cache of event logs for "near head" recent blocks.
+- [ ] Release performance benchmark report.
 
 ## Contribution
 
