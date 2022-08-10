@@ -261,13 +261,15 @@ func (client *delegateClient) proxySubscribeNewHeads(dctx *delegateContext) {
 	for {
 		csub, nhCh, err := subFunc()
 		for failures := 0; err != nil; { // resub until suceess
+			logger.WithError(err).Info("NewHead proxy subscriptions error")
+
 			if failures++; failures%maxProxyDelegateSubFailures == 0 {
 				// trigger error for every few failures
 				logger.WithField("failures", failures).
 					WithError(err).Error("Failed to try too many newHeads proxy subscriptions")
-				time.Sleep(time.Second)
 			}
 
+			time.Sleep(time.Second)
 			csub, nhCh, err = subFunc()
 		}
 
@@ -321,14 +323,16 @@ func (client *delegateClient) proxySubscribeEpochs(dctx *delegateContext) {
 	for {
 		csub, epochCh, err := subFunc()
 		for failures := 0; err != nil; { // resub until suceess
+			logger.WithError(err).Info("Epochs proxy subscriptions error")
+
 			if failures++; failures%maxProxyDelegateSubFailures == 0 {
 				// trigger error for every few failures
 				logger.WithField("failures", failures).
 					WithError(err).
 					Error("Failed to try too many epochs proxy subscriptions")
-				time.Sleep(time.Second)
 			}
 
+			time.Sleep(time.Second)
 			csub, epochCh, err = subFunc()
 		}
 
@@ -377,13 +381,15 @@ func (client *delegateClient) proxySubscribeLogs(dctx *delegateContext) {
 	for {
 		csub, logsCh, err := subFunc()
 		for failures := 0; err != nil; { // resub until suceess
+			logger.WithError(err).Info("Logs proxy subscriptions error")
+
 			if failures++; failures%maxProxyDelegateSubFailures == 0 {
 				// trigger error for every few failures
 				logger.WithField("failures", failures).
 					WithError(err).Error("Failed to try too many logs proxy subscriptions")
-				time.Sleep(time.Second)
 			}
 
+			time.Sleep(time.Second)
 			csub, logsCh, err = subFunc()
 		}
 
