@@ -274,7 +274,7 @@ func (validator *EthValidator) validateEthBlock(blockNo uint64) error {
 	}
 
 	// pick first success transaction for validation
-	var firstOkTxn *types.Transaction
+	var firstOkTxn *types.TransactionDetail
 	for i, txn := range blockTxns {
 		if util.IsSuccessEthTx(&txn) {
 			firstOkTxn = &blockTxns[i]

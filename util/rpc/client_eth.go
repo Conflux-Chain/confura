@@ -10,7 +10,7 @@ import (
 
 type ethClientOption struct {
 	baseClientOption
-	providers.Option
+	web3go.ClientOption
 }
 
 func (o *ethClientOption) SetRetryCount(retry int) {
@@ -44,11 +44,13 @@ func MustNewEthClient(url string, options ...ClientOption) *web3go.Client {
 
 func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 	opt := ethClientOption{
-		Option: providers.Option{
-			RetryCount:           ethClientCfg.Retry,
-			RetryInterval:        ethClientCfg.RetryInterval,
-			RequestTimeout:       ethClientCfg.RequestTimeout,
-			MaxConnectionPerHost: ethClientCfg.MaxConnsPerHost,
+		ClientOption: web3go.ClientOption{
+			Option: providers.Option{
+				RetryCount:           ethClientCfg.Retry,
+				RetryInterval:        ethClientCfg.RetryInterval,
+				RequestTimeout:       ethClientCfg.RequestTimeout,
+				MaxConnectionPerHost: ethClientCfg.MaxConnsPerHost,
+			},
 		},
 	}
 
@@ -56,7 +58,7 @@ func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 		o(&opt)
 	}
 
-	eth, err := web3go.NewClientWithOption(url, opt.Option)
+	eth, err := web3go.NewClientWithOption(url, opt.ClientOption)
 	if err == nil && opt.hookMetrics {
 		HookMiddlewares(eth.Provider(), url, "eth")
 	}

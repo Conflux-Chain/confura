@@ -48,7 +48,7 @@ func ConvertHashNullable(value *cfxtypes.Hash) common.Hash {
 }
 
 // convert cfx tx => eth tx
-func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.Transaction {
+func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.TransactionDetail {
 	if tx == nil {
 		return nil
 	}
@@ -67,7 +67,7 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 		nonce = tx.Nonce.ToInt().Uint64()
 	}
 
-	ethTxn := &types.Transaction{
+	ethTxn := &types.TransactionDetail{
 		BlockHash:        tx.BlockHash.ToCommonHash(),
 		ChainID:          big.NewInt(int64(chainId)),
 		Creates:          creates,
@@ -198,7 +198,7 @@ func ConvertBlockSummary(value *cfxtypes.BlockSummary, blockExt *store.BlockExtr
 func ConvertBlock(value *cfxtypes.Block, blockExt *store.BlockExtra) *types.Block {
 	block := ConvertBlockHeader(&value.BlockHeader, blockExt)
 
-	txs := make([]types.Transaction, len(value.Transactions))
+	txs := make([]types.TransactionDetail, len(value.Transactions))
 	for i, tx := range value.Transactions {
 		var txnExt *store.TransactionExtra
 		if i < len(blockExt.TxnExts) {

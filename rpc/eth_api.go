@@ -264,7 +264,7 @@ func (api *ethAPI) EstimateGas(
 }
 
 // TransactionByHash returns the transaction with the given hash.
-func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.Transaction, error) {
+func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.TransactionDetail, error) {
 	logger := logrus.WithField("txHash", hash.Hex())
 
 	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
@@ -441,7 +441,7 @@ func (api *ethAPI) GetUncleByBlockHashAndIndex(
 // transaction index position.
 func (api *ethAPI) GetTransactionByBlockHashAndIndex(
 	ctx context.Context, hash common.Hash, index hexutil.Uint,
-) (*web3Types.Transaction, error) {
+) (*web3Types.TransactionDetail, error) {
 	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.TransactionByBlockHashAndIndex(hash, uint(index))
 }
@@ -450,7 +450,7 @@ func (api *ethAPI) GetTransactionByBlockHashAndIndex(
 // transaction index position.
 func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 	ctx context.Context, blockNum web3Types.BlockNumber, index hexutil.Uint,
-) (*web3Types.Transaction, error) {
+) (*web3Types.TransactionDetail, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getTransactionByBlockNumberAndIndex", w3c.Eth)
 	return w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))

@@ -87,7 +87,7 @@ func ConvertTxStatusNullable(value *uint64) (status *hexutil.Uint64) {
 	return
 }
 
-func ConvertTx(tx *ethTypes.Transaction, ethNetworkId uint32) *types.Transaction {
+func ConvertTx(tx *ethTypes.TransactionDetail, ethNetworkId uint32) *types.Transaction {
 	if tx == nil {
 		return nil
 	}
@@ -293,12 +293,6 @@ func ConvertLogFilter(fq *ethTypes.FilterQuery, ethNetworkId uint32) *types.LogF
 
 	if fq.ToBlock != nil {
 		lf.ToBlock = (*hexutil.Big)(big.NewInt(fq.ToBlock.Int64()))
-	}
-
-	// convert offset/limit
-	if fq.Limit != nil {
-		limit := uint64(*fq.Limit)
-		lf.Limit = (*hexutil.Uint64)(&limit)
 	}
 
 	return lf

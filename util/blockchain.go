@@ -155,7 +155,7 @@ func IsEmptyBlock(block *types.Block) bool {
 }
 
 // IsEip155Tx check if the EVM transaction is compliant to EIP155
-func IsEip155Tx(tx *web3goTypes.Transaction) bool {
+func IsEip155Tx(tx *web3goTypes.TransactionDetail) bool {
 	if tx.V != nil && tx.V.Uint64() >= 35 {
 		return true
 	}
@@ -164,7 +164,7 @@ func IsEip155Tx(tx *web3goTypes.Transaction) bool {
 }
 
 // IsLegacyEthTx check if the EVM transaction is legacy (pre EIP155)
-func IsLegacyEthTx(tx *web3goTypes.Transaction) bool {
+func IsLegacyEthTx(tx *web3goTypes.TransactionDetail) bool {
 	if tx.V != nil && tx.V.Uint64() == 27 || tx.V.Uint64() == 28 {
 		return true
 	}
@@ -173,6 +173,6 @@ func IsLegacyEthTx(tx *web3goTypes.Transaction) bool {
 }
 
 // IsSuccessEthTx check if the EVM transaction is success
-func IsSuccessEthTx(tx *web3goTypes.Transaction) bool {
+func IsSuccessEthTx(tx *web3goTypes.TransactionDetail) bool {
 	return tx.Status != nil && *tx.Status == ethtypes.ReceiptStatusSuccessful
 }
