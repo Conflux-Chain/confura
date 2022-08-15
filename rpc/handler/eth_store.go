@@ -121,7 +121,7 @@ func (h *EthStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (
 	return
 }
 
-func (h *EthStoreHandler) GetTransactionByHash(ctx context.Context, txHash common.Hash) (*web3Types.Transaction, error) {
+func (h *EthStoreHandler) GetTransactionByHash(ctx context.Context, txHash common.Hash) (*web3Types.TransactionDetail, error) {
 	cfxTxHash := cfxbridge.ConvertHash(txHash)
 
 	stx, err := h.store.GetTransaction(ctx, cfxTxHash)

@@ -63,7 +63,7 @@ func ExtractEthBlockExt(ethBlock *web3Types.Block) *BlockExtra {
 	}
 }
 
-func ExtractEthTransactionExt(ethTxn *web3Types.Transaction) *TransactionExtra {
+func ExtractEthTransactionExt(ethTxn *web3Types.TransactionDetail) *TransactionExtra {
 	return &TransactionExtra{
 		Accesses:             ethTxn.Accesses,
 		BlockNumber:          (*hexutil.Big)(ethTxn.BlockNumber),
