@@ -509,6 +509,10 @@ func (api *cfxAPI) GetPoSRewardByEpoch(ctx context.Context, epoch types.Epoch) (
 	return cfx.GetPoSRewardByEpoch(epoch)
 }
 
+func (api *cfxAPI) GetParamsFromVote(ctx context.Context, epoch ...*types.Epoch) (postypes.VoteParamsInfo, error) {
+	return GetCfxClientFromContext(ctx).GetParamsFromVote(epoch...)
+}
+
 func (api *cfxAPI) metricLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) {
 	isBlockRange := filter.FromBlock != nil || filter.ToBlock != nil
 	isBlockHashes := len(filter.BlockHashes) > 0
