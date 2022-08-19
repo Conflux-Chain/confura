@@ -30,7 +30,7 @@ func MustNewWeb3PayMiddlewareProvider() (*web3pay.RpcMiddlewareProvider, bool) {
 		web3pay.RpcMiddlewareProviderOption{
 			Timeout:     config.RequestTimeout,
 			BillingKey:  config.BillingKey,
-			CustomerKey: handlers.GetWeb3PayCustomerKeyFromContext,
+			CustomerKey: handlers.GetAccessTokenFromContext,
 			// rate limit is used as fallback for billing middleware.
 			BillingFallbackMw:      RateLimit,
 			BillingBatchFallbackMw: RateLimitBatch,

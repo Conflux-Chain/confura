@@ -125,12 +125,3 @@ func GetAccessTokenFromContext(ctx context.Context) (string, bool) {
 	val, ok := ctx.Value(CtxAccessToken).(string)
 	return val, ok
 }
-
-func GetWeb3PayCustomerKey(r *http.Request) string {
-	return r.URL.Query().Get("web3pay_customer_key")
-}
-
-func GetWeb3PayCustomerKeyFromContext(ctx context.Context) (string, bool) {
-	val, ok := ctx.Value(CtxWeb3PayCustomerKey).(string)
-	return val, ok
-}
