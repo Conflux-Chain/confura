@@ -42,7 +42,7 @@ cfx:
   retry: 0
   # Interval duration before each retry
   retryInterval: 1s
-  # Requestion timeout duration
+  # Request timeout duration
   requestTimeout: 3s
   # Max connections allowed per fullnode
   maxConnsPerHost: 1024
@@ -260,3 +260,14 @@ node:
 #   requestTimeout: 3s
 #   # List of core space fullnodes to be broadcasted.
 #   nodeUrls: []
+
+# Web3Pay client configurations for fee billing
+# web3pay:
+#   # Whether to enable web3pay billing
+#   enabled: false
+#   # Request timeout duration
+#   requestTimeout: 1s
+#   # Payment gateway endpoint
+#   gatewayEndpoint:
+#   # Billing auth key
+#   billingKey:

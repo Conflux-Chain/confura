@@ -24,9 +24,16 @@ func init() {
 	// panic recovery
 	rpc.HookHandleCallMsg(middlewares.Recover)
 
-	// rate limit
-	rpc.HookHandleBatch(middlewares.RateLimitBatch)
-	rpc.HookHandleCallMsg(middlewares.RateLimit)
+	// web3pay billing
+	web3payMwProvider, ok := middlewares.MustNewWeb3PayMiddlewareProvider()
+	if ok { // enabled?
+		rpc.HookHandleBatch(web3payMwProvider.BillingBatchMiddleware)
+		rpc.HookHandleCallMsg(web3payMwProvider.BillingMiddleware)
+	} else {
+		// rate limit
+		rpc.HookHandleBatch(middlewares.RateLimitBatch)
+		rpc.HookHandleCallMsg(middlewares.RateLimit)
+	}
 
 	// metrics
 	rpc.HookHandleBatch(middlewares.MetricsBatch)
@@ -49,6 +56,7 @@ func httpMiddleware(registry *rate.Registry, clientProvider interface{}) handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
+			ctx = context.WithValue(ctx, handlers.CtxWeb3PayCustomerKey, handlers.GetWeb3PayCustomerKey(r))
 			ctx = context.WithValue(ctx, handlers.CtxAccessToken, handlers.GetAccessToken(r))
 			ctx = context.WithValue(ctx, handlers.CtxKeyRealIP, handlers.GetIPAddress(r))
 			ctx = context.WithValue(ctx, handlers.CtxKeyRateRegistry, registry)
