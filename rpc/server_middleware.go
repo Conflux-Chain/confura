@@ -9,6 +9,8 @@ import (
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/confura/util/rpc/middlewares"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/spf13/viper"
+
 	"github.com/openweb3/go-rpc-provider"
 )
 
@@ -24,9 +26,22 @@ func init() {
 	// panic recovery
 	rpc.HookHandleCallMsg(middlewares.Recover)
 
-	// rate limit
-	rpc.HookHandleBatch(middlewares.RateLimitBatch)
-	rpc.HookHandleCallMsg(middlewares.RateLimit)
+	// use web3pay billing?
+	if viper.GetBool("web3pay.enabled") {
+		// rate limit is used as fallback for billing middleware.
+		billingMwOption := middlewares.BillingMwProviderOption{
+			Fallback:      middlewares.RateLimit,
+			BatchFallback: middlewares.RateLimitBatch,
+		}
+		billingMwProvider := middlewares.MustNewBillingMiddlewareProviderFromViper(billingMwOption)
+
+		rpc.HookHandleBatch(billingMwProvider.BillingBatch)
+		rpc.HookHandleCallMsg(billingMwProvider.Billing)
+	} else {
+		// rate limit
+		rpc.HookHandleBatch(middlewares.RateLimitBatch)
+		rpc.HookHandleCallMsg(middlewares.RateLimit)
+	}
 
 	// metrics
 	rpc.HookHandleBatch(middlewares.MetricsBatch)
@@ -49,6 +64,7 @@ func httpMiddleware(registry *rate.Registry, clientProvider interface{}) handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
+			ctx = context.WithValue(ctx, handlers.CtxWeb3PayConsumerKey, handlers.GetWeb3PayConsumerKey(r))
 			ctx = context.WithValue(ctx, handlers.CtxAccessToken, handlers.GetAccessToken(r))
 			ctx = context.WithValue(ctx, handlers.CtxKeyRealIP, handlers.GetIPAddress(r))
 			ctx = context.WithValue(ctx, handlers.CtxKeyRateRegistry, registry)
