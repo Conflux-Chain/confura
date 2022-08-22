@@ -6,40 +6,31 @@ import (
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	web3pay "github.com/Conflux-Chain/web3pay-service/client"
+	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 )
 
-type web3PayConfig struct {
-	Enabled         bool
-	BillingKey      string
-	GatewayEndpoint string
-	RequestTimeout  time.Duration `default:"1s"`
-}
-
-func MustNewWeb3PayMiddlewareProvider() (*web3pay.RpcMiddlewareProvider, bool) {
-	var config web3PayConfig
+func MustNewWeb3PayClient() (*web3pay.Client, bool) {
+	var config struct {
+		web3pay.ClientConfig `mapstructure:",squash"`
+		Enabled              bool
+		Timeout              time.Duration `default:"200ms"`
+	}
 	viper.MustUnmarshalKey("web3pay", &config)
+	config.ClientConfig.Timeout = config.Timeout // set default
 
 	if !config.Enabled {
-		logrus.Info("Web3pay billing RPC middleware not enabled")
 		return nil, false
 	}
 
-	provider, err := web3pay.NewRpcMiddlewareProvider(
-		config.GatewayEndpoint,
-		web3pay.RpcMiddlewareProviderOption{
-			Timeout:     config.RequestTimeout,
-			BillingKey:  config.BillingKey,
-			CustomerKey: handlers.GetAccessTokenFromContext,
-			// rate limit is used as fallback for billing middleware.
-			BillingFallbackMw:      RateLimit,
-			BillingBatchFallbackMw: RateLimitBatch,
-		},
-	)
-
+	client, err := web3pay.NewClient(&config.ClientConfig)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to new Web3Pay RPC middleware provider")
+		logrus.WithError(err).Fatal("Failed to new Web3Pay client")
 	}
 
-	return provider, true
+	return client, true
+}
+
+func Billing(client *web3pay.Client) rpc.HandleCallMsgMiddleware {
+	return web3pay.BillingMiddleware(client, handlers.GetAccessTokenFromContext)
 }

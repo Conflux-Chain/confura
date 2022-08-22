@@ -10,6 +10,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/rpc/middlewares"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -25,15 +26,14 @@ func init() {
 	rpc.HookHandleCallMsg(middlewares.Recover)
 
 	// web3pay billing
-	web3payMwProvider, ok := middlewares.MustNewWeb3PayMiddlewareProvider()
-	if ok { // enabled?
-		rpc.HookHandleBatch(web3payMwProvider.BillingBatchMiddleware)
-		rpc.HookHandleCallMsg(web3payMwProvider.BillingMiddleware)
-	} else {
-		// rate limit
-		rpc.HookHandleBatch(middlewares.RateLimitBatch)
-		rpc.HookHandleCallMsg(middlewares.RateLimit)
+	if web3payClient, ok := middlewares.MustNewWeb3PayClient(); ok {
+		logrus.Info("Web3Pay billing RPC middleware enabled")
+		rpc.HookHandleCallMsg(middlewares.Billing(web3payClient))
 	}
+
+	// rate limit
+	rpc.HookHandleBatch(middlewares.RateLimitBatch)
+	rpc.HookHandleCallMsg(middlewares.RateLimit)
 
 	// metrics
 	rpc.HookHandleBatch(middlewares.MetricsBatch)

@@ -261,13 +261,13 @@ node:
 #   # List of core space fullnodes to be broadcasted.
 #   nodeUrls: []
 
-# Web3Pay client configurations for fee billing
+# # Web3Pay client configurations for fee billing
 # web3pay:
 #   # Whether to enable web3pay billing
 #   enabled: false
 #   # Request timeout duration
-#   requestTimeout: 1s
-#   # Payment gateway endpoint
-#   gatewayEndpoint:
+#   timeout: 200ms
+#   # API gateway endpoint
+#   gateway:
 #   # Billing auth key
 #   billingKey:
