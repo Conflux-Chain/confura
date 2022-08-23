@@ -1,8 +1,6 @@
 package middlewares
 
 import (
-	"time"
-
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	web3pay "github.com/Conflux-Chain/web3pay-service/client"
@@ -14,16 +12,14 @@ func MustNewWeb3PayClient() (*web3pay.Client, bool) {
 	var config struct {
 		web3pay.ClientConfig `mapstructure:",squash"`
 		Enabled              bool
-		Timeout              time.Duration `default:"200ms"`
 	}
 	viper.MustUnmarshalKey("web3pay", &config)
-	config.ClientConfig.Timeout = config.Timeout // set default
 
 	if !config.Enabled {
 		return nil, false
 	}
 
-	client, err := web3pay.NewClient(&config.ClientConfig)
+	client, err := web3pay.NewClient(config.ClientConfig)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new Web3Pay client")
 	}
