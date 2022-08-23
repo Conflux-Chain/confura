@@ -6,14 +6,11 @@ import (
 
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	web3pay "github.com/Conflux-Chain/web3pay-service/client"
-	lru "github.com/hashicorp/golang-lru"
 	"github.com/openweb3/go-rpc-provider"
-	"github.com/sirupsen/logrus"
 )
 
 var (
-	errRateLimit           = errors.New("too many requests")
-	vipAccessTokenCache, _ = lru.New(2000)
+	errRateLimit = errors.New("too many requests")
 )
 
 func RateLimitBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
@@ -34,26 +31,9 @@ func RateLimitBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
 func RateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
 		// check billing status
-		if bs, ok := web3pay.BillingStatusFromContext(ctx); ok {
-			token, _ := handlers.GetAccessTokenFromContext(ctx)
-
-			// serve on billing successfully
-			if bs.Success() {
-				vipAccessTokenCache.Add(token, struct{}{})
-				return next(ctx, msg)
-			}
-
-			// handle internal server errors
-			if err, ok := bs.InternalServerError(); ok {
-				logrus.WithField("msg", msg).WithError(err).Error("Billing internal server error")
-
-				// try the best not to block VIP users due to internal server errors
-				if _, ok := vipAccessTokenCache.Get(token); ok {
-					return next(ctx, msg)
-				}
-			}
-
-			// otherwise fallback to rate limit
+		if bs, ok := web3pay.BillingStatusFromContext(ctx); ok && bs.Success() {
+			// serve directly on billing successfully, otherwise fallback to rate limit
+			return next(ctx, msg)
 		}
 
 		// white list allow?
