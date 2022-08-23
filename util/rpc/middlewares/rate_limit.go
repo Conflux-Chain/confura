@@ -5,10 +5,13 @@ import (
 	"errors"
 
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
+	web3pay "github.com/Conflux-Chain/web3pay-service/client"
 	"github.com/openweb3/go-rpc-provider"
 )
 
-var errRateLimit = errors.New("too many requests")
+var (
+	errRateLimit = errors.New("too many requests")
+)
 
 func RateLimitBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
 	return func(ctx context.Context, msgs []*rpc.JsonRpcMessage) []*rpc.JsonRpcMessage {
@@ -27,6 +30,12 @@ func RateLimitBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
 
 func RateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
+		// check billing status
+		if bs, ok := web3pay.BillingStatusFromContext(ctx); ok && bs.Success() {
+			// serve directly on billing successfully, otherwise fallback to rate limit
+			return next(ctx, msg)
+		}
+
 		// white list allow?
 		if handlers.WhiteListAllow(ctx) {
 			return next(ctx, msg)
