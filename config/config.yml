@@ -55,7 +55,7 @@ eth:
   retry: 0
   # Interval duration before each retry
   retryInterval: 1s
-  # Requestion timeout duration
+  # Request timeout duration
   requestTimeout: 3s
   # Max connections allowed per fullnode
   maxConnsPerHost: 1024
@@ -113,7 +113,7 @@ sync:
 #     username: root
 #     password: root
 #   report:
-#     # Whether to report collected metrics to InfluxDB periodly
+#     # Whether to report collected metrics to InfluxDB periodically
 #     enabled: false
 #     interval: 10s
 
@@ -209,7 +209,7 @@ node:
   ethurls: [http://evmtestnet.confluxrpc.com]
   # Group `ethlogs` fullnodes
   ethLogNodes: [http://evmtestnet.confluxrpc.com]
-  # # Consitent hash ring configurations
+  # # Consistent hash ring configurations
   # hashRing:
   #   partitionCount: 15739
   #   replicationFactor: 51
@@ -248,7 +248,7 @@ node:
   #     # Failover fullnode if group `ethhttp` is capsized
   #     ethUrl:
 
-# # Transaction relay configurtions
+# # Transaction relay configurations
 # relay:
 #   # Channel size to buffer relay transaction
 #   bufferSize: 2000
