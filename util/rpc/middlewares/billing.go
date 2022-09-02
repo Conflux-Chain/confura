@@ -28,10 +28,7 @@ func MustNewWeb3PayClient() (*web3pay.Client, bool) {
 }
 
 func Billing(client *web3pay.Client) rpc.HandleCallMsgMiddleware {
-	return web3pay.Openweb3BillingMiddleware(&web3pay.Ow3BillingMiddlewareOption{
-		BillingMiddlewareOption: web3pay.BillingMiddlewareOption{
-			Client:              client,
-			CustomerKeyProvider: handlers.GetAccessTokenFromContext,
-		},
-	})
+	mwoption := web3pay.NewOw3BillingMiddlewareOptionWithClient(client)
+	mwoption.CustomerKeyProvider = handlers.GetAccessTokenFromContext
+	return web3pay.Openweb3BillingMiddleware(mwoption)
 }
