@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 type Protocol string
@@ -20,8 +21,13 @@ const (
 	ProtocolWS   = "WS"
 )
 
-// DefaultShutdownTimeout is default timeout to shutdown RPC server.
-var DefaultShutdownTimeout = 3 * time.Second
+var (
+	// DefaultShutdownTimeout is default timeout to shutdown RPC server.
+	DefaultShutdownTimeout = 3 * time.Second
+
+	// defaultWsPingInterval the default websocket ping/pong heartbeating interval.
+	defaultWsPingInterval = 10 * time.Second
+)
 
 // Server serves JSON RPC services.
 type Server struct {
@@ -50,8 +56,11 @@ func MustNewServer(name string, rpcs map[string]interface{}, middlewares ...hand
 		Handler: node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
 	}
 
+	viper.SetDefault("rpc.wsPingInterval", defaultWsPingInterval)
 	wsServer := http.Server{
-		Handler: handler.WebsocketHandler([]string{"*"}),
+		Handler: handler.WebsocketHandler([]string{"*"}, rpc.WebsocketOption{
+			WsPingInterval: viper.GetDuration("rpc.wsPingInterval"),
+		}),
 	}
 
 	for i := len(middlewares) - 1; i >= 0; i-- {
