@@ -7,6 +7,8 @@ rpc:
   endpoint: ":22537"
   # Served websocket endpoint
   # wsEndpoint: ":22535"
+  # The websocket ping/pong heartbeating interval
+  # wsPingInterval: "10s"
   # Core space bridge server configurations
   cfxBridge:
     # EVM space fullnode endpoint
@@ -30,7 +32,7 @@ ethrpc:
   # Served HTTP endpoint
   endpoint: ":28545"
   # Served websocket endpoint
-  #wsEndpoint: ":28535"
+  # wsEndpoint: ":28535"
 
 # Core space SDK client configurations
 cfx:
