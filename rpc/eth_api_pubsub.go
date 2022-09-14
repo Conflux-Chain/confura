@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"sync/atomic"
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util/metrics"
@@ -11,12 +10,6 @@ import (
 	"github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-)
-
-var (
-	// pubsub session statistics
-	countSessionsForEthNewHeadsPubsub = int64(0)
-	countSessionsForEthLogsPubsub     = int64(0)
 )
 
 // eSpace PubSub notification
@@ -54,11 +47,11 @@ func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 	nodeName := rpcutil.Url2NodeName(psCtx.eth.URL)
 	counter := metrics.Registry.PubSub.Sessions("eth", "new_heads", nodeName)
-	counter.Update(atomic.AddInt64(&countSessionsForEthNewHeadsPubsub, 1))
+	counter.Inc(1)
 
 	go func() {
 		defer dSub.unsubscribe()
-		defer counter.Update(atomic.AddInt64(&countSessionsForEthNewHeadsPubsub, -1))
+		defer counter.Dec(1)
 
 		for {
 			select {
@@ -115,11 +108,11 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 
 	nodeName := rpcutil.Url2NodeName(psCtx.eth.URL)
 	counter := metrics.Registry.PubSub.Sessions("eth", "logs", nodeName)
-	counter.Update(atomic.AddInt64(&countSessionsForEthLogsPubsub, 1))
+	counter.Inc(1)
 
 	go func() {
 		defer dSub.unsubscribe()
-		defer counter.Update(atomic.AddInt64(&countSessionsForEthLogsPubsub, -1))
+		defer counter.Dec(1)
 
 		for {
 			select {

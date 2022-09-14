@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"sync/atomic"
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util/metrics"
@@ -12,13 +11,6 @@ import (
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-)
-
-var (
-	// pubsub session statistics
-	countSessionsForNewHeadsPubsub = int64(0)
-	countSessionsForEpochsPubsub   = int64(0)
-	countSessionsForLogsPubsub     = int64(0)
 )
 
 // PubSub notification
@@ -54,11 +46,11 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 	nodeName := rpcutil.Url2NodeName(psCtx.cfx.GetNodeURL())
 	counter := metrics.Registry.PubSub.Sessions("cfx", "new_heads", nodeName)
-	counter.Update(atomic.AddInt64(&countSessionsForNewHeadsPubsub, 1))
+	counter.Inc(1)
 
 	go func() {
 		defer dSub.unsubscribe()
-		defer counter.Update(atomic.AddInt64(&countSessionsForNewHeadsPubsub, -1))
+		defer counter.Dec(1)
 
 		for {
 			select {
@@ -121,11 +113,11 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 
 	nodeName := rpcutil.Url2NodeName(psCtx.cfx.GetNodeURL())
 	counter := metrics.Registry.PubSub.Sessions("cfx", "epochs", nodeName)
-	counter.Update(atomic.AddInt64(&countSessionsForEpochsPubsub, 1))
+	counter.Inc(1)
 
 	go func() {
 		defer dSub.unsubscribe()
-		defer counter.Update(atomic.AddInt64(&countSessionsForEpochsPubsub, -1))
+		defer counter.Dec(1)
 
 		for {
 			select {
@@ -182,11 +174,11 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 
 	nodeName := rpcutil.Url2NodeName(psCtx.cfx.GetNodeURL())
 	counter := metrics.Registry.PubSub.Sessions("cfx", "logs", nodeName)
-	counter.Update(atomic.AddInt64(&countSessionsForLogsPubsub, 1))
+	counter.Inc(1)
 
 	go func() {
 		defer dSub.unsubscribe()
-		defer counter.Update(atomic.AddInt64(&countSessionsForLogsPubsub, -1))
+		defer counter.Dec(1)
 
 		for {
 			select {
