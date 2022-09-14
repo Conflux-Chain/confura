@@ -40,6 +40,10 @@ func init() {
 			Nodes:    cfg.EthURLs,
 			Failover: cfg.Router.ChainedFailover.EthURL,
 		},
+		GroupEthWs: {
+			Nodes:    cfg.EthWSURLs,
+			Failover: cfg.Router.ChainedFailover.EthWSURL,
+		},
 		GroupEthLogs: {
 			Nodes: cfg.EthLogNodes,
 		},
@@ -52,6 +56,7 @@ type config struct {
 	URLs         []string
 	EthURLs      []string
 	WSURLs       []string
+	EthWSURLs    []string
 	LogNodes     []string
 	EthLogNodes  []string
 	ArchiveNodes []string
@@ -78,9 +83,10 @@ type config struct {
 		NodeRPCURL      string
 		EthNodeRPCURL   string
 		ChainedFailover struct {
-			URL    string
-			WSURL  string
-			EthURL string
+			URL      string
+			WSURL    string
+			EthURL   string
+			EthWSURL string
 		}
 	}
 }
