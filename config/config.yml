@@ -211,6 +211,8 @@ node:
   ethurls: [http://evmtestnet.confluxrpc.com]
   # Group `ethlogs` fullnodes
   ethLogNodes: [http://evmtestnet.confluxrpc.com]
+  # Group `ethws` fullnodes
+  # ethWsUrls: [wss://evmtestnet.confluxrpc.com/ws]
   # # Consistent hash ring configurations
   # hashRing:
   #   partitionCount: 15739
@@ -249,6 +251,8 @@ node:
   #     wsUrl:
   #     # Failover fullnode if group `ethhttp` is capsized
   #     ethUrl:
+  #     # Failover fullnode if group `ethws` is capsized
+  #     ethWsUrl:
 
 # # Transaction relay configurations
 # relay:

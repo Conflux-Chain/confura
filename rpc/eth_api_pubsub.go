@@ -6,19 +6,20 @@ import (
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
-// PubSub notification
-// TODO: restrict total sessions and sessions per IP, otherwise it maybe susceptible
-// to flooding attack.
+// eSpace PubSub notification
+// TODO:
+// 1. restrict total sessions and sessions per IP, otherwise it maybe susceptible
+// to flooding attack;
+// 2. `newPendingTransactions` and `syncing` are not implemented in the fullnode yet.
 
 // NewHeads send a notification each time a new header (block) is appended to the chain.
-func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
+func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
 
 	if !supported {
@@ -33,8 +34,8 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 	rpcSub := psCtx.notifier.CreateSubscription()
 
-	headersCh := make(chan *types.BlockHeader, pubsubChannelBufferSize)
-	dClient := getOrNewDelegateClient(psCtx.cfx)
+	headersCh := make(chan *types.Header, pubsubChannelBufferSize)
+	dClient := getOrNewEthDelegateClient(psCtx.eth)
 
 	dSub, err := dClient.delegateSubscribeNewHeads(rpcSub.ID, headersCh)
 	if err != nil {
@@ -44,8 +45,8 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 	logger := logrus.WithField("rpcSubID", rpcSub.ID)
 
-	nodeName := rpcutil.Url2NodeName(psCtx.cfx.GetNodeURL())
-	counter := metrics.Registry.PubSub.Sessions("cfx", "new_heads", nodeName)
+	nodeName := rpcutil.Url2NodeName(psCtx.eth.URL)
+	counter := metrics.Registry.PubSub.Sessions("eth", "new_heads", nodeName)
 	counter.Inc(1)
 
 	go func() {
@@ -63,7 +64,7 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 				psCtx.rpcClient.Close()
 				return
 
-			case err = <-rpcSub.Err():
+			case err = <-rpcSub.Err(): // client connection closed or error
 				logger.WithError(err).Debug("NewHeads pubsub subscription error")
 				return
 
@@ -77,76 +78,9 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 	return rpcSub, nil
 }
 
-// Epochs send a notification each time a new epoch is appended to the chain.
-func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subscription, error) {
-	if subEpoch == nil {
-		subEpoch = types.EpochLatestMined
-	}
-
-	if !subEpoch.Equals(types.EpochLatestMined) && !subEpoch.Equals(types.EpochLatestState) {
-		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
-	}
-
-	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
-	if !supported {
-		logrus.WithError(err).Errorf("Epochs pubsub notification unsupported (%v)", subEpoch)
-		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
-	}
-
-	if err != nil {
-		logrus.WithError(err).Errorf("Epochs pubsub context error (%v)", subEpoch)
-		return &rpc.Subscription{}, errSubscriptionProxyError
-	}
-
-	rpcSub := psCtx.notifier.CreateSubscription()
-
-	epochsCh := make(chan *types.WebsocketEpochResponse, pubsubChannelBufferSize)
-	dClient := getOrNewDelegateClient(psCtx.cfx)
-
-	dSub, err := dClient.delegateSubscribeEpochs(rpcSub.ID, epochsCh, *subEpoch)
-	if err != nil {
-		logrus.WithError(err).Errorf("Failed to delegate pubsub epochs subscription (%v)", subEpoch)
-		return &rpc.Subscription{}, errSubscriptionProxyError
-	}
-
-	logger := logrus.WithField("rpcSubID", rpcSub.ID)
-
-	nodeName := rpcutil.Url2NodeName(psCtx.cfx.GetNodeURL())
-	counter := metrics.Registry.PubSub.Sessions("cfx", "epochs", nodeName)
-	counter.Inc(1)
-
-	go func() {
-		defer dSub.unsubscribe()
-		defer counter.Dec(1)
-
-		for {
-			select {
-			case epoch := <-epochsCh:
-				logger.WithField("epoch", epoch).Debugf("Received new epoch from pubsub delegate (%v)", subEpoch)
-				psCtx.notifier.Notify(rpcSub.ID, epoch)
-
-			case err = <-dSub.err: // delegate subscription error
-				logger.WithError(err).Debugf("Received error from epochs pubsub delegate (%v)", subEpoch)
-				psCtx.rpcClient.Close()
-				return
-
-			case err = <-rpcSub.Err():
-				logger.WithError(err).Debugf("Epochs pubsub subscription error (%v)", subEpoch)
-				return
-
-			case <-psCtx.notifier.Closed():
-				logger.Debugf("Epochs pubsub connection closed (%v)", subEpoch)
-				return
-			}
-		}
-	}()
-
-	return rpcSub, nil
-}
-
 // Logs creates a subscription that fires for all new log that match the given filter criteria.
-func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subscription, error) {
-	metrics.Registry.PubSub.InputLogFilter("cfx").Mark(!isEmptyLogFilter(filter))
+func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Subscription, error) {
+	metrics.Registry.PubSub.InputLogFilter("eth").Mark(!isEmptyEthLogFilter(filter))
 
 	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
 	if !supported {
@@ -161,8 +95,8 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 
 	rpcSub := psCtx.notifier.CreateSubscription()
 
-	logsCh := make(chan *types.SubscriptionLog, pubsubChannelBufferSize)
-	dClient := getOrNewDelegateClient(psCtx.cfx)
+	logsCh := make(chan *types.Log, pubsubChannelBufferSize)
+	dClient := getOrNewEthDelegateClient(psCtx.eth)
 
 	dSub, err := dClient.delegateSubscribeLogs(rpcSub.ID, logsCh, filter)
 	if err != nil {
@@ -172,8 +106,8 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 
 	logger := logrus.WithField("rpcSubID", rpcSub.ID)
 
-	nodeName := rpcutil.Url2NodeName(psCtx.cfx.GetNodeURL())
-	counter := metrics.Registry.PubSub.Sessions("cfx", "logs", nodeName)
+	nodeName := rpcutil.Url2NodeName(psCtx.eth.URL)
+	counter := metrics.Registry.PubSub.Sessions("eth", "logs", nodeName)
 	counter.Inc(1)
 
 	go func() {
@@ -205,14 +139,14 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 	return rpcSub, nil
 }
 
-type pubsubContext struct {
+type epubsubContext struct {
 	notifier  *rpc.Notifier
 	rpcClient *rpc.Client
-	cfx       sdk.ClientOperator
+	eth       *node.Web3goClient
 }
 
 // pubsubCtxFromContext returns the pubsub context with member variables stored in ctx, if any.
-func (api *cfxAPI) pubsubCtxFromContext(ctx context.Context) (psCtx *pubsubContext, supported bool, err error) {
+func (api *ethAPI) pubsubCtxFromContext(ctx context.Context) (psCtx *epubsubContext, supported bool, err error) {
 	notifier, supported := rpc.NotifierFromContext(ctx)
 	if !supported {
 		err = errors.New("failed to get notifier from context")
@@ -225,12 +159,12 @@ func (api *cfxAPI) pubsubCtxFromContext(ctx context.Context) (psCtx *pubsubConte
 		return
 	}
 
-	cfx, err := api.provider.GetClientByIPGroup(ctx, node.GroupCfxWs)
+	eth, err := api.provider.GetClientByIPGroup(ctx, node.GroupEthWs)
 	if err != nil {
-		err = errors.WithMessage(err, "failed to get cfx wsclient by ip")
+		err = errors.WithMessage(err, "failed to get eth wsclient by ip")
 		return
 	}
 
-	psCtx = &pubsubContext{notifier, rpcClient, cfx}
+	psCtx = &epubsubContext{notifier, rpcClient, eth}
 	return
 }

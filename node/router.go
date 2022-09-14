@@ -28,6 +28,7 @@ const (
 
 	// evm space fullnode groups
 	GroupEthHttp = "ethhttp"
+	GroupEthWs   = "ethws"
 	GroupEthLogs = "ethlogs"
 )
 

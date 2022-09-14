@@ -25,7 +25,7 @@ const (
 	delegateStatusOK
 
 	// default pubsub channel buffer size
-	pubsubChannelBufferSize = 1000
+	pubsubChannelBufferSize = 2000
 
 	// pre-defined delegate context name
 	nhCtxName      = "new_heads"           // for newHeads subscription

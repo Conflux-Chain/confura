@@ -173,8 +173,8 @@ func (*NodeManagerMetrics) NodeAvailability(space, group, node string) string {
 // PubSub metrics
 type PubSubMetrics struct{}
 
-func (*PubSubMetrics) Sessions(space, topic, node string) metrics.Counter {
-	return GetOrRegisterCounter("infura/pubsub/%v/sessions/%v/%v", space, topic, node)
+func (*PubSubMetrics) Sessions(space, topic, node string) metrics.Gauge {
+	return GetOrRegisterGauge("infura/pubsub/%v/sessions/%v/%v", space, topic, node)
 }
 
 func (*PubSubMetrics) InputLogFilter(space string) Percentage {

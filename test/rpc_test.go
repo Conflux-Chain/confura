@@ -140,7 +140,6 @@ func TestGetLogs(t *testing.T) {
 	testGetLogs(t, 8, types.LogFilter{
 		FromEpoch: types.NewEpochNumberUint64(10477303),
 		ToEpoch:   types.NewEpochNumberUint64(10477315),
-		Limit:     types.NewUint64(8),
 	})
 }
 
