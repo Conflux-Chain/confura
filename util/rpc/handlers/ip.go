@@ -5,6 +5,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -113,12 +114,16 @@ func GetAccessToken(r *http.Request) string {
 
 	// access token path pattern:
 	// http://example.com/${accessToken}...
-	key := strings.TrimLeft(r.URL.Path, "/")
+	key := strings.TrimLeft(r.URL.EscapedPath(), "/")
 	if idx := strings.Index(key, "/"); idx > 0 {
 		key = key[:idx]
 	}
 
-	return key
+	if key, err := url.PathUnescape(key); err == nil {
+		return key
+	}
+
+	return ""
 }
 
 func GetAccessTokenFromContext(ctx context.Context) (string, bool) {
