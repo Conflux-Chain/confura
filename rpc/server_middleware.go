@@ -56,7 +56,10 @@ func httpMiddleware(registry *rate.Registry, clientProvider interface{}) handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			ctx = context.WithValue(ctx, handlers.CtxAccessToken, handlers.GetAccessToken(r))
+			if token := handlers.GetAccessToken(r); len(token) > 0 { // optional
+				ctx = context.WithValue(ctx, handlers.CtxAccessToken, token)
+			}
+
 			ctx = context.WithValue(ctx, handlers.CtxKeyRealIP, handlers.GetIPAddress(r))
 			ctx = context.WithValue(ctx, handlers.CtxKeyRateRegistry, registry)
 			ctx = context.WithValue(ctx, ctxKeyClientProvider, clientProvider)

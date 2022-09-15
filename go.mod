@@ -4,8 +4,8 @@ go 1.15
 
 require (
 	github.com/Conflux-Chain/go-conflux-sdk v1.4.2
-	github.com/Conflux-Chain/go-conflux-util v0.0.0-20220216032819-554815f9dbe6
-	github.com/Conflux-Chain/web3pay-service v0.0.0-20220902035042-5c192d025339
+	github.com/Conflux-Chain/go-conflux-util v0.0.0-20220907035343-2d1233bccd70
+	github.com/Conflux-Chain/web3pay-service v0.0.0-20220915034912-b5c10ef3163a
 	github.com/buraksezer/consistent v0.9.0
 	github.com/cespare/xxhash v1.1.0
 	github.com/ethereum/go-ethereum v1.10.15
