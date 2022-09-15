@@ -113,7 +113,7 @@ func GetAccessToken(r *http.Request) string {
 	}
 
 	// access token path pattern:
-	// http://example.com/${apiKey}...
+	// http://example.com/${accessToken}...
 	key := strings.TrimLeft(r.URL.EscapedPath(), "/")
 	if idx := strings.Index(key, "/"); idx > 0 {
 		key = key[:idx]
