@@ -115,7 +115,9 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.cfxDB, prunedHandler)
 
 		// periodically reload rate limit settings from db
-		go rate.DefaultRegistryCfx.AutoReload(15*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs)
+		go rate.DefaultRegistryCfx.AutoReload(
+			15*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs, storeCtx.cfxDB.LoadRateLimitKeyset,
+		)
 	}
 
 	// initialize RPC server
@@ -144,7 +146,9 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx st
 		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.ethDB)
 
 		// periodically reload rate limit settings from db
-		go rate.DefaultRegistryEth.AutoReload(10*time.Second, storeCtx.ethDB.LoadRateLimitConfigs)
+		go rate.DefaultRegistryEth.AutoReload(
+			15*time.Second, storeCtx.ethDB.LoadRateLimitConfigs, storeCtx.cfxDB.LoadRateLimitKeyset,
+		)
 	}
 
 	// initialize RPC server
