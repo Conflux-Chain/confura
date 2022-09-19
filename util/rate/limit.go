@@ -24,33 +24,34 @@ type visitor struct {
 	lastSeen time.Time     // used for GC when visitor inactive for a while
 }
 
-// IpLimiter is used to limit requests from different users.
-type IpLimiter struct {
+// VistingLimiter is used to limit visiting requests made by some entity of specific type
+// using token bucket algorithm.
+type VistingLimiter struct {
 	Option
 
-	// ip => visitor
+	// limit entity (eg., IP or API key etc.) => visitor
 	visitors map[string]*visitor
 
 	mu sync.Mutex
 }
 
-func NewIpLimiter(rate rate.Limit, burst int) *IpLimiter {
-	return &IpLimiter{
+func NewVisitingLimiter(rate rate.Limit, burst int) *VistingLimiter {
+	return &VistingLimiter{
 		Option:   Option{rate, burst},
 		visitors: make(map[string]*visitor),
 	}
 }
 
-func (l *IpLimiter) Allow(ip string, n int) bool {
+func (l *VistingLimiter) Allow(entity string, n int) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	v, ok := l.visitors[ip]
+	v, ok := l.visitors[entity]
 	if !ok {
 		v = &visitor{
 			limiter: rate.NewLimiter(l.Rate, l.Burst),
 		}
-		l.visitors[ip] = v
+		l.visitors[entity] = v
 	}
 
 	v.lastSeen = time.Now()
@@ -58,20 +59,20 @@ func (l *IpLimiter) Allow(ip string, n int) bool {
 	return v.limiter.AllowN(v.lastSeen, n)
 }
 
-func (l *IpLimiter) GC(timeout time.Duration) {
+func (l *VistingLimiter) GC(timeout time.Duration) {
 	now := time.Now()
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	for ip, v := range l.visitors {
+	for entity, v := range l.visitors {
 		if v.lastSeen.Add(timeout).Before(now) {
-			delete(l.visitors, ip)
+			delete(l.visitors, entity)
 		}
 	}
 }
 
-func (l *IpLimiter) Update(option Option) bool {
+func (l *VistingLimiter) Update(option Option) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 

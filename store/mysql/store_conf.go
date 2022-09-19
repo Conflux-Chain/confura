@@ -1,11 +1,13 @@
 package mysql
 
 import (
+	"crypto/md5"
+	"encoding/json"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/rate"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -13,13 +15,16 @@ import (
 
 const (
 	MysqlConfKeyReorgVersion = "reorg.version"
+
+	rateLimitConfigStrategyPrefix    = "ratelimit.strategy."
+	rateLimitStrategySqlMatchPattern = rateLimitConfigStrategyPrefix + "%"
 )
 
 // configuration tables
 type conf struct {
 	ID        uint32
 	Name      string `gorm:"unique;size:128;not null"` // config name
-	Value     string `gorm:"size:256;not null"`        // config value
+	Value     string `gorm:"size:32698;not null"`      // config value
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -89,9 +94,11 @@ func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
 	return cs.StoreConfig(MysqlConfKeyReorgVersion, newVersion)
 }
 
+// ratelimit config
+
 func (cs *confStore) LoadRateLimitConfigs() *rate.Config {
 	var cfgs []conf
-	if err := cs.db.Where("name LIKE ?", "ratelimit.%").Find(&cfgs).Error; err != nil {
+	if err := cs.db.Where("name LIKE ?", rateLimitStrategySqlMatchPattern).Find(&cfgs).Error; err != nil {
 		logrus.WithError(err).Error("Failed to load rate limit config from db")
 		return nil
 	}
@@ -100,45 +107,41 @@ func (cs *confStore) LoadRateLimitConfigs() *rate.Config {
 		return &rate.Config{}
 	}
 
-	rconf := &rate.Config{
-		IpLimitOpts: make(map[string]rate.Option),
-		WhiteList:   make(map[string]struct{}),
-	}
+	var strategies []*rate.Strategy
 
-	namePrefixLen := len("ratelimit.")
-
+	// load ratelimit strategies
 	for _, v := range cfgs {
-		name := v.Name[namePrefixLen:]
-		if len(name) == 0 {
-			logrus.WithField("cfg", v).Warn("Invalid rate limit config, name is too short")
+		strategy, err := cs.loadRateLimitStrategy(v)
+		if err != nil {
+			logrus.WithField("cfg", v).WithError(err).Warn("Invalid rate limit strategy config")
 			continue
 		}
 
-		if strings.EqualFold(name, "whitelist") { // add white list
-			whiteList := strings.Split(v.Value, ",")
-			for _, name := range whiteList {
-				rconf.WhiteList[name] = struct{}{}
-			}
-			continue
+		if strategy != nil {
+			strategies = append(strategies, strategy)
 		}
-
-		fields := strings.Split(v.Value, ",")
-		if len(fields) != 2 {
-			logrus.WithField("cfg", v).Warn("Invalid rate limit config, value fields mismatch")
-		}
-
-		r, err := strconv.Atoi(fields[0])
-		if err != nil {
-			logrus.WithField("cfg", v).Warn("Invalid rate limit config, rate is not number")
-		}
-
-		burst, err := strconv.Atoi(fields[1])
-		if err != nil {
-			logrus.WithField("cfg", v).Warn("Invalid rate limit config, burst is not number")
-		}
-
-		rconf.IpLimitOpts[name] = rate.NewOption(r, burst)
 	}
 
-	return rconf
+	return &rate.Config{Strategies: strategies}
+}
+
+func (cs *confStore) loadRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
+	// eg., ratelimit.strategy.whitelist
+	name := cfg.Name[len(rateLimitConfigStrategyPrefix):]
+	if len(name) == 0 {
+		return nil, errors.New("name is too short")
+	}
+
+	strategy := rate.Strategy{}
+	data := []byte(cfg.Value)
+
+	if err := json.Unmarshal(data, &strategy); err != nil {
+		return nil, errors.WithMessage(err, "malformed json string")
+	}
+
+	strategy.ID = cfg.ID
+	strategy.Name = name
+	strategy.MD5 = md5.Sum(data)
+
+	return &strategy, nil
 }

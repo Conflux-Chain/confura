@@ -1,19 +1,44 @@
 package rate
 
 import (
+	"sort"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
 type Config struct {
-	IpLimitOpts map[string]Option   // ip rate limit configs
-	WhiteList   map[string]struct{} // white list
+	Strategies []*Strategy // limit strategies
 }
 
-func (m *Registry) AutoReload(interval time.Duration, reloader func() *Config) {
+type KeyInfo struct {
+	SID uint32 // bound strategy ID
+	Key string // limit key
+}
+
+type KeySetFilter struct {
+	SIDs   []uint32 // strategy IDs
+	KeySet []string // limit keyset
+	Limit  int      // result limit size (<= 0 means none)
+}
+
+// KeySetLoader limit keyset loader
+type KeySetLoader func(filter *KeySetFilter) ([]*KeyInfo, error)
+
+func (m *Registry) AutoReload(interval time.Duration, reloader func() *Config, kloader KeySetLoader) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+
+	// init registry key loader
+	m.keyLoader = func(key string) (*KeyInfo, error) {
+		kinfos, err := kloader(&KeySetFilter{KeySet: []string{key}})
+		if err == nil && len(kinfos) > 0 {
+			return kinfos[0], nil
+		}
+		return nil, err
+	}
+
+	// TODO: warm up limit key cache for better performance
 
 	// load immediately at first
 	rconf := reloader()
@@ -23,6 +48,8 @@ func (m *Registry) AutoReload(interval time.Duration, reloader func() *Config) {
 	for range ticker.C {
 		rconf := reloader()
 		m.reloadOnce(rconf)
+
+		// TODO: re-validate most recently used limit keys for refresh.
 	}
 }
 
@@ -34,56 +61,42 @@ func (m *Registry) reloadOnce(rconf *Config) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// refresh whitelist
-	m.refreshWhiteList(rconf.WhiteList)
-	// refresh ip limit options
-	m.refreshIpLimitOpts(rconf.IpLimitOpts)
+	// refresh rate limit strategies
+	m.refreshStrategies(rconf.Strategies)
 }
 
-func (m *Registry) refreshWhiteList(all map[string]struct{}) {
-	// remove from white list
-	for name := range m.whilteList {
-		if _, ok := all[name]; !ok {
-			delete(m.whilteList, name)
-			logrus.WithField("name", name).Info("RateLimit white list item removed")
+func (m *Registry) refreshStrategies(strategies []*Strategy) {
+	// build strategy mapping
+	strategyMap := make(map[string]*Strategy, len(strategies))
+	for _, s := range strategies {
+		strategyMap[s.Name] = s
+	}
+
+	// remove throttlers
+	for name := range m.throttlers {
+		if _, ok := strategyMap[name]; !ok {
+			delete(m.throttlers, name)
+			logrus.WithField("name", name).Info("RateLimit strategy removed")
 		}
 	}
 
-	// add to white list
-	for name := range all {
-		if _, ok := m.whilteList[name]; !ok {
-			m.whilteList[name] = struct{}{}
-			logrus.WithField("name", name).Info("RateLimit white list item added")
+	// add or update throttlers
+	for name, strategy := range strategyMap {
+		throttler, ok := m.throttlers[name]
+		if !ok { // add
+			m.throttlers[name] = NewThrottler(strategy)
+			logrus.WithField("strategy", strategy).Info("RateLimit strategy added")
+			continue
 		}
-	}
-}
 
-func (m *Registry) refreshIpLimitOpts(all map[string]Option) {
-	// remove limiters
-	for name := range m.limiters {
-		if _, ok := all[name]; !ok {
-			delete(m.limiters, name)
-			logrus.WithField("name", name).Info("IpRateLimiter removed")
+		if throttler.Update(strategy) { // update
+			logrus.WithField("strategy", strategy).Info("RateLimit strategy updated")
 		}
 	}
 
-	// add or update limiters
-	for name, option := range all {
-		if current, ok := m.limiters[name]; ok {
-			if current.Update(option) {
-				logrus.WithFields(logrus.Fields{
-					"name":  name,
-					"rate":  option.Rate,
-					"burst": option.Burst,
-				}).Info("IpRateLimiter updated")
-			}
-		} else {
-			m.limiters[name] = NewIpLimiter(option.Rate, option.Burst)
-			logrus.WithFields(logrus.Fields{
-				"name":  name,
-				"rate":  option.Rate,
-				"burst": option.Burst,
-			}).Info("IpRateLimiter added")
-		}
-	}
+	// sort strategies by priority
+	sort.SliceStable(strategies, func(i, j int) bool {
+		return strategies[i].Priority > strategies[j].Priority
+	})
+	m.strategies = strategies
 }

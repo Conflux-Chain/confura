@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"net"
 	"net/http"
 
 	"github.com/Conflux-Chain/confura/util/rate"
@@ -17,43 +16,26 @@ func RateLimit(registry *rate.Registry) Middleware {
 	}
 }
 
-func WhiteListAllow(ctx context.Context) bool {
-	if ip, ok := GetIPAddressFromContext(ctx); ok {
-		nip := net.ParseIP(ip)
-
-		// always allow request from loopback ip
-		if nip != nil && nip.IsLoopback() {
-			return true
-		}
-	}
-
-	registry, ok := ctx.Value(CtxKeyRateRegistry).(*rate.Registry)
-	if !ok {
-		return false
-	}
-
-	if token, ok := GetAccessTokenFromContext(ctx); ok {
-		return registry.WhiteListed(token)
-	}
-
-	return false
-}
-
 func RateLimitAllow(ctx context.Context, name string, n int) bool {
 	registry, ok := ctx.Value(CtxKeyRateRegistry).(*rate.Registry)
 	if !ok {
 		return true
 	}
 
-	ip, ok := GetIPAddressFromContext(ctx)
+	vc := &rate.VistingContext{Resource: name}
+
+	if ip, ok := GetIPAddressFromContext(ctx); ok { // ip
+		vc.Ip = ip
+	}
+
+	if token, ok := GetAccessTokenFromContext(ctx); ok { // key
+		vc.Key = token
+	}
+
+	throttler, ok := registry.Get(vc)
 	if !ok {
 		return true
 	}
 
-	limiter, ok := registry.Get(name)
-	if !ok {
-		return true
-	}
-
-	return limiter.Allow(ip, n)
+	return throttler.Allow(vc, n)
 }
