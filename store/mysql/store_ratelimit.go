@@ -11,7 +11,7 @@ import (
 type RateLimit struct {
 	ID        uint32 // primary key
 	SID       uint32 // strategy ID
-	Key       string `gorm:"unique;size:128;not null"` // access key
+	Key       string `gorm:"unique;size:128;not null"` // limit key
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -30,7 +30,7 @@ func NewRateLimitStore(db *gorm.DB) *RateLimitStore {
 	}
 }
 
-func (rls *RateLimitStore) LoadRateLimitKeys(filter *rate.KeySetFilter) (res []*rate.KeyInfo, err error) {
+func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeySetFilter) (res []*rate.KeyInfo, err error) {
 	db := rls.db
 
 	if len(filter.KeySet) > 0 {

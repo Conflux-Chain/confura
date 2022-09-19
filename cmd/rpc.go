@@ -116,7 +116,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 		// periodically reload rate limit settings from db
 		go rate.DefaultRegistryCfx.AutoReload(
-			15*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs, storeCtx.cfxDB.LoadRateLimitKeys,
+			15*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs, storeCtx.cfxDB.LoadRateLimitKeyset,
 		)
 	}
 
@@ -147,7 +147,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx st
 
 		// periodically reload rate limit settings from db
 		go rate.DefaultRegistryEth.AutoReload(
-			15*time.Second, storeCtx.ethDB.LoadRateLimitConfigs, storeCtx.cfxDB.LoadRateLimitKeys,
+			15*time.Second, storeCtx.ethDB.LoadRateLimitConfigs, storeCtx.cfxDB.LoadRateLimitKeyset,
 		)
 	}
 

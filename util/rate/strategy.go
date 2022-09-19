@@ -22,7 +22,7 @@ type Strategy struct {
 	Priority  int               // priority weight
 	Rules     map[string]Option // limit rules: rule name => rule option
 	Regex     *regexp.Regexp    `json:"-"` // key regex pattern
-	MD5       [md5.Size]byte    `json:"-"` // config fingerprint
+	MD5       [md5.Size]byte    `json:"-"` // config data fingerprint
 }
 
 type _strategy Strategy
@@ -41,6 +41,10 @@ func (s *Strategy) UnmarshalJSON(input []byte) error {
 
 	if _s.LimitType == LimitByKey && _s.KeyLen <= 0 {
 		return errors.New("keylen must be positive for limit key type")
+	}
+
+	if _s.KeyLen > 128 {
+		return errors.New("keylen must be at most 128")
 	}
 
 	*s = (Strategy)(_s._strategy)
