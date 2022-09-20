@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/openweb3/web3go"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 )
 
 type Web3goClient struct {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/rate"
+	"github.com/scroll-tech/rpc-gateway/util/rate"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

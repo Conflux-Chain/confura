@@ -6,14 +6,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/rpc/throttle"
-	"github.com/Conflux-Chain/confura/store/mysql"
-	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/node"
+	"github.com/scroll-tech/rpc-gateway/rpc/throttle"
+	"github.com/scroll-tech/rpc-gateway/store/mysql"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 	"github.com/sirupsen/logrus"
 )
 

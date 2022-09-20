@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/store"
+	"github.com/scroll-tech/rpc-gateway/types"
+	"github.com/scroll-tech/rpc-gateway/util"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )

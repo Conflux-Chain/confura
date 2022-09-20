@@ -3,7 +3,7 @@ package sync
 import (
 	"testing"
 
-	"github.com/Conflux-Chain/confura/util"
+	"github.com/scroll-tech/rpc-gateway/util"
 	"github.com/stretchr/testify/assert"
 )
 

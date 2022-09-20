@@ -3,11 +3,11 @@ package config
 import (
 	"strings"
 
-	"github.com/Conflux-Chain/confura/util/alert"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/util/alert"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 	"github.com/sirupsen/logrus"
 
 	// For go-ethereum v1.0.15, node pkg imports internal/debug pkg which will inits log root

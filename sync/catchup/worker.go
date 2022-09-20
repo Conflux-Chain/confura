@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/scroll-tech/rpc-gateway/store"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 	"github.com/sirupsen/logrus"
 )
 

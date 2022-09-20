@@ -1,12 +1,12 @@
 package cmd
 
 import (
-	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/store/mysql"
-	"github.com/Conflux-Chain/confura/store/redis"
-	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/openweb3/web3go"
+	"github.com/scroll-tech/rpc-gateway/store"
+	"github.com/scroll-tech/rpc-gateway/store/mysql"
+	"github.com/scroll-tech/rpc-gateway/store/redis"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 )
 
 // storeContext context to hold store instances

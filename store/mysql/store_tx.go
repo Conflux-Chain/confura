@@ -4,10 +4,10 @@ import (
 	"context"
 	"math/big"
 
-	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/scroll-tech/rpc-gateway/store"
+	"github.com/scroll-tech/rpc-gateway/util"
 	"gorm.io/gorm"
 )
 

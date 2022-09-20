@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
+	rpcutil "github.com/scroll-tech/rpc-gateway/util/rpc"
 	"github.com/sirupsen/logrus"
 )
 

@@ -4,9 +4,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/Conflux-Chain/confura/store"
-	citypes "github.com/Conflux-Chain/confura/types"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/scroll-tech/rpc-gateway/store"
+	citypes "github.com/scroll-tech/rpc-gateway/types"
 	"github.com/stretchr/testify/assert"
 )
 

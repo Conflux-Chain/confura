@@ -4,11 +4,11 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/montanaflynn/stats"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/util"
 	"github.com/sirupsen/logrus"
 )
 

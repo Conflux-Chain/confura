@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	web3pay "github.com/Conflux-Chain/web3pay-service/client"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/scroll-tech/rpc-gateway/util/rpc/handlers"
 )
 
 var (

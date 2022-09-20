@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 )
 
 func MetricsBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {

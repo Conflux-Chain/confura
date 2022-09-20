@@ -3,8 +3,8 @@ package service
 import (
 	"time"
 
-	infuraMetrics "github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
+	infuraMetrics "github.com/scroll-tech/rpc-gateway/util/metrics"
 )
 
 type clientMetric struct {

@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/scroll-tech/rpc-gateway/util/rpc/handlers"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )

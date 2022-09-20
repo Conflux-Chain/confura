@@ -2,9 +2,9 @@ package main
 
 import (
 	// ensure viper based configuration initialized at the very beginning
-	_ "github.com/Conflux-Chain/confura/config"
+	_ "github.com/scroll-tech/rpc-gateway/config"
 
-	"github.com/Conflux-Chain/confura/cmd"
+	"github.com/scroll-tech/rpc-gateway/cmd"
 )
 
 func main() {

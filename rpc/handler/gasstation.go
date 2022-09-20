@@ -3,10 +3,10 @@ package handler
 import (
 	"math/big"
 
-	"github.com/Conflux-Chain/confura/store"
-	itypes "github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/scroll-tech/rpc-gateway/store"
+	itypes "github.com/scroll-tech/rpc-gateway/types"
+	"github.com/scroll-tech/rpc-gateway/util"
 	"github.com/sirupsen/logrus"
 )
 

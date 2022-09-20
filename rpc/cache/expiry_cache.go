@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util"
+	"github.com/scroll-tech/rpc-gateway/util"
 )
 
 // for atomic load/store in cache.

@@ -1,8 +1,8 @@
 package rpc
 
 import (
-	"github.com/Conflux-Chain/confura/store"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/store"
 )
 
 // rpc errors conform to fullnode

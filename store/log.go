@@ -3,10 +3,10 @@ package store
 import (
 	"encoding/json"
 
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/scroll-tech/rpc-gateway/util"
 	"github.com/sirupsen/logrus"
 )
 

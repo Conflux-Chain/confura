@@ -4,10 +4,10 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/web3go"
+	"github.com/scroll-tech/rpc-gateway/node"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 )
 
 var EthDefault = NewEth()

@@ -6,13 +6,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Conflux-Chain/confura/store"
-	citypes "github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/store"
+	citypes "github.com/scroll-tech/rpc-gateway/types"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 	"github.com/sirupsen/logrus"
 )
 

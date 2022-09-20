@@ -6,16 +6,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/store/mysql"
-	"github.com/Conflux-Chain/confura/sync/catchup"
-	citypes "github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/store"
+	"github.com/scroll-tech/rpc-gateway/store/mysql"
+	"github.com/scroll-tech/rpc-gateway/sync/catchup"
+	citypes "github.com/scroll-tech/rpc-gateway/types"
+	"github.com/scroll-tech/rpc-gateway/util"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 	"github.com/sirupsen/logrus"
 )
 

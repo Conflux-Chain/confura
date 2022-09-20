@@ -3,7 +3,7 @@ package rpc
 import (
 	"context"
 
-	"github.com/Conflux-Chain/confura/rpc/cache"
+	"github.com/scroll-tech/rpc-gateway/rpc/cache"
 )
 
 // web3API provides evm space web3 RPC proxy API.

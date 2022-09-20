@@ -6,9 +6,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/Conflux-Chain/confura/cmd/test"
-	"github.com/Conflux-Chain/confura/cmd/util"
-	"github.com/Conflux-Chain/confura/config"
+	"github.com/scroll-tech/rpc-gateway/cmd/test"
+	"github.com/scroll-tech/rpc-gateway/cmd/util"
+	"github.com/scroll-tech/rpc-gateway/config"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

@@ -3,7 +3,7 @@ package rpc
 import (
 	"context"
 
-	"github.com/Conflux-Chain/confura/rpc/cache"
+	"github.com/scroll-tech/rpc-gateway/rpc/cache"
 )
 
 // netAPI provides evm space net RPC proxy API.

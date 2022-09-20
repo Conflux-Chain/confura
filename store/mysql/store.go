@@ -5,10 +5,10 @@ import (
 	"io"
 	"sort"
 
-	"github.com/Conflux-Chain/confura/store"
-	citypes "github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/store"
+	citypes "github.com/scroll-tech/rpc-gateway/types"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 	"gorm.io/gorm"
 )
 

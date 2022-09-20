@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/go-rpc-provider/utils"
+	"github.com/scroll-tech/rpc-gateway/util"
 )
 
 var Registry Metrics

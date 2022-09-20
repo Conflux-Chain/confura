@@ -4,12 +4,12 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/util/rate"
-	"github.com/Conflux-Chain/confura/util/rpc/handlers"
-	"github.com/Conflux-Chain/confura/util/rpc/middlewares"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/scroll-tech/rpc-gateway/node"
+	"github.com/scroll-tech/rpc-gateway/util/rate"
+	"github.com/scroll-tech/rpc-gateway/util/rpc/handlers"
+	"github.com/scroll-tech/rpc-gateway/util/rpc/middlewares"
 	"github.com/sirupsen/logrus"
 )
 

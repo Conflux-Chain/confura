@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Conflux-Chain/confura/cmd/util"
-	"github.com/Conflux-Chain/confura/store"
-	cisync "github.com/Conflux-Chain/confura/sync"
-	"github.com/Conflux-Chain/confura/sync/catchup"
+	"github.com/scroll-tech/rpc-gateway/cmd/util"
+	"github.com/scroll-tech/rpc-gateway/store"
+	cisync "github.com/scroll-tech/rpc-gateway/sync"
+	"github.com/scroll-tech/rpc-gateway/sync/catchup"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

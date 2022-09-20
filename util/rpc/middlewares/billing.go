@@ -1,10 +1,10 @@
 package middlewares
 
 import (
-	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	web3pay "github.com/Conflux-Chain/web3pay-service/client"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/scroll-tech/rpc-gateway/util/rpc/handlers"
 	"github.com/sirupsen/logrus"
 )
 

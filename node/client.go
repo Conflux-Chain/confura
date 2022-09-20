@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Conflux-Chain/confura/util"
-	"github.com/Conflux-Chain/confura/util/rpc"
-	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/util"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
+	"github.com/scroll-tech/rpc-gateway/util/rpc/handlers"
 	"github.com/sirupsen/logrus"
 )
 

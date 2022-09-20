@@ -3,10 +3,10 @@ package mysql
 import (
 	"context"
 
-	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/store"
+	"github.com/scroll-tech/rpc-gateway/types"
+	"github.com/scroll-tech/rpc-gateway/util"
 	"gorm.io/gorm"
 )
 

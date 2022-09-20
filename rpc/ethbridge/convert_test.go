@@ -4,12 +4,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/rpc/cfxbridge"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -9,15 +9,15 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
-	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/rpc"
-	"github.com/Conflux-Chain/confura/rpc/handler"
-	"github.com/Conflux-Chain/confura/store/redis"
-	"github.com/Conflux-Chain/confura/util/rate"
-	"github.com/Conflux-Chain/confura/util/relay"
-	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	cmdutil "github.com/scroll-tech/rpc-gateway/cmd/util"
+	"github.com/scroll-tech/rpc-gateway/node"
+	"github.com/scroll-tech/rpc-gateway/rpc"
+	"github.com/scroll-tech/rpc-gateway/rpc/handler"
+	"github.com/scroll-tech/rpc-gateway/store/redis"
+	"github.com/scroll-tech/rpc-gateway/util/rate"
+	"github.com/scroll-tech/rpc-gateway/util/relay"
+	rpcutil "github.com/scroll-tech/rpc-gateway/util/rpc"
 )
 
 var (

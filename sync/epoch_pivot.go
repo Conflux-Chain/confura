@@ -1,9 +1,9 @@
 package sync
 
 import (
-	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/pkg/errors"
+	citypes "github.com/scroll-tech/rpc-gateway/types"
 )
 
 // epochPivotWindow caches epoch pivot info with limited capacity.

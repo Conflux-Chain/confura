@@ -3,10 +3,10 @@ package cache
 import (
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 )
 
 // StatusCache memory cache for core space status related RPC method suites.

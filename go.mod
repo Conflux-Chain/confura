@@ -1,4 +1,4 @@
-module github.com/Conflux-Chain/confura
+module github.com/scroll-tech/rpc-gateway
 
 go 1.15
 

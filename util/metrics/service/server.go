@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 )
 
 const Namespace = "metrics"

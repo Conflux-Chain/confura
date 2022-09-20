@@ -4,9 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Conflux-Chain/confura/cmd/util"
-	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/scroll-tech/rpc-gateway/cmd/util"
+	"github.com/scroll-tech/rpc-gateway/node"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

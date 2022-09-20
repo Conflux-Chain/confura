@@ -5,12 +5,6 @@ import (
 	"math/big"
 	"math/bits"
 
-	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/rpc/cache"
-	"github.com/Conflux-Chain/confura/rpc/handler"
-	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/util"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -18,6 +12,12 @@ import (
 	"github.com/openweb3/web3go/client"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
+	"github.com/scroll-tech/rpc-gateway/node"
+	"github.com/scroll-tech/rpc-gateway/rpc/cache"
+	"github.com/scroll-tech/rpc-gateway/rpc/handler"
+	"github.com/scroll-tech/rpc-gateway/store"
+	"github.com/scroll-tech/rpc-gateway/util"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 	"github.com/sirupsen/logrus"
 )
 

@@ -5,7 +5,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/Conflux-Chain/confura/util/rate"
+	"github.com/scroll-tech/rpc-gateway/util/rate"
 )
 
 func RateLimit(registry *rate.Registry) Middleware {

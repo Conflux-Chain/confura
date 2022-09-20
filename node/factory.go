@@ -3,7 +3,7 @@ package node
 import (
 	"sync"
 
-	"github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 )
 
 var (

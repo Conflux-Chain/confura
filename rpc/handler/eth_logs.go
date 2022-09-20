@@ -5,12 +5,12 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"github.com/Conflux-Chain/confura/rpc/ethbridge"
-	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/store/mysql"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
+	"github.com/scroll-tech/rpc-gateway/rpc/ethbridge"
+	"github.com/scroll-tech/rpc-gateway/store"
+	"github.com/scroll-tech/rpc-gateway/store/mysql"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 )
 
 // EthLogsApiHandler RPC handler to get evm space event logs from store or fullnode.

@@ -3,7 +3,7 @@ package mysql
 import (
 	"errors"
 
-	"github.com/Conflux-Chain/confura/store"
+	"github.com/scroll-tech/rpc-gateway/store"
 	"gorm.io/gorm"
 )
 

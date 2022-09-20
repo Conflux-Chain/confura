@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/Conflux-Chain/confura/cmd/util"
-	"github.com/Conflux-Chain/confura/test"
+	"github.com/scroll-tech/rpc-gateway/cmd/util"
+	"github.com/scroll-tech/rpc-gateway/test"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

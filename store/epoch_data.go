@@ -3,15 +3,15 @@ package store
 import (
 	"fmt"
 
-	citypes "github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
-	"github.com/Conflux-Chain/confura/util/blacklist"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	sdkerr "github.com/Conflux-Chain/go-conflux-sdk/types/errors"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
+	citypes "github.com/scroll-tech/rpc-gateway/types"
+	"github.com/scroll-tech/rpc-gateway/util"
+	"github.com/scroll-tech/rpc-gateway/util/blacklist"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 	"github.com/sirupsen/logrus"
 )
 

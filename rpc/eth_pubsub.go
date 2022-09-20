@@ -3,12 +3,12 @@ package rpc
 import (
 	"time"
 
-	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/util"
-	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
+	"github.com/scroll-tech/rpc-gateway/node"
+	"github.com/scroll-tech/rpc-gateway/util"
+	rpcutil "github.com/scroll-tech/rpc-gateway/util/rpc"
 	"github.com/sirupsen/logrus"
 )
 

@@ -1,8 +1,8 @@
 package sync
 
 import (
-	"github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
+	"github.com/scroll-tech/rpc-gateway/types"
+	"github.com/scroll-tech/rpc-gateway/util"
 )
 
 // epochWindow maintains a continuous epoch window with a fixed size capacity.

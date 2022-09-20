@@ -4,10 +4,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Conflux-Chain/confura/util/metrics"
-	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 )
 
 // nodeFactory factory method to create node instance

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/metrics"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	"github.com/openweb3/go-rpc-provider/utils"
+	"github.com/scroll-tech/rpc-gateway/util/metrics"
 	"github.com/sirupsen/logrus"
 )
 

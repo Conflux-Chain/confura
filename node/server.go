@@ -1,9 +1,9 @@
 package node
 
 import (
-	"github.com/Conflux-Chain/confura/util"
-	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/scroll-tech/rpc-gateway/util"
+	"github.com/scroll-tech/rpc-gateway/util/rpc"
 )
 
 // NewServer creates node management RPC server
