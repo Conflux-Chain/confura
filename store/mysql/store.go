@@ -31,6 +31,7 @@ type MysqlStore struct {
 	*blockStore
 	*confStore
 	*UserStore
+	*RateLimitStore
 	ls   *logStore
 	ails *AddressIndexedLogStore
 	bcls *bigContractLogStore
@@ -57,6 +58,7 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 		blockStore:         newBlockStore(db),
 		confStore:          newConfStore(db),
 		UserStore:          newUserStore(db),
+		RateLimitStore:     NewRateLimitStore(db),
 		ls:                 newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
 		bcls:               newBigContractLogStore(db, cs, ebms, ails, pruner.newBnPartitionObsChan),
 		ails:               ails,

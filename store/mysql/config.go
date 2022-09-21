@@ -19,6 +19,7 @@ var allModels = []interface{}{
 	&transaction{},
 	&block{},
 	&conf{},
+	&RateLimit{},
 	&User{},
 	&Contract{},
 	&epochBlockMap{},
