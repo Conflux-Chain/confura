@@ -180,8 +180,8 @@ func (m *Registry) loadKeyInfo(key string) (*KeyInfo, bool) {
 
 func (m *Registry) removeStrategy(s *Strategy) {
 	if s.Name == DefaultStrategy {
-		logrus.Info("Default IP limiter set unmounted")
 		m.defaultLimiterSet = nil
+		logrus.Info("Default IP limiter set unmounted")
 	}
 
 	delete(m.strategies, s.ID)
@@ -191,8 +191,8 @@ func (m *Registry) removeStrategy(s *Strategy) {
 
 func (m *Registry) addStrategy(s *Strategy) {
 	if s.Name == DefaultStrategy {
-		logrus.WithField("strategy", s).Info("Default IP limiter set mounted")
 		m.defaultLimiterSet = NewIpLimiterSet(s)
+		logrus.WithField("strategy", s).Info("Default IP limiter set mounted")
 	}
 
 	m.strategies[s.ID] = s
@@ -202,8 +202,8 @@ func (m *Registry) addStrategy(s *Strategy) {
 
 func (m *Registry) updateStrategy(s *Strategy) {
 	if s.Name == DefaultStrategy {
-		logrus.WithField("strategy", s).Info("Default IP limiter set updated")
 		m.defaultLimiterSet.Update(s)
+		logrus.WithField("strategy", s).Info("Default IP limiter set updated")
 	}
 
 	m.strategies[s.ID] = s

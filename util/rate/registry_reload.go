@@ -30,14 +30,7 @@ func (m *Registry) AutoReload(interval time.Duration, reloader func() *Config, k
 	defer ticker.Stop()
 
 	// init registry key loader
-	m.keyLoader = func(key string) (*KeyInfo, error) {
-		kinfos, err := kloader(&KeysetFilter{KeySet: []string{key}})
-		if err == nil && len(kinfos) > 0 {
-			return kinfos[0], nil
-		}
-
-		return nil, err
-	}
+	m.initKeyLoader(kloader)
 
 	// TODO: warm up limit key cache for better performance
 
@@ -88,5 +81,19 @@ func (m *Registry) refreshStrategies(strategies map[uint32]*Strategy) {
 			m.updateStrategy(strategy)
 			logrus.WithField("strategy", strategy).Info("RateLimit strategy updated")
 		}
+	}
+}
+
+func (m *Registry) initKeyLoader(kloader KeysetLoader) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.keyLoader = func(key string) (*KeyInfo, error) {
+		kinfos, err := kloader(&KeysetFilter{KeySet: []string{key}})
+		if err == nil && len(kinfos) > 0 {
+			return kinfos[0], nil
+		}
+
+		return nil, err
 	}
 }
