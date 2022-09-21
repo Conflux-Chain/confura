@@ -32,7 +32,8 @@ func (m *Registry) AutoReload(interval time.Duration, reloader func() *Config, k
 	// init registry key loader
 	m.initKeyLoader(kloader)
 
-	// TODO: warm up limit key cache for better performance
+	// warm up limit key cache for better performance
+	m.warmUpKeyCache(kloader)
 
 	// load immediately at first
 	rconf := reloader()
@@ -96,4 +97,18 @@ func (m *Registry) initKeyLoader(kloader KeysetLoader) {
 
 		return nil, err
 	}
+}
+
+func (m *Registry) warmUpKeyCache(kloader KeysetLoader) {
+	kis, err := kloader(&KeysetFilter{Limit: (LimitKeyCacheSize * 3 / 4)})
+	if err != nil {
+		logrus.WithError(err).Warn("Failed to load limit keyset to warm up cache")
+		return
+	}
+
+	for i := range kis {
+		m.keyCache.Add(kis[i].Key, kis[i])
+	}
+
+	logrus.WithField("totalKeys", len(kis)).Info("Limit keyset loaded to cache")
 }
