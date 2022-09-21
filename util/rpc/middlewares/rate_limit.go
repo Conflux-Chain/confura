@@ -15,7 +15,7 @@ var (
 
 func RateLimitBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
 	return func(ctx context.Context, msgs []*rpc.JsonRpcMessage) []*rpc.JsonRpcMessage {
-		if handlers.WhiteListAllow(ctx) || handlers.RateLimitAllow(ctx, "rpc_batch", len(msgs)) {
+		if handlers.RateLimitAllow(ctx, "rpc_batch", len(msgs)) {
 			return next(ctx, msgs)
 		}
 
@@ -33,11 +33,6 @@ func RateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		// check billing status
 		if bs, ok := web3pay.BillingStatusFromContext(ctx); ok && bs.Success() {
 			// serve directly on billing successfully, otherwise fallback to rate limit
-			return next(ctx, msg)
-		}
-
-		// white list allow?
-		if handlers.WhiteListAllow(ctx) {
 			return next(ctx, msg)
 		}
 

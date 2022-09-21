@@ -119,7 +119,7 @@ func evmSpaceApis(clientProvider *node.EthClientProvider, option ...EthAPIOption
 		}, {
 			Namespace: "parity",
 			Version:   "1.0",
-			Service:   parityAPI{},
+			Service:   &parityAPI{},
 			Public:    false,
 		},
 	}, nil
