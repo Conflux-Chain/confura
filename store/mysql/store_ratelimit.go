@@ -1,10 +1,15 @@
 package mysql
 
 import (
+	"errors"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/rate"
 	"gorm.io/gorm"
+)
+
+var (
+	errBreakFindInBatches = errors.New("break gorm DB `FindInBatches` loop")
 )
 
 // RateLimit rate limit keyset table
@@ -42,16 +47,14 @@ func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res [
 		db = db.Where("sid IN (?)", filter.SIDs)
 	}
 
-	if filter.Limit > 0 {
-		db = db.Limit(filter.Limit)
-	}
-
-	if db == rls.db {
+	if db == rls.db && filter.Limit <= 0 {
 		return nil, nil
 	}
 
+	var totals int
 	var ratelimits []RateLimit
-	err = db.FindInBatches(&ratelimits, 200, func(tx *gorm.DB, batch int) error {
+
+	rs := db.FindInBatches(&ratelimits, 200, func(tx *gorm.DB, batch int) error {
 		for i := range ratelimits {
 			res = append(res, &rate.KeyInfo{
 				Type: ratelimits[i].LimitType,
@@ -60,8 +63,18 @@ func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res [
 			})
 		}
 
+		totals += len(ratelimits)
+		if filter.Limit > 0 && totals >= filter.Limit {
+			// enough records, break the batch loop
+			return errBreakFindInBatches
+		}
+
 		return nil
-	}).Error
+	})
+
+	if rs.Error != errBreakFindInBatches {
+		err = rs.Error
+	}
 
 	return
 }
