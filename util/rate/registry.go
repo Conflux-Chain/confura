@@ -5,13 +5,14 @@ import (
 	"sync"
 	"time"
 
-	lru "github.com/hashicorp/golang-lru"
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	DefaultStrategy   = "default"
-	LimitKeyCacheSize = 5000
+	DefaultStrategy       = "default"
+	LimitKeyCacheSize     = 5000
+	LimitKeyExpirationTTL = 75 * time.Second
 )
 
 var (
@@ -31,7 +32,7 @@ type Registry struct {
 	strategies map[uint32]*Strategy
 
 	// limit key cache: limit key => *KeyInfo (nil if missing)
-	keyCache *lru.Cache
+	keyCache *util.ExpirableLruCache
 	// loader to retrieve keyset from store
 	keyLoader func(key string) (*KeyInfo, error)
 
@@ -44,8 +45,7 @@ type Registry struct {
 }
 
 func NewRegistry() *Registry {
-	cache, _ := lru.New(LimitKeyCacheSize)
-
+	cache := util.NewExpirableLruCache(LimitKeyCacheSize, LimitKeyExpirationTTL)
 	return &Registry{
 		keyCache:        cache,
 		strategies:      make(map[uint32]*Strategy),
