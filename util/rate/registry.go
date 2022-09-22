@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util"
+	"github.com/scroll-tech/rpc-gateway/util"
 	"github.com/sirupsen/logrus"
 )
 
