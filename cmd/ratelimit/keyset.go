@@ -38,17 +38,17 @@ func init() {
 }
 
 func addKey(cmd *cobra.Command, args []string) {
-
+	// TODO
 }
 
 func delKey(cmd *cobra.Command, args []string) {
-
+	// TODO
 }
 
 func updateKey(cmd *cobra.Command, args []string) {
-
+	// TODO
 }
 
 func listKeys(cmd *cobra.Command, args []string) {
-
+	// TODO
 }
