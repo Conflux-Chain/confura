@@ -85,8 +85,12 @@ func addStrategy(cmd *cobra.Command, args []string) {
 	}
 
 	dbs := getMysqlStore(&storeCtx)
-	name := rate.ConfigStrategyPrefix + stratCfg.Name
+	if dbs == nil {
+		logrus.Info("DB store is unavailable")
+		return
+	}
 
+	name := rate.ConfigStrategyPrefix + stratCfg.Name
 	cfgmap, err := dbs.LoadConfig(name)
 	if err != nil {
 		logrus.WithField("strategy", stratCfg.Name).
@@ -123,12 +127,18 @@ func delStrategy(cmd *cobra.Command, args []string) {
 		return
 	}
 
+	dbs := getMysqlStore(&storeCtx)
+	if dbs == nil {
+		logrus.Info("DB store is unavailable")
+		return
+	}
+
 	logrus.WithField("strategy", stratCfg.Name).
 		Info("Press the Enter Key to delete the rate limit strategy!")
 	fmt.Scanln() // wait for Enter Key
 
 	name := rate.ConfigStrategyPrefix + stratCfg.Name
-	removed, err := getMysqlStore(&storeCtx).DeleteConfig(name)
+	removed, err := dbs.DeleteConfig(name)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to delete the rate limit strategy")
 		return
@@ -151,7 +161,13 @@ func listStrategies(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	config, err := getMysqlStore(&storeCtx).LoadRateLimitConfigs()
+	dbs := getMysqlStore(&storeCtx)
+	if dbs == nil {
+		logrus.Info("DB store is unavailable")
+		return
+	}
+
+	config, err := dbs.LoadRateLimitConfigs()
 	if err != nil {
 		logrus.WithError(err).Info("Failed to load rate limit configs")
 		return
@@ -172,16 +188,11 @@ func listStrategies(cmd *cobra.Command, args []string) {
 }
 
 func getMysqlStore(storeCtx *util.StoreContext) *mysql.MysqlStore {
-	dbs := storeCtx.CfxDB
 	if strings.EqualFold(stratCfg.Network, "eth") {
-		dbs = storeCtx.EthDB
+		return storeCtx.EthDB
 	}
 
-	if dbs == nil {
-		logrus.WithField("network", stratCfg.Network).Fatal("No DB store avaliable")
-	}
-
-	return dbs
+	return storeCtx.CfxDB
 }
 
 func validateStrategyCmdConfig(validateName, validateNetwork, validateRules bool) (*rate.Strategy, error) {
@@ -189,8 +200,14 @@ func validateStrategyCmdConfig(validateName, validateNetwork, validateRules bool
 		return nil, errors.New("name must not be empty")
 	}
 
-	if validateNetwork && len(stratCfg.Network) == 0 {
-		return nil, errors.New("network space must not be empty")
+	if validateNetwork {
+		if len(stratCfg.Network) == 0 {
+			return nil, errors.New("network space must not be empty")
+		}
+
+		if !strings.EqualFold(stratCfg.Network, "cfx") && !strings.EqualFold(stratCfg.Network, "eth") {
+			return nil, errors.New("invalid network space (only `cfx` and `eth` are acceptable)")
+		}
 	}
 
 	if !validateRules {
