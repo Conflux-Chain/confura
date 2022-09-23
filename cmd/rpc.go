@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/Conflux-Chain/confura/cmd/util"
 	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc"
@@ -62,7 +63,7 @@ func startRpcService(*cobra.Command, []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
-	storeCtx := mustInitStoreContext()
+	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
 	if rpcOpt.cfxEnabled { // start core space RPC
@@ -81,42 +82,42 @@ func startRpcService(*cobra.Command, []string) {
 }
 
 // startNativeSpaceRpcServer starts core space RPC server
-func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx storeContext) {
+func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
 	router := node.Factory().CreateRouter()
 	option := rpc.CfxAPIOption{
 		Relayer: relay.MustNewTxnRelayerFromViper(),
 	}
 
 	// initialize store handler
-	if storeCtx.cfxDB != nil {
-		option.StoreHandler = handler.NewCfxCommonStoreHandler("db", storeCtx.cfxDB, option.StoreHandler)
+	if storeCtx.CfxDB != nil {
+		option.StoreHandler = handler.NewCfxCommonStoreHandler("db", storeCtx.CfxDB, option.StoreHandler)
 	}
 
-	if storeCtx.cfxCache != nil {
-		option.StoreHandler = handler.NewCfxCommonStoreHandler("cache", storeCtx.cfxCache, option.StoreHandler)
+	if storeCtx.CfxCache != nil {
+		option.StoreHandler = handler.NewCfxCommonStoreHandler("cache", storeCtx.CfxCache, option.StoreHandler)
 	}
 
 	// initialize gas station handler
-	gasHandler := handler.NewGasStationHandler(storeCtx.cfxDB, storeCtx.cfxCache)
+	gasHandler := handler.NewGasStationHandler(storeCtx.CfxDB, storeCtx.CfxCache)
 
-	if storeCtx.cfxDB != nil {
+	if storeCtx.CfxDB != nil {
 		// initialize pruned logs handler
 		var prunedHandler *handler.CfxPrunedLogsHandler
 
 		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
 			prunedHandler = handler.NewCfxPrunedLogsHandler(
 				node.NewCfxClientProvider(router),
-				storeCtx.cfxDB.UserStore,
+				storeCtx.CfxDB.UserStore,
 				redis.MustNewRedisClient(redisUrl),
 			)
 		}
 
 		// initialize logs api handler
-		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.cfxDB, prunedHandler)
+		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.CfxDB, prunedHandler)
 
 		// periodically reload rate limit settings from db
 		go rate.DefaultRegistryCfx.AutoReload(
-			15*time.Second, storeCtx.cfxDB.LoadRateLimitConfigs, storeCtx.cfxDB.LoadRateLimitKeyset,
+			15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs, storeCtx.CfxDB.LoadRateLimitKeyset,
 		)
 	}
 
@@ -135,19 +136,19 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 }
 
 // startEvmSpaceRpcServer starts evm space RPC server
-func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx storeContext) {
+func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
 	var option rpc.EthAPIOption
 	router := node.EthFactory().CreateRouter()
 
-	if storeCtx.ethDB != nil {
+	if storeCtx.EthDB != nil {
 		// initialize store handler
-		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.ethDB, nil)
+		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.EthDB, nil)
 		// initialize logs api handler
-		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.ethDB)
+		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB)
 
 		// periodically reload rate limit settings from db
 		go rate.DefaultRegistryEth.AutoReload(
-			15*time.Second, storeCtx.ethDB.LoadRateLimitConfigs, storeCtx.cfxDB.LoadRateLimitKeyset,
+			15*time.Second, storeCtx.EthDB.LoadRateLimitConfigs, storeCtx.CfxDB.LoadRateLimitKeyset,
 		)
 	}
 

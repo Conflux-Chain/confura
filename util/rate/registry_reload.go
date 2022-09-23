@@ -25,7 +25,7 @@ type KeysetFilter struct {
 // KeysetLoader limit keyset loader
 type KeysetLoader func(filter *KeysetFilter) ([]*KeyInfo, error)
 
-func (m *Registry) AutoReload(interval time.Duration, reloader func() *Config, kloader KeysetLoader) {
+func (m *Registry) AutoReload(interval time.Duration, reloader func() (*Config, error), kloader KeysetLoader) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -36,15 +36,19 @@ func (m *Registry) AutoReload(interval time.Duration, reloader func() *Config, k
 	m.warmUpKeyCache(kloader)
 
 	// load immediately at first
-	rconf := reloader()
-	m.reloadOnce(rconf)
+	if rconf, err := reloader(); err == nil {
+		m.reloadOnce(rconf)
+	}
 
 	// load periodically
 	for range ticker.C {
-		rconf := reloader()
-		m.reloadOnce(rconf)
+		rconf, err := reloader()
+		if err != nil {
+			logrus.WithError(err).Error("Failed to load rate limit configs")
+			continue
+		}
 
-		// TODO: re-validate most recently used limit keys to refresh cache.
+		m.reloadOnce(rconf)
 	}
 }
 
