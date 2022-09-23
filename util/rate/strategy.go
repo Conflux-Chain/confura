@@ -12,6 +12,8 @@ const (
 	// limit types
 	LimitTypeByKey = iota
 	LimitTypeByIp
+
+	ConfigStrategyPrefix = "ratelimit.strategy."
 )
 
 //  Strategy rate limit strategy

@@ -1,0 +1,95 @@
+package util
+
+import (
+	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/store/mysql"
+	"github.com/Conflux-Chain/confura/store/redis"
+	"github.com/Conflux-Chain/confura/util/rpc"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/openweb3/web3go"
+)
+
+// StoreContext context to hold store instances
+type StoreContext struct {
+	CfxDB    *mysql.MysqlStore
+	EthDB    *mysql.MysqlStore
+	CfxCache *redis.RedisStore
+}
+
+func MustInitStoreContext() StoreContext {
+	var ctx StoreContext
+
+	// prepare core space db store
+	if config := mysql.MustNewConfigFromViper(); config.Enabled {
+		ctx.CfxDB = config.MustOpenOrCreate(mysql.StoreOption{
+			Disabler: store.StoreConfig(),
+		})
+	}
+
+	// prepare evm space db store
+	if ethConfig := mysql.MustNewEthStoreConfigFromViper(); ethConfig.Enabled {
+		ctx.EthDB = ethConfig.MustOpenOrCreate(mysql.StoreOption{
+			Disabler: store.EthStoreConfig(),
+		})
+	}
+
+	// prepare redis store
+	if redis, ok := redis.MustNewRedisStoreFromViper(store.StoreConfig()); ok {
+		ctx.CfxCache = redis
+	}
+
+	return ctx
+}
+
+func (ctx *StoreContext) Close() {
+	if ctx.CfxDB != nil {
+		ctx.CfxDB.Close()
+	}
+
+	if ctx.EthDB != nil {
+		ctx.EthDB.Close()
+	}
+
+	if ctx.CfxCache != nil {
+		ctx.CfxCache.Close()
+	}
+}
+
+// SyncContext context to hold sdk clients for blockchain interoperation.
+type SyncContext struct {
+	StoreContext
+
+	SyncCfx *sdk.Client
+	SubCfx  *sdk.Client
+	SyncEth *web3go.Client
+}
+
+func MustInitSyncContext(storeCtx StoreContext) SyncContext {
+	sc := SyncContext{StoreContext: storeCtx}
+
+	if storeCtx.CfxDB != nil || storeCtx.CfxCache != nil {
+		sc.SyncCfx = rpc.MustNewCfxClientFromViper(rpc.WithClientHookMetrics(true))
+		sc.SubCfx = rpc.MustNewCfxWsClientFromViper()
+	}
+
+	if storeCtx.EthDB != nil {
+		sc.SyncEth = rpc.MustNewEthClientFromViper(rpc.WithClientHookMetrics(true))
+	}
+
+	return sc
+}
+
+func (ctx *SyncContext) Close() {
+	// Usually, storeContext will be defer closed by itself
+	// ctx.storeContext.Close()
+	if ctx.SyncCfx != nil {
+		ctx.SyncCfx.Close()
+	}
+
+	if ctx.SubCfx != nil {
+		ctx.SubCfx.Close()
+	}
+
+	// not provided yet!
+	// ctx.syncEth.Close()
+}

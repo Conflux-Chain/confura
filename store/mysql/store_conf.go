@@ -2,7 +2,6 @@ package mysql
 
 import (
 	"crypto/md5"
-	"encoding/json"
 	"strconv"
 	"time"
 
@@ -16,8 +15,7 @@ import (
 const (
 	MysqlConfKeyReorgVersion = "reorg.version"
 
-	rateLimitConfigStrategyPrefix    = "ratelimit.strategy."
-	rateLimitStrategySqlMatchPattern = rateLimitConfigStrategyPrefix + "%"
+	rateLimitStrategySqlMatchPattern = rate.ConfigStrategyPrefix + "%"
 )
 
 // configuration tables
@@ -68,6 +66,11 @@ func (cs *confStore) StoreConfig(confName string, confVal interface{}) error {
 	}).Error
 }
 
+func (cs *confStore) DeleteConfig(confName string) (bool, error) {
+	res := cs.db.Delete(&conf{}, "name = ?", confName)
+	return res.RowsAffected > 0, res.Error
+}
+
 func (cs *confStore) GetReorgVersion() (int, error) {
 	var result conf
 	exists, err := cs.exists(&result, "name = ?", MysqlConfKeyReorgVersion)
@@ -96,15 +99,14 @@ func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
 
 // ratelimit config
 
-func (cs *confStore) LoadRateLimitConfigs() *rate.Config {
+func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
 	var cfgs []conf
 	if err := cs.db.Where("name LIKE ?", rateLimitStrategySqlMatchPattern).Find(&cfgs).Error; err != nil {
-		logrus.WithError(err).Error("Failed to load rate limit config from db")
-		return nil
+		return nil, err
 	}
 
 	if len(cfgs) == 0 {
-		return &rate.Config{}
+		return &rate.Config{}, nil
 	}
 
 	strategies := make(map[uint32]*rate.Strategy)
@@ -122,38 +124,27 @@ func (cs *confStore) LoadRateLimitConfigs() *rate.Config {
 		}
 	}
 
-	return &rate.Config{Strategies: strategies}
+	return &rate.Config{Strategies: strategies}, nil
 }
 
 func (cs *confStore) loadRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
 	// eg., ratelimit.strategy.whitelist
-	name := cfg.Name[len(rateLimitConfigStrategyPrefix):]
+	name := cfg.Name[len(rate.ConfigStrategyPrefix):]
 	if len(name) == 0 {
 		return nil, errors.New("name is too short")
 	}
 
-	ruleMap := make(map[string][]int)
 	data := []byte(cfg.Value)
 
-	if err := json.Unmarshal(data, &ruleMap); err != nil {
-		return nil, errors.WithMessage(err, "malformed json string for limit rule data")
+	ruleOpts, err := rate.JsonUnmarshalStrategyRules(data)
+	if err != nil {
+		return nil, err
 	}
 
-	strategy := rate.Strategy{
+	return &rate.Strategy{
 		ID:    cfg.ID,
 		Name:  name,
-		Rules: make(map[string]rate.Option),
-	}
-
-	for name, value := range ruleMap {
-		if len(value) != 2 {
-			return nil, errors.New("invalid limit option (must be rate/burst integer pairs)")
-		}
-
-		strategy.Rules[name] = rate.NewOption(value[0], value[1])
-	}
-
-	// calculate fingerprint
-	strategy.MD5 = md5.Sum(data)
-	return &strategy, nil
+		Rules: ruleOpts,
+		MD5:   md5.Sum(data), // calculate fingerprint
+	}, nil
 }

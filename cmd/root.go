@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/Conflux-Chain/confura/cmd/ratelimit"
 	"github.com/Conflux-Chain/confura/cmd/test"
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/config"
@@ -48,6 +49,7 @@ func init() {
 	)
 
 	rootCmd.AddCommand(test.Cmd)
+	rootCmd.AddCommand(ratelimit.Cmd)
 }
 
 func start(cmd *cobra.Command, args []string) {
@@ -64,11 +66,11 @@ func start(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	wg := &sync.WaitGroup{}
 
-	storeCtx := mustInitStoreContext()
+	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
 	if syncServerEnabled { // start sync
-		syncCtx := mustInitSyncContext(storeCtx)
+		syncCtx := util.MustInitSyncContext(storeCtx)
 		defer syncCtx.Close()
 
 		startSyncServiceAdaptively(ctx, wg, syncCtx)

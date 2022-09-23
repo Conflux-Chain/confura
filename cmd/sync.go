@@ -86,10 +86,10 @@ func startSyncService(*cobra.Command, []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
-	storeCtx := mustInitStoreContext()
+	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	syncCtx := mustInitSyncContext(storeCtx)
+	syncCtx := util.MustInitSyncContext(storeCtx)
 	defer syncCtx.Close()
 
 	var subs []cisync.EpochSubscriber
@@ -107,7 +107,7 @@ func startSyncService(*cobra.Command, []string) {
 
 	if len(subs) > 0 { // monitor pivot chain switch via pub/sub
 		logrus.Info("Start to pub/sub epoch to monitor pivot chain switch")
-		go cisync.MustSubEpoch(ctx, &wg, syncCtx.subCfx, subs...)
+		go cisync.MustSubEpoch(ctx, &wg, syncCtx.SubCfx, subs...)
 	}
 
 	if syncOpt.catchupEnabled { // start fast catchup
@@ -122,19 +122,19 @@ func startSyncService(*cobra.Command, []string) {
 }
 
 // startSyncServiceAdaptively adaptively starts kinds of sync server per to store instances.
-func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) {
-	if syncCtx.cfxDB == nil && syncCtx.cfxCache == nil && syncCtx.ethDB == nil {
+func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
+	if syncCtx.CfxDB == nil && syncCtx.CfxCache == nil && syncCtx.EthDB == nil {
 		logrus.Fatal("No data sync configured")
 	}
 
 	var subs []cisync.EpochSubscriber
 
-	if syncCtx.cfxDB != nil { // start DB sync
+	if syncCtx.CfxDB != nil { // start DB sync
 		syncer := startSyncCfxDatabase(ctx, wg, syncCtx)
 		subs = append(subs, syncer)
 	}
 
-	if syncCtx.cfxCache != nil { // start KV sync
+	if syncCtx.CfxCache != nil { // start KV sync
 		if syncer := startSyncCfxCache(ctx, wg, syncCtx); syncer != nil {
 			subs = append(subs, syncer)
 		}
@@ -142,27 +142,27 @@ func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, syncCtx
 
 	if len(subs) > 0 { // monitor pivot chain switch via pub/sub
 		logrus.Info("Start to pub/sub epoch to monitor pivot chain switch")
-		go cisync.MustSubEpoch(ctx, wg, syncCtx.subCfx, subs...)
+		go cisync.MustSubEpoch(ctx, wg, syncCtx.SubCfx, subs...)
 	}
 
-	if syncCtx.ethDB != nil { // start ETH sync
+	if syncCtx.EthDB != nil { // start ETH sync
 		startSyncEthDatabase(ctx, wg, syncCtx)
 	}
 }
 
-func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) *cisync.DatabaseSyncer {
+func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) *cisync.DatabaseSyncer {
 	logrus.Info("Start to sync core space blockchain data into database")
 
-	syncer := cisync.MustNewDatabaseSyncer(syncCtx.syncCfx, syncCtx.cfxDB)
+	syncer := cisync.MustNewDatabaseSyncer(syncCtx.SyncCfx, syncCtx.CfxDB)
 	go syncer.Sync(ctx, wg)
 
 	// start core space db prune
-	go syncCtx.cfxDB.Prune()
+	go syncCtx.CfxDB.Prune()
 
 	return syncer
 }
 
-func startSyncCfxCache(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) *cisync.KVCacheSyncer {
+func startSyncCfxCache(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) *cisync.KVCacheSyncer {
 	if store.StoreConfig().IsChainBlockDisabled() &&
 		store.StoreConfig().IsChainTxnDisabled() &&
 		store.StoreConfig().IsChainReceiptDisabled() {
@@ -173,27 +173,27 @@ func startSyncCfxCache(ctx context.Context, wg *sync.WaitGroup, syncCtx syncCont
 
 	logrus.Info("Start to sync core space blockchain data into cache")
 
-	csyncer := cisync.MustNewKVCacheSyncer(syncCtx.syncCfx, syncCtx.cfxCache)
+	csyncer := cisync.MustNewKVCacheSyncer(syncCtx.SyncCfx, syncCtx.CfxCache)
 	go csyncer.Sync(ctx, wg)
 
 	// start core space cache prune
-	cpruner := cisync.MustNewKVCachePruner(syncCtx.cfxCache)
+	cpruner := cisync.MustNewKVCachePruner(syncCtx.CfxCache)
 	go cpruner.Prune(ctx, wg)
 
 	return csyncer
 }
 
-func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) {
+func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
 	logrus.Info("Start to sync evm space blockchain data into database")
 
-	ethSyncer := cisync.MustNewEthSyncer(syncCtx.syncEth, syncCtx.ethDB)
+	ethSyncer := cisync.MustNewEthSyncer(syncCtx.SyncEth, syncCtx.EthDB)
 	go ethSyncer.Sync(ctx, wg)
 
 	// start evm space db prune
-	go syncCtx.ethDB.Prune()
+	go syncCtx.EthDB.Prune()
 }
 
-func startCatchupSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx syncContext) {
+func startCatchupSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
 	logrus.Info("Start to fast catch-up sync core space blockchain data into database")
 
 	if !catchupSetting.adaptive && catchupSetting.epochFrom >= catchupSetting.epochTo {
@@ -202,8 +202,8 @@ func startCatchupSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCt
 	}
 
 	syncer := catchup.MustNewSyncer(
-		syncCtx.syncCfx,
-		syncCtx.cfxDB,
+		syncCtx.SyncCfx,
+		syncCtx.CfxDB,
 		catchup.WithBenchmark(catchupSetting.benchmark),
 		catchup.WithAdaptive(catchupSetting.adaptive),
 		catchup.WithEpochFrom(catchupSetting.epochFrom),
