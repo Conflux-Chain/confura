@@ -22,7 +22,7 @@ const (
 type conf struct {
 	ID        uint32
 	Name      string `gorm:"unique;size:128;not null"` // config name
-	Value     string `gorm:"size:32698;not null"`      // config value
+	Value     string `gorm:"size:16250;not null"`      // config value
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
