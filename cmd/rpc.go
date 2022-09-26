@@ -148,7 +148,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 
 		// periodically reload rate limit settings from db
 		go rate.DefaultRegistryEth.AutoReload(
-			15*time.Second, storeCtx.EthDB.LoadRateLimitConfigs, storeCtx.CfxDB.LoadRateLimitKeyset,
+			15*time.Second, storeCtx.EthDB.LoadRateLimitConfigs, storeCtx.EthDB.LoadRateLimitKeyset,
 		)
 	}
 
