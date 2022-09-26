@@ -78,13 +78,13 @@ func addStrategy(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	strategy, err := validateStrategyCmdConfig(true, true, true)
+	strategy, err := validateStrategyCmdConfig(true, true)
 	if err != nil {
 		logrus.WithField("config", stratCfg).WithError(err).Info("Invalid command config")
 		return
 	}
 
-	dbs := getMysqlStore(&storeCtx)
+	dbs := getMysqlStore(&storeCtx, stratCfg.Network)
 	if dbs == nil {
 		logrus.Info("DB store is unavailable")
 		return
@@ -121,13 +121,13 @@ func delStrategy(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	_, err := validateStrategyCmdConfig(true, true, false)
+	_, err := validateStrategyCmdConfig(true, false)
 	if err != nil {
 		logrus.WithField("config", stratCfg).WithError(err).Info("Invalid command config")
 		return
 	}
 
-	dbs := getMysqlStore(&storeCtx)
+	dbs := getMysqlStore(&storeCtx, stratCfg.Network)
 	if dbs == nil {
 		logrus.Info("DB store is unavailable")
 		return
@@ -155,13 +155,13 @@ func listStrategies(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	_, err := validateStrategyCmdConfig(false, true, false)
+	_, err := validateStrategyCmdConfig(false, false)
 	if err != nil {
 		logrus.WithField("config", stratCfg).WithError(err).Info("Invalid command config")
 		return
 	}
 
-	dbs := getMysqlStore(&storeCtx)
+	dbs := getMysqlStore(&storeCtx, stratCfg.Network)
 	if dbs == nil {
 		logrus.Info("DB store is unavailable")
 		return
@@ -187,27 +187,21 @@ func listStrategies(cmd *cobra.Command, args []string) {
 	}
 }
 
-func getMysqlStore(storeCtx *util.StoreContext) *mysql.MysqlStore {
-	if strings.EqualFold(stratCfg.Network, "eth") {
+func getMysqlStore(storeCtx *util.StoreContext, network string) *mysql.MysqlStore {
+	if strings.EqualFold(network, "eth") {
 		return storeCtx.EthDB
 	}
 
 	return storeCtx.CfxDB
 }
 
-func validateStrategyCmdConfig(validateName, validateNetwork, validateRules bool) (*rate.Strategy, error) {
-	if validateName && len(stratCfg.Name) == 0 {
-		return nil, errors.New("name must not be empty")
+func validateStrategyCmdConfig(validateName, validateRules bool) (*rate.Strategy, error) {
+	if err := validateNetwork(stratCfg.Network); err != nil {
+		return nil, err
 	}
 
-	if validateNetwork {
-		if len(stratCfg.Network) == 0 {
-			return nil, errors.New("network space must not be empty")
-		}
-
-		if !strings.EqualFold(stratCfg.Network, "cfx") && !strings.EqualFold(stratCfg.Network, "eth") {
-			return nil, errors.New("invalid network space (only `cfx` and `eth` are acceptable)")
-		}
+	if validateName && len(stratCfg.Name) == 0 {
+		return nil, errors.New("name must not be empty")
 	}
 
 	if !validateRules {
@@ -223,4 +217,16 @@ func validateStrategyCmdConfig(validateName, validateNetwork, validateRules bool
 		Name:  stratCfg.Name,
 		Rules: ruleOpts,
 	}, nil
+}
+
+func validateNetwork(network string) error {
+	if len(network) == 0 {
+		return errors.New("network space must not be empty")
+	}
+
+	if !strings.EqualFold(network, "cfx") && !strings.EqualFold(network, "eth") {
+		return errors.New("invalid network space (only `cfx` and `eth` are acceptable)")
+	}
+
+	return nil
 }
