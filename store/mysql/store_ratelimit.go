@@ -15,7 +15,7 @@ var (
 // RateLimit rate limit keyset table
 type RateLimit struct {
 	ID        uint32
-	SID       uint32 // strategy ID
+	SID       uint32 `gorm:"index"`                    // strategy ID
 	LimitType int    `gorm:"default:0;not null"`       // limit type
 	LimitKey  string `gorm:"unique;size:128;not null"` // limit key
 	CreatedAt time.Time
@@ -36,6 +36,19 @@ func NewRateLimitStore(db *gorm.DB) *RateLimitStore {
 	}
 }
 
+func (rls *RateLimitStore) AddRateLimit(sid uint32, limitType int, limitKey string) error {
+	ratelimit := &RateLimit{
+		SID: sid, LimitType: limitType, LimitKey: limitKey,
+	}
+
+	return rls.db.Create(ratelimit).Error
+}
+
+func (rls *RateLimitStore) DeleteRateLimit(limitKey string) (bool, error) {
+	res := rls.db.Delete(&RateLimit{}, "limit_key = ?", limitKey)
+	return res.RowsAffected > 0, res.Error
+}
+
 func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res []*rate.KeyInfo, err error) {
 	db := rls.db
 
@@ -44,7 +57,7 @@ func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res [
 	}
 
 	if len(filter.SIDs) > 0 {
-		db = db.Where("sid IN (?)", filter.SIDs)
+		db = db.Where("s_id IN (?)", filter.SIDs)
 	}
 
 	if db == rls.db && filter.Limit <= 0 {

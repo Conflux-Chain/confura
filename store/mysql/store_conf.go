@@ -99,6 +99,15 @@ func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
 
 // ratelimit config
 
+func (cs *confStore) LoadRateLimitStrategy(name string) (*rate.Strategy, error) {
+	var cfg conf
+	if err := cs.db.Where("name = ?", rate.ConfigStrategyPrefix+name).First(&cfg).Error; err != nil {
+		return nil, err
+	}
+
+	return cs.loadRateLimitStrategy(cfg)
+}
+
 func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
 	var cfgs []conf
 	if err := cs.db.Where("name LIKE ?", rateLimitStrategySqlMatchPattern).Find(&cfgs).Error; err != nil {

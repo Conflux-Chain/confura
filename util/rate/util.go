@@ -2,9 +2,33 @@ package rate
 
 import (
 	"encoding/json"
+	"math/rand"
+	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 )
+
+const (
+	LimitKeyLength = 32
+)
+
+func GenerateRandomLimitKey(limitType int) (string, error) {
+	data := make([]byte, LimitKeyLength)
+
+	source := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(source)
+	r.Read(data)
+
+	if limitType != LimitTypeByKey && limitType != LimitTypeByIp {
+		return "", errors.New("invalid limit type")
+	}
+
+	data[0] &= 0x0F                           // clear out the upper 4 bits
+	data[0] |= (uint8(limitType) << 4) & 0xF0 // reset the upper 4 bits
+
+	return hexutil.Encode(data)[2:], nil
+}
 
 func JsonUnmarshalStrategyRules(data []byte) (map[string]Option, error) {
 	ruleMap := make(map[string][]int)
