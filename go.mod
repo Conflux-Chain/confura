@@ -6,6 +6,7 @@ require (
 	github.com/Conflux-Chain/go-conflux-sdk v1.4.2
 	github.com/Conflux-Chain/go-conflux-util v0.0.0-20220907035343-2d1233bccd70
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20220915034912-b5c10ef3163a
+	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
 	github.com/cespare/xxhash v1.1.0
 	github.com/ethereum/go-ethereum v1.10.15
