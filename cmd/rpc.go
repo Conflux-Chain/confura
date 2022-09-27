@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
-	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc"
 	"github.com/Conflux-Chain/confura/rpc/handler"
@@ -78,7 +77,7 @@ func startRpcService(*cobra.Command, []string) {
 		startNativeSpaceBridgeRpcServer(ctx, &wg)
 	}
 
-	cmdutil.GracefulShutdown(&wg, cancel)
+	util.GracefulShutdown(&wg, cancel)
 }
 
 // startNativeSpaceRpcServer starts core space RPC server

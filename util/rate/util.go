@@ -1,10 +1,12 @@
 package rate
 
 import (
+	"bytes"
 	"encoding/json"
 	"math/rand"
 	"time"
 
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 )
@@ -27,7 +29,16 @@ func GenerateRandomLimitKey(limitType int) (string, error) {
 	data[0] &= 0x0F                           // clear out the upper 4 bits
 	data[0] |= (uint8(limitType) << 4) & 0xF0 // reset the upper 4 bits
 
-	return hexutil.Encode(data)[2:], nil
+	secretb := []byte(hexutil.Encode(data)[2:])
+	usecretb := bytes.ToUpper(secretb)
+
+	for i := range secretb {
+		if util.RandUint64(10) == 0 {
+			secretb[i] = usecretb[i]
+		}
+	}
+
+	return string(secretb), nil
 }
 
 func JsonUnmarshalStrategyRules(data []byte) (map[string]Option, error) {
