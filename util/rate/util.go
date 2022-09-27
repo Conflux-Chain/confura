@@ -1,18 +1,16 @@
 package rate
 
 import (
-	"bytes"
 	"encoding/json"
 	"math/rand"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/btcsuite/btcutil/base58"
 	"github.com/pkg/errors"
 )
 
 const (
-	LimitKeyLength = 32
+	LimitKeyLength = 16
 )
 
 func GenerateRandomLimitKey(limitType int) (string, error) {
@@ -26,17 +24,8 @@ func GenerateRandomLimitKey(limitType int) (string, error) {
 		return "", errors.New("invalid limit type")
 	}
 
-	data[0] &= 0x0F                           // clear out the upper 4 bits
-	data[0] |= (uint8(limitType) << 4) & 0xF0 // reset the upper 4 bits
-
-	secretb := []byte(hexutil.Encode(data)[2:])
-	usecretb := bytes.ToUpper(secretb)
-
-	for i := range secretb {
-		if util.RandUint64(10) == 0 {
-			secretb[i] = usecretb[i]
-		}
-	}
+	secretb := []byte(base58.Encode(data))
+	secretb[0] = '0' + uint8(limitType)
 
 	return string(secretb), nil
 }
