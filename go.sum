@@ -572,11 +572,8 @@ github.com/openweb3/go-rpc-provider v0.2.2/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uF
 github.com/openweb3/go-rpc-provider v0.2.8/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uFot6ZKh4QarD//eZ0=
 github.com/openweb3/go-rpc-provider v0.2.9 h1:6IGACyqQ0CB0lodHPJTbgpLBivjyz7kdxk84o9bELMY=
 github.com/openweb3/go-rpc-provider v0.2.9/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uFot6ZKh4QarD//eZ0=
-github.com/openweb3/go-sdk-common v0.0.0-20220524083215-d22d44765e44/go.mod h1:/M7gnCteccqnoBJMBmwTXkj7akVzQIMcD8y6DFX5GmE=
 github.com/openweb3/go-sdk-common v0.0.0-20220720074746-a7134e1d372c h1:BrPXZpkTdmZe5bNjSSnxWqL44X9FcZ3xftLcYNkIJ68=
 github.com/openweb3/go-sdk-common v0.0.0-20220720074746-a7134e1d372c/go.mod h1:0WCVKMiLiYEaHhpQWQ3rgLti/Fv/+JPRiB0sEoovwk8=
-github.com/openweb3/web3go v0.2.0 h1:DU+7162KHrt2XiWrILsccFkTmDqWBx27Bk1lHLmL1BE=
-github.com/openweb3/web3go v0.2.0/go.mod h1:G/vX7crNV+QGZj4s11cM560WB6j4UjCU1z5nuE/mV5U=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pascaldekloe/goe v0.1.0/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
@@ -627,6 +624,8 @@ github.com/russross/blackfriday/v2 v2.0.1/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQD
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/ryanuber/columnize v0.0.0-20160712163229-9b3edd62028f/go.mod h1:sm1tb6uqfes/u+d4ooFouqFdy9/2g9QGwK3SQygK0Ts=
 github.com/sagikazarmark/crypt v0.3.0/go.mod h1:uD/D+6UF4SrIR1uGEv7bBNkNqLGqUr43MRiaGWX1Nig=
+github.com/scroll-tech/web3go v0.0.0-20221006003405-dc5f08fb1c44 h1:aYR1Uwqu8h/n+WfhMQqgdemR1a5Zgdb7qwOJZjgP6XM=
+github.com/scroll-tech/web3go v0.0.0-20221006003405-dc5f08fb1c44/go.mod h1:nzov9bieJKvQFqJ1gIfvNn3LFO63pdp1C8dP4qv0TmA=
 github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529/go.mod h1:DxrIzT+xaE7yg65j358z/aeFdxmN0P9QXhEzd20vsDc=
 github.com/segmentio/kafka-go v0.1.0/go.mod h1:X6itGqS9L4jDletMsxZ7Dz+JFWxM6JHfPOCvTvk+EJo=
 github.com/segmentio/kafka-go v0.2.0/go.mod h1:X6itGqS9L4jDletMsxZ7Dz+JFWxM6JHfPOCvTvk+EJo=
