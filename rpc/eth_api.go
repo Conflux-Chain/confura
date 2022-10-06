@@ -530,8 +530,16 @@ func (api *ethAPI) filterLogger(filter *web3Types.FilterQuery) *logrus.Entry {
 	return logger
 }
 
+// FeeHistory returns the fee market history.
+func (api *ethAPI) FeeHistory(
+	ctx context.Context, blockCount rpc.DecimalOrHex, lastBlock web3Types.BlockNumber, rewardPercentiles []float64,
+) (*web3Types.FeeHistoryResult, error) {
+	w3c := GetEthClientFromContext(ctx)
+	api.inputBlockMetric.Update1(&lastBlock, "eth_feeHistory/lastBlock", w3c.Eth)
+	return w3c.Eth.FeeHistory(blockCount, lastBlock, rewardPercentiles)
+}
+
 // The following RPC methods are not supported yet by the fullnode:
-// `eth_feeHistory`
 // `eth_getFilterChanges`
 // `eth_getFilterLogs`
 // `eth_newBlockFilter`
