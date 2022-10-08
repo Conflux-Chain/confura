@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/util/rate"
@@ -43,24 +44,34 @@ var (
 		Short: "List rate limit keys",
 		Run:   listKeys,
 	}
+
+	genKeyCmd = &cobra.Command{
+		Use:   "gk",
+		Short: "Generate random rate limit key",
+		Run:   genKey,
+	}
 )
 
 func init() {
 	Cmd.AddCommand(addKeyCmd)
-	hookKeysetCmdFlags(addKeyCmd, true, false, true)
+	hookKeysetCmdFlags(addKeyCmd, true, true, false, true)
+	hookKeysetCmdLimitKeyFlag(addKeyCmd, false)
 
 	Cmd.AddCommand(delKeyCmd)
-	hookKeysetCmdFlags(delKeyCmd, false, true, false)
+	hookKeysetCmdFlags(delKeyCmd, true, false, true, false)
 
 	Cmd.AddCommand(listKeysCmd)
-	hookKeysetCmdFlags(listKeysCmd, true, false, false)
+	hookKeysetCmdFlags(listKeysCmd, true, true, false, false)
+
+	Cmd.AddCommand(genKeyCmd)
+	hookKeysetCmdFlags(genKeyCmd, false, false, false, true)
 }
 
 func addKey(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	err := validateKeysetCmdConfig(true, false, true)
+	err := validateKeysetCmdConfig(true, true, false, true)
 	if err != nil {
 		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
 		return
@@ -78,10 +89,13 @@ func addKey(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	limitKey, err := rate.GenerateRandomLimitKey(keysetCfg.LimitType)
-	if err != nil {
-		logrus.Info("Failed to generate random limit key")
-		return
+	limitKey := strings.TrimSpace(keysetCfg.LimitKey)
+	if len(limitKey) == 0 { // generate random limit key if not provided
+		limitKey, err = rate.GenerateRandomLimitKey(keysetCfg.LimitType)
+		if err != nil {
+			logrus.WithError(err).Info("Failed to generate random limit key")
+			return
+		}
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -106,7 +120,7 @@ func delKey(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	err := validateKeysetCmdConfig(false, true, false)
+	err := validateKeysetCmdConfig(true, false, true, false)
 	if err != nil {
 		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
 		return
@@ -139,7 +153,7 @@ func listKeys(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	err := validateKeysetCmdConfig(true, false, false)
+	err := validateKeysetCmdConfig(true, true, false, false)
 	if err != nil {
 		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
 		return
@@ -182,9 +196,30 @@ func listKeys(cmd *cobra.Command, args []string) {
 	}
 }
 
-func validateKeysetCmdConfig(validateStrategy, validateLimitKey, validateLimitType bool) error {
-	if err := validateNetwork(keysetCfg.Network); err != nil {
-		return err
+func genKey(cmd *cobra.Command, args []string) {
+	err := validateKeysetCmdConfig(false, false, false, true)
+	if err != nil {
+		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
+		return
+	}
+
+	limitKey, err := rate.GenerateRandomLimitKey(keysetCfg.LimitType)
+	if err != nil {
+		logrus.Info("Failed to generate random limit key")
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"limitKey":  limitKey,
+		"limitType": limitTypeMap[keysetCfg.LimitType],
+	}).Info("New random rate limit key generated")
+}
+
+func validateKeysetCmdConfig(validateNet, validateStrategy, validateLimitKey, validateLimitType bool) error {
+	if validateNet {
+		if err := validateNetwork(keysetCfg.Network); err != nil {
+			return err
+		}
 	}
 
 	if validateStrategy && len(keysetCfg.Strategy) == 0 {
@@ -199,15 +234,15 @@ func validateKeysetCmdConfig(validateStrategy, validateLimitKey, validateLimitTy
 		return nil
 	}
 
-	if keysetCfg.LimitType != 0 && keysetCfg.LimitType != 1 {
+	if keysetCfg.LimitType != rate.LimitTypeByIp && keysetCfg.LimitType != rate.LimitTypeByKey {
 		return errors.New("invalid rate limit type")
 	}
 
 	return nil
 }
 
-func hookKeysetCmdFlags(keysetCmd *cobra.Command, hookStrategy, hookLimitKey, hookLimitType bool) {
-	{ // RPC network space
+func hookKeysetCmdFlags(keysetCmd *cobra.Command, hookNetwork, hookStrategy, hookLimitKey, hookLimitType bool) {
+	if hookNetwork { // RPC network space
 		keysetCmd.Flags().StringVarP(
 			&keysetCfg.Network, "network", "n", "cfx", "RPC network space ('cfx' or 'eth')",
 		)
@@ -222,10 +257,7 @@ func hookKeysetCmdFlags(keysetCmd *cobra.Command, hookStrategy, hookLimitKey, ho
 	}
 
 	if hookLimitKey { // rate limit key
-		keysetCmd.Flags().StringVarP(
-			&keysetCfg.LimitKey, "key", "k", "", "rate limit key",
-		)
-		keysetCmd.MarkFlagRequired("key")
+		hookKeysetCmdLimitKeyFlag(keysetCmd, true)
 	}
 
 	if hookLimitType { // rate limit type
@@ -233,5 +265,15 @@ func hookKeysetCmdFlags(keysetCmd *cobra.Command, hookStrategy, hookLimitKey, ho
 			&keysetCfg.LimitType, "type", "t", 0, "rate limit type (0 - by Key, 1 - by IP)",
 		)
 		keysetCmd.MarkFlagRequired("type")
+	}
+}
+
+func hookKeysetCmdLimitKeyFlag(keysetCmd *cobra.Command, required bool) {
+	keysetCmd.Flags().StringVarP(
+		&keysetCfg.LimitKey, "key", "k", "", "rate limit key",
+	)
+
+	if required {
+		keysetCmd.MarkFlagRequired("key")
 	}
 }
