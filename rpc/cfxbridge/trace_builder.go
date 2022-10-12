@@ -23,6 +23,25 @@ func (tb *TraceBuilder) Build() []types.LocalizedTrace {
 		return emptyTraces
 	}
 
+	if tb.stackedResults != nil && tb.stackedResults.Len() != 0 {
+		var leftover []*stackedTraceResult
+
+		// This shouldn't happen if push/pop operation pairs correctly, anyway
+		// let's append the leftover result traces for completeness.
+		for v := tb.stackedResults.Back(); v != nil; {
+			tr := v.Value.(*stackedTraceResult)
+			tb.traces = append(tb.traces, *tr.traceResult)
+
+			nv := v.Prev()
+			tb.stackedResults.Remove(v)
+			v = nv
+
+			leftover = append(leftover, tr)
+		}
+
+		logrus.WithField("leftOverResultTraces", leftover).Warn("Mismatched result trace stack operations")
+	}
+
 	return tb.traces
 }
 
@@ -34,15 +53,13 @@ func (tb *TraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTrac
 
 	tb.traces = append(tb.traces, *trace)
 
-	// E.g. internal_transfer_action trace has no result trace.
-	if traceResult == nil {
-		return
-	}
-
 	if subTraces == 0 {
-		tb.traces = append(tb.traces, *traceResult)
+		if traceResult != nil {
+			tb.traces = append(tb.traces, *traceResult)
+		}
+
 		tb.pop()
-	} else {
+	} else if traceResult != nil {
 		tb.push(traceResult, subTraces)
 	}
 }
@@ -89,6 +106,9 @@ func (tb *TraceBuilder) pop() {
 	// All sub traces handled and pop the trace result
 	tb.traces = append(tb.traces, *item.traceResult)
 	tb.stackedResults.Remove(topEle)
+
+	// Pop upstream trace
+	tb.pop()
 }
 
 type TransactionTraceBuilder struct {
@@ -117,7 +137,7 @@ func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTr
 		if trace.TransactionPosition != nil {
 			ttb.txTrace.TransactionPosition = *trace.TransactionPosition
 		}
-	} else if ttb.txTrace.TransactionHash != *trace.TransactionHash {
+	} else if ttb.txTrace.TransactionHash != *trace.TransactionHash { // next new transaction
 		return false
 	}
 
