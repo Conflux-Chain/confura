@@ -51,7 +51,7 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 
 	txnTraces, err := builder.Build()
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	return &types.LocalizedBlockTrace{

@@ -180,8 +180,8 @@ func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, s
 		return nil
 	}
 
-	done, err := btb.builer.Append(trace, traceResult, subTraces)
-	if err != nil || done {
+	next, err := btb.builer.Append(trace, traceResult, subTraces)
+	if err != nil || next {
 		return err
 	}
 
