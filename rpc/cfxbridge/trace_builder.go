@@ -2,9 +2,14 @@ package cfxbridge
 
 import (
 	"container/list"
+	"errors"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/sirupsen/logrus"
+)
+
+var (
+	errWrongTraceStack = errors.New("wrong trace stack")
 )
 
 type stackedTraceResult struct {
@@ -18,33 +23,47 @@ type TraceBuilder struct {
 	stackedResults *list.List
 }
 
-func (tb *TraceBuilder) Build() []types.LocalizedTrace {
+func (tb *TraceBuilder) Build() ([]types.LocalizedTrace, error) {
 	if tb.traces == nil {
-		return emptyTraces
+		return emptyTraces, nil
 	}
 
-	return tb.traces
+	// This shouldn't happen if stack push/pop operation pairs correctly.
+	if tb.stackedResults != nil && tb.stackedResults.Len() != 0 {
+		logrus.WithFields(logrus.Fields{
+			"stackLen":  tb.stackedResults.Len(),
+			"numTraces": len(tb.traces),
+		}).Error("Mismatched push/pop operation pairs for trace result stack")
+		return nil, errWrongTraceStack
+	}
+
+	return tb.traces, nil
 }
 
-func (tb *TraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) {
+func (tb *TraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) error {
 	// E.g. reward & suicide trace not supported in Conflux.
 	if trace == nil {
-		return
+		return nil
 	}
 
 	tb.traces = append(tb.traces, *trace)
 
-	// E.g. internal_transfer_action trace has no result trace.
-	if traceResult == nil {
-		return
+	// If there are any subtraces for this one, just push the trace result
+	// to stack for later retrieval.
+	if subTraces != 0 {
+		if traceResult != nil {
+			tb.push(traceResult, subTraces)
+		}
+		return nil
 	}
 
-	if subTraces == 0 {
+	// Otherwise, this trace is the end one of call stack. Need to append the
+	// trace result and pop the stack.
+	if traceResult != nil {
 		tb.traces = append(tb.traces, *traceResult)
-		tb.pop()
-	} else {
-		tb.push(traceResult, subTraces)
 	}
+
+	return tb.pop()
 }
 
 func (tb *TraceBuilder) push(traceResult *types.LocalizedTrace, subTraces uint) {
@@ -59,36 +78,42 @@ func (tb *TraceBuilder) push(traceResult *types.LocalizedTrace, subTraces uint) 
 	})
 }
 
-func (tb *TraceBuilder) pop() {
+func (tb *TraceBuilder) pop() error {
 	// No item pushed into stack before
 	if tb.stackedResults == nil {
-		return
+		return nil
 	}
 
 	// No pending trace result to handle
 	topEle := tb.stackedResults.Back()
 	if topEle == nil {
-		return
+		return nil
 	}
 
 	item := topEle.Value.(*stackedTraceResult)
 
 	// Should never happen, but make code robust
 	if item.subTraces == 0 {
-		logrus.WithField("tx", item.traceResult.TransactionHash.String()).Error("Failed to pop due to invalid subtraces")
-		return
+		logrus.WithFields(logrus.Fields{
+			"txnHash":   item.traceResult.TransactionHash.String(),
+			"traceType": item.traceResult.Type,
+		}).Error("Failed to pop due to invalid subtraces")
+		return errWrongTraceStack
 	}
 
 	item.subTraces--
 
 	// There are remaining sub traces that unhandled
 	if item.subTraces > 0 {
-		return
+		return nil
 	}
 
 	// All sub traces handled and pop the trace result
 	tb.traces = append(tb.traces, *item.traceResult)
 	tb.stackedResults.Remove(topEle)
+
+	// Pop upstream trace
+	return tb.pop()
 }
 
 type TransactionTraceBuilder struct {
@@ -96,19 +121,24 @@ type TransactionTraceBuilder struct {
 	builder TraceBuilder
 }
 
-func (ttb *TransactionTraceBuilder) Build() (*types.LocalizedTransactionTrace, bool) {
+func (ttb *TransactionTraceBuilder) Build() (*types.LocalizedTransactionTrace, bool, error) {
 	if len(ttb.txTrace.TransactionHash) == 0 {
-		return nil, false
+		return nil, false, nil
 	}
 
-	ttb.txTrace.Traces = ttb.builder.Build()
-	return &ttb.txTrace, true
+	traces, err := ttb.builder.Build()
+	if err != nil {
+		return nil, false, err
+	}
+
+	ttb.txTrace.Traces = traces
+	return &ttb.txTrace, true, nil
 }
 
-func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) bool {
+func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) (bool, error) {
 	if trace == nil {
 		// ignore nil trace and continue to append other traces
-		return true
+		return true, nil
 	}
 
 	if len(ttb.txTrace.TransactionHash) == 0 {
@@ -117,13 +147,15 @@ func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTr
 		if trace.TransactionPosition != nil {
 			ttb.txTrace.TransactionPosition = *trace.TransactionPosition
 		}
-	} else if ttb.txTrace.TransactionHash != *trace.TransactionHash {
-		return false
+	} else if ttb.txTrace.TransactionHash != *trace.TransactionHash { // next new transaction
+		return false, nil
 	}
 
-	ttb.builder.Append(trace, traceResult, subTraces)
+	if err := ttb.builder.Append(trace, traceResult, subTraces); err != nil {
+		return false, err
+	}
 
-	return true
+	return true, nil
 }
 
 type BlockTraceBuilder struct {
@@ -131,32 +163,46 @@ type BlockTraceBuilder struct {
 	builer   TransactionTraceBuilder
 }
 
-func (btb *BlockTraceBuilder) Build() []types.LocalizedTransactionTrace {
-	btb.seal()
+func (btb *BlockTraceBuilder) Build() ([]types.LocalizedTransactionTrace, error) {
+	if err := btb.seal(); err != nil {
+		return nil, err
+	}
 
 	if btb.txTraces == nil {
-		return emptyTxTraces
+		return emptyTxTraces, nil
 	}
 
-	return btb.txTraces
+	return btb.txTraces, nil
 }
 
-func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) {
+func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) error {
 	if trace == nil {
-		return
+		return nil
 	}
 
-	if btb.builer.Append(trace, traceResult, subTraces) {
-		return
+	next, err := btb.builer.Append(trace, traceResult, subTraces)
+	if err != nil || next {
+		return err
 	}
 
-	btb.seal()
-	btb.builer.Append(trace, traceResult, subTraces)
+	if err := btb.seal(); err != nil {
+		return err
+	}
+
+	_, err = btb.builer.Append(trace, traceResult, subTraces)
+	return err
 }
 
-func (btb *BlockTraceBuilder) seal() {
-	if txTrace, ok := btb.builer.Build(); ok {
+func (btb *BlockTraceBuilder) seal() error {
+	txTrace, ok, err := btb.builer.Build()
+	if err != nil {
+		return err
+	}
+
+	if ok {
 		btb.txTraces = append(btb.txTraces, *txTrace)
 		btb.builer = TransactionTraceBuilder{}
 	}
+
+	return nil
 }
