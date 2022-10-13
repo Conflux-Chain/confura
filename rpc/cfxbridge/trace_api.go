@@ -44,11 +44,18 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 	var builder BlockTraceBuilder
 	for i := range traces {
 		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
-		builder.Append(cfxTrace, cfxTraceResult, traces[i].Subtraces)
+		if err := builder.Append(cfxTrace, cfxTraceResult, traces[i].Subtraces); err != nil {
+			return nil, err
+		}
+	}
+
+	txnTraces, err := builder.Build()
+	if err != nil {
+		return nil, nil
 	}
 
 	return &types.LocalizedBlockTrace{
-		TransactionTraces: builder.Build(),
+		TransactionTraces: txnTraces,
 		EpochHash:         blockHash,
 		EpochNumber:       *types.NewBigIntByRaw(ethBlock.Number),
 		BlockHash:         blockHash,
@@ -73,8 +80,10 @@ func (api *TraceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]type
 	var builder TraceBuilder
 	for i := range traces {
 		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
-		builder.Append(cfxTrace, cfxTraceResult, traces[i].Subtraces)
+		if err := builder.Append(cfxTrace, cfxTraceResult, traces[i].Subtraces); err != nil {
+			return nil, err
+		}
 	}
 
-	return builder.Build(), nil
+	return builder.Build()
 }
