@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Conflux-Chain/confura/util/rate"
+	web3pay "github.com/Conflux-Chain/web3pay-service/client/middleware"
 )
 
 func RateLimit(registry *rate.Registry) Middleware {
@@ -32,6 +33,14 @@ func RateLimitAllow(ctx context.Context, name string, n int) bool {
 
 	vc := &rate.VisitContext{
 		Ip: ip, Resource: name, Key: token,
+	}
+
+	if ss, ok := web3pay.VipSubscriptionStatusFromContext(ctx); ok {
+		// check VIP subscription status
+		vc.Status, _ = rate.GetVipStatusBySubscriptionStatus(ss)
+	} else if bs, ok := web3pay.BillingStatusFromContext(ctx); ok {
+		// check billing status
+		vc.Status, _ = rate.GetVipStatusByBillingStatus(bs)
 	}
 
 	limiter, ok := registry.Get(vc)

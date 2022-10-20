@@ -2,6 +2,7 @@ package rate
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,6 +63,10 @@ func (m *Registry) Get(vc *VisitContext) (Limiter, bool) {
 		return m.getDefaultLimiter(vc)
 	}
 
+	if vc.Status != nil && vc.Status.Tier != VipTierNone { // VIP access
+		return m.getVipLimiter(vc)
+	}
+
 	ki, ok := m.loadKeyInfo(vc.Key)
 	if !ok || ki == nil { // limit key not loaded or missing
 		logrus.WithFields(logrus.Fields{
@@ -120,6 +125,53 @@ func (m *Registry) gcPeriodically(interval time.Duration, timeout time.Duration)
 	for range ticker.C {
 		m.GC(timeout)
 	}
+}
+
+func (m *Registry) getVipLimiter(vc *VisitContext) (Limiter, bool) {
+	logger := logrus.WithFields(logrus.Fields{
+		"visitContext": vc,
+		"vipStatus":    vc.Status,
+	})
+
+	strategy := m.getVipStrategy(vc.Status.Tier)
+	if strategy == nil {
+		logger.Info("No VIP strategy available")
+		return nil, false
+	}
+
+	logger = logger.WithField("strategy", strategy.Name)
+	ki := &KeyInfo{
+		SID: strategy.ID, Key: vc.Key, Type: LimitTypeByKey,
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// load limiter set by key info from where limiter is looked up
+	// for current visit context
+	if ls, ok := m.getLimiterSetByKeyInfo(ki); ok {
+		logger.WithField("limiterSetType", fmt.Sprintf("%T", ls)).
+			Debug("Use limiter from VIP strategy limiter set")
+		return ls.Get(vc)
+	}
+
+	logger.Info("No VIP limiter available")
+	return nil, false
+}
+
+func (m *Registry) getVipStrategy(tier VipTier) *Strategy {
+	vipStrategy := GetVipStrategyByTier(tier)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, s := range m.strategies {
+		if strings.EqualFold(s.Name, vipStrategy) {
+			return s
+		}
+	}
+
+	return nil
 }
 
 // getLimiterSet gets limiter set for the specified strategy and limiter type

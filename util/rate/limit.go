@@ -8,9 +8,10 @@ import (
 )
 
 type VisitContext struct {
-	Ip       string // visiter IP
-	Key      string // visiter key
-	Resource string // visited resource (also used as limit rule)
+	Ip       string     // visiter IP
+	Key      string     // visiter key
+	Status   *VipStatus // visiter VIP status
+	Resource string     // visited resource (also used as limit rule)
 }
 
 type Limiter interface {

@@ -25,10 +25,10 @@ func init() {
 	// panic recovery
 	rpc.HookHandleCallMsg(middlewares.Recover)
 
-	// web3pay billing
-	if web3payClient, ok := middlewares.MustNewWeb3PayClient(); ok {
-		logrus.Info("Web3Pay billing RPC middleware enabled")
-		rpc.HookHandleCallMsg(middlewares.Billing(web3payClient))
+	// web3pay
+	if mw, conf, ok := middlewares.MustNewWeb3PayMiddlewareFromViper(); ok {
+		logrus.WithField("mode", conf.Mode).Info("Web3Pay openweb3 RPC middleware enabled")
+		rpc.HookHandleCallMsg(mw)
 	}
 
 	// rate limit
