@@ -77,7 +77,27 @@ func (m *Registry) Get(vc *VisitContext) (Limiter, bool) {
 		return m.getDefaultLimiter(vc)
 	}
 
-	return m.getKeysetLimiter(vc, ki)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// load limiter set by key info from where limiter is looked up
+	// for current visit context
+	if ls, ok := m.getLimiterSetByKeyInfo(ki); ok {
+		logrus.WithFields(logrus.Fields{
+			"visitContext":   vc,
+			"limiterSetType": fmt.Sprintf("%T", ls),
+			"keyInfo":        ki,
+		}).Debug("Use limiter from some strategy limiter set")
+
+		return ls.Get(vc)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"visitContext": vc,
+		"keyInfo":      ki,
+	}).Debug("Use default limiter due to not limiter set avaliable")
+
+	return m.getDefaultLimiter(vc, true)
 }
 
 func (m *Registry) GC(timeout time.Duration) {
@@ -119,34 +139,24 @@ func (m *Registry) getVipLimiter(vc *VisitContext) (Limiter, bool) {
 		return nil, false
 	}
 
-	logger.WithField("strategy", strategy.Name).Debug("Limiter with VIP strategy utilized")
+	logger = logger.WithField("strategy", strategy.Name)
+	ki := &KeyInfo{
+		SID: strategy.ID, Key: vc.Key, Type: LimitTypeByKey,
+	}
 
-	ki := &KeyInfo{SID: strategy.ID, Key: vc.Key, Type: LimitTypeByKey}
-	return m.getKeysetLimiter(vc, ki)
-}
-
-func (m *Registry) getKeysetLimiter(vc *VisitContext, ki *KeyInfo) (Limiter, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// load limiter set by key info from where limiter is looked up
 	// for current visit context
 	if ls, ok := m.getLimiterSetByKeyInfo(ki); ok {
-		logrus.WithFields(logrus.Fields{
-			"visitContext":   vc,
-			"limiterSetType": fmt.Sprintf("%T", ls),
-			"keyInfo":        ki,
-		}).Debug("Use limiter from some strategy limiter set")
-
+		logger.WithField("limiterSetType", fmt.Sprintf("%T", ls)).
+			Debug("Use limiter from VIP strategy limiter set")
 		return ls.Get(vc)
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"visitContext": vc,
-		"keyInfo":      ki,
-	}).Debug("Use default limiter due to not limiter set avaliable")
-
-	return m.getDefaultLimiter(vc, true)
+	logger.Info("No VIP limiter available")
+	return nil, false
 }
 
 func (m *Registry) getVipStrategy(tier VipTier) *Strategy {
