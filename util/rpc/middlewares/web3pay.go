@@ -38,14 +38,14 @@ func MustNewWeb3PayMiddlewareFromViper() (rpc.HandleCallMsgMiddleware, *web3payC
 		return nil, nil, false
 	}
 
-	var mdw rpc.HandleCallMsgMiddleware
+	var mw rpc.HandleCallMsgMiddleware
 	if conf.IsSubscriptionMode() {
-		mdw = mustNewWeb3PayVIpSubscriptionMiddleware(conf)
+		mw = mustNewWeb3PayVIpSubscriptionMiddleware(conf)
 	} else {
-		mdw = mustNewWeb3PayBillingMiddleware(conf)
+		mw = mustNewWeb3PayBillingMiddleware(conf)
 	}
 
-	return mdw, conf, true
+	return mw, conf, true
 }
 
 func mustNewWeb3PayVIpSubscriptionMiddleware(conf *web3payConfig) rpc.HandleCallMsgMiddleware {

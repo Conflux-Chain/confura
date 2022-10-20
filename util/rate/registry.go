@@ -160,11 +160,13 @@ func (m *Registry) getVipLimiter(vc *VisitContext) (Limiter, bool) {
 }
 
 func (m *Registry) getVipStrategy(tier VipTier) *Strategy {
+	vipStrategy := GetVipStrategyByTier(tier)
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for _, s := range m.strategies {
-		if strings.EqualFold(s.Name, VipStrategyByTier(tier)) {
+		if strings.EqualFold(s.Name, vipStrategy) {
 			return s
 		}
 	}

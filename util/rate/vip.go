@@ -17,7 +17,7 @@ const (
 type VipTier uint
 
 const (
-	// no VIP tier
+	// none VIP tier
 	VipTierNone VipTier = iota
 	// VIP subscription tier
 	VipTierSubscription1
@@ -33,7 +33,7 @@ type VipStatus struct {
 	Tier VipTier // VIP tier
 }
 
-func VipStrategyByTier(tier VipTier) string {
+func GetVipStrategyByTier(tier VipTier) string {
 	return fmt.Sprintf("vip%d", tier)
 }
 
@@ -82,11 +82,11 @@ func GetVipTierBySubscription(vi *types.VipInfo) (VipTier, bool) {
 		return VipTierNone, false
 	}
 
-	if vt := VipTier(tier); vt > VipTierNone && vt < VipTierSubscriptionEnd {
-		// acceptable VIP subscription tier
-		return vt, true
+	vt := VipTier(tier)
+	if vt < VipTierSubscription1 || vt >= VipTierSubscriptionEnd {
+		// beyond acceptable range
+		return VipTierNone, false
 	}
 
-	// beyond acceptable range
-	return VipTierNone, false
+	return vt, true
 }
