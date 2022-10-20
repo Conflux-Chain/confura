@@ -2,6 +2,7 @@ package rate
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,6 +63,10 @@ func (m *Registry) Get(vc *VisitContext) (Limiter, bool) {
 		return m.getDefaultLimiter(vc)
 	}
 
+	if vc.Status != nil && vc.Status.Tier != VipTierNone { // VIP access
+		return m.getVipLimiter(vc)
+	}
+
 	ki, ok := m.loadKeyInfo(vc.Key)
 	if !ok || ki == nil { // limit key not loaded or missing
 		logrus.WithFields(logrus.Fields{
@@ -72,27 +77,7 @@ func (m *Registry) Get(vc *VisitContext) (Limiter, bool) {
 		return m.getDefaultLimiter(vc)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// load limiter set by key info from where limiter is looked up
-	// for current visit context
-	if ls, ok := m.getLimiterSetByKeyInfo(ki); ok {
-		logrus.WithFields(logrus.Fields{
-			"visitContext":   vc,
-			"limiterSetType": fmt.Sprintf("%T", ls),
-			"keyInfo":        ki,
-		}).Debug("Use limiter from some strategy limiter set")
-
-		return ls.Get(vc)
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"visitContext": vc,
-		"keyInfo":      ki,
-	}).Debug("Use default limiter due to not limiter set avaliable")
-
-	return m.getDefaultLimiter(vc, true)
+	return m.getKeysetLimiter(vc, ki)
 }
 
 func (m *Registry) GC(timeout time.Duration) {
@@ -120,6 +105,61 @@ func (m *Registry) gcPeriodically(interval time.Duration, timeout time.Duration)
 	for range ticker.C {
 		m.GC(timeout)
 	}
+}
+
+func (m *Registry) getVipLimiter(vc *VisitContext) (Limiter, bool) {
+	logger := logrus.WithFields(logrus.Fields{
+		"visitContext": vc,
+		"vipStatus":    vc.Status,
+	})
+
+	strategy := m.getVipStrategy(vc.Status.Tier)
+	if strategy == nil {
+		logger.Info("No VIP strategy available")
+		return nil, false
+	}
+
+	logger.WithField("strategy", strategy.Name).Debug("Limiter with VIP strategy utilized")
+
+	ki := &KeyInfo{SID: strategy.ID, Key: vc.Key, Type: LimitTypeByKey}
+	return m.getKeysetLimiter(vc, ki)
+}
+
+func (m *Registry) getKeysetLimiter(vc *VisitContext, ki *KeyInfo) (Limiter, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// load limiter set by key info from where limiter is looked up
+	// for current visit context
+	if ls, ok := m.getLimiterSetByKeyInfo(ki); ok {
+		logrus.WithFields(logrus.Fields{
+			"visitContext":   vc,
+			"limiterSetType": fmt.Sprintf("%T", ls),
+			"keyInfo":        ki,
+		}).Debug("Use limiter from some strategy limiter set")
+
+		return ls.Get(vc)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"visitContext": vc,
+		"keyInfo":      ki,
+	}).Debug("Use default limiter due to not limiter set avaliable")
+
+	return m.getDefaultLimiter(vc, true)
+}
+
+func (m *Registry) getVipStrategy(tier VipTier) *Strategy {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, s := range m.strategies {
+		if strings.EqualFold(s.Name, VipStrategyByTier(tier)) {
+			return s
+		}
+	}
+
+	return nil
 }
 
 // getLimiterSet gets limiter set for the specified strategy and limiter type

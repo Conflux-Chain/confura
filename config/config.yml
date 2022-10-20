@@ -267,13 +267,25 @@ node:
 #   # List of core space fullnodes to be broadcasted.
 #   nodeUrls: []
 
-# # Web3Pay client configurations for fee billing
+# # Web3Pay client middleware configurations
 # web3pay:
-#   # Whether to enable web3pay billing
+#   # Whether to enable web3pay
 #   enabled: false
-#   # Request timeout duration
-#   timeout: 200ms
-#   # API gateway endpoint
-#   gateway:
-#   # Billing auth key
-#   billingKey:
+#   # Available payment modes are `billing` and `subscription`
+#   mode: billing
+#   # Billing middleware configurations.
+#   # Effective only if the payment mode set as `billing`
+#   billing:
+#     # Request timeout duration
+#     timeout: 200ms
+#     # billing API gateway endpoint
+#     gateway:
+#     # Billing auth key
+#     billingKey:
+#   # VIP subscription middleware configurations.
+#   # Effective only if the payment mode set as `subscription`
+#   subscription:
+#     # EVM space blockchain node RPC endpoint
+#     chainRpcUrl:
+#     # VIP subscription App contract address
+#     AppContract:
