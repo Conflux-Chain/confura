@@ -24,6 +24,11 @@ const (
 	syncPivotInfoWinCapacity = 50
 )
 
+type pivotSwitchEvent struct {
+	revertFrom uint64
+	revertTo   uint64
+}
+
 // db sync configuration
 type syncConfig struct {
 	FromEpoch uint64 `default:"0"`
@@ -54,8 +59,8 @@ type DatabaseSyncer struct {
 	syncIntervalCatchUp time.Duration
 	// last received epoch number from pubsub for pivot chain switch detection
 	lastSubEpochNo uint64
-	// receive the pivot chain switched epoch event channel
-	pivotSwitchEpochCh chan uint64
+	// channel to receive pivot chain switch events
+	pivotSwitchEventCh chan *pivotSwitchEvent
 	// checkpoint channel received to check sync data
 	checkPointCh chan bool
 	// window to cache epoch pivot info
@@ -78,7 +83,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		lastSubEpochNo:      citypes.EpochNumberNil,
-		pivotSwitchEpochCh:  make(chan uint64, conf.Sub.Buffer),
+		pivotSwitchEventCh:  make(chan *pivotSwitchEvent, conf.Sub.Buffer),
 		checkPointCh:        make(chan bool, 2),
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 	}
@@ -405,18 +410,19 @@ func (syncer *DatabaseSyncer) nextEpochTo(maxEpochTo uint64) (uint64, uint64) {
 func (syncer *DatabaseSyncer) drainPivotReorgEvents() error {
 	for {
 		select {
-		case rEpoch := <-syncer.pivotSwitchEpochCh:
-			if rEpoch >= syncer.epochFrom {
+		case psevent := <-syncer.pivotSwitchEventCh:
+			if psevent.revertTo >= syncer.epochFrom {
 				break
 			}
 
 			logrus.WithFields(logrus.Fields{
-				"revertToEpoch": rEpoch,
-				"syncFromEpoch": syncer.epochFrom,
+				"revertFromEpoch": psevent.revertFrom,
+				"revertToEpoch":   psevent.revertTo,
+				"syncFromEpoch":   syncer.epochFrom,
 			}).Warn("Db syncer detected pivot chain reorg for the latest confirmed epoch from pubsub")
 
 			// pivot switch reorg for the latest confirmed epoch
-			if err := syncer.pivotSwitchRevert(rEpoch); err != nil {
+			if err := syncer.pivotSwitchRevert(psevent.revertTo); err != nil {
 				return errors.WithMessage(err, "failed to revert epoch(s) from pivot switch reorg channel")
 			}
 		default:
@@ -493,7 +499,9 @@ func (syncer *DatabaseSyncer) detectPivotSwitchFromPubsub(epoch *types.Websocket
 		logger.Info("Db syncer detected pubsub new epoch pivot switched")
 
 		atomic.StoreUint64(addrPtr, newEpoch)
-		syncer.pivotSwitchEpochCh <- newEpoch
+		syncer.pivotSwitchEventCh <- &pivotSwitchEvent{
+			revertFrom: lastSubEpochNo, revertTo: newEpoch,
+		}
 	case lastSubEpochNo+1 == newEpoch: // continuous
 		logger.Debug("Db syncer validated continuous new epoch from pubsub")
 
