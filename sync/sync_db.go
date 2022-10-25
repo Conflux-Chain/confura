@@ -55,7 +55,7 @@ type DatabaseSyncer struct {
 	// last received epoch number from pubsub for pivot chain switch detection
 	lastSubEpochNo uint64
 	// receive the pivot chain switched epoch event channel
-	pivotSwitchEpochCh chan uint64
+	pivotSwitchEpochCh chan [2]uint64
 	// checkpoint channel received to check sync data
 	checkPointCh chan bool
 	// window to cache epoch pivot info
@@ -78,7 +78,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		lastSubEpochNo:      citypes.EpochNumberNil,
-		pivotSwitchEpochCh:  make(chan uint64, conf.Sub.Buffer),
+		pivotSwitchEpochCh:  make(chan [2]uint64, conf.Sub.Buffer),
 		checkPointCh:        make(chan bool, 2),
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 	}
@@ -405,14 +405,16 @@ func (syncer *DatabaseSyncer) nextEpochTo(maxEpochTo uint64) (uint64, uint64) {
 func (syncer *DatabaseSyncer) drainPivotReorgEvents() error {
 	for {
 		select {
-		case rEpoch := <-syncer.pivotSwitchEpochCh:
+		case psinfo := <-syncer.pivotSwitchEpochCh:
+			rEpoch := psinfo[1]
 			if rEpoch >= syncer.epochFrom {
 				break
 			}
 
 			logrus.WithFields(logrus.Fields{
-				"revertToEpoch": rEpoch,
-				"syncFromEpoch": syncer.epochFrom,
+				"revertFromEpoch": psinfo[0],
+				"revertToEpoch":   rEpoch,
+				"syncFromEpoch":   syncer.epochFrom,
 			}).Warn("Db syncer detected pivot chain reorg for the latest confirmed epoch from pubsub")
 
 			// pivot switch reorg for the latest confirmed epoch
@@ -493,7 +495,7 @@ func (syncer *DatabaseSyncer) detectPivotSwitchFromPubsub(epoch *types.Websocket
 		logger.Info("Db syncer detected pubsub new epoch pivot switched")
 
 		atomic.StoreUint64(addrPtr, newEpoch)
-		syncer.pivotSwitchEpochCh <- newEpoch
+		syncer.pivotSwitchEpochCh <- [2]uint64{lastSubEpochNo, newEpoch}
 	case lastSubEpochNo+1 == newEpoch: // continuous
 		logger.Debug("Db syncer validated continuous new epoch from pubsub")
 
