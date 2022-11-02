@@ -215,6 +215,10 @@ func startDebugSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup) {
 
 	logrus.Info("Debug Space RPC server started, HTTP endpoint=\"", httpEndpoint, "\"")
 
+	if !rpc.IsIPValid() {
+		return
+	}
+
 	http.Handle("/", &ForwardHandler{})
 	http.ListenAndServe(httpEndpoint, nil)
 }
