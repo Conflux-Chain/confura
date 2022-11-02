@@ -15,7 +15,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/montanaflynn/stats v0.6.6
 	github.com/openweb3/go-rpc-provider v0.2.9
-	github.com/openweb3/web3go v0.2.0
+	github.com/openweb3/web3go v0.2.2
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
 	github.com/sirupsen/logrus v1.8.1
