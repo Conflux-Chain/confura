@@ -359,6 +359,7 @@ func (api *ethAPI) getLogs(ctx context.Context, fq *web3Types.FilterQuery, exclu
 		return logs, false, err
 	}
 
+	// fail over to fullnode if no handler configured
 	logs, err := w3c.Eth.Logs(*fq)
 	return logs, true, err
 }
