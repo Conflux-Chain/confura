@@ -2,8 +2,10 @@ package rpc
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strings"
 
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
@@ -12,16 +14,29 @@ import (
 	web3Types "github.com/openweb3/web3go/types"
 )
 
+const delegateFilterCacheSize = 10000
 const (
-	defaultFilterQueryCacheSize = 5000
+	// Filter type
+	FilterTypeUnknown = iota
+	FilterTypeLog
+	FilterTypeBlock
+	FilterTypePendingTxn
+	FilterTypeLastIndex
 )
 
 var (
-	// (fullnode name + filter ID) => *web3Types.FilterQuery
-	ethFilterQueryCache, _ = lru.New(defaultFilterQueryCacheSize)
+	// proxy filter ID => *ethDelegateFilter
+	ethDelegateFilterCache, _ = lru.New(delegateFilterCacheSize)
 
 	errFilterNotFound = errors.New("filter not found")
 )
+
+type ethDelegateFilter struct {
+	ftype   int                    // filter type
+	fid     rpc.ID                 // filter ID
+	fq      *web3Types.FilterQuery // log filter query
+	nodeUrl string                 // delegate fullnode URL
+}
 
 // NewFilter creates a new filter and returns the filter id. It can be
 // used to retrieve logs when the state changes. This method cannot be
@@ -42,10 +57,12 @@ func (api *ethAPI) NewFilter(ctx context.Context, fq web3Types.FilterQuery) (rpc
 		return "", err
 	}
 
-	cachekey := ethFilterQueryCacheKey(w3c.URL, *fid)
-	ethFilterQueryCache.Add(cachekey, &fq)
+	pfid := genProxyFilterId(*fid, FilterTypeLog, w3c.URL)
+	ethDelegateFilterCache.Add(pfid, &ethDelegateFilter{
+		ftype: FilterTypeLog, fid: *fid, fq: &fq, nodeUrl: w3c.URL,
+	})
 
-	return *fid, nil
+	return pfid, nil
 }
 
 // NewBlockFilter creates a filter that fetches blocks that are imported into the chain.
@@ -57,6 +74,11 @@ func (api *ethAPI) NewBlockFilter(ctx context.Context) (rpc.ID, error) {
 	if err != nil {
 		return "", err
 	}
+
+	pfid := genProxyFilterId(*fid, FilterTypeBlock, w3c.URL)
+	ethDelegateFilterCache.Add(pfid, &ethDelegateFilter{
+		ftype: FilterTypeBlock, fid: *fid, nodeUrl: w3c.URL,
+	})
 
 	return *fid, nil
 }
@@ -74,6 +96,11 @@ func (api *ethAPI) NewPendingTransactionFilter(ctx context.Context) (rpc.ID, err
 		return "", err
 	}
 
+	pfid := genProxyFilterId(*fid, FilterTypePendingTxn, w3c.URL)
+	ethDelegateFilterCache.Add(pfid, &ethDelegateFilter{
+		ftype: FilterTypePendingTxn, fid: *fid, nodeUrl: w3c.URL,
+	})
+
 	return *fid, nil
 }
 
@@ -81,11 +108,21 @@ func (api *ethAPI) NewPendingTransactionFilter(ctx context.Context) (rpc.ID, err
 func (api *ethAPI) UninstallFilter(ctx context.Context, fid rpc.ID) (bool, error) {
 	w3c := GetEthClientFromContext(ctx)
 
-	// remove from the LRU cache if existed
-	cachekey := ethFilterQueryCacheKey(w3c.URL, fid)
-	ethFilterQueryCache.Remove(cachekey)
+	if v, ok := ethDelegateFilterCache.Get(fid); ok {
+		ethDelegateFilterCache.Remove(fid)
 
-	return w3c.Filter.UninstallFilter(fid)
+		efilter := v.(*ethDelegateFilter)
+		if strings.EqualFold(efilter.nodeUrl, w3c.URL) {
+			return w3c.Filter.UninstallFilter(efilter.fid)
+		}
+
+		// if delegate fullnode already switched, the old delegate may be eliminated
+		// due to unhealthy status. In this way, we don't wanna uninstall the filter
+		// from the new allocated fullnode neither.
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // GetFilterChanges returns the logs for the filter with the given id since
@@ -96,17 +133,24 @@ func (api *ethAPI) UninstallFilter(ctx context.Context, fid rpc.ID) (bool, error
 func (api *ethAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{}, error) {
 	w3c := GetEthClientFromContext(ctx)
 
-	// refresh the LRU cache
-	cachekey := ethFilterQueryCacheKey(w3c.URL, fid)
-	_, ok := ethFilterQueryCache.Get(cachekey)
-
-	res, err := w3c.Filter.GetFilterChanges(fid)
-	if detectFilterNotFoundError(err) && ok {
-		// remove cache if filter not found on full node any more
-		ethFilterQueryCache.Remove(cachekey)
+	cv, ok := ethDelegateFilterCache.Get(fid)
+	if !ok {
+		return nil, errFilterNotFound
 	}
 
-	return res, err
+	efilter := cv.(*ethDelegateFilter)
+	if !strings.EqualFold(efilter.nodeUrl, w3c.URL) { // delegate fullnode switched?
+		ethDelegateFilterCache.Remove(fid)
+		return nil, errFilterNotFound
+	}
+
+	result, err := w3c.Filter.GetFilterChanges(efilter.fid)
+	if detectFilterNotFoundError(err) {
+		// lazy remove deprecated delegate filter
+		ethDelegateFilterCache.Remove(fid)
+	}
+
+	return result, err
 }
 
 // GetFilterLogs returns the logs for the filter with the given id.
@@ -114,33 +158,40 @@ func (api *ethAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{
 func (api *ethAPI) GetFilterLogs(ctx context.Context, fid rpc.ID) ([]web3Types.Log, error) {
 	w3c := GetEthClientFromContext(ctx)
 
-	cachekey := ethFilterQueryCacheKey(w3c.URL, fid)
-	v, ok := ethFilterQueryCache.Get(cachekey)
+	cv, ok := ethDelegateFilterCache.Get(fid)
 	if !ok {
-		return ethEmptyLogs, errFilterNotFound
+		return nil, errFilterNotFound
 	}
 
-	fq := v.(*web3Types.FilterQuery)
-	logs, delegated, err := api.getLogs(ctx, fq, true)
+	efilter := cv.(*ethDelegateFilter)
+	if !strings.EqualFold(efilter.nodeUrl, w3c.URL) { // delegate fullnode switched?
+		ethDelegateFilterCache.Remove(fid)
+		return nil, errFilterNotFound
+	}
 
-	logger := api.filterLogger(fq).WithField("fnDelegated", delegated)
+	if efilter.ftype != FilterTypeLog { // wrong filter type
+		return nil, errFilterNotFound
+	}
 
-	if err != nil {
+	logs, delegated, err := api.getLogs(ctx, efilter.fq, false)
+
+	logger := api.filterLogger(efilter.fq).WithField("fnDelegated", delegated)
+	if err == nil {
+		logger.Debug("`eth_getFilterLogs` RPC request handled")
+		return logs, nil
+	}
+
+	if delegated && detectFilterNotFoundError(err) {
+		// lazy remove deprecated delegate filter
+		ethDelegateFilterCache.Remove(fid)
+	} else {
 		logger.WithError(err).Debug("Failed to handle `eth_getFilterLogs` RPC request")
-		return logs, err
 	}
 
-	logger.Debug("`eth_getFilterLogs` RPC request handled")
-	return logs, nil
+	return logs, err
 }
 
-// ethFilterQueryCacheKey assembles filter query cache key for specified filter ID and fullnode
-func ethFilterQueryCacheKey(nodeUrl string, fid rpc.ID) string {
-	fn := rpcutil.Url2NodeName(string(nodeUrl))
-	return fmt.Sprintf("%s/%s", fn, fid)
-}
-
-// detectFilterNotFoundError detects `filter not found` error according to error content
+// detectFilterNotFoundError detects filter not found error according to error content
 func detectFilterNotFoundError(err error) bool {
 	if err == nil {
 		return false
@@ -148,4 +199,23 @@ func detectFilterNotFoundError(err error) bool {
 
 	errStr := strings.ToLower(err.Error())
 	return strings.Contains(errStr, "filter not found")
+}
+
+func genProxyFilterId(filterId rpc.ID, filterType int, nodeUrl string) rpc.ID {
+	nodeName := rpcutil.Url2NodeName(nodeUrl)
+	data := fmt.Sprintf("node:%s;fid:%s;type:%d", nodeName, filterId, filterType)
+
+	// proxy filter ID = hash(node name + filter ID + filter type)
+
+	h := fnv.New128()
+	h.Write([]byte(data))
+	b := h.Sum(nil)
+
+	id := hex.EncodeToString(b)
+	id = strings.TrimLeft(id, "0")
+	if id == "" {
+		id = "0" // ID's are RPC quantities, no leading zero's and 0 is 0x0.
+	}
+
+	return rpc.ID("0x" + id)
 }
