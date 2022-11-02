@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -22,6 +21,7 @@ import (
 	"github.com/scroll-tech/rpc-gateway/util/rate"
 	"github.com/scroll-tech/rpc-gateway/util/relay"
 	rpcutil "github.com/scroll-tech/rpc-gateway/util/rpc"
+	"github.com/scroll-tech/rpc-gateway/util/whitelist"
 )
 
 var (
@@ -193,20 +193,33 @@ func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup) {
 
 type ForwardHandler struct{}
 
-func (h *ForwardHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	u, err := url.Parse("http://localhost:8545")
+func (h *ForwardHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+
+	valid, err := whitelist.IsIPValid(req)
 	if err != nil {
-		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if valid == false {
+		return //FIXME
+	}
+
+	URL := "http://localhost" + viper.GetString("debugnode.endpoint")
+	u, err := url.Parse(URL)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	proxy := httputil.ReverseProxy{
-		Director: func(request *http.Request) {
-			request.URL = u
+		Director: func(req *http.Request) {
+			req.URL = u
 		},
 	}
 
-	proxy.ServeHTTP(writer, request)
+	proxy.ServeHTTP(w, req)
 }
 
 // startDebugSpaceRpcServer starts RPC server for geth debug API
@@ -214,10 +227,6 @@ func startDebugSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup) {
 	httpEndpoint := viper.GetString("debugrpc.endpoint")
 
 	logrus.Info("Debug Space RPC server started, HTTP endpoint=\"", httpEndpoint, "\"")
-
-	if !rpc.IsIPValid() {
-		return
-	}
 
 	http.Handle("/", &ForwardHandler{})
 	http.ListenAndServe(httpEndpoint, nil)

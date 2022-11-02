@@ -1,7 +1,6 @@
-package rpc
+package whitelist
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -13,8 +12,6 @@ import (
 
 	"github.com/patrickmn/go-cache"
 	"github.com/sirupsen/logrus"
-
-	"github.com/scroll-tech/rpc-gateway/util/rpc/handlers"
 )
 
 var (
@@ -27,23 +24,15 @@ func init() {
 	logrus.Info("whiteListURL: ", whiteListURL)
 }
 
-func remoteAddrFromContext(ctx context.Context) string {
-	if ip, ok := handlers.GetIPAddressFromContext(ctx); ok {
-		return ip
-	}
-
-	return "unknown_ip"
-}
-
-func IsIPValid() (bool, error) {
+// IsIPValid checks if the debugger IP is in the whitelist through the whitelist backend
+func IsIPValid(req *http.Request) (bool, error) {
 	// in dev environment
 	if whiteListURL == "" {
 		return true, nil
 	}
 
-	ip := remoteAddrFromContext(ctx)
-	ip = strings.ToLower(ip)
-
+	ip := GetIPFromRequestEnv(req)
+	logrus.Info(ip)
 	if ip == "unknown_ip" {
 		return false, nil
 	}
@@ -90,4 +79,20 @@ func IsIPValid() (bool, error) {
 	ok = debuggerList != nil
 	whiteListCache.Set(cache_key, ok, cache.DefaultExpiration)
 	return ok, nil
+}
+
+func GetIPFromRequestEnv(req *http.Request) string {
+	fwdAddress := req.Header.Get("X-Forwarded-For")
+	if fwdAddress != "" {
+		return strings.ToLower(strings.Split(fwdAddress, ", ")[0])
+	}
+	ip := req.Header.Get("X-Real-IP")
+	if ip != "" {
+		return strings.ToLower(ip)
+	}
+	ip = strings.Split(req.RemoteAddr, ":")[0]
+	if ip != "" {
+		return strings.ToLower(ip)
+	}
+	return "unknown_ip"
 }
