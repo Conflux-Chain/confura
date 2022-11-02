@@ -89,11 +89,6 @@ func ParseEthLogFilterType(filter *web3Types.FilterQuery) (LogFilterType, bool) 
 		flag |= LogFilterTypeBlockHash
 	}
 
-	// different types of log filters are mutual exclusion
-	if bits.OnesCount(uint(flag)) > 1 {
-		return flag, false
-	}
-
 	// if no explicit filter type detected, use block range filter type as default
 	if flag == 0 {
 		flag |= LogFilterTypeBlockRange
