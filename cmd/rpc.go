@@ -2,6 +2,10 @@ package cmd
 
 import (
 	"context"
+	"log"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"sync"
 	"time"
 
@@ -26,6 +30,7 @@ var (
 		cfxEnabled       bool
 		ethEnabled       bool
 		cfxBridgeEnabled bool
+		debugEnabled     bool
 	}
 
 	rpcCmd = &cobra.Command{
@@ -51,11 +56,15 @@ func init() {
 		&rpcOpt.cfxBridgeEnabled, "cfxBridge", false, "start core space bridge RPC server",
 	)
 
+	rpcCmd.Flags().BoolVar(
+		&rpcOpt.debugEnabled, "debug", false, "start debug space RPC server",
+	)
+
 	rootCmd.AddCommand(rpcCmd)
 }
 
 func startRpcService(*cobra.Command, []string) {
-	if !rpcOpt.cfxEnabled && !rpcOpt.ethEnabled && !rpcOpt.cfxBridgeEnabled {
+	if !rpcOpt.cfxEnabled && !rpcOpt.ethEnabled && !rpcOpt.cfxBridgeEnabled && !rpcOpt.debugEnabled {
 		logrus.Fatal("No RPC server specified")
 	}
 
@@ -76,6 +85,12 @@ func startRpcService(*cobra.Command, []string) {
 	if rpcOpt.cfxBridgeEnabled { // start core space bridge RPC
 		startNativeSpaceBridgeRpcServer(ctx, &wg)
 	}
+
+	if rpcOpt.debugEnabled { // start debug space RPC
+		startDebugSpaceRpcServer(ctx, &wg)
+	}
+
+	logrus.Info("wait for shutdown")
 
 	cmdutil.GracefulShutdown(&wg, cancel)
 }
@@ -174,4 +189,32 @@ func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup) {
 
 	server := rpc.MustNewNativeSpaceBridgeServer(&config)
 	go server.MustServeGraceful(ctx, wg, config.Endpoint, rpcutil.ProtocolHttp)
+}
+
+type ForwardHandler struct{}
+
+func (h *ForwardHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	u, err := url.Parse("http://localhost:8545")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	proxy := httputil.ReverseProxy{
+		Director: func(request *http.Request) {
+			request.URL = u
+		},
+	}
+
+	proxy.ServeHTTP(writer, request)
+}
+
+// startDebugSpaceRpcServer starts RPC server for geth debug API
+func startDebugSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup) {
+	httpEndpoint := viper.GetString("debugrpc.endpoint")
+
+	logrus.Info("Debug Space RPC server started, HTTP endpoint=\"", httpEndpoint, "\"")
+
+	http.Handle("/", &ForwardHandler{})
+	http.ListenAndServe(httpEndpoint, nil)
 }
