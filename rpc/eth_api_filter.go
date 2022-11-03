@@ -32,10 +32,15 @@ var (
 )
 
 type ethDelegateFilter struct {
-	ftype   int                    // filter type
-	fid     rpc.ID                 // filter ID
-	fq      *web3Types.FilterQuery // log filter query
-	nodeUrl string                 // delegate fullnode URL
+	ftype    int                    // filter type
+	fid      rpc.ID                 // filter ID
+	fq       *web3Types.FilterQuery // log filter query
+	nodeName string                 // delegate fullnode name
+}
+
+func (f *ethDelegateFilter) checkNode(nodeUrl string) bool {
+	nodeName := rpcutil.Url2NodeName(nodeUrl)
+	return strings.EqualFold(f.nodeName, nodeName)
 }
 
 // NewFilter creates a new filter and returns the filter id. It can be
@@ -57,9 +62,11 @@ func (api *ethAPI) NewFilter(ctx context.Context, fq web3Types.FilterQuery) (rpc
 		return "", err
 	}
 
-	pfid := genProxyFilterId(*fid, FilterTypeLog, w3c.URL)
+	nodeName := rpcutil.Url2NodeName(w3c.URL)
+	pfid := genProxyFilterId(*fid, FilterTypeLog, nodeName)
+
 	ethDelegateFilterCache.Add(pfid, &ethDelegateFilter{
-		ftype: FilterTypeLog, fid: *fid, fq: &fq, nodeUrl: w3c.URL,
+		ftype: FilterTypeLog, fid: *fid, fq: &fq, nodeName: nodeName,
 	})
 
 	return pfid, nil
@@ -75,9 +82,11 @@ func (api *ethAPI) NewBlockFilter(ctx context.Context) (rpc.ID, error) {
 		return "", err
 	}
 
-	pfid := genProxyFilterId(*fid, FilterTypeBlock, w3c.URL)
+	nodeName := rpcutil.Url2NodeName(w3c.URL)
+	pfid := genProxyFilterId(*fid, FilterTypeBlock, nodeName)
+
 	ethDelegateFilterCache.Add(pfid, &ethDelegateFilter{
-		ftype: FilterTypeBlock, fid: *fid, nodeUrl: w3c.URL,
+		ftype: FilterTypeBlock, fid: *fid, nodeName: nodeName,
 	})
 
 	return *fid, nil
@@ -96,9 +105,11 @@ func (api *ethAPI) NewPendingTransactionFilter(ctx context.Context) (rpc.ID, err
 		return "", err
 	}
 
-	pfid := genProxyFilterId(*fid, FilterTypePendingTxn, w3c.URL)
+	nodeName := rpcutil.Url2NodeName(w3c.URL)
+	pfid := genProxyFilterId(*fid, FilterTypePendingTxn, nodeName)
+
 	ethDelegateFilterCache.Add(pfid, &ethDelegateFilter{
-		ftype: FilterTypePendingTxn, fid: *fid, nodeUrl: w3c.URL,
+		ftype: FilterTypePendingTxn, fid: *fid, nodeName: nodeName,
 	})
 
 	return *fid, nil
@@ -112,7 +123,7 @@ func (api *ethAPI) UninstallFilter(ctx context.Context, fid rpc.ID) (bool, error
 		ethDelegateFilterCache.Remove(fid)
 
 		efilter := v.(*ethDelegateFilter)
-		if strings.EqualFold(efilter.nodeUrl, w3c.URL) {
+		if efilter.checkNode(w3c.URL) {
 			return w3c.Filter.UninstallFilter(efilter.fid)
 		}
 
@@ -139,7 +150,7 @@ func (api *ethAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{
 	}
 
 	efilter := cv.(*ethDelegateFilter)
-	if !strings.EqualFold(efilter.nodeUrl, w3c.URL) { // delegate fullnode switched?
+	if !efilter.checkNode(w3c.URL) { // delegate fullnode switched?
 		ethDelegateFilterCache.Remove(fid)
 		return nil, errFilterNotFound
 	}
@@ -164,7 +175,7 @@ func (api *ethAPI) GetFilterLogs(ctx context.Context, fid rpc.ID) ([]web3Types.L
 	}
 
 	efilter := cv.(*ethDelegateFilter)
-	if !strings.EqualFold(efilter.nodeUrl, w3c.URL) { // delegate fullnode switched?
+	if !efilter.checkNode(w3c.URL) { // delegate fullnode switched?
 		ethDelegateFilterCache.Remove(fid)
 		return nil, errFilterNotFound
 	}
@@ -201,8 +212,7 @@ func detectFilterNotFoundError(err error) bool {
 	return strings.Contains(errStr, "filter not found")
 }
 
-func genProxyFilterId(filterId rpc.ID, filterType int, nodeUrl string) rpc.ID {
-	nodeName := rpcutil.Url2NodeName(nodeUrl)
+func genProxyFilterId(filterId rpc.ID, filterType int, nodeName string) rpc.ID {
 	data := fmt.Sprintf("node:%s;fid:%s;type:%d", nodeName, filterId, filterType)
 
 	// proxy filter ID = hash(node name + filter ID + filter type)
