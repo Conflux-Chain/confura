@@ -289,3 +289,16 @@ node:
 #     chainRpcUrl:
 #     # VIP subscription App contract address
 #     AppContract:
+
+# Access control middleware configurations
+accessControl:
+  # RPC methods allowed for VIP only
+  vipOnlyACL:
+    # debug RPC
+    - cfx_getEpochReceipts
+    # trace RPC
+    - trace_block
+    - trace_filter
+    - trace_transaction
+    # parity RPC
+    - parity_getBlockReceipts

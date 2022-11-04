@@ -31,6 +31,10 @@ func init() {
 		rpc.HookHandleCallMsg(mw)
 	}
 
+	// VIP only access control
+	acmw := middlewares.MustNewVipOnlyAccessControlMiddlewareFromViper()
+	rpc.HookHandleCallMsg(acmw)
+
 	// rate limit
 	rpc.HookHandleBatch(middlewares.RateLimitBatch)
 	rpc.HookHandleCallMsg(middlewares.RateLimit)

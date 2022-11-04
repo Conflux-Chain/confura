@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util"
+	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/sirupsen/logrus"
 )
 
@@ -63,7 +64,7 @@ func (m *Registry) Get(vc *VisitContext) (Limiter, bool) {
 		return m.getDefaultLimiter(vc)
 	}
 
-	if vc.Status != nil && vc.Status.Tier != VipTierNone { // VIP access
+	if vc.Status != nil && vc.Status.Tier != acl.VipTierNone { // VIP access
 		return m.getVipLimiter(vc)
 	}
 
@@ -159,8 +160,8 @@ func (m *Registry) getVipLimiter(vc *VisitContext) (Limiter, bool) {
 	return nil, false
 }
 
-func (m *Registry) getVipStrategy(tier VipTier) *Strategy {
-	vipStrategy := GetVipStrategyByTier(tier)
+func (m *Registry) getVipStrategy(tier acl.VipTier) *Strategy {
+	vipStrategy := getVipStrategyByTier(tier)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -172,6 +173,10 @@ func (m *Registry) getVipStrategy(tier VipTier) *Strategy {
 	}
 
 	return nil
+}
+
+func getVipStrategyByTier(tier acl.VipTier) string {
+	return fmt.Sprintf("vip%d", tier)
 }
 
 // getLimiterSet gets limiter set for the specified strategy and limiter type
