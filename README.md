@@ -1,3 +1,7 @@
+# Scroll's Fork of Confura for RPC-Gateway
+
+Deployed as part of the pre-alpha testnet at https://prealpha.scroll.io
+
 # Confura
 
 Implementation of an Ethereum Infura equivalent public RPC service on Conflux Network.
