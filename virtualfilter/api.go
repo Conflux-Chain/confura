@@ -23,7 +23,6 @@ type FilterApi struct {
 	sys       *FilterSystem
 	filtersMu sync.Mutex
 	filters   map[rpc.ID]*Filter
-	timeout   time.Duration
 	clients   util.ConcurrentMap
 }
 
@@ -32,7 +31,6 @@ func NewFilterApi(system *FilterSystem, ttl time.Duration) *FilterApi {
 	api := &FilterApi{
 		sys:     system,
 		filters: make(map[rpc.ID]*Filter),
-		timeout: ttl,
 	}
 
 	go api.timeoutLoop(ttl)
@@ -43,23 +41,18 @@ func NewFilterApi(system *FilterSystem, ttl time.Duration) *FilterApi {
 // timeoutLoop runs at the interval set by 'timeout' and deletes filters
 // that have not been recently used. It is started when the API is created.
 func (api *FilterApi) timeoutLoop(timeout time.Duration) {
-	ticker := time.NewTicker(timeout)
+	ticker := time.NewTicker(timeout / 2)
 	defer ticker.Stop()
 
-	for {
-		<-ticker.C
-		api.filtersMu.Lock()
+	for range ticker.C {
+		expired := api.expireFilters(timeout)
 
-		for id, f := range api.filters {
-			select {
-			case <-f.deadline.C:
-				delete(api.filters, id)
-			default:
-				continue
+		// also uninstall delegate log filters
+		for id, f := range expired {
+			if f.typ == FilterTypeLog {
+				api.sys.delegateUninstallFilter(id)
 			}
 		}
-
-		api.filtersMu.Unlock()
 	}
 }
 
@@ -77,14 +70,10 @@ func (api *FilterApi) NewBlockFilter(nodeUrl string) (rpc.ID, error) {
 	}
 
 	pfid := rpc.NewID()
-	api.addFilter(pfid, &Filter{
-		typ:      FilterTypeBlock,
-		deadline: time.NewTimer(api.timeout),
-		del: &fnDelegateInfo{
-			fid:      *fid,
-			nodeName: rpcutil.Url2NodeName(nodeUrl),
-		},
-	})
+	api.addFilter(pfid, newFilter(FilterTypeBlock, &fnDelegateInfo{
+		fid:      *fid,
+		nodeName: rpcutil.Url2NodeName(nodeUrl),
+	}))
 
 	return pfid, nil
 }
@@ -103,14 +92,10 @@ func (api *FilterApi) NewPendingTransactionFilter(nodeUrl string) (rpc.ID, error
 	}
 
 	pfid := rpc.NewID()
-	api.addFilter(pfid, &Filter{
-		typ:      FilterTypePendingTxn,
-		deadline: time.NewTimer(api.timeout),
-		del: &fnDelegateInfo{
-			fid:      *fid,
-			nodeName: rpcutil.Url2NodeName(nodeUrl),
-		},
-	})
+	api.addFilter(pfid, newFilter(FilterTypePendingTxn, &fnDelegateInfo{
+		fid:      *fid,
+		nodeName: rpcutil.Url2NodeName(nodeUrl),
+	}))
 
 	return pfid, nil
 }
@@ -128,13 +113,9 @@ func (api *FilterApi) NewFilter(nodeUrl string, crit *web3Types.FilterQuery) (rp
 		return nilRpcId, err
 	}
 
-	api.addFilter(pfid, &Filter{
-		typ:      FilterTypeLog,
-		deadline: time.NewTimer(api.timeout),
-		del: &fnDelegateInfo{
-			nodeName: rpcutil.Url2NodeName(nodeUrl),
-		},
-	})
+	api.addFilter(pfid, newFilter(FilterTypePendingTxn, &fnDelegateInfo{
+		nodeName: rpcutil.Url2NodeName(nodeUrl),
+	}, crit))
 
 	return pfid, errors.New("not supported yet")
 }
@@ -151,6 +132,7 @@ func (api *FilterApi) UninstallFilter(nodeUrl string, id rpc.ID) (bool, error) {
 	}
 
 	if !f.IsDelegateFullNode(nodeUrl) { // not the old delegate full node?
+		// return directly not even bother to delete the deprecated filter
 		return true, nil
 	}
 
@@ -171,7 +153,7 @@ func (api *FilterApi) GetFilterLogs(nodeUrl string, id rpc.ID) ([]types.Log, err
 	}
 
 	if !f.IsDelegateFullNode(nodeUrl) { // not the old delegate full node?
-		// to keep data consistency, remove the deprecated filter
+		// remove the deprecated filter for data consistency
 		api.delFilter(id)
 		// uninstall the delegate log filter
 		api.sys.delegateUninstallFilter(id)
@@ -196,7 +178,7 @@ func (api *FilterApi) GetFilterChanges(nodeUrl string, id rpc.ID) (interface{}, 
 	}
 
 	if !f.IsDelegateFullNode(nodeUrl) { // not the old delegate full node?
-		// to keep data consistency, remove the deprecated filter
+		// remove the deprecated filter for data consistency
 		api.delFilter(id)
 
 		// uninstall the delegate log filter
@@ -207,26 +189,21 @@ func (api *FilterApi) GetFilterChanges(nodeUrl string, id rpc.ID) (interface{}, 
 		return nil, errFilterNotFound
 	}
 
-	// reset timout timer
-	if !f.deadline.Stop() {
-		// timer expired but filter is not yet removed in timeout loop
-		// receive timer value and reset timer
-		<-f.deadline.C
-	}
-	f.deadline.Reset(api.timeout)
-
-	if f.typ == FilterTypeLog {
-
-	}
+	// refresh filter last polling time
+	api.refreshFilterPollingTime(id)
 
 	w3c, err := api.loadOrGetFnClient(nodeUrl)
 	if err != nil {
 		return nil, err
 	}
 
+	if f.typ == FilterTypeLog {
+		return api.sys.GetFilterLogs(w3c, f.crit)
+	}
+
 	result, err := w3c.Filter.GetFilterChanges(f.del.fid)
 	if IsFilterNotFoundError(err) {
-		// lazy remove deprecated delegate filter
+		// lazily remove deprecated delegate filter
 		api.delFilter(id)
 	}
 
@@ -278,4 +255,30 @@ func (api *FilterApi) delFilter(id rpc.ID) (*Filter, bool) {
 	}
 
 	return f, found
+}
+
+func (api *FilterApi) refreshFilterPollingTime(id rpc.ID) {
+	api.filtersMu.Lock()
+	defer api.filtersMu.Unlock()
+
+	if f, found := api.filters[id]; found {
+		f.lastPollingTime = time.Now().Unix()
+	}
+}
+
+func (api *FilterApi) expireFilters(ttl time.Duration) map[rpc.ID]*Filter {
+	api.filtersMu.Lock()
+	defer api.filtersMu.Unlock()
+
+	efilters := make(map[rpc.ID]*Filter)
+
+	for id, f := range api.filters {
+		elapsed := time.Duration(time.Now().Unix()-f.lastPollingTime) * time.Second
+		if elapsed >= ttl { // expired
+			efilters[id] = f
+			delete(api.filters, id)
+		}
+	}
+
+	return efilters
 }

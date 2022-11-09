@@ -28,10 +28,23 @@ var (
 // Filter is a helper struct that holds meta information over the filter type,
 // log filter criterion and proxy full node delegation.
 type Filter struct {
-	typ      FilterType             // filter type
-	deadline *time.Timer            // filter is inactive when deadline triggers
-	crit     *web3Types.FilterQuery // log filter query
-	del      *fnDelegateInfo        // full node delegate info
+	typ             FilterType             // filter type
+	lastPollingTime int64                  // last polling timestamp
+	crit            *web3Types.FilterQuery // log filter query
+	del             *fnDelegateInfo        // full node delegate info
+}
+
+func newFilter(typ FilterType, del *fnDelegateInfo, criterion ...*web3Types.FilterQuery) *Filter {
+	f := &Filter{
+		typ: typ, del: del,
+		lastPollingTime: time.Now().Unix(),
+	}
+
+	if len(criterion) > 0 {
+		f.crit = criterion[0]
+	}
+
+	return f
 }
 
 type fnDelegateInfo struct {
