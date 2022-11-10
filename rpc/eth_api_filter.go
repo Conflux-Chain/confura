@@ -184,7 +184,7 @@ func (api *ethAPI) GetFilterLogs(ctx context.Context, fid rpc.ID) ([]web3Types.L
 		return nil, errFilterNotFound
 	}
 
-	logs, delegated, err := api.getLogs(ctx, efilter.fq, false)
+	logs, delegated, err := api.getLogs(ctx, efilter.fq)
 
 	logger := api.filterLogger(efilter.fq).WithField("fnDelegated", delegated)
 	if err == nil {

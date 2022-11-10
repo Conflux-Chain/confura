@@ -6,6 +6,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
@@ -46,6 +47,10 @@ func (api *FilterApi) timeoutLoop(timeout time.Duration) {
 
 	for range ticker.C {
 		expired := api.expireFilters(timeout)
+
+		if api.sys == nil {
+			continue
+		}
 
 		// also uninstall delegate log filters
 		for id, f := range expired {
@@ -101,23 +106,31 @@ func (api *FilterApi) NewPendingTransactionFilter(nodeUrl string) (rpc.ID, error
 }
 
 // NewFilter creates a proxy log filter from full node with specified node URL and filter query condition
-func (api *FilterApi) NewFilter(nodeUrl string, crit *web3Types.FilterQuery) (rpc.ID, error) {
+func (api *FilterApi) NewFilter(nodeUrl string, crit web3Types.FilterQuery) (rpc.ID, error) {
 	w3c, err := api.loadOrGetFnClient(nodeUrl)
 	if err != nil {
 		return nilRpcId, err
 	}
 
-	// create a delegate log filter to the allocated full node
-	pfid, err := api.sys.delegateNewFilter(w3c)
+	metrics.UpdateEthLogFilter("eth_newFilter", w3c.Eth, &crit)
+
+	var fid *rpc.ID
+	if api.sys != nil { // create a delegate log filter to the allocated full node
+		fid, err = api.sys.delegateNewFilter(w3c)
+	} else { // fallback to create a proxy log filter to full node
+		fid, err = w3c.Filter.NewLogFilter(&crit)
+	}
+
 	if err != nil {
 		return nilRpcId, err
 	}
 
-	api.addFilter(pfid, newFilter(FilterTypePendingTxn, &fnDelegateInfo{
+	api.addFilter(*fid, newFilter(FilterTypePendingTxn, &fnDelegateInfo{
+		fid:      *fid,
 		nodeName: rpcutil.Url2NodeName(nodeUrl),
-	}, crit))
+	}, &crit))
 
-	return pfid, errors.New("not supported yet")
+	return *fid, errors.New("not supported yet")
 }
 
 // UninstallFilter removes the proxy filter with the given filter id.
@@ -127,7 +140,7 @@ func (api *FilterApi) UninstallFilter(nodeUrl string, id rpc.ID) (bool, error) {
 		return false, nil
 	}
 
-	if f.typ == FilterTypeLog {
+	if api.sys != nil && f.typ == FilterTypeLog {
 		return api.sys.delegateUninstallFilter(id)
 	}
 
@@ -155,8 +168,10 @@ func (api *FilterApi) GetFilterLogs(nodeUrl string, id rpc.ID) ([]types.Log, err
 	if !f.IsDelegateFullNode(nodeUrl) { // not the old delegate full node?
 		// remove the deprecated filter for data consistency
 		api.delFilter(id)
-		// uninstall the delegate log filter
-		api.sys.delegateUninstallFilter(id)
+
+		if api.sys != nil { // uninstall the delegate log filter
+			api.sys.delegateUninstallFilter(id)
+		}
 
 		return nil, errFilterNotFound
 	}
@@ -166,7 +181,12 @@ func (api *FilterApi) GetFilterLogs(nodeUrl string, id rpc.ID) ([]types.Log, err
 		return nil, err
 	}
 
-	return api.sys.GetLogs(w3c, f.crit)
+	if api.sys != nil {
+		return api.sys.GetFilterLogs(w3c, f.crit)
+	}
+
+	// fallback to the full node for filter logs
+	return w3c.Filter.GetFilterLogs(f.del.fid)
 }
 
 // GetFilterChanges returns the data for the proxy filter with the given id since
@@ -181,8 +201,8 @@ func (api *FilterApi) GetFilterChanges(nodeUrl string, id rpc.ID) (interface{}, 
 		// remove the deprecated filter for data consistency
 		api.delFilter(id)
 
-		// uninstall the delegate log filter
-		if f.typ == FilterTypeLog {
+		if api.sys != nil && f.typ == FilterTypeLog {
+			// uninstall the delegate log filter
 			return api.sys.delegateUninstallFilter(id)
 		}
 
@@ -197,8 +217,8 @@ func (api *FilterApi) GetFilterChanges(nodeUrl string, id rpc.ID) (interface{}, 
 		return nil, err
 	}
 
-	if f.typ == FilterTypeLog {
-		return api.sys.GetFilterLogs(w3c, f.crit)
+	if api.sys != nil && f.typ == FilterTypeLog {
+		return api.sys.GetFilterChanges(w3c, f.crit)
 	}
 
 	result, err := w3c.Filter.GetFilterChanges(f.del.fid)
@@ -262,7 +282,7 @@ func (api *FilterApi) refreshFilterPollingTime(id rpc.ID) {
 	defer api.filtersMu.Unlock()
 
 	if f, found := api.filters[id]; found {
-		f.lastPollingTime = time.Now().Unix()
+		f.lastPollingTime = time.Now()
 	}
 }
 
@@ -273,8 +293,7 @@ func (api *FilterApi) expireFilters(ttl time.Duration) map[rpc.ID]*Filter {
 	efilters := make(map[rpc.ID]*Filter)
 
 	for id, f := range api.filters {
-		elapsed := time.Duration(time.Now().Unix()-f.lastPollingTime) * time.Second
-		if elapsed >= ttl { // expired
+		if time.Since(f.lastPollingTime) >= ttl { // expired
 			efilters[id] = f
 			delete(api.filters, id)
 		}

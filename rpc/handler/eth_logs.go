@@ -103,7 +103,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		// ensure fullnode delegation is rational
-		if err := handler.checkFullnodeLogFilter(fnFilter); err != nil {
+		if err := handler.checkFnEthLogFilter(fnFilter); err != nil {
 			return nil, false, err
 		}
 
@@ -162,7 +162,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, filter, nil
 	}
 
-	networkId, err := handler.getNetworkId(eth)
+	networkId, err := handler.GetNetworkId(eth)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -191,7 +191,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
 		return nil, filter, nil
 	}
 
-	networkId, err := handler.getNetworkId(eth)
+	networkId, err := handler.GetNetworkId(eth)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -215,7 +215,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
 	return &dbFilter, &fnFilter, nil
 }
 
-func (handler *EthLogsApiHandler) getNetworkId(eth *client.RpcEthClient) (uint32, error) {
+func (handler *EthLogsApiHandler) GetNetworkId(eth *client.RpcEthClient) (uint32, error) {
 	if val := handler.networkId.Load(); val != nil {
 		return val.(uint32), nil
 	}
@@ -231,15 +231,17 @@ func (handler *EthLogsApiHandler) getNetworkId(eth *client.RpcEthClient) (uint32
 	return networkId, nil
 }
 
-// checkFullnodeLogFilter checks if the log filter is rational for fullnode delegation.
+// checkFnEthLogFilter checks if the eth log filter is rational for fullnode delegation.
 //
 // Note this function assumes the log filter is valid and normalized.
-func (handler *EthLogsApiHandler) checkFullnodeLogFilter(filter *types.FilterQuery) error {
-	if filter.FromBlock != nil && filter.ToBlock != nil {
-		count := *filter.ToBlock - *filter.FromBlock + 1
-		if uint64(count) > store.MaxLogEpochRange {
-			return store.ErrGetLogsQuerySetTooLarge
-		}
+func (handler *EthLogsApiHandler) checkFnEthLogFilter(filter *types.FilterQuery) error {
+	if filter.FromBlock == nil || filter.ToBlock == nil {
+		return nil
+	}
+
+	gap := *filter.ToBlock - *filter.FromBlock + 1
+	if uint64(gap) > store.MaxLogEpochRange {
+		return store.ErrGetLogsQuerySetTooLarge
 	}
 
 	return nil

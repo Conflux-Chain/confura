@@ -18,6 +18,12 @@ import (
 
 var (
 	hashRegexp *regexp.Regexp = regexp.MustCompile("^0x([A-Fa-f0-9]{64})$")
+
+	ethHardforkBlockNumberDevnet    = rpc.BlockNumber(1)
+	ethChainId2HardforkBlockNumbers = map[uint64]rpc.BlockNumber{
+		1030: 36935000, //mainnet
+		71:   61465000, // testnet
+	}
 )
 
 // IsValidHashStr validates if the search (block/tx) hash contains the right characters
@@ -175,4 +181,13 @@ func IsLegacyEthTx(tx *web3goTypes.TransactionDetail) bool {
 // IsSuccessEthTx check if the EVM transaction is success
 func IsSuccessEthTx(tx *web3goTypes.TransactionDetail) bool {
 	return tx.Status != nil && *tx.Status == ethtypes.ReceiptStatusSuccessful
+}
+
+// GetEthHardforkBlockNumber gets eSpace hardfork block number
+func GetEthHardforkBlockNumber(chainId uint64) rpc.BlockNumber {
+	if v, ok := ethChainId2HardforkBlockNumbers[chainId]; ok {
+		return v
+	}
+
+	return ethHardforkBlockNumberDevnet
 }
