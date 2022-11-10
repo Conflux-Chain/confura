@@ -183,7 +183,7 @@ func IsSuccessEthTx(tx *web3goTypes.TransactionDetail) bool {
 	return tx.Status != nil && *tx.Status == ethtypes.ReceiptStatusSuccessful
 }
 
-// GetEthHardforkBlockNumber gets eSpace hardfork block number
+// GetEthHardforkBlockNumber gets eSpace hardfork block number by chain ID
 func GetEthHardforkBlockNumber(chainId uint64) rpc.BlockNumber {
 	if v, ok := ethChainId2HardforkBlockNumbers[chainId]; ok {
 		return v

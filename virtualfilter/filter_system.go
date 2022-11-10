@@ -82,7 +82,7 @@ func (fs *FilterSystem) GetFilterLogs(w3c *node.Web3goClient, crit *web3Types.Fi
 	return logs, err
 }
 
-// GetFilterChangedLogs returns the matching log entries since last polling, and updates the filter cursor accordingly.
+// GetFilterChanges returns the matching log entries since last polling, and updates the filter cursor accordingly.
 func (fs *FilterSystem) GetFilterChanges(w3c *node.Web3goClient, crit *web3Types.FilterQuery) ([]types.Log, error) {
 	// TODO: get matching logs from db/cache
 	return nil, errors.New("not supported yet")
