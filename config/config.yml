@@ -290,15 +290,22 @@ node:
 #     # VIP subscription App contract address
 #     AppContract:
 
-# Access control middleware configurations
-accessControl:
-  # RPC methods allowed for VIP only
-  vipOnlyACL:
-    # debug RPC
-    - cfx_getEpochReceipts
-    # trace RPC
-    - trace_block
-    - trace_filter
-    - trace_transaction
-    # parity RPC
-    - parity_getBlockReceipts
+# # Access control middleware configurations
+# accessControl:
+#   # RPC methods allowed for VIP only
+#   vipOnlyACL:
+#     # debug RPC
+#     - cfx_getEpochReceipts
+#     # trace RPC
+#     - trace_block
+#     - trace_filter
+#     - trace_transaction
+#     # parity RPC
+#     - parity_getBlockReceipts
+
+# Virtual filters configurations
+virtualFilters:
+  # Served HTTP endpoint
+  endpoint: ":48545"
+  # Time to live for inactive filter
+  TTL: 1m
