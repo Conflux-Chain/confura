@@ -111,11 +111,11 @@ func (sub *delegateSubscription) deliver(result interface{}) bool {
 // It can safely be called more than once.
 func (sub *delegateSubscription) unsubscribe() {
 	sub.quitOnce.Do(func() {
-		close(sub.quit)
-		close(sub.err)
-
 		// deregister delegate subscriptions
 		sub.dCtx.deregisterDelegateSub(sub.subId)
+
+		close(sub.quit)
+		close(sub.err)
 	})
 }
 
