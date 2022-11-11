@@ -3,7 +3,6 @@ package rpc
 import (
 	"context"
 	"math/big"
-	"math/bits"
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc/cache"
@@ -14,30 +13,17 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/openweb3/web3go"
-	"github.com/openweb3/web3go/client"
 	web3Types "github.com/openweb3/web3go/types"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 var (
 	ethEmptyLogs = []web3Types.Log{}
-
-	ethHardforkBlockNumberDevnet    = rpc.BlockNumber(1)
-	ethChainId2HardforkBlockNumbers = map[uint64]rpc.BlockNumber{
-		1030: 36935000, //mainnet
-		71:   61465000, // testnet
-	}
 )
 
 type EthAPIOption struct {
 	StoreHandler  *handler.EthStoreHandler
 	LogApiHandler *handler.EthLogsApiHandler
-}
-
-func updateEthStoreHitRatio(method string, hit bool) {
-	metrics.Registry.RPC.StoreHit(method, "store").Mark(hit)
 }
 
 // ethAPI provides Ethereum relative API within evm space according to:
@@ -48,7 +34,8 @@ type ethAPI struct {
 	provider         *node.EthClientProvider
 	inputBlockMetric metrics.InputBlockMetric
 
-	hardforkBlockNumber *rpc.BlockNumber // return default value before eSpace hardfork
+	// return empty data before eSpace hardfork block number
+	hardforkBlockNumber rpc.BlockNumber
 }
 
 func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *ethAPI {
@@ -66,11 +53,6 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 		logrus.Fatal("chain id on eSpace is nil")
 	}
 
-	hardforkBlockNumber := &ethHardforkBlockNumberDevnet
-	if bn, ok := ethChainId2HardforkBlockNumbers[*chainId]; ok {
-		hardforkBlockNumber = &bn
-	}
-
 	var opt EthAPIOption
 	if len(option) > 0 {
 		opt = option[0]
@@ -79,7 +61,7 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 	return &ethAPI{
 		EthAPIOption:        opt,
 		provider:            provider,
-		hardforkBlockNumber: hardforkBlockNumber,
+		hardforkBlockNumber: util.GetEthHardforkBlockNumber(*chainId),
 	}
 }
 
@@ -96,7 +78,7 @@ func (api *ethAPI) GetBlockByHash(
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		block, err := api.StoreHandler.GetBlockByHash(ctx, blockHash, fullTx)
-		updateEthStoreHitRatio("eth_getBlockByHash", err == nil)
+		metrics.Registry.RPC.StoreHit("eth_getBlockByHash", "store").Mark(err == nil)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getBlockByHash hit in the store")
 			return block, nil
@@ -152,7 +134,7 @@ func (api *ethAPI) GetBlockByNumber(
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		block, err := api.StoreHandler.GetBlockByNumber(ctx, &blockNum, fullTx)
-		updateEthStoreHitRatio("eth_getBlockByNumber", err == nil)
+		metrics.Registry.RPC.StoreHit("eth_getBlockByNumber", "store").Mark(err == nil)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getBlockByNumber hit in the store")
 			return block, nil
@@ -269,7 +251,7 @@ func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (
 
 	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		tx, err := api.StoreHandler.GetTransactionByHash(ctx, hash)
-		updateEthStoreHitRatio("eth_getTransactionByHash", err == nil)
+		metrics.Registry.RPC.StoreHit("eth_getTransactionByHash", "store").Mark(err == nil)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getTransactionByHash hit in the store")
 			return tx, nil
@@ -291,7 +273,7 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 
 	if !store.EthStoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		tx, err := api.StoreHandler.GetTransactionReceipt(ctx, txHash)
-		updateEthStoreHitRatio("eth_getTransactionReceipt", err == nil)
+		metrics.Registry.RPC.StoreHit("eth_getTransactionReceipt", "store").Mark(err == nil)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getTransactionReceipt hit in the ethstore")
 			return tx, nil
@@ -313,7 +295,7 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 
 // GetLogs returns an array of all logs matching a given filter object.
 func (api *ethAPI) GetLogs(ctx context.Context, fq web3Types.FilterQuery) ([]web3Types.Log, error) {
-	logs, delegated, err := api.getLogs(ctx, &fq, true)
+	logs, delegated, err := api.getLogs(ctx, &fq)
 	logger := api.filterLogger(&fq).WithField("fnDelegated", delegated)
 
 	if err != nil {
@@ -325,33 +307,32 @@ func (api *ethAPI) GetLogs(ctx context.Context, fq web3Types.FilterQuery) ([]web
 	return logs, nil
 }
 
-// getLogs helper method to get logs from store or fullnode splittedly
-func (api *ethAPI) getLogs(ctx context.Context, fq *web3Types.FilterQuery, exclusive bool) ([]web3Types.Log, bool, error) {
+// getLogs helper method to get logs from store or fullnode.
+func (api *ethAPI) getLogs(ctx context.Context, fq *web3Types.FilterQuery) ([]web3Types.Log, bool, error) {
 	w3c := GetEthClientFromContext(ctx)
-	api.metricLogFilter(w3c.Eth, fq)
+	metrics.UpdateEthLogFilter("eth_getLogs", w3c.Eth, fq)
 
-	flag, ok := store.ParseEthLogFilterType(fq)
+	flag, ok := ParseEthLogFilterType(fq)
 	if !ok {
-		return ethEmptyLogs, false, errInvalidEthLogFilter
+		return ethEmptyLogs, false, ErrInvalidEthLogFilter
 	}
 
-	if err := api.normalizeLogFilter(w3c.Client, flag, fq); err != nil {
+	if err := NormalizeEthLogFilter(w3c.Client, flag, fq, api.hardforkBlockNumber); err != nil {
 		return ethEmptyLogs, false, err
 	}
 
-	if err := api.validateLogFilter(flag, fq, exclusive); err != nil {
+	if err := ValidateEthLogFilter(flag, fq); err != nil {
 		return ethEmptyLogs, false, err
 	}
 
 	// return empty directly if filter block range before eSpace hardfork
-	if fq.ToBlock != nil && *fq.ToBlock <= *api.hardforkBlockNumber {
+	if fq.ToBlock != nil && *fq.ToBlock <= api.hardforkBlockNumber {
 		return ethEmptyLogs, false, nil
 	}
 
 	if api.LogApiHandler != nil {
 		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client.Eth, fq)
-		updateEthStoreHitRatio("eth_getLogs", hitStore)
-
+		metrics.Registry.RPC.StoreHit("eth_getLogs", "store").Mark(hitStore)
 		if logs == nil { // uniform empty logs
 			logs = ethEmptyLogs
 		}
@@ -457,65 +438,6 @@ func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getTransactionByBlockNumberAndIndex", w3c.Eth)
 	return w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))
-}
-
-func (api *ethAPI) normalizeLogFilter(w3c *web3go.Client, flag store.LogFilterType, filter *web3Types.FilterQuery) error {
-	// set default block range if not set and normalize block number if necessary
-	if flag&store.LogFilterTypeBlockRange != 0 {
-		defaultBlockNo := rpc.LatestBlockNumber
-
-		// if no from block provided, set latest block number as default
-		if filter.FromBlock == nil {
-			filter.FromBlock = &defaultBlockNo
-		}
-
-		// if no to block provided, set latest block number as default
-		if filter.ToBlock == nil {
-			filter.ToBlock = &defaultBlockNo
-		}
-
-		var blocks [2]*rpc.BlockNumber
-		for i, b := range []*rpc.BlockNumber{filter.FromBlock, filter.ToBlock} {
-			block, err := util.NormalizeEthBlockNumber(w3c, b, *api.hardforkBlockNumber)
-			if err != nil {
-				return errors.WithMessage(err, "failed to normalize block number")
-			}
-
-			blocks[i] = block
-		}
-
-		filter.FromBlock, filter.ToBlock = blocks[0], blocks[1]
-	}
-
-	return nil
-}
-
-func (api *ethAPI) validateLogFilter(flag store.LogFilterType, filter *web3Types.FilterQuery, exclusive bool) error {
-	// different types of log filters are mutual exclusion for exclusive mode
-	if exclusive && bits.OnesCount(uint(flag)) > 1 {
-		return errInvalidEthLogFilter
-	}
-
-	if flag&store.LogFilterTypeBlockRange != 0 {
-		if *filter.FromBlock > *filter.ToBlock {
-			return errInvalidLogFilterBlockRange
-		}
-	}
-
-	return nil
-}
-
-func (api *ethAPI) metricLogFilter(eth *client.RpcEthClient, filter *web3Types.FilterQuery) {
-	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/hash").Mark(filter.BlockHash != nil)
-	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/address/null").Mark(len(filter.Addresses) == 0)
-	metrics.Registry.RPC.Percentage("eth_getLogs", "address/single").Mark(len(filter.Addresses) == 1)
-	metrics.Registry.RPC.Percentage("eth_getLogs", "address/multiple").Mark(len(filter.Addresses) > 1)
-	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/topics").Mark(len(filter.Topics) > 0)
-
-	if filter.BlockHash == nil {
-		api.inputBlockMetric.Update1(filter.FromBlock, "eth_getLogs/from", eth)
-		api.inputBlockMetric.Update1(filter.ToBlock, "eth_getLogs/to", eth)
-	}
 }
 
 // TODO: This method should be removed once `web3Types.FilterQuery` is logging friendly.

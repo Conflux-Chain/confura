@@ -29,7 +29,7 @@ var (
 // log filter criterion and proxy full node delegation.
 type Filter struct {
 	typ             FilterType             // filter type
-	lastPollingTime int64                  // last polling timestamp
+	lastPollingTime time.Time              // last polling time
 	crit            *web3Types.FilterQuery // log filter query
 	del             *fnDelegateInfo        // full node delegate info
 }
@@ -37,7 +37,7 @@ type Filter struct {
 func newFilter(typ FilterType, del *fnDelegateInfo, criterion ...*web3Types.FilterQuery) *Filter {
 	f := &Filter{
 		typ: typ, del: del,
-		lastPollingTime: time.Now().Unix(),
+		lastPollingTime: time.Now(),
 	}
 
 	if len(criterion) > 0 {

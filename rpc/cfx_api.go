@@ -6,7 +6,6 @@ import (
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc/cache"
 	"github.com/Conflux-Chain/confura/rpc/handler"
-	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/confura/util/relay"
@@ -14,7 +13,6 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -252,18 +250,18 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	cfx := GetCfxClientFromContext(ctx)
 	api.metricLogFilter(cfx, &filter)
 
-	flag, ok := store.ParseLogFilterType(&filter)
+	flag, ok := ParseLogFilterType(&filter)
 	if !ok {
 		logrus.WithField("filter", filter).Debug("Failed to parse log filter type for cfx_getLogs")
-		return emptyLogs, errInvalidLogFilter
+		return emptyLogs, ErrInvalidLogFilter
 	}
 
-	if err := api.normalizeLogFilter(cfx, flag, &filter); err != nil {
+	if err := NormalizeLogFilter(cfx, flag, &filter); err != nil {
 		logrus.WithField("filter", filter).WithError(err).Debug("Failed to normalize log filter type for cfx_getLogs")
 		return emptyLogs, err
 	}
 
-	if err := api.validateLogFilter(flag, &filter); err != nil {
+	if err := ValidateLogFilter(flag, &filter); err != nil {
 		logrus.WithField("filter", filter).WithError(err).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
 		return emptyLogs, err
 	}
@@ -290,69 +288,6 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	}).Debug("Fail over `cfx_getLogs` to fullnode due to no API handler configured")
 
 	return cfx.GetLogs(filter)
-}
-
-func (api *cfxAPI) normalizeLogFilter(cfx sdk.ClientOperator, flag store.LogFilterType, filter *types.LogFilter) error {
-	// set default epoch range if not set and convert to numbered epoch if necessary
-	if flag&store.LogFilterTypeEpochRange != 0 {
-		// if no from epoch provided, set latest state epoch as default
-		if filter.FromEpoch == nil {
-			filter.FromEpoch = types.EpochLatestState
-		}
-
-		// if no to epoch provided, set latest state epoch as default
-		if filter.ToEpoch == nil {
-			filter.ToEpoch = types.EpochLatestState
-		}
-
-		var epochs [2]*types.Epoch
-		for i, e := range []*types.Epoch{filter.FromEpoch, filter.ToEpoch} {
-			epoch, err := util.ConvertToNumberedEpoch(cfx, e)
-			if err != nil {
-				return errors.WithMessagef(err, "failed to convert numbered epoch for %v", e)
-			}
-
-			epochs[i] = epoch
-		}
-
-		filter.FromEpoch, filter.ToEpoch = epochs[0], epochs[1]
-	}
-
-	return nil
-}
-
-func (api *cfxAPI) validateLogFilter(flag store.LogFilterType, filter *types.LogFilter) error {
-	switch {
-	case flag&store.LogFilterTypeBlockHash != 0: // validate block hash log filter
-		if len(filter.BlockHashes) > store.MaxLogBlockHashesSize {
-			return errExceedLogFilterBlockHashLimit(len(filter.BlockHashes))
-		}
-	case flag&store.LogFilterTypeBlockRange != 0: // validate block range log filter
-		// both fromBlock and toBlock must be provided
-		if filter.FromBlock == nil || filter.ToBlock == nil {
-			return errInvalidLogFilter
-		}
-
-		fromBlock := filter.FromBlock.ToInt().Uint64()
-		toBlock := filter.ToBlock.ToInt().Uint64()
-
-		if fromBlock > toBlock {
-			return errInvalidLogFilterBlockRange
-		}
-
-	case flag&store.LogFilterTypeEpochRange != 0: // validate epoch range log filter
-		epochFrom, _ := filter.FromEpoch.ToInt()
-		epochTo, _ := filter.ToEpoch.ToInt()
-
-		ef := epochFrom.Uint64()
-		et := epochTo.Uint64()
-
-		if ef > et {
-			return errInvalidLogFilterEpochRange
-		}
-	}
-
-	return nil
 }
 
 func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
