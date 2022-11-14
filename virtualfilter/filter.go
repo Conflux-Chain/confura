@@ -6,6 +6,7 @@ import (
 	"time"
 
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/go-rpc-provider"
 	web3Types "github.com/openweb3/web3go/types"
 )
@@ -67,4 +68,15 @@ func IsFilterNotFoundError(err error) bool {
 	}
 
 	return false
+}
+
+type FilterContext struct {
+	fid    rpc.ID
+	cursor *FilterCursor
+	crit   *web3Types.FilterQuery
+}
+
+type FilterCursor struct {
+	blockNum  rpc.BlockNumber
+	blockHash common.Hash
 }
