@@ -10,8 +10,6 @@ import (
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
-	web3Types "github.com/openweb3/web3go/types"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -55,7 +53,7 @@ func (api *FilterApi) timeoutLoop(timeout time.Duration) {
 		// also uninstall delegate log filters
 		for id, f := range expired {
 			if f.typ == FilterTypeLog {
-				api.sys.delegateUninstallFilter(id)
+				api.sys.UninstallFilter(id)
 			}
 		}
 	}
@@ -106,7 +104,7 @@ func (api *FilterApi) NewPendingTransactionFilter(nodeUrl string) (rpc.ID, error
 }
 
 // NewFilter creates a proxy log filter from full node with specified node URL and filter query condition
-func (api *FilterApi) NewFilter(nodeUrl string, crit web3Types.FilterQuery) (rpc.ID, error) {
+func (api *FilterApi) NewFilter(nodeUrl string, crit types.FilterQuery) (rpc.ID, error) {
 	w3c, err := api.loadOrGetFnClient(nodeUrl)
 	if err != nil {
 		return nilRpcId, err
@@ -116,7 +114,7 @@ func (api *FilterApi) NewFilter(nodeUrl string, crit web3Types.FilterQuery) (rpc
 
 	var fid *rpc.ID
 	if api.sys != nil { // create a delegate log filter to the allocated full node
-		fid, err = api.sys.delegateNewFilter(w3c)
+		fid, err = api.sys.NewFilter(w3c, &crit)
 	} else { // fallback to create a proxy log filter to full node
 		fid, err = w3c.Filter.NewLogFilter(&crit)
 	}
@@ -130,7 +128,7 @@ func (api *FilterApi) NewFilter(nodeUrl string, crit web3Types.FilterQuery) (rpc
 		nodeName: rpcutil.Url2NodeName(nodeUrl),
 	}, &crit))
 
-	return *fid, errors.New("not supported yet")
+	return *fid, nil
 }
 
 // UninstallFilter removes the proxy filter with the given filter id.
@@ -141,7 +139,7 @@ func (api *FilterApi) UninstallFilter(nodeUrl string, id rpc.ID) (bool, error) {
 	}
 
 	if api.sys != nil && f.typ == FilterTypeLog {
-		return api.sys.delegateUninstallFilter(id)
+		return api.sys.UninstallFilter(id)
 	}
 
 	if !f.IsDelegateFullNode(nodeUrl) { // not the old delegate full node?
@@ -170,7 +168,7 @@ func (api *FilterApi) GetFilterLogs(nodeUrl string, id rpc.ID) ([]types.Log, err
 		api.delFilter(id)
 
 		if api.sys != nil { // uninstall the delegate log filter
-			api.sys.delegateUninstallFilter(id)
+			api.sys.UninstallFilter(id)
 		}
 
 		return nil, errFilterNotFound
@@ -203,7 +201,7 @@ func (api *FilterApi) GetFilterChanges(nodeUrl string, id rpc.ID) (interface{}, 
 
 		if api.sys != nil && f.typ == FilterTypeLog {
 			// uninstall the delegate log filter
-			return api.sys.delegateUninstallFilter(id)
+			return api.sys.UninstallFilter(id)
 		}
 
 		return nil, errFilterNotFound

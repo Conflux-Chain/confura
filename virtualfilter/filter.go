@@ -6,8 +6,14 @@ import (
 	"time"
 
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/go-rpc-provider"
 	web3Types "github.com/openweb3/web3go/types"
+)
+
+type (
+	ProxyFilterID    = rpc.ID // proxy filter ID
+	DelegateFilterID = rpc.ID // delegate filter ID
 )
 
 type FilterType byte
@@ -67,4 +73,17 @@ func IsFilterNotFoundError(err error) bool {
 	}
 
 	return false
+}
+
+// FilterCursor the visiting position where last polling ends.
+type FilterCursor struct {
+	blockNum  rpc.BlockNumber
+	blockHash common.Hash
+}
+
+// FilterContext stores information for filter such as query criterion etc.
+type FilterContext struct {
+	fid    rpc.ID
+	cursor *FilterCursor
+	crit   *web3Types.FilterQuery
 }
