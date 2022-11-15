@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
 )
@@ -11,8 +10,8 @@ type InputBlockMetric struct{}
 
 func (metric *InputBlockMetric) updateBlockNumberIgnoreDefault(blockNum *types.BlockNumber, method string, eth *client.RpcEthClient) {
 	// mark percentage for most popular values
-	Registry.RPC.InputBlock(method, "latest").Mark(blockNum != nil && *blockNum == rpc.LatestBlockNumber)
-	Registry.RPC.InputBlock(method, "pending").Mark(blockNum != nil && *blockNum == rpc.PendingBlockNumber)
+	Registry.RPC.InputBlock(method, "latest").Mark(blockNum != nil && *blockNum == types.LatestBlockNumber)
+	Registry.RPC.InputBlock(method, "pending").Mark(blockNum != nil && *blockNum == types.PendingBlockNumber)
 	// metric.updatePercentage(method, "earliest", blockNum != nil && *blockNum == rpc.EarliestBlockNumber)
 
 	// block number

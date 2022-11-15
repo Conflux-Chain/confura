@@ -12,7 +12,6 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/rpc"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 )
@@ -35,7 +34,7 @@ type ethAPI struct {
 	inputBlockMetric metrics.InputBlockMetric
 
 	// return empty data before eSpace hardfork block number
-	hardforkBlockNumber rpc.BlockNumber
+	hardforkBlockNumber web3Types.BlockNumber
 }
 
 func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *ethAPI {

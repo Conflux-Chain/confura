@@ -9,7 +9,6 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	web3goTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -19,8 +18,8 @@ import (
 var (
 	hashRegexp *regexp.Regexp = regexp.MustCompile("^0x([A-Fa-f0-9]{64})$")
 
-	ethHardforkBlockNumberDevnet    = rpc.BlockNumber(1)
-	ethChainId2HardforkBlockNumbers = map[uint64]rpc.BlockNumber{
+	ethHardforkBlockNumberDevnet    = web3goTypes.BlockNumber(1)
+	ethChainId2HardforkBlockNumbers = map[uint64]web3goTypes.BlockNumber{
 		1030: 36935000, //mainnet
 		71:   61465000, // testnet
 	}
@@ -104,8 +103,8 @@ func ConvertToHashSlice(ss []string) []types.Hash {
 
 // NormalizeEthBlockNumber normalizes ETH block number to be positive if necessary
 func NormalizeEthBlockNumber(
-	w3c *web3go.Client, blockNum *rpc.BlockNumber, hardforkBlockNumber rpc.BlockNumber,
-) (*rpc.BlockNumber, error) {
+	w3c *web3go.Client, blockNum *web3goTypes.BlockNumber, hardforkBlockNumber web3goTypes.BlockNumber,
+) (*web3goTypes.BlockNumber, error) {
 	if blockNum == nil {
 		return nil, errors.New("block number must be provided")
 	}
@@ -121,7 +120,7 @@ func NormalizeEthBlockNumber(
 	}
 
 	// earliest => hardfork
-	if *blockNum == rpc.EarliestBlockNumber {
+	if *blockNum == web3goTypes.EarliestBlockNumber {
 		return &hardforkBlockNumber, nil
 	}
 
@@ -137,7 +136,7 @@ func NormalizeEthBlockNumber(
 		return nil, errors.Errorf("unknown block number (%v)", string(blockText))
 	}
 
-	blockNo := rpc.BlockNumber(block.Number.Int64())
+	blockNo := web3goTypes.BlockNumber(block.Number.Int64())
 	return &blockNo, nil
 }
 
@@ -184,7 +183,7 @@ func IsSuccessEthTx(tx *web3goTypes.TransactionDetail) bool {
 }
 
 // GetEthHardforkBlockNumber gets eSpace hardfork block number by chain ID
-func GetEthHardforkBlockNumber(chainId uint64) rpc.BlockNumber {
+func GetEthHardforkBlockNumber(chainId uint64) web3goTypes.BlockNumber {
 	if v, ok := ethChainId2HardforkBlockNumbers[chainId]; ok {
 		return v
 	}

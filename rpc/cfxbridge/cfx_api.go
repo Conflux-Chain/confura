@@ -8,9 +8,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/client"
+	ethTypes "github.com/openweb3/web3go/types"
 )
 
 type CfxAPI struct {
@@ -139,14 +139,14 @@ func (api *CfxAPI) GetBlockByEpochNumber(ctx context.Context, bn EthBlockNumber,
 
 func (api *CfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (interface{}, error) {
 	bn := EthBlockNumber{
-		value: rpc.BlockNumber(blockNumer),
+		value: ethTypes.BlockNumber(blockNumer),
 	}
 
 	return api.GetBlockByEpochNumber(ctx, bn, includeTxs)
 }
 
 func (api *CfxAPI) GetBestBlockHash(ctx context.Context) (common.Hash, error) {
-	block, err := api.eth.BlockByNumber(rpc.LatestBlockNumber, false)
+	block, err := api.eth.BlockByNumber(ethTypes.LatestBlockNumber, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -289,7 +289,7 @@ func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
 		return types.Status{}, err
 	}
 
-	block, err := api.eth.BlockByNumber(rpc.LatestBlockNumber, false)
+	block, err := api.eth.BlockByNumber(ethTypes.LatestBlockNumber, false)
 	if err != nil {
 		return types.Status{}, err
 	}

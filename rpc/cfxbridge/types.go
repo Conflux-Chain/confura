@@ -10,17 +10,16 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/rpc"
 	ethTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 )
 
 // EthBlockNumber accepts number and epoch tag latest_state, other values are invalid, e.g. latest_confirmed.
 type EthBlockNumber struct {
-	value rpc.BlockNumber
+	value ethTypes.BlockNumber
 }
 
-func (ebn *EthBlockNumber) ValueOrNil() *rpc.BlockNumber {
+func (ebn *EthBlockNumber) ValueOrNil() *ethTypes.BlockNumber {
 	if ebn == nil {
 		return nil
 	}
@@ -28,9 +27,9 @@ func (ebn *EthBlockNumber) ValueOrNil() *rpc.BlockNumber {
 	return &ebn.value
 }
 
-func (ebn *EthBlockNumber) Value() rpc.BlockNumber {
+func (ebn *EthBlockNumber) Value() ethTypes.BlockNumber {
 	if ebn == nil {
-		return rpc.LatestBlockNumber
+		return ethTypes.LatestBlockNumber
 	}
 
 	return ebn.value
@@ -55,11 +54,11 @@ func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 
 	// Supports hex, latest_state and earliest
 	if num, ok := epoch.ToInt(); ok {
-		ebn.value = rpc.BlockNumber(num.Int64())
+		ebn.value = ethTypes.BlockNumber(num.Int64())
 	} else if types.EpochLatestState.Equals(&epoch) {
-		ebn.value = rpc.LatestBlockNumber
+		ebn.value = ethTypes.LatestBlockNumber
 	} else if types.EpochEarliest.Equals(&epoch) {
-		ebn.value = rpc.EarliestBlockNumber
+		ebn.value = ethTypes.EarliestBlockNumber
 	} else {
 		// Other values are all invalid
 		return ErrEpochUnsupported
@@ -70,7 +69,7 @@ func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 
 // EthBlockNumberOrHash accepts hex number, hash and epoch tag latest_state, other values are invalid, e.g. latest_confirmed.
 type EthBlockNumberOrHash struct {
-	number rpc.BlockNumber
+	number ethTypes.BlockNumber
 	hash   *common.Hash
 }
 
@@ -94,16 +93,16 @@ func (ebnh *EthBlockNumberOrHash) UnmarshalJSON(data []byte) error {
 
 	// Supports hex number
 	if num, ok := epoch.ToInt(); ok {
-		ebnh.number = rpc.BlockNumber(num.Int64())
+		ebnh.number = ethTypes.BlockNumber(num.Int64())
 		return nil
 	}
 
 	// Supports particular tags (latest_state and earliest) and hash
 	switch {
 	case types.EpochEarliest.Equals(&epoch):
-		ebnh.number = rpc.EarliestBlockNumber
+		ebnh.number = ethTypes.EarliestBlockNumber
 	case types.EpochLatestState.Equals(&epoch):
-		ebnh.number = rpc.LatestBlockNumber
+		ebnh.number = ethTypes.LatestBlockNumber
 	case len(epoch.String()) == 66:
 		blockHash := common.HexToHash(epoch.String())
 		ebnh.hash = &blockHash

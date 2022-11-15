@@ -3,8 +3,8 @@ package util
 import (
 	"testing"
 
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
+	w3types "github.com/openweb3/web3go/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -26,21 +26,21 @@ func TestNormalizeEthBlockNumber(t *testing.T) {
 	w3c, err := web3go.NewClient("http://evmtestnet.confluxrpc.com")
 	assert.NoError(t, err)
 
-	latestBlockNum := rpc.LatestBlockNumber
-	blockNum, err := NormalizeEthBlockNumber(w3c, &latestBlockNum, rpc.BlockNumber(0))
+	latestBlockNum := w3types.LatestBlockNumber
+	blockNum, err := NormalizeEthBlockNumber(w3c, &latestBlockNum, w3types.BlockNumber(0))
 	assert.NoError(t, err)
 	assert.NotNil(t, blockNum)
 
-	pendingBlockNum := rpc.PendingBlockNumber
-	blockNum, err = NormalizeEthBlockNumber(w3c, &pendingBlockNum, rpc.BlockNumber(0))
+	pendingBlockNum := w3types.PendingBlockNumber
+	blockNum, err = NormalizeEthBlockNumber(w3c, &pendingBlockNum, w3types.BlockNumber(0))
 	if blockNum != nil {
 		assert.NoError(t, err)
 	} else {
 		assert.NoError(t, err)
 	}
 
-	earlistBlockNum := rpc.EarliestBlockNumber
-	blockNum, err = NormalizeEthBlockNumber(w3c, &earlistBlockNum, rpc.BlockNumber(0))
+	earlistBlockNum := w3types.EarliestBlockNumber
+	blockNum, err = NormalizeEthBlockNumber(w3c, &earlistBlockNum, w3types.BlockNumber(0))
 	if blockNum != nil {
 		assert.NoError(t, err)
 	}
