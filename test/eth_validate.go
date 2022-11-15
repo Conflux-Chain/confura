@@ -22,7 +22,6 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/multierr"
@@ -349,7 +348,7 @@ func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) (*typ
 	var err1, err2 error
 
 	fnCall := func() (interface{}, error) {
-		b1, err1 = validator.fn.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), true)
+		b1, err1 = validator.fn.Eth.BlockByNumber(types.BlockNumber(blockNumer), true)
 		if err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block from fullnode")
 		}
@@ -358,7 +357,7 @@ func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) (*typ
 	}
 
 	infuraCall := func() (interface{}, error) {
-		b2, err2 = validator.infura.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), true)
+		b2, err2 = validator.infura.Eth.BlockByNumber(types.BlockNumber(blockNumer), true)
 		if err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block from infura")
 		}
@@ -385,7 +384,7 @@ func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) (*typ
 // Validate `eth_getBlockByNumber` (includeTxs = false)
 func (validator *EthValidator) validateGetBlockSummaryByNumber(blockNumer uint64) error {
 	fnCall := func() (interface{}, error) {
-		b1, err1 := validator.fn.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), false)
+		b1, err1 := validator.fn.Eth.BlockByNumber(types.BlockNumber(blockNumer), false)
 		if err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block summary from fullnode")
 		}
@@ -393,7 +392,7 @@ func (validator *EthValidator) validateGetBlockSummaryByNumber(blockNumer uint64
 	}
 
 	infuraCall := func() (interface{}, error) {
-		b2, err2 := validator.infura.Eth.BlockByNumber(rpc.BlockNumber(blockNumer), false)
+		b2, err2 := validator.infura.Eth.BlockByNumber(types.BlockNumber(blockNumer), false)
 		if err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block summary from infura")
 		}
@@ -587,8 +586,8 @@ func (validator *EthValidator) validateGetLogs(
 	// filter: blocknumbers
 	fromBn, toBn := int64(blockNo), int64(blockNo)
 	filterByBlockNums := types.FilterQuery{
-		FromBlock: (*rpc.BlockNumber)(&fromBn),
-		ToBlock:   (*rpc.BlockNumber)(&toBn),
+		FromBlock: (*types.BlockNumber)(&fromBn),
+		ToBlock:   (*types.BlockNumber)(&toBn),
 	}
 
 	if err := validator.doValidateGetLogs(&filterByBlockNums); err != nil {

@@ -7,7 +7,6 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -83,14 +82,14 @@ func ParseEthLogFilterType(filter *web3Types.FilterQuery) (LogFilterType, bool) 
 
 func NormalizeEthLogFilter(
 	w3c *web3go.Client, flag LogFilterType,
-	filter *web3Types.FilterQuery, hardforkBlockNum rpc.BlockNumber,
+	filter *web3Types.FilterQuery, hardforkBlockNum web3Types.BlockNumber,
 ) error {
 	if flag&LogFilterTypeBlockRange == 0 { // not a blockrange log filter
 		return nil
 	}
 
 	// set default block range if not set and normalize block number if necessary
-	defaultBlockNo := rpc.LatestBlockNumber
+	defaultBlockNo := web3Types.LatestBlockNumber
 
 	// if no from block provided, set latest block number as default
 	if filter.FromBlock == nil {
@@ -102,8 +101,8 @@ func NormalizeEthLogFilter(
 		filter.ToBlock = &defaultBlockNo
 	}
 
-	var blocks [2]*rpc.BlockNumber
-	for i, b := range []*rpc.BlockNumber{filter.FromBlock, filter.ToBlock} {
+	var blocks [2]*web3Types.BlockNumber
+	for i, b := range []*web3Types.BlockNumber{filter.FromBlock, filter.ToBlock} {
 		block, err := util.NormalizeEthBlockNumber(w3c, b, hardforkBlockNum)
 		if err != nil {
 			return errors.WithMessage(err, "failed to normalize block number")

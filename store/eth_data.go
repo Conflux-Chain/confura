@@ -3,11 +3,10 @@ package store
 import (
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/rpc"
-
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go"
+	"github.com/openweb3/web3go/types"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -70,7 +69,7 @@ func queryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthDa
 	var blockReceipts []web3Types.Receipt
 	if useBatch {
 		// Batch get block receipts.
-		blockNumOrHash := web3Types.BlockNumberOrHashWithNumber(rpc.BlockNumber(blockNumber))
+		blockNumOrHash := web3Types.BlockNumberOrHashWithNumber(types.BlockNumber(blockNumber))
 		blockReceipts, err = w3c.Parity.BlockReceipts(&blockNumOrHash)
 		if err != nil {
 			logger.WithError(err).Info("Failed to batch query ETH block receipts")

@@ -7,8 +7,8 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/web3go"
+	ethTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
@@ -68,7 +68,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestConvertBlockHeader(t *testing.T) {
-	blockNum := rpc.BlockNumber(64630500)
+	blockNum := ethTypes.BlockNumber(64630500)
 
 	ethBlock, err := ethClient.Eth.BlockByNumber(blockNum, false)
 	assert.NoError(t, err)

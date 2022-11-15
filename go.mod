@@ -5,7 +5,7 @@ go 1.15
 require (
 	github.com/Conflux-Chain/go-conflux-sdk v1.4.2
 	github.com/Conflux-Chain/go-conflux-util v0.0.0-20220907035343-2d1233bccd70
-	github.com/Conflux-Chain/web3pay-service v0.0.0-20221020022131-269944f9065d
+	github.com/Conflux-Chain/web3pay-service v0.0.0-20221115064122-2da1fe3499c5
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
 	github.com/cespare/xxhash v1.1.0
@@ -14,8 +14,8 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/montanaflynn/stats v0.6.6
-	github.com/openweb3/go-rpc-provider v0.2.9
-	github.com/openweb3/web3go v0.2.2
+	github.com/openweb3/go-rpc-provider v0.3.1
+	github.com/openweb3/web3go v0.2.3
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
 	github.com/sirupsen/logrus v1.8.1
