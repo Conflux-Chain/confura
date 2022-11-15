@@ -30,6 +30,9 @@ const (
 	GroupEthHttp = "ethhttp"
 	GroupEthWs   = "ethws"
 	GroupEthLogs = "ethlogs"
+
+	// debug space fullnode groups
+	GroupDebugHttp = "debughttp"
 )
 
 // Space parses space from group name

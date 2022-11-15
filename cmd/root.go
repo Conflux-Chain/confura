@@ -78,6 +78,7 @@ func start(cmd *cobra.Command, args []string) {
 		startNativeSpaceRpcServer(ctx, wg, storeCtx)
 		startEvmSpaceRpcServer(ctx, wg, storeCtx)
 		startNativeSpaceBridgeRpcServer(ctx, wg)
+		startDebugSpaceRpcServer(ctx, wg)
 	}
 
 	if nodeServerEnabled { // start node management

@@ -160,6 +160,7 @@ You can use the `rpc` subcommand to start RPC service, including core space, evm
 >      --cfx         start core space RPC server
 >      --cfxBridge   start core space bridge RPC server
 >      --eth         start evm space RPC server
+>      --debug       start debug space RPC server
 >      --help        help for rpc
 
 eg., you can run the following for core space RPC server:

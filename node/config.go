@@ -47,7 +47,11 @@ func init() {
 		GroupEthLogs: {
 			Nodes: cfg.EthLogNodes,
 		},
+		GroupDebugHttp: {
+			Nodes: cfg.DebugURLs,
+		},
 	}
+
 }
 
 type config struct {
@@ -55,6 +59,7 @@ type config struct {
 	EthEndpoint  string `default:":28530"`
 	URLs         []string
 	EthURLs      []string
+	DebugURLs    []string
 	WSURLs       []string
 	EthWSURLs    []string
 	LogNodes     []string
