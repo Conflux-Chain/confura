@@ -246,8 +246,7 @@ func (fs *FilterSystem) loadOrNewProxyContext(client *node.Web3goClient) *proxyC
 	v, _ := fs.proxyContexts.LoadOrStoreFn(nodeName, func(interface{}) interface{} {
 		return &proxyContext{}
 	})
-	pctx := v.(*proxyContext)
-	return pctx
+	return v.(*proxyContext)
 }
 
 // newVirtualDelegateFilter creates a virtual delegate filter with specified filter context
