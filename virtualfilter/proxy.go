@@ -15,23 +15,51 @@ var (
 
 // proxyContext context for shared proxy filter to the full node
 type proxyContext struct {
-	mu  sync.Mutex
-	fid *ProxyFilterID // shared proxy filter ID
+	client *node.Web3goClient
+	fid    *ProxyFilterID
 }
 
-// loadOrNewProxyFilter creates or loads an universal shared proxy filter
-func (pctx *proxyContext) loadOrNewProxyFilter(client *node.Web3goClient) (*ProxyFilterID, bool, error) {
-	if pctx.fid != nil { // already created?
-		return pctx.fid, false, nil
+// proxyFilterManager manages to create proxy filter to full node.
+// To reduce workload, there would be only one valid shared proxy filter
+// for each full node.
+type proxyFilterManager struct {
+	mu           sync.Mutex
+	proxyFilters map[string]*proxyContext // node name => proxy context
+}
+
+func newProxyFilterManager() *proxyFilterManager {
+	return &proxyFilterManager{
+		proxyFilters: make(map[string]*proxyContext),
+	}
+}
+
+func (pfm *proxyFilterManager) loadOrNewProxyFilter(
+	client *node.Web3goClient, onProxyFilter func(pctx *proxyContext, loaded bool) error) error {
+
+	pfm.mu.Lock()
+	defer pfm.mu.Unlock()
+
+	nodeName := client.NodeName()
+	if pctx, ok := pfm.proxyFilters[nodeName]; ok {
+		return onProxyFilter(pctx, true)
 	}
 
 	fid, err := client.Filter.NewLogFilter(&types.FilterQuery{})
 	if err != nil {
-		return nil, false, err
+		return err
 	}
 
-	pctx.fid = fid
-	return fid, true, nil
+	pctx := &proxyContext{client: client, fid: fid}
+	pfm.proxyFilters[nodeName] = pctx
+
+	return onProxyFilter(pctx, false)
+}
+
+func (pfm *proxyFilterManager) removeProxyFilter(client *node.Web3goClient) {
+	pfm.mu.Lock()
+	defer pfm.mu.Unlock()
+
+	delete(pfm.proxyFilters, client.NodeName())
 }
 
 // delegateContext holds delegate information for the proxy filter
@@ -39,7 +67,6 @@ type delegateContext struct {
 	client *node.Web3goClient
 
 	termCh chan struct{}  // termination singal channel
-	closed bool           // in case channel closed more than once
 	fid    *ProxyFilterID // shared proxy filter ID
 	cur    *FilterCursor  // current visiting cursor
 
@@ -57,19 +84,21 @@ func newDelegateContext(fid *ProxyFilterID, client *node.Web3goClient) *delegate
 	}
 }
 
-func (dctx *delegateContext) registerGuest(dfid DelegateFilterID) {
-	dctx.guestFilters[dfid] = struct{}{}
+func (dctx *delegateContext) registerGuest(dfid *DelegateFilterID) {
+	dctx.guestFilters[*dfid] = struct{}{}
 }
 
-func (dctx *delegateContext) deregisterGuest(dfid DelegateFilterID) {
-	delete(dctx.guestFilters, dfid)
+func (dctx *delegateContext) deregisterGuest(dfid *DelegateFilterID) {
+	delete(dctx.guestFilters, *dfid)
 }
 
 // close closes the signal channel to terminate the shared proxy filter
 func (dctx *delegateContext) close() {
-	if !dctx.closed {
+	if dctx.termCh != nil {
 		close(dctx.termCh)
-		dctx.closed = true
+
+		// ensure channel closed only once
+		dctx.termCh = nil
 	}
 }
 

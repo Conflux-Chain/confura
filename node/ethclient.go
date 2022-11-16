@@ -6,6 +6,7 @@ import (
 	"math/rand"
 
 	"github.com/Conflux-Chain/confura/util/rpc"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/openweb3/web3go"
 )
 
@@ -13,6 +14,10 @@ type Web3goClient struct {
 	*web3go.Client
 
 	URL string
+}
+
+func (w3c *Web3goClient) NodeName() string {
+	return rpcutil.Url2NodeName(w3c.URL)
 }
 
 // EthClientProvider provides evm space client by router.
