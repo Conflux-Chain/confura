@@ -2,6 +2,7 @@ package virtualfilter
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/confura/node"
@@ -33,6 +34,10 @@ type FilterSystem struct {
 	// There would be many virtual delegate filters for a single shared proxy filter per full node,
 	// therefore we use proxy context to store the mapping relationships etc.
 	proxyContexts util.ConcurrentMap // node name => *proxyContext
+
+	// There would be one mutex per full node for operations such as establishing proxy filter etc.
+	// to reduce lock waits by seperation from different full nodes.
+	proxyLocks util.ConcurrentMap // node name => *sync.Mutex
 }
 
 func NewFilterSystem(lhandler *handler.EthLogsApiHandler, conf *Config) *FilterSystem {
@@ -41,11 +46,12 @@ func NewFilterSystem(lhandler *handler.EthLogsApiHandler, conf *Config) *FilterS
 
 // NewFilter creates a new virtual delegate filter
 func (fs *FilterSystem) NewFilter(client *node.Web3goClient, crit *types.FilterQuery) (*web3rpc.ID, error) {
+	mu := fs.loadOrNewProxyLock(client.NodeName())
+
+	mu.Lock()
+	defer mu.Unlock()
+
 	pctx := fs.loadOrNewProxyContext(client)
-
-	pctx.mu.Lock()
-	defer pctx.mu.Unlock()
-
 	if pctx.fid == nil {
 		// establishes a shared universal proxy filter initially
 		fid, err := pctx.client.Filter.NewLogFilter(&types.FilterQuery{})
@@ -75,11 +81,18 @@ func (fs *FilterSystem) UninstallFilter(id web3rpc.ID) (bool, error) {
 	var found bool
 
 	fs.proxyContexts.Range(func(key, value interface{}) bool {
-		pctx := value.(*proxyContext)
+		nodeName := key.(string)
+		mu := fs.loadOrNewProxyLock(nodeName)
 
-		pctx.mu.Lock()
-		defer pctx.mu.Unlock()
+		mu.Lock()
+		defer mu.Unlock()
 
+		v, ok := fs.proxyContexts.Load(nodeName)
+		if !ok {
+			return true
+		}
+
+		pctx := v.(*proxyContext)
 		if _, found = pctx.delegateFilters[id]; !found {
 			return true
 		}
@@ -133,6 +146,14 @@ func (fs *FilterSystem) GetFilterLogs(w3c *node.Web3goClient, crit *types.Filter
 func (fs *FilterSystem) GetFilterChanges(w3c *node.Web3goClient, crit *types.FilterQuery) ([]types.Log, error) {
 	// TODO: get matching logs from db/cache
 	return nil, errors.New("not supported yet")
+}
+
+func (fs *FilterSystem) loadOrNewProxyLock(nodeName string) *sync.Mutex {
+	v, _ := fs.proxyLocks.LoadOrStoreFn(nodeName, func(interface{}) interface{} {
+		return &sync.Mutex{}
+	})
+
+	return v.(*sync.Mutex)
 }
 
 func (fs *FilterSystem) loadOrNewProxyContext(client *node.Web3goClient) *proxyContext {
@@ -194,8 +215,10 @@ func (fs *FilterSystem) merge(pctx *proxyContext, changes *types.FilterChanges) 
 // clear clears the shared proxy filter of specified context
 func (fs *FilterSystem) clear(pctx *proxyContext, lockfree ...bool) {
 	if len(lockfree) == 0 || !lockfree[0] {
-		pctx.mu.Lock()
-		defer pctx.mu.Unlock()
+		mu := fs.loadOrNewProxyLock(pctx.client.NodeName())
+
+		mu.Lock()
+		defer mu.Unlock()
 	}
 
 	// uninstall the proxy filter with error ignored
@@ -203,15 +226,16 @@ func (fs *FilterSystem) clear(pctx *proxyContext, lockfree ...bool) {
 		pctx.client.Filter.UninstallFilter(*pctx.fid)
 	}
 
-	// reset the proxy context for reuse
-	pctx.fid, pctx.cur = nil, nil
-	pctx.delegateFilters = make(map[DelegateFilterID]*FilterContext)
+	// remove proxy context from filter system
+	fs.proxyContexts.Delete(pctx.client.NodeName())
 }
 
 // gc clear the proxy filter if not used by any delegate filter
 func (fs *FilterSystem) gc(pctx *proxyContext) bool {
-	pctx.mu.Lock()
-	defer pctx.mu.Unlock()
+	mu := fs.loadOrNewProxyLock(pctx.client.NodeName())
+
+	mu.Lock()
+	defer mu.Unlock()
 
 	if len(pctx.delegateFilters) > 0 {
 		return false

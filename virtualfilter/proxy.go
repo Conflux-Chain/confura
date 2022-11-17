@@ -2,7 +2,6 @@ package virtualfilter
 
 import (
 	"errors"
-	"sync"
 
 	"github.com/Conflux-Chain/confura/node"
 )
@@ -15,7 +14,6 @@ var (
 // proxyContext holds filtering state for proxy filter
 type proxyContext struct {
 	client *node.Web3goClient
-	mu     sync.Mutex
 
 	fid *ProxyFilterID // proxy filter ID
 	cur *FilterCursor  // current cursor
