@@ -140,8 +140,7 @@ func (fs *FilterSystem) loadOrNewProxyContext(client *node.Web3goClient) *proxyC
 
 	v, _ := fs.proxyContexts.LoadOrStoreFn(nn, func(interface{}) interface{} {
 		return newProxyContext(client)
-	},
-	)
+	})
 
 	return v.(*proxyContext)
 }
