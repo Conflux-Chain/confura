@@ -2,7 +2,6 @@ package virtualfilter
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/confura/node"
@@ -22,102 +21,75 @@ const (
 	maxPollingDelayDuration = 1 * time.Minute
 )
 
-// FilterSystem creates proxy log filter to fullnode, and instantly polls event logs from
+// FilterSystem creates proxy log filter to full node, and instantly polls event logs from
 // the full node to persist data in db/cache store for high performance and stable log filter
 // data retrieval service.
 type FilterSystem struct {
 	cfg *Config
-	mu  sync.Mutex
 
-	// handler to get filter logs from store or full node
+	// handler to get filter logs from store or full node.
 	lhandler *handler.EthLogsApiHandler
 
-	// manager to create proxy filter to full node
-	pfman *proxyFilterManager
-
-	// There would be many virtual delegate filters for a single shared proxy filter, therefore
-	// we use delegate context to store the mapping relationships etc.
-	delegateContexts map[ProxyFilterID]*delegateContext
-
-	// For every virtual delegate filter, we use filter context to store the recent filter status
-	// such as current visiting cursor etc.
-	filterContexts map[DelegateFilterID]*FilterContext
+	// There would be many virtual delegate filters for a single shared proxy filter per full node,
+	// therefore we use proxy context to store the mapping relationships etc.
+	proxyContexts util.ConcurrentMap // node name => *proxyContext
 }
 
 func NewFilterSystem(lhandler *handler.EthLogsApiHandler, conf *Config) *FilterSystem {
-	return &FilterSystem{
-		cfg:              conf,
-		lhandler:         lhandler,
-		pfman:            newProxyFilterManager(),
-		delegateContexts: make(map[ProxyFilterID]*delegateContext),
-		filterContexts:   make(map[DelegateFilterID]*FilterContext),
-	}
+	return &FilterSystem{cfg: conf, lhandler: lhandler}
 }
 
 // NewFilter creates a new virtual delegate filter
 func (fs *FilterSystem) NewFilter(client *node.Web3goClient, crit *types.FilterQuery) (*web3rpc.ID, error) {
-	var dfid *DelegateFilterID
+	pctx := fs.loadOrNewProxyContext(client)
 
-	err := fs.pfman.loadOrNewProxyFilter(client, func(pctx *proxyContext, loaded bool) error {
-		fs.mu.Lock()
-		defer fs.mu.Unlock()
+	pctx.mu.Lock()
+	defer pctx.mu.Unlock()
 
-		if !loaded { // register the delegate context if initial created
-			fs.delegateContexts[*pctx.fid] = newDelegateContext(pctx.fid, client)
+	if pctx.fid == nil {
+		// establishes a shared universal proxy filter initially
+		fid, err := pctx.client.Filter.NewLogFilter(&types.FilterQuery{})
+		if err != nil {
+			return nil, err
 		}
 
-		dctx, ok := fs.delegateContexts[*pctx.fid]
-		if !ok { // delegate context removed already? let client retry
-			return errFilterProxyError
-		}
+		pctx.fid = fid
 
-		// snapshot the current filter states
-		fctx := dctx.snapshotFilterContext(crit)
+		// start to poll filter changes
+		go fs.poll(pctx)
+	}
 
-		// new a virtual delegate filter
-		dfid = fs.newVirtualDelegateFilter(fctx)
+	// new a virtual delegate filter
+	dfid := web3rpc.NewID()
 
-		// register the delegate filter as guest of the shared proxy filter
-		dctx.registerGuest(dfid)
+	// snapshot the current filter states
+	pctx.delegateFilters[dfid] = &FilterContext{
+		fid: *pctx.fid, cursor: pctx.cur, crit: crit,
+	}
 
-		if !loaded { // start to poll filter changes if initial created
-			go fs.poll(dctx)
-		}
-
-		return nil
-	})
-
-	return dfid, err
+	return &dfid, nil
 }
 
 // UninstallFilter uninstalls a virtual delegate filter
 func (fs *FilterSystem) UninstallFilter(id web3rpc.ID) (bool, error) {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	var found bool
 
-	fctx, ok := fs.filterContexts[id]
-	if !ok { // filter not found?
-		return false, nil
-	}
+	fs.proxyContexts.Range(func(key, value interface{}) bool {
+		pctx := value.(*proxyContext)
 
-	// delete filter context
-	delete(fs.filterContexts, id)
+		pctx.mu.Lock()
+		defer pctx.mu.Unlock()
 
-	dctx, ok := fs.delegateContexts[fctx.fid]
-	if !ok {
-		return true, nil
-	}
+		if _, found = pctx.delegateFilters[id]; !found {
+			return true
+		}
 
-	// deregister from delegate context
-	dctx.deregisterGuest(&id)
+		// delete filter context
+		delete(pctx.delegateFilters, id)
+		return false
+	})
 
-	// If no guest delegate filters existed anymore for the shared proxy filter,
-	// terminate the proxy filter to reclaim resource usage.
-	if len(dctx.guestFilters) == 0 {
-		dctx.close()
-	}
-
-	return true, nil
+	return found, nil
 }
 
 // Logs returns the matching log entries from the blockchain node or db/cache store.
@@ -163,81 +135,91 @@ func (fs *FilterSystem) GetFilterChanges(w3c *node.Web3goClient, crit *types.Fil
 	return nil, errors.New("not supported yet")
 }
 
+func (fs *FilterSystem) loadOrNewProxyContext(client *node.Web3goClient) *proxyContext {
+	nn := client.NodeName()
+
+	v, _ := fs.proxyContexts.LoadOrStoreFn(nn, func(interface{}) interface{} {
+		return newProxyContext(client)
+	},
+	)
+
+	return v.(*proxyContext)
+}
+
 // poll instantly polling filter changes from full node
-func (fs *FilterSystem) poll(dctx *delegateContext) {
+func (fs *FilterSystem) poll(pctx *proxyContext) {
 	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
 
-	delayedTicks := 0 // delayed ticks until now
-	maxDelayedTicks := int(maxPollingDelayDuration / pollingInterval)
+	lastPollingTime := time.Now()
 
-	for {
-		select {
-		// TODO: add context.Done for graceful shutdown?
-		case <-ticker.C:
-			fchanges, err := dctx.client.Filter.GetFilterChanges(*dctx.fid)
-			if err == nil {
-				delayedTicks = 0 // reset delayed ticks
-				fs.merge(dctx, fchanges)
-
-				continue
-			}
-
-			if IsFilterNotFoundError(err) { // proxy filter cleared by the full node?
-				fs.clear(dctx)
-				return
-			}
-
-			// try as many as possible for any other error
-			if delayedTicks++; delayedTicks < maxDelayedTicks {
-				continue
-			}
-
-			logrus.WithFields(logrus.Fields{
-				"proxyFilterID": *dctx.fid,
-				"delayedTicks":  delayedTicks,
-			}).WithError(err).Error("Filter System failed to poll filter changes after too many delays")
-			fs.clear(dctx)
-
-			return
-		case <-dctx.termCh:
-			fs.clear(dctx)
+	for range ticker.C {
+		if fs.gc(pctx) { // proxy filter garbage collected?
 			return
 		}
+
+		fchanges, err := pctx.client.Filter.GetFilterChanges(*pctx.fid)
+		if err == nil {
+			// update last polling time
+			lastPollingTime = time.Now()
+
+			fs.merge(pctx, fchanges)
+			continue
+		}
+
+		// Proxy filter removed by the full node? this may be due to full node reboot.
+		if IsFilterNotFoundError(err) {
+			fs.clear(pctx)
+			return
+		}
+
+		// try as many times as possible for any other error
+		if time.Since(lastPollingTime) < maxPollingDelayDuration {
+			continue
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"proxyFilterID":   *pctx.fid,
+			"delayedDuration": time.Since(lastPollingTime),
+		}).WithError(err).Error("Filter System failed to poll filter changes after too many delays")
+
+		fs.clear(pctx)
+		return
 	}
 }
 
-func (fs *FilterSystem) merge(dctx *delegateContext, changes *types.FilterChanges) {
+func (fs *FilterSystem) merge(pctx *proxyContext, changes *types.FilterChanges) {
 	// TODO: merge filter changes to db && cache store
 }
 
-// clear clears proxy filter of the specified delegate context
-func (fs *FilterSystem) clear(dctx *delegateContext) {
-	// uninstall the proxy filter with error ignored
-	defer dctx.client.Filter.UninstallFilter(*dctx.fid)
-
-	// remove the shared proxy filter so that new one can be created next time
-	fs.pfman.removeProxyFilter(dctx.client)
-
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
-
-	// delete delegate context
-	delete(fs.delegateContexts, *dctx.fid)
-
-	for dfid := range dctx.guestFilters {
-		// delete filter context for the guest filter
-		delete(fs.filterContexts, dfid)
-
-		// deregister the guest filter
-		dctx.deregisterGuest(&dfid)
+// clear clears the shared proxy filter of specified context
+func (fs *FilterSystem) clear(pctx *proxyContext, lockfree ...bool) {
+	if len(lockfree) == 0 || !lockfree[0] {
+		pctx.mu.Lock()
+		defer pctx.mu.Unlock()
 	}
+
+	// uninstall the proxy filter with error ignored
+	if pctx.fid != nil {
+		pctx.client.Filter.UninstallFilter(*pctx.fid)
+	}
+
+	// reset the proxy context for reuse
+	pctx.fid, pctx.cur = nil, nil
+	pctx.delegateFilters = make(map[DelegateFilterID]*FilterContext)
 }
 
-// newVirtualDelegateFilter creates a virtual delegate filter with specified filter context
-func (fs *FilterSystem) newVirtualDelegateFilter(fctx *FilterContext) *DelegateFilterID {
-	dfid := web3rpc.NewID()
-	fs.filterContexts[dfid] = fctx
+// gc clear the proxy filter if not used by any delegate filter
+func (fs *FilterSystem) gc(pctx *proxyContext) bool {
+	pctx.mu.Lock()
+	defer pctx.mu.Unlock()
 
-	return &dfid
+	if len(pctx.delegateFilters) > 0 {
+		return false
+	}
+
+	// If no delegate filters existed anymore for the shared proxy filter,
+	// terminate the proxy filter to reclaim resource usage.
+	fs.clear(pctx, true)
+	return true
 }
