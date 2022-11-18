@@ -18,16 +18,16 @@ var (
 
 type proxyContext struct {
 	// shared proxy filter ID
-	fid *ProxyFilterID
+	fid ProxyFilterID
 
 	// current polling cursor
-	cur *FilterCursor
+	cur FilterCursor
 
 	// delegate filters
 	delegates map[DelegateFilterID]*FilterContext
 }
 
-func newProxyContext(fid *ProxyFilterID) *proxyContext {
+func newProxyContext(fid ProxyFilterID) *proxyContext {
 	return &proxyContext{
 		fid:       fid,
 		delegates: make(map[web3rpc.ID]*FilterContext),
@@ -92,7 +92,7 @@ func (p *proxyStub) poll() {
 			return
 		}
 
-		fchanges, err := p.client.Filter.GetFilterChanges(*p.pctx.fid)
+		fchanges, err := p.client.Filter.GetFilterChanges(p.pctx.fid)
 		if err == nil {
 			lastPollingTime = time.Now() // update last polling time
 			p.merge(fchanges)
@@ -107,7 +107,7 @@ func (p *proxyStub) poll() {
 
 		if dur := time.Since(lastPollingTime); dur > maxPollingDelayDuration { // too many times delayed?
 			logrus.WithFields(logrus.Fields{
-				"proxyFilterID": *p.pctx.fid, "delayedDuration": dur,
+				"proxyFilterID": p.pctx.fid, "delayedDuration": dur,
 			}).WithError(err).Error("Filter proxy failed to poll filter changes after too many delays")
 
 			p.close()
@@ -129,7 +129,7 @@ func (p *proxyStub) close(lockfree ...bool) {
 
 	if p.pctx != nil {
 		// uninstall the proxy filter with error ignored
-		p.client.Filter.UninstallFilter(*p.pctx.fid)
+		p.client.Filter.UninstallFilter(p.pctx.fid)
 
 		// reset proxy context
 		p.pctx = nil
@@ -161,7 +161,7 @@ func (p *proxyStub) establish() error {
 		return err
 	}
 
-	p.pctx = newProxyContext(fid)
+	p.pctx = newProxyContext(*fid)
 
 	// start polling from full node instantly
 	go p.poll()
