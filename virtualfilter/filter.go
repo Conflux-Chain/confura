@@ -83,7 +83,6 @@ type FilterCursor struct {
 
 // FilterContext stores information for filter such as query criterion etc.
 type FilterContext struct {
-	fid    rpc.ID
 	cursor *FilterCursor
 	crit   *web3Types.FilterQuery
 }
