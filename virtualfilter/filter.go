@@ -37,10 +37,10 @@ type Filter struct {
 	typ             FilterType             // filter type
 	lastPollingTime time.Time              // last polling time
 	crit            *web3Types.FilterQuery // log filter query
-	del             *fnDelegateInfo        // full node delegate info
+	del             fnDelegateInfo         // full node delegate info
 }
 
-func newFilter(typ FilterType, del *fnDelegateInfo, criterion ...*web3Types.FilterQuery) *Filter {
+func newFilter(typ FilterType, del fnDelegateInfo, criterion ...*web3Types.FilterQuery) *Filter {
 	f := &Filter{
 		typ: typ, del: del,
 		lastPollingTime: time.Now(),
@@ -54,15 +54,17 @@ func newFilter(typ FilterType, del *fnDelegateInfo, criterion ...*web3Types.Filt
 }
 
 type fnDelegateInfo struct {
-	fid      rpc.ID // filter ID by full node
-	nodeName string // node name
+	fid     rpc.ID // filter ID by full node
+	nodeUrl string // full node URL
 }
 
 // IsDelegateFullNode checks if the filter uses the full node with specified URL as
 // the delegate full node
 func (f *Filter) IsDelegateFullNode(nodeUrl string) bool {
-	nodeName := rpcutil.Url2NodeName(nodeUrl)
-	return strings.EqualFold(f.del.nodeName, nodeName)
+	nodeName := rpcutil.Url2NodeName(f.del.nodeUrl)
+	checkNodeName := rpcutil.Url2NodeName(nodeUrl)
+
+	return strings.EqualFold(nodeName, checkNodeName)
 }
 
 // IsFilterNotFoundError check if error content contains `filter not found`
