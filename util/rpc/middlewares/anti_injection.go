@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	// regex to validate RPC method format such as "cfx_call"
-	rpcMethodValidationRegex, _ = regexp.Compile("^[[:alpha:]]{3}_[[:alpha:]]+$")
+	// regex to validate RPC method format
+	rpcMethodValidationRegex, _ = regexp.Compile("^[[:alnum:]]+_[[:alnum:]]+$")
 
 	errInvalidRpcMethod = errors.New("invalid JSON-RPC method")
 )
