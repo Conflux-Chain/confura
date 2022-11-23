@@ -2,6 +2,8 @@ package middlewares
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
@@ -24,7 +26,18 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
 		start := time.Now()
 		resp := next(ctx, msg)
-		metrics.Registry.RPC.UpdateDuration(msg.Method, resp.Error, start)
+
+		metricMethod := msg.Method
+		if resp.Error != nil && isMethodNotFoundByError(msg.Method, resp.Error) {
+			metricMethod = "method_not_found"
+		}
+
+		metrics.Registry.RPC.UpdateDuration(metricMethod, resp.Error, start)
 		return resp
 	}
+}
+
+func isMethodNotFoundByError(method string, err error) bool {
+	subPattern := fmt.Sprintf("the method %s does not exist/is not available", method)
+	return strings.Contains(err.Error(), subPattern)
 }
