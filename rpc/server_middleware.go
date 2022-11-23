@@ -25,6 +25,9 @@ func init() {
 	// panic recovery
 	rpc.HookHandleCallMsg(middlewares.Recover)
 
+	// anti-injection
+	rpc.HookHandleCallMsg(middlewares.AntiInjection)
+
 	// web3pay
 	if mw, conf, ok := middlewares.MustNewWeb3PayMiddlewareFromViper(); ok {
 		logrus.WithField("mode", conf.Mode).Info("Web3Pay openweb3 RPC middleware enabled")
