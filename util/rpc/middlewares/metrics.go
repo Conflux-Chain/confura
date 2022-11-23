@@ -27,17 +27,17 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		start := time.Now()
 		resp := next(ctx, msg)
 
-		mmethod := msg.Method
-		if isMethodNotFoundByError(msg.Method, resp.Error) {
-			mmethod = "method_not_found"
+		metricMethod := msg.Method
+		if resp.Error != nil && isMethodNotFoundByError(msg.Method, resp.Error) {
+			metricMethod = "method_not_found"
 		}
 
-		metrics.Registry.RPC.UpdateDuration(mmethod, resp.Error, start)
+		metrics.Registry.RPC.UpdateDuration(metricMethod, resp.Error, start)
 		return resp
 	}
 }
 
 func isMethodNotFoundByError(method string, err error) bool {
-	subpattern := fmt.Sprintf("the method %s does not exist/is not available", method)
-	return strings.Contains(err.Error(), subpattern)
+	subPattern := fmt.Sprintf("the method %s does not exist/is not available", method)
+	return strings.Contains(err.Error(), subPattern)
 }
