@@ -33,7 +33,7 @@ type proxyContext struct {
 	delegates map[DelegateFilterID]*FilterContext
 
 	// simulated filter blockchain
-	chain FilterChain
+	chain *FilterChain
 }
 
 func newProxyContext(fid ProxyFilterID) proxyContext {

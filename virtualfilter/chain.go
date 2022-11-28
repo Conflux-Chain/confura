@@ -123,8 +123,8 @@ type FilterChain struct {
 	hashToNodes map[common.Hash]*FilterNode // block hash => filter node
 }
 
-func NewFilterChain() FilterChain {
-	fc := FilterChain{
+func NewFilterChain() *FilterChain {
+	fc := &FilterChain{
 		hashToNodes: make(map[common.Hash]*FilterNode),
 	}
 
@@ -262,6 +262,7 @@ func (fc *FilterChain) PushBack(block *FilterBlock) *FilterNode {
 	node := &FilterNode{
 		FilterBlock: block, chain: fc,
 	}
+
 	return fc.insert(node, fc.root.prev)
 }
 

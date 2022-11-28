@@ -53,96 +53,72 @@ func TestParseFilterChanges(t *testing.T) {
 
 func TestFilterChain(t *testing.T) {
 	fchain := NewFilterChain()
-	assert.Equal(t, (*FilterNode)(nil), fchain.Front())
-	assert.Equal(t, (*FilterNode)(nil), fchain.Back())
-	assert.Equal(t, 0, fchain.len)
-
-	// test case #1 - reorg the chain
-	demoLogs1 := []types.Log{
-		{BlockNumber: 2, BlockHash: common.HexToHash("0x12"), Removed: true},
-		{BlockNumber: 1, BlockHash: common.HexToHash("0x11"), Removed: true},
-	}
-
-	fblists := parseFilterChanges(&types.FilterChanges{Logs: demoLogs1})
-	err := fchain.Reorg(fblists[0])
-	assert.NoError(t, err, "failed to reorg filter chain")
-
-	assert.Equal(t, 0, fchain.len)
 	assert.Nil(t, fchain.Front())
 	assert.Nil(t, fchain.Back())
-	assert.True(t, fchain.exists(demoLogs1[0].BlockHash))
-	assert.True(t, fchain.exists(demoLogs1[1].BlockHash))
+	assert.Equal(t, 0, fchain.len)
 
-	cursor1 := FilterCursor{
-		blockNum: demoLogs1[0].BlockNumber, blockHash: demoLogs1[0].BlockHash,
+	demolog := []types.Log{
+		{BlockNumber: 1, BlockHash: common.HexToHash("0x11")},
+		{BlockNumber: 2, BlockHash: common.HexToHash("0x12")},
+		{BlockNumber: 3, BlockHash: common.HexToHash("0x13")},
+		{BlockNumber: 4, BlockHash: common.HexToHash("0x14")},
+		{BlockNumber: 4, BlockHash: common.HexToHash("0x14"), Removed: true},
 	}
+	filterBlockLists := parseFilterChanges(&types.FilterChanges{Logs: demolog})
 
-	i, expectedTraversalNodes := 0, []*FilterNode{
-		{FilterBlock: NewFilterBlockFromLog(&demoLogs1[0])},
-		{FilterBlock: NewFilterBlockFromLog(&demoLogs1[1])},
-		nil,
-	}
+	// test case #1 extend the chain
+	err := fchain.Extend(filterBlockLists[0])
+	assert.NoError(t, err, "failed to extend filter chain")
+	assert.Equal(t, 4, fchain.len)
+	assert.NotNil(t, fchain.Front())
+	assert.NotNil(t, fchain.Back())
+	assert.True(t, fchain.Front().Match(NewFilterBlockFromLog(&demolog[0])))
+	assert.True(t, fchain.Back().Match(NewFilterBlockFromLog(&demolog[3])))
 
-	fchain.print(cursor1)
+	fchain.print(nilFilterCursor)
 
-	err = fchain.Traverse(cursor1, func(node *FilterNode, forkPoint bool) bool {
-		if node == nil {
-			assert.Equal(t, expectedTraversalNodes[i], node)
-		} else {
-			assert.True(t, expectedTraversalNodes[i].Match(node.FilterBlock))
-		}
+	i := 0
+	fchain.Traverse(nilFilterCursor, func(node *FilterNode, forkPoint bool) bool {
+		assert.True(t, node.Match(NewFilterBlockFromLog(&demolog[i])))
 
 		i++
 		return true
 	})
-	assert.NoError(t, err, "failed to traverse filter chain")
 
-	// test case #2 - extend the chain
-	demoLogs2 := []types.Log{
-		{BlockNumber: 1, BlockHash: common.HexToHash("0x21")},
-		{BlockNumber: 2, BlockHash: common.HexToHash("0x22")},
-		{BlockNumber: 3, BlockHash: common.HexToHash("0x23")},
-		{BlockNumber: 4, BlockHash: common.HexToHash("0x24")},
-	}
-
-	fblists = parseFilterChanges(&types.FilterChanges{Logs: demoLogs2})
-	err = fchain.Extend(fblists[0])
-	assert.NoError(t, err, "failed to extend filter chain")
-
-	assert.Equal(t, len(demoLogs2), fchain.len)
-	assert.True(t, fchain.Front().Match(NewFilterBlockFromLog(&demoLogs2[0])))
-	assert.True(t, fchain.Back().Match(NewFilterBlockFromLog(&demoLogs2[len(demoLogs2)-1])))
-
-	cursor2 := FilterCursor{
-		blockNum: demoLogs2[0].BlockNumber, blockHash: demoLogs2[0].BlockHash,
-	}
-	fchain.print(cursor2)
-
-	// test case #3 - reorg && extend the chain
-	demoLogs3 := []types.Log{
-		{BlockNumber: 4, BlockHash: common.HexToHash("0x24"), Removed: true},
-		{BlockNumber: 3, BlockHash: common.HexToHash("0x23"), Removed: true},
-	}
-
-	fblists = parseFilterChanges(&types.FilterChanges{Logs: demoLogs3})
-	err = fchain.Reorg(fblists[0])
+	// test case #2 reorg the chain
+	err = fchain.Reorg(filterBlockLists[1])
 	assert.NoError(t, err, "failed to reorg filter chain")
+	assert.Equal(t, 3, fchain.len)
+	assert.NotNil(t, fchain.Front())
+	assert.NotNil(t, fchain.Back())
+	assert.True(t, fchain.Front().Match(NewFilterBlockFromLog(&demolog[0])))
+	assert.True(t, fchain.Back().Match(NewFilterBlockFromLog(&demolog[2])))
 
-	cursor3 := FilterCursor{
-		blockNum: demoLogs3[1].BlockNumber, blockHash: demoLogs3[1].BlockHash,
+	// traverse the canonical chain
+	fchain.print(nilFilterCursor)
+
+	fchain.Traverse(nilFilterCursor, func() FilterChainIteratorFunc {
+		i := 0
+		return func(node *FilterNode, forkPoint bool) bool {
+			assert.True(t, node.Match(NewFilterBlockFromLog(&demolog[i])))
+			i++
+
+			return true
+		}
+	}())
+
+	// traverse the fork chain
+	cursor := FilterCursor{
+		blockNum: demolog[4].BlockNumber, blockHash: demolog[4].BlockHash,
 	}
-	fchain.print(cursor3)
+	fchain.print(cursor)
 
-	demoLogs4 := []types.Log{
-		{BlockNumber: 3, BlockHash: common.HexToHash("0x33")},
-		{BlockNumber: 4, BlockHash: common.HexToHash("0x34")},
-		{BlockNumber: 5, BlockHash: common.HexToHash("0x35")},
-		{BlockNumber: 6, BlockHash: common.HexToHash("0x36")},
-	}
-
-	fblists = parseFilterChanges(&types.FilterChanges{Logs: demoLogs4})
-	err = fchain.Extend(fblists[0])
-	assert.NoError(t, err, "failed to extend filter chain")
-
-	fchain.print(cursor3)
+	fchain.Traverse(cursor, func() FilterChainIteratorFunc {
+		i := 0
+		return func(node *FilterNode, forkPoint bool) bool {
+			assert.True(t, node.Match(NewFilterBlockFromLog(&demolog[3-i])))
+			i++
+			return true
+		}
+	}())
 }
