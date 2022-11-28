@@ -197,7 +197,7 @@ func (api *FilterApi) GetFilterLogs(nodeUrl string, id rpc.ID) (logs []types.Log
 
 // GetFilterChanges returns the data for the proxy filter with the given id since
 // last time it was called. This can be used for polling.
-func (api *FilterApi) GetFilterChanges(nodeUrl string, id rpc.ID) (res interface{}, err error) {
+func (api *FilterApi) GetFilterChanges(nodeUrl string, id rpc.ID) (res *types.FilterChanges, err error) {
 	f, found := api.getFilter(id)
 	if !found {
 		return nil, errFilterNotFound

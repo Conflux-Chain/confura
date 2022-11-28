@@ -29,6 +29,8 @@ const (
 
 var (
 	errFilterNotFound = errors.New("filter not found")
+
+	nilFilterCursor = FilterCursor{}
 )
 
 // Filter is a helper struct that holds meta information over the filter type,
@@ -79,7 +81,7 @@ func IsFilterNotFoundError(err error) bool {
 
 // FilterCursor the visiting position where last polling ends.
 type FilterCursor struct {
-	blockNum  rpc.BlockNumber
+	blockNum  uint64
 	blockHash common.Hash
 }
 

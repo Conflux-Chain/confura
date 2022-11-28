@@ -62,13 +62,7 @@ func (fs *FilterSystem) UninstallFilter(id web3rpc.ID) (bool, error) {
 
 // Logs returns the matching log entries from the blockchain node or db/cache store.
 func (fs *FilterSystem) GetFilterLogs(id web3rpc.ID) ([]types.Log, error) {
-	v, ok := fs.filterProxies.Load(id)
-	if !ok {
-		return nil, errFilterNotFound
-	}
-
-	proxy := v.(*proxyStub)
-	fctx, ok := proxy.getFilterContext(id)
+	proxy, fctx, ok := fs.loadFilterContext(id)
 	if !ok {
 		return nil, errFilterNotFound
 	}
@@ -107,9 +101,35 @@ func (fs *FilterSystem) GetFilterLogs(id web3rpc.ID) ([]types.Log, error) {
 }
 
 // GetFilterChanges returns the matching log entries since last polling, and updates the filter cursor accordingly.
-func (fs *FilterSystem) GetFilterChanges(id web3rpc.ID) ([]types.Log, error) {
-	// TODO: get matching logs from db/cache
-	return nil, errors.New("not supported yet")
+func (fs *FilterSystem) GetFilterChanges(id web3rpc.ID) (*types.FilterChanges, error) {
+	proxy, fctx, ok := fs.loadFilterContext(id)
+	if !ok {
+		return nil, errFilterNotFound
+	}
+
+	changes, err := proxy.getFilterChanges(id)
+	if err != nil {
+		return nil, filterProxyError(err)
+	}
+
+	changes.Logs = filterLogs(changes.Logs, fctx.crit)
+	return changes, nil
+}
+
+func (fs *FilterSystem) loadFilterContext(id web3rpc.ID) (*proxyStub, *FilterContext, bool) {
+	v, ok := fs.filterProxies.Load(id)
+	if !ok {
+		return nil, nil, false
+	}
+
+	proxy := v.(*proxyStub)
+
+	fctx, ok := proxy.getFilterContext(id)
+	if !ok {
+		return nil, nil, false
+	}
+
+	return proxy, fctx, true
 }
 
 func (fs *FilterSystem) loadOrNewFnProxy(client *node.Web3goClient) *proxyStub {
@@ -120,6 +140,33 @@ func (fs *FilterSystem) loadOrNewFnProxy(client *node.Web3goClient) *proxyStub {
 	})
 
 	return v.(*proxyStub)
+}
+
+// filterLogs creates a slice of logs matching the given criteria.
+func filterLogs(logs []types.Log, crit *types.FilterQuery) []types.Log {
+	var ret []types.Log
+
+	for i := range logs {
+		if crit.FromBlock != nil && crit.FromBlock.Int64() >= 0 && uint64(*crit.FromBlock) > logs[i].BlockNumber {
+			continue
+		}
+
+		if crit.ToBlock != nil && crit.ToBlock.Int64() >= 0 && uint64(*crit.ToBlock) < logs[i].BlockNumber {
+			continue
+		}
+
+		if len(crit.Addresses) > 0 && !util.IncludeEthLogAddrs(&logs[i], crit.Addresses) {
+			continue
+		}
+
+		if len(crit.Topics) > 0 && !util.MatchEthLogTopics(&logs[i], crit.Topics) {
+			continue
+		}
+
+		ret = append(ret, logs[i])
+	}
+
+	return ret
 }
 
 // implement `proxyObserver` interface

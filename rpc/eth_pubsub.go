@@ -6,7 +6,6 @@ import (
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
@@ -146,40 +145,7 @@ func matchEthPubSubLogFilter(log *types.Log, filter *types.FilterQuery) bool {
 		return true
 	}
 
-	return matchEthLogFilterAddr(log, filter) && matchEthLogFilterTopic(log, filter)
-}
-
-func matchEthLogFilterTopic(log *types.Log, filter *types.FilterQuery) bool {
-	find := func(t common.Hash, topics []common.Hash) bool {
-		for _, topic := range topics {
-			if t == topic {
-				return true
-			}
-		}
-		return false
-	}
-
-	for i, topics := range filter.Topics {
-		if len(topics) == 0 {
-			continue
-		}
-
-		if len(log.Topics) <= i || !find(log.Topics[i], topics) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func matchEthLogFilterAddr(log *types.Log, filter *types.FilterQuery) bool {
-	for _, addr := range filter.Addresses {
-		if log.Address == addr {
-			return true
-		}
-	}
-
-	return len(filter.Addresses) == 0
+	return util.IncludeEthLogAddrs(log, filter.Addresses) && util.MatchEthLogTopics(log, filter.Topics)
 }
 
 func isEmptyEthLogFilter(filter types.FilterQuery) bool {

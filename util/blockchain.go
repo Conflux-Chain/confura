@@ -190,3 +190,38 @@ func GetEthHardforkBlockNumber(chainId uint64) web3goTypes.BlockNumber {
 
 	return ethHardforkBlockNumberDevnet
 }
+
+// MatchEthLogTopics checks if the eSpace event log matches with the given topics condition
+func MatchEthLogTopics(log *web3goTypes.Log, topics [][]common.Hash) bool {
+	find := func(t common.Hash, topics []common.Hash) bool {
+		for _, topic := range topics {
+			if t == topic {
+				return true
+			}
+		}
+		return false
+	}
+
+	for i, topics := range topics {
+		if len(topics) == 0 {
+			continue
+		}
+
+		if len(log.Topics) <= i || !find(log.Topics[i], topics) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// IncludeEthLogAddrs checks if the eSpace event logs include any of the given addresses
+func IncludeEthLogAddrs(log *web3goTypes.Log, addresses []common.Address) bool {
+	for _, addr := range addresses {
+		if log.Address == addr {
+			return true
+		}
+	}
+
+	return len(addresses) == 0
+}
