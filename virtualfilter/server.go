@@ -1,21 +1,26 @@
 package virtualfilter
 
 import (
+	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/rpc"
 )
 
-// MustNewServer creates virtual filters RPC server from viper settings
-func MustNewServerFromViper(vfls *mysql.VirtualFilterLogStore, handler *handler.EthLogsApiHandler) *rpc.Server {
+// MustServeFromViper creates virtual filters RPC server from viper settings
+func MustNewServerFromViper(
+	shutdownContext util.GracefulShutdownContext, vfls *mysql.VirtualFilterLogStore, handler *handler.EthLogsApiHandler,
+) (*rpc.Server, string) {
 	conf := mustNewConfigFromViper()
 
 	var fs *FilterSystem
 	if handler != nil {
-		fs = NewFilterSystem(vfls, handler, conf)
+		fs = NewFilterSystem(shutdownContext, vfls, handler, conf)
 	}
 
-	return rpc.MustNewServer("vfilter", map[string]interface{}{
+	srv := rpc.MustNewServer("vfilter", map[string]interface{}{
 		"eth": NewFilterApi(fs, conf.TTL),
 	})
+
+	return srv, conf.Endpoint
 }

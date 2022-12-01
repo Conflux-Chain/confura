@@ -10,6 +10,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// GracefulShutdownContext wraps context and wait group which can be utilized
+// to handle graceful shutdown on termination signal received.
+type GracefulShutdownContext struct {
+	Ctx context.Context
+	Wg  *sync.WaitGroup
+}
+
 // GracefulShutdown supports to clean up goroutines after termination signal captured.
 func GracefulShutdown(wg *sync.WaitGroup, cancel context.CancelFunc) {
 	// Handle sigterm and await termChan signal
