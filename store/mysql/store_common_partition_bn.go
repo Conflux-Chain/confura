@@ -116,9 +116,9 @@ func (bnps *bnPartitionedStore) growPartition(entity string, tabler schema.Table
 	return &newPart, err
 }
 
-// shrinkPartition removes a partition with the smallest index from the entity paritition list and the partition table will also
+// shrinkPartition removes a partition with the oldest index from the entity paritition list and the partition table will also
 // be dropped.
-// If the passed in `partitionIndex` parameter is non-negative, it will do sanity check to ensure the latest partition index is
+// If the passed in `partitionIndex` parameter is non-negative, it will do sanity check to ensure the oldest partition index is
 // equal to the passed in `partitionIndex`.
 func (bnps *bnPartitionedStore) shrinkPartition(entity string, tabler schema.Tabler, partitionIndex int) (*bnPartition, error) {
 	oldPart, existed, err := bnps.oldestPartition(entity)
@@ -181,16 +181,16 @@ func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange type
 		return nil, &searchRange, nil
 	}
 
+	if searchRange.From < bnStart && searchRange.To > bnStart {
+		// search range intersects with the first partition
+		return nil, nil, store.ErrAlreadyPruned
+	}
+
 	db := bnps.db.Where("entity = ?", entity).
 		Where("bn_min <= ? AND bn_max >= ?", searchRange.To, searchRange.From)
 	err = db.Find(&partitions).Error
 	if err != nil {
 		return nil, nil, err
-	}
-
-	if searchRange.From < bnStart && searchRange.To > bnStart {
-		// search range intersects with the first partition
-		return nil, nil, store.ErrAlreadyPruned
 	}
 
 	if searchRange.To > bnEnd && searchRange.From < bnEnd {
@@ -401,6 +401,31 @@ func (bnps *bnPartitionedStore) entityRange(selector string, entity string) (
 	existed = true
 
 	return
+}
+
+// deleteEntityPartitions deletes all entity partitions
+func (bnps *bnPartitionedStore) deleteEntityPartitions(entity string, tabler schema.Tabler) ([]*bnPartition, error) {
+	var partitions []*bnPartition
+
+	startPartIdx, endPartIdx, existed, err := bnps.indexRange(entity)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get partition index range")
+	}
+
+	if !existed { // no partitions found
+		return nil, nil
+	}
+
+	for i := startPartIdx; i <= endPartIdx; i++ {
+		partition, err := bnps.shrinkPartition(entity, tabler, int(i))
+		if err != nil {
+			return partitions, errors.WithMessagef(err, "failed to shrink partition %d", i)
+		}
+
+		partitions = append(partitions, partition)
+	}
+
+	return partitions, nil
 }
 
 // pruneArchivePartitions iteratively prunes archive partitions chronologically
