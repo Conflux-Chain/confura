@@ -195,7 +195,7 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) bool {
 	// notify polled change data
 	if p.obs != nil {
 		if err := p.obs.onPolled(p, fchanges); err != nil {
-			logger.WithError(err).Error("Filter proxy failed to notify on-polled data observer")
+			logger.WithError(err).Error("Filter proxy failed to notify polled change data")
 			return false
 		}
 	}
