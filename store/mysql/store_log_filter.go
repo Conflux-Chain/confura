@@ -39,6 +39,10 @@ func applyVariadicFilter(db *gorm.DB, column logColumnType, value store.Variadic
 	return db
 }
 
+func applyContractFilter(db *gorm.DB, contract store.VariadicValue) *gorm.DB {
+	return applyVariadicFilter(db, logColumnTypeContract, contract)
+}
+
 func applyTopicsFilter(db *gorm.DB, topics []store.VariadicValue) *gorm.DB {
 	numTopics := len(topics)
 

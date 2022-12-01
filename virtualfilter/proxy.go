@@ -21,8 +21,9 @@ func filterProxyError(err error) error {
 }
 
 type proxyObserver interface {
-	onEstablished(pctx proxyContext)
-	onClosed(pctx proxyContext)
+	onEstablished(proxy *proxyStub)
+	onClosed(proxy *proxyStub)
+	onPolled(proxy *proxyStub, changes *types.FilterChanges) error
 }
 
 type proxyContext struct {
@@ -89,8 +90,7 @@ func (p *proxyStub) uninstallFilter(id DelegateFilterID) bool {
 	return true
 }
 
-// TODO: get change logs from db store
-func (p *proxyStub) getFilterChanges(id DelegateFilterID) (*types.FilterChanges, error) {
+func (p *proxyStub) getFilterChanges(id DelegateFilterID) ([]*FilterBlock, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -99,7 +99,7 @@ func (p *proxyStub) getFilterChanges(id DelegateFilterID) (*types.FilterChanges,
 		return nil, errFilterNotFound
 	}
 
-	var res types.FilterChanges
+	var res []*FilterBlock
 
 	err := p.chain.Traverse(fctx.cursor, func(node *FilterNode, forkPoint bool) bool {
 		if node == nil { // skip nil node
@@ -107,7 +107,7 @@ func (p *proxyStub) getFilterChanges(id DelegateFilterID) (*types.FilterChanges,
 		}
 
 		if fctx.cursor == nilFilterCursor { // full traversal for nil cursor
-			res.Logs = append(res.Logs, node.logs...)
+			res = append(res, node.FilterBlock)
 			return true
 		}
 
@@ -122,7 +122,7 @@ func (p *proxyStub) getFilterChanges(id DelegateFilterID) (*types.FilterChanges,
 			return true
 		}
 
-		res.Logs = append(res.Logs, node.logs...)
+		res = append(res, node.FilterBlock)
 		return true
 	})
 
@@ -132,7 +132,7 @@ func (p *proxyStub) getFilterChanges(id DelegateFilterID) (*types.FilterChanges,
 
 	// update the filter cursor
 	fctx.cursor = p.chain.SnapshotCurrentCursor()
-	return &res, nil
+	return res, nil
 }
 
 func (p *proxyStub) getFilterContext(id DelegateFilterID) (*FilterContext, bool) {
@@ -163,6 +163,11 @@ func (p *proxyStub) poll() {
 }
 
 func (p *proxyStub) pollOnce(lastPollingTime *time.Time) bool {
+	logger := logrus.WithFields(logrus.Fields{
+		"proxyFullNode": p.client.URL,
+		"proxyContext":  p.proxyContext,
+	})
+
 	fchanges, err := p.client.Filter.GetFilterChanges(p.fid)
 	if err != nil {
 		// proxy filter not found by full node? this may be due to full node reboot.
@@ -175,9 +180,7 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) bool {
 			return true
 		}
 
-		logrus.WithFields(logrus.Fields{
-			"proxyFullNode":   p.client.URL,
-			"proxyContext":    p.proxyContext,
+		logger.WithFields(logrus.Fields{
 			"delayedDuration": duration,
 		}).WithError(err).Error("Filter proxy failed to poll filter changes due to too long delays")
 		return false
@@ -185,11 +188,16 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) bool {
 
 	// merge the filter changes
 	if err = p.merge(fchanges); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"proxyFullNode": p.client.URL,
-			"proxyContext":  p.proxyContext,
-		}).WithError(err).Error("Filter proxy failed to merge filter changes")
+		logger.WithError(err).Error("Filter proxy failed to merge filter changes")
 		return false
+	}
+
+	// notify polled change data
+	if p.obs != nil {
+		if err := p.obs.onPolled(p, fchanges); err != nil {
+			logger.WithError(err).Error("Filter proxy failed to notify on-polled data observer")
+			return false
+		}
 	}
 
 	// update polling time
@@ -197,9 +205,7 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) bool {
 	return true
 }
 
-// TODO:
-// 1. prune filter change logs from memory in case of memory blast;
-// 2. store filter change logs within db store for better reliability.
+// TODO: prune filter change logs from memory in case of memory blast
 func (p *proxyStub) merge(changes *types.FilterChanges) error {
 	chainedBlocksList := parseFilterChanges(changes)
 	if len(chainedBlocksList) == 0 {
@@ -242,7 +248,7 @@ func (p *proxyStub) close(lockfree ...bool) {
 	}
 
 	if p.obs != nil {
-		p.obs.onClosed(p.proxyContext)
+		p.obs.onClosed(p)
 	}
 
 	// reset proxy context
@@ -277,7 +283,7 @@ func (p *proxyStub) establish() error {
 	p.proxyContext = newProxyContext(*fid)
 
 	if p.obs != nil {
-		p.obs.onEstablished(p.proxyContext)
+		p.obs.onEstablished(p)
 	}
 
 	// start polling from full node instantly
