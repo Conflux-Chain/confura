@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/openweb3/web3go/types"
 )
 
@@ -90,7 +91,7 @@ func (n *FilterNode) Prev() *FilterNode {
 type FilterBlock struct {
 	FilterCursor
 
-	reorg bool        // whether the block is re-orgnized
+	reorg bool        // whether the block is re-organized
 	logs  []types.Log // logs contained within this block
 }
 
@@ -121,11 +122,21 @@ type FilterChain struct {
 	genesis     *FilterNode                 // (the first) genesis chain node
 	len         int                         // canonical chain length
 	hashToNodes map[common.Hash]*FilterNode // block hash => filter node
+
+	// cache to hold block hashes for filter block full of event logs, once whose
+	// size exceeded the limit, eviction will be enforced.
+	fullBlockhashCache *lru.Cache
 }
 
-func NewFilterChain() *FilterChain {
+func NewFilterChain(maxFilterBlocks int) *FilterChain {
 	fc := &FilterChain{
 		hashToNodes: make(map[common.Hash]*FilterNode),
+	}
+
+	if maxFilterBlocks > 0 {
+		// init full filter block cache
+		fbhCache, _ := lru.NewWithEvict(maxFilterBlocks, fc.onFilterBlockCacheEvict)
+		fc.fullBlockhashCache = fbhCache
 	}
 
 	// init root node
@@ -274,6 +285,10 @@ func (fc *FilterChain) insert(n, at *FilterNode) *FilterNode {
 
 	fc.hashToNodes[n.blockHash] = n
 
+	if fc.fullBlockhashCache != nil {
+		fc.fullBlockhashCache.Add(n.blockHash, struct{}{})
+	}
+
 	n.prev = at
 	n.next = at.next
 	n.prev.next = n
@@ -289,7 +304,7 @@ func (fc *FilterChain) exists(blockHash common.Hash) bool {
 	return ok
 }
 
-// Rewind reverts the chain to the specified node
+// Rewind reverts the canonical chain to the specified node
 func (fc *FilterChain) Rewind(node *FilterNode) error {
 	if node == nil { // rewind until to the root
 		fc.root.prev, fc.root.next = &fc.root, &fc.root
@@ -298,7 +313,6 @@ func (fc *FilterChain) Rewind(node *FilterNode) error {
 		return nil
 	}
 
-	// root <-> a <-> b <-> root
 	for steps, tail := 0, fc.Back(); tail != nil; {
 		if tail == node {
 			fc.root.prev = node
@@ -337,5 +351,14 @@ func (fc *FilterChain) print(cursor FilterCursor) {
 		fmt.Println("->root")
 	} else {
 		fmt.Println("traversal error: ", err)
+	}
+}
+
+// onFilterBlockCacheEvict callbacks to clean event logs of evicted full filter block
+func (fc *FilterChain) onFilterBlockCacheEvict(key, value interface{}) {
+	bh := key.(common.Hash)
+
+	if fn, ok := fc.hashToNodes[bh]; ok {
+		fn.logs = nil // clean event logs for the filter block
 	}
 }
