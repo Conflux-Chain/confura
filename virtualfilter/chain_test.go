@@ -52,7 +52,7 @@ func TestParseFilterChanges(t *testing.T) {
 }
 
 func TestFilterChain(t *testing.T) {
-	fchain := NewFilterChain()
+	fchain := NewFilterChain(10)
 	assert.Nil(t, fchain.Front())
 	assert.Nil(t, fchain.Back())
 	assert.Equal(t, 0, fchain.len)
@@ -121,4 +121,24 @@ func TestFilterChain(t *testing.T) {
 			return true
 		}
 	}())
+
+	// test case #3 extend the chain to evict full filter blocks
+	demolog2 := []types.Log{
+		{BlockNumber: 4, BlockHash: common.HexToHash("0x24")},
+		{BlockNumber: 5, BlockHash: common.HexToHash("0x25")},
+		{BlockNumber: 6, BlockHash: common.HexToHash("0x26")},
+		{BlockNumber: 7, BlockHash: common.HexToHash("0x27")},
+		{BlockNumber: 8, BlockHash: common.HexToHash("0x28")},
+		{BlockNumber: 9, BlockHash: common.HexToHash("0x29")},
+		{BlockNumber: 10, BlockHash: common.HexToHash("0x30")},
+	}
+	filterBlockLists = parseFilterChanges(&types.FilterChanges{Logs: demolog2})
+
+	assert.Positive(t, len(fchain.Front().logs))
+	err = fchain.Extend(filterBlockLists[0])
+	assert.NoError(t, err, "failed to extend filter chain")
+	assert.Equal(t, 10, fchain.len)
+	assert.Zero(t, len(fchain.Front().logs))
+	assert.Positive(t, len(fchain.Front().Next().logs))
+	assert.Positive(t, len(fchain.Back().logs))
 }

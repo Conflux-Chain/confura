@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	nilProxyContext = newProxyContext(nilRpcId)
+	nilProxyContext = newProxyContext(nilRpcId, 0)
 )
 
 // filterProxyError uniform error returned to the end user
@@ -37,11 +37,11 @@ type proxyContext struct {
 	chain *FilterChain
 }
 
-func newProxyContext(fid ProxyFilterID) proxyContext {
+func newProxyContext(fid ProxyFilterID, maxFullFilterBlocks int) proxyContext {
 	return proxyContext{
 		fid:       fid,
 		delegates: make(map[web3rpc.ID]*FilterContext),
-		chain:     NewFilterChain(),
+		chain:     NewFilterChain(maxFullFilterBlocks),
 	}
 }
 
@@ -49,12 +49,13 @@ type proxyStub struct {
 	proxyContext
 	mu     sync.Mutex
 	obs    proxyObserver
+	cfg    *Config
 	client *node.Web3goClient
 }
 
-func newProxyStub(obs proxyObserver, client *node.Web3goClient) *proxyStub {
+func newProxyStub(cfg *Config, obs proxyObserver, client *node.Web3goClient) *proxyStub {
 	return &proxyStub{
-		proxyContext: nilProxyContext, obs: obs, client: client,
+		proxyContext: nilProxyContext, obs: obs, cfg: cfg, client: client,
 	}
 }
 
@@ -90,7 +91,7 @@ func (p *proxyStub) uninstallFilter(id DelegateFilterID) bool {
 	return true
 }
 
-func (p *proxyStub) getFilterChanges(id DelegateFilterID) ([]*FilterBlock, error) {
+func (p *proxyStub) getFilterChanges(id DelegateFilterID) ([]FilterBlock, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -99,7 +100,7 @@ func (p *proxyStub) getFilterChanges(id DelegateFilterID) ([]*FilterBlock, error
 		return nil, errFilterNotFound
 	}
 
-	var res []*FilterBlock
+	var res []FilterBlock
 
 	err := p.chain.Traverse(fctx.cursor, func(node *FilterNode, forkPoint bool) bool {
 		if node == nil { // skip nil node
@@ -107,7 +108,7 @@ func (p *proxyStub) getFilterChanges(id DelegateFilterID) ([]*FilterBlock, error
 		}
 
 		if fctx.cursor == nilFilterCursor { // full traversal for nil cursor
-			res = append(res, node.FilterBlock)
+			res = append(res, *node.FilterBlock)
 			return true
 		}
 
@@ -122,7 +123,7 @@ func (p *proxyStub) getFilterChanges(id DelegateFilterID) ([]*FilterBlock, error
 			return true
 		}
 
-		res = append(res, node.FilterBlock)
+		res = append(res, *node.FilterBlock)
 		return true
 	})
 
@@ -280,7 +281,7 @@ func (p *proxyStub) establish() error {
 		return err
 	}
 
-	p.proxyContext = newProxyContext(*fid)
+	p.proxyContext = newProxyContext(*fid, p.cfg.MaxFullFilterBlocks)
 
 	if p.obs != nil {
 		p.obs.onEstablished(p)

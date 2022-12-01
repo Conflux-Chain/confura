@@ -254,7 +254,10 @@ func (vfls *VirtualFilterLogStore) GetLogs(
 		// convert to web3go log type
 		for _, v := range logs {
 			var w3log w3types.Log
-			util.MustUnmarshalJson(v.JsonRepr, &w3log)
+			if err := json.Unmarshal(v.JsonRepr, &w3log); err != nil {
+				return nil, errors.WithMessage(err, "invalid event log json")
+			}
+
 			result = append(result, w3log)
 		}
 

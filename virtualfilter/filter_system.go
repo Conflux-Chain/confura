@@ -182,7 +182,7 @@ func (fs *FilterSystem) loadOrNewFnProxy(client *node.Web3goClient) *proxyStub {
 	nn := client.NodeName()
 
 	v, _ := fs.fnProxies.LoadOrStoreFn(nn, func(interface{}) interface{} {
-		return newProxyStub(fs, client)
+		return newProxyStub(fs.cfg, fs, client)
 	})
 
 	return v.(*proxyStub)

@@ -303,9 +303,11 @@ node:
 #     # parity RPC
 #     - parity_getBlockReceipts
 
-# Virtual filters configurations
-virtualFilters:
-  # Served HTTP endpoint
-  endpoint: ":48545"
-  # Time to live for inactive filter
-  TTL: 1m
+# # Virtual filters configurations
+# virtualFilters:
+#   # Served HTTP endpoint
+#   endpoint: ":48545"
+#   # Time to live for inactive filter
+#   TTL: 1m
+#   # Max number of filter blocks full of event logs to restrict memory usage
+#   MaxFullFilterBlocks: 100
