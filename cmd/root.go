@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	flagVersion       bool
-	nodeServerEnabled bool
-	rpcServerEnabled  bool
-	syncServerEnabled bool
+	flagVersion          bool
+	nodeServerEnabled    bool
+	rpcServerEnabled     bool
+	syncServerEnabled    bool
+	vfilterServerEnabled bool
 
 	rootCmd = &cobra.Command{
 		Use:   "confura",
@@ -48,6 +49,11 @@ func init() {
 		&syncServerEnabled, "sync", false, "whether to start data sync/prune service",
 	)
 
+	// boot flat for virtual filter service
+	rootCmd.Flags().BoolVar(
+		&vfilterServerEnabled, "vf", false, "whether to start virtual filter service",
+	)
+
 	rootCmd.AddCommand(test.Cmd)
 	rootCmd.AddCommand(ratelimit.Cmd)
 }
@@ -59,7 +65,7 @@ func start(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	if !nodeServerEnabled && !rpcServerEnabled && !syncServerEnabled {
+	if !nodeServerEnabled && !rpcServerEnabled && !syncServerEnabled && !vfilterServerEnabled {
 		logrus.Fatal("No services started")
 	}
 
@@ -85,6 +91,10 @@ func start(cmd *cobra.Command, args []string) {
 	if nodeServerEnabled { // start node management
 		startNativeSpaceNodeServer(ctx, wg)
 		startEvmSpaceNodeServer(ctx, wg)
+	}
+
+	if vfilterServerEnabled { // start virtual filter
+		startVirtualFilterRpcServer(ctx, wg, storeCtx)
 	}
 
 	util.GracefulShutdown(wg, cancel)

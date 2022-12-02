@@ -2,9 +2,12 @@ package virtualfilter
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
+	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/node"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	web3rpc "github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -13,6 +16,8 @@ import (
 
 var (
 	nilProxyContext = newProxyContext(nilRpcId, 0)
+
+	errProxyAlreadyClosed = errors.New("proxy closed already")
 )
 
 // filterProxyError uniform error returned to the end user
@@ -47,19 +52,27 @@ func newProxyContext(fid ProxyFilterID, maxFullFilterBlocks int) proxyContext {
 
 type proxyStub struct {
 	proxyContext
-	mu     sync.Mutex
-	obs    proxyObserver
-	cfg    *Config
-	client *node.Web3goClient
+	shutdownCtx cmdutil.GracefulShutdownContext
+	mu          sync.Mutex
+	obs         proxyObserver
+	cfg         *Config
+	client      *node.Web3goClient
+	quitflag    int32
 }
 
-func newProxyStub(cfg *Config, obs proxyObserver, client *node.Web3goClient) *proxyStub {
+func newProxyStub(
+	shutdownCtx cmdutil.GracefulShutdownContext, cfg *Config, obs proxyObserver, client *node.Web3goClient) *proxyStub {
+
 	return &proxyStub{
-		proxyContext: nilProxyContext, obs: obs, cfg: cfg, client: client,
+		proxyContext: nilProxyContext, shutdownCtx: shutdownCtx, obs: obs, cfg: cfg, client: client,
 	}
 }
 
 func (p *proxyStub) newFilter(crit *types.FilterQuery) (*web3rpc.ID, error) {
+	if atomic.LoadInt32(&p.quitflag) != 0 { // proxy already closed?
+		return nil, errProxyAlreadyClosed
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -149,14 +162,50 @@ func (p *proxyStub) poll() {
 	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
 
-	lastPollingTime := time.Now()
+	done := make(chan bool, 1)
+	defer close(done)
 
-	for range ticker.C {
-		if p.gc() { // garbage collected?
-			return
+	// To make the virtual filter service more resilient, we'd like it not take too long
+	// to stop or reboot. Here start a monitor routine to kill the thread if timeout.
+	p.shutdownCtx.Wg.Add(1)
+	go func() {
+		defer p.shutdownCtx.Wg.Done()
+
+		select {
+		case <-p.shutdownCtx.Ctx.Done(): // on shutdown
+			atomic.StoreInt32(&p.quitflag, 1)
+
+			select {
+			case <-time.After(rpcutil.DefaultShutdownTimeout):
+				logrus.WithField("fid", p.fid).Info("Virtual proxy filter killed due to timeout")
+				return
+			case <-done:
+				break
+			}
+		case <-done:
+			break
 		}
 
-		if !p.pollOnce(&lastPollingTime) {
+		if atomic.LoadInt32(&p.quitflag) != 0 {
+			logrus.WithField("fid", p.fid).Info("Virtual proxy filter gracefully shutdown")
+		}
+	}()
+
+	lastPollingTime := time.Now()
+
+	for {
+		select {
+		case <-ticker.C:
+			if p.gc() { // garbage collected?
+				return
+			}
+
+			if !p.pollOnce(&lastPollingTime) {
+				p.close()
+				return
+			}
+		case <-p.shutdownCtx.Ctx.Done():
+			atomic.StoreInt32(&p.quitflag, 1)
 			p.close()
 			return
 		}
@@ -206,7 +255,6 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) bool {
 	return true
 }
 
-// TODO: prune filter change logs from memory in case of memory blast
 func (p *proxyStub) merge(changes *types.FilterChanges) error {
 	chainedBlocksList := parseFilterChanges(changes)
 	if len(chainedBlocksList) == 0 {

@@ -32,6 +32,7 @@ type MysqlStore struct {
 	*confStore
 	*UserStore
 	*RateLimitStore
+	*VirtualFilterLogStore
 	ls   *logStore
 	ails *AddressIndexedLogStore
 	bcls *bigContractLogStore
@@ -52,20 +53,21 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 	ails := NewAddressIndexedLogStore(db, cs, config.AddressIndexedLogPartitions)
 
 	return &MysqlStore{
-		baseStore:          newBaseStore(db),
-		epochBlockMapStore: ebms,
-		txStore:            newTxStore(db),
-		blockStore:         newBlockStore(db),
-		confStore:          newConfStore(db),
-		UserStore:          newUserStore(db),
-		RateLimitStore:     NewRateLimitStore(db),
-		ls:                 newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
-		bcls:               newBigContractLogStore(db, cs, ebms, ails, pruner.newBnPartitionObsChan),
-		ails:               ails,
-		cs:                 cs,
-		config:             config,
-		disabler:           option.Disabler,
-		pruner:             pruner,
+		baseStore:             newBaseStore(db),
+		epochBlockMapStore:    ebms,
+		txStore:               newTxStore(db),
+		blockStore:            newBlockStore(db),
+		confStore:             newConfStore(db),
+		UserStore:             newUserStore(db),
+		RateLimitStore:        NewRateLimitStore(db),
+		VirtualFilterLogStore: NewVirtualFilterLogStore(db),
+		ls:                    newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
+		bcls:                  newBigContractLogStore(db, cs, ebms, ails, pruner.newBnPartitionObsChan),
+		ails:                  ails,
+		cs:                    cs,
+		config:                config,
+		disabler:              option.Disabler,
+		pruner:                pruner,
 	}
 }
 

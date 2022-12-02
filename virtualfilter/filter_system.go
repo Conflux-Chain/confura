@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/node"
 	rpc "github.com/Conflux-Chain/confura/rpc"
 	"github.com/Conflux-Chain/confura/rpc/handler"
@@ -30,6 +31,9 @@ const (
 type FilterSystem struct {
 	cfg *Config
 
+	// graceful shutdown context
+	shutdownCtx cmdutil.GracefulShutdownContext
+
 	// handler to get filter logs from store or full node
 	lhandler *handler.EthLogsApiHandler
 	// log store to persist changed logs for more reliability
@@ -39,13 +43,20 @@ type FilterSystem struct {
 	filterProxies util.ConcurrentMap // filter ID => *proxyStub
 }
 
-func NewFilterSystem(vfls *mysql.VirtualFilterLogStore, lhandler *handler.EthLogsApiHandler, conf *Config) *FilterSystem {
-	return &FilterSystem{cfg: conf, lhandler: lhandler, logStore: vfls}
+func NewFilterSystem(
+	shutdownCtx cmdutil.GracefulShutdownContext,
+	vfls *mysql.VirtualFilterLogStore,
+	lhandler *handler.EthLogsApiHandler,
+	conf *Config,
+) *FilterSystem {
+	return &FilterSystem{
+		shutdownCtx: shutdownCtx, cfg: conf, lhandler: lhandler, logStore: vfls,
+	}
 }
 
 // NewFilter creates a new virtual delegate filter
 func (fs *FilterSystem) NewFilter(client *node.Web3goClient, crit *types.FilterQuery) (*web3rpc.ID, error) {
-	proxy := fs.loadOrNewFnProxy(client)
+	proxy := fs.loadOrNewFnProxy(fs.shutdownCtx, client)
 
 	fid, err := proxy.newFilter(crit)
 	if err != nil {
@@ -178,11 +189,11 @@ func (fs *FilterSystem) loadFilterContext(id web3rpc.ID) (*proxyStub, *FilterCon
 	return proxy, fctx, true
 }
 
-func (fs *FilterSystem) loadOrNewFnProxy(client *node.Web3goClient) *proxyStub {
+func (fs *FilterSystem) loadOrNewFnProxy(shutdownCtx cmdutil.GracefulShutdownContext, client *node.Web3goClient) *proxyStub {
 	nn := client.NodeName()
 
 	v, _ := fs.fnProxies.LoadOrStoreFn(nn, func(interface{}) interface{} {
-		return newProxyStub(fs.cfg, fs, client)
+		return newProxyStub(shutdownCtx, fs.cfg, fs, client)
 	})
 
 	return v.(*proxyStub)
