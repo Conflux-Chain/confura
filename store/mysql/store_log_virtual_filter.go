@@ -42,15 +42,22 @@ func newVflog(log *w3types.Log) (*vflog, error) {
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to json marshal")
 	}
+	convertLogTopicFunc := func(log *w3types.Log, index int) string {
+		if index < 0 || index >= len(log.Topics) {
+			return ""
+		}
+
+		return log.Topics[index].String()
+	}
 
 	return &vflog{
 		BlockNumber:     log.BlockNumber,
 		BlockHash:       log.BlockHash.String(),
 		ContractAddress: log.Address.String(),
-		Topic0:          log.Topics[0].String(),
-		Topic1:          log.Topics[1].String(),
-		Topic2:          log.Topics[2].String(),
-		Topic3:          log.Topics[3].String(),
+		Topic0:          convertLogTopicFunc(log, 0),
+		Topic1:          convertLogTopicFunc(log, 1),
+		Topic2:          convertLogTopicFunc(log, 2),
+		Topic3:          convertLogTopicFunc(log, 3),
 		LogIndex:        uint64(log.Index),
 		JsonRepr:        jdata,
 	}, nil
@@ -287,7 +294,8 @@ func (vfls *VirtualFilterLogStore) expandPartitioBnRange(dbTx *gorm.DB, entity s
 	}
 
 	partition := bnPartition{Entity: entity, Index: partitionIndex}
-	return dbTx.Where(&partition).Updates(updates).Error
+
+	return dbTx.Model(&bnPartition{}).Where(&partition).Updates(updates).Error
 }
 
 // filterEntity gets partition entity of specified virtual proxy filter

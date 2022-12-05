@@ -168,7 +168,7 @@ func (p *proxyStub) poll() {
 	// To make the virtual filter service more resilient, we'd like it not take too long
 	// to stop or reboot. Here start a monitor routine to kill the thread if timeout.
 	p.shutdownCtx.Wg.Add(1)
-	go func() {
+	go func(fid web3rpc.ID) {
 		defer p.shutdownCtx.Wg.Done()
 
 		select {
@@ -177,7 +177,7 @@ func (p *proxyStub) poll() {
 
 			select {
 			case <-time.After(rpcutil.DefaultShutdownTimeout):
-				logrus.WithField("fid", p.fid).Info("Virtual proxy filter killed due to timeout")
+				logrus.WithField("fid", fid).Info("Virtual proxy filter killed due to timeout")
 				return
 			case <-done:
 				break
@@ -186,10 +186,12 @@ func (p *proxyStub) poll() {
 			break
 		}
 
+		logrus.WithField("fid", fid).Info("virtual proxy filter closed")
+
 		if atomic.LoadInt32(&p.quitflag) != 0 {
-			logrus.WithField("fid", p.fid).Info("Virtual proxy filter gracefully shutdown")
+			logrus.WithField("fnUrl", p.client.URL).Info("Virtual filter proxy stub shutdown")
 		}
-	}()
+	}(p.fid)
 
 	lastPollingTime := time.Now()
 
@@ -222,6 +224,7 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) bool {
 	if err != nil {
 		// proxy filter not found by full node? this may be due to full node reboot.
 		if IsFilterNotFoundError(err) {
+			logger.WithError(err).Info("Proxy filter already removed on full node side")
 			return false
 		}
 
@@ -310,6 +313,10 @@ func (p *proxyStub) gc() bool {
 	defer p.mu.Unlock()
 
 	if len(p.delegates) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"fnUrl":    p.client.URL,
+			"filterID": p.fid,
+		}).Info("Virtual filter garbage collects proxy stub due to no delegates")
 		p.close(true)
 		return true
 	}
