@@ -17,6 +17,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/relay"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 )
 
@@ -136,8 +137,10 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 // startEvmSpaceRpcServer starts evm space RPC server
 func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
-	var option rpc.EthAPIOption
 	router := node.EthFactory().CreateRouter()
+	option := rpc.EthAPIOption{
+		VirtualFilterClient: vfclient.MustNewClientFromViper(),
+	}
 
 	if storeCtx.EthDB != nil {
 		// initialize store handler

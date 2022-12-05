@@ -59,6 +59,9 @@ func (api *FilterApi) NewBlockFilter(nodeUrl string) (rpc.ID, error) {
 	// create a proxy block filter to the allocated full node
 	fid, err := client.Filter.NewBlockFilter()
 	if err != nil {
+		logrus.WithField("fnNodeUrl", nodeUrl).
+			WithError(err).
+			Error("Virtual filter failed to create proxy block filter")
 		return nilRpcId, filterProxyError(err)
 	}
 
@@ -80,6 +83,9 @@ func (api *FilterApi) NewPendingTransactionFilter(nodeUrl string) (rpc.ID, error
 	// create a proxy pending txn filter to the allocated full node
 	fid, err := client.Filter.NewPendingTransactionFilter()
 	if err != nil {
+		logrus.WithField("fnNodeUrl", nodeUrl).
+			WithError(err).
+			Error("Virtual filter failed to create proxy pending txn filter")
 		return nilRpcId, filterProxyError(err)
 	}
 
@@ -108,6 +114,10 @@ func (api *FilterApi) NewFilter(nodeUrl string, crit types.FilterQuery) (rpc.ID,
 	}
 
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"fnNodeUrl":       nodeUrl,
+			"filterCriterion": crit,
+		}).WithError(err).Error("Virtual filter failed to create proxy log filter")
 		return nilRpcId, filterProxyError(err)
 	}
 
@@ -120,26 +130,13 @@ func (api *FilterApi) NewFilter(nodeUrl string, crit types.FilterQuery) (rpc.ID,
 }
 
 // UninstallFilter removes the proxy filter with the given filter id.
-func (api *FilterApi) UninstallFilter(nodeUrl string, id rpc.ID) (bool, error) {
+func (api *FilterApi) UninstallFilter(id rpc.ID) (bool, error) {
 	f, found := api.delFilter(id)
 	if !found {
 		return false, nil
 	}
 
-	// Not the old delegate full node? This maybe due to client IP change or
-	// rebalance for consistent hash ring of node manager
-	if !f.IsDelegateFullNode(nodeUrl) {
-		logrus.WithFields(logrus.Fields{
-			"filterID": id,
-			"newFnUrl": nodeUrl,
-			"oldFnUrl": f.del.nodeUrl,
-		}).Info("Delegate full node switched over for `UninstallFilter`")
-
-		// but still use the old delegate full node for data consistency
-		nodeUrl = f.del.nodeUrl
-	}
-
-	client, err := api.loadOrGetFnClient(nodeUrl)
+	client, err := api.loadOrGetFnClient(f.del.nodeUrl)
 	if err != nil {
 		return false, filterProxyError(err)
 	}
@@ -152,27 +149,14 @@ func (api *FilterApi) UninstallFilter(nodeUrl string, id rpc.ID) (bool, error) {
 }
 
 // GetFilterLogs returns the logs for the proxy filter with the given id.
-func (api *FilterApi) GetFilterLogs(nodeUrl string, id rpc.ID) (logs []types.Log, err error) {
+func (api *FilterApi) GetFilterLogs(id rpc.ID) (logs []types.Log, err error) {
 	f, found := api.getFilter(id)
 
 	if !found || f.typ != FilterTypeLog { // not found or wrong filter type?
 		return nil, errFilterNotFound
 	}
 
-	// Not the old delegate full node? This maybe due to client IP change or
-	// rebalance for consistent hash ring of node manager
-	if !f.IsDelegateFullNode(nodeUrl) {
-		logrus.WithFields(logrus.Fields{
-			"filterID": id,
-			"newFnUrl": nodeUrl,
-			"oldFnUrl": f.del.nodeUrl,
-		}).Info("Delegate full node switched over for `GetFilterLogs`")
-
-		// but still use the old delegate full node for data consistency
-		nodeUrl = f.del.nodeUrl
-	}
-
-	w3c, err := api.loadOrGetFnClient(nodeUrl)
+	w3c, err := api.loadOrGetFnClient(f.del.nodeUrl)
 	if err != nil {
 		return nil, filterProxyError(err)
 	}
@@ -183,13 +167,22 @@ func (api *FilterApi) GetFilterLogs(nodeUrl string, id rpc.ID) (logs []types.Log
 		logs, err = w3c.Filter.GetFilterLogs(f.del.fid)
 	}
 
+	if logs == nil { // uniform empty logs
+		logs = ethEmptyLogs
+	}
+
+	if err == nil {
+		return logs, nil
+	}
+
 	if IsFilterNotFoundError(err) {
 		// remove deprecated proxy filter
 		api.delFilter(id)
-	}
-
-	if logs == nil { // uniform empty logs
-		logs = ethEmptyLogs
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"delegateFn": f.del,
+			"filterID":   id,
+		}).WithError(err).Error("Virtual filter failed to get filter logs")
 	}
 
 	return logs, err
@@ -197,29 +190,16 @@ func (api *FilterApi) GetFilterLogs(nodeUrl string, id rpc.ID) (logs []types.Log
 
 // GetFilterChanges returns the data for the proxy filter with the given id since
 // last time it was called. This can be used for polling.
-func (api *FilterApi) GetFilterChanges(nodeUrl string, id rpc.ID) (res *types.FilterChanges, err error) {
+func (api *FilterApi) GetFilterChanges(id rpc.ID) (res *types.FilterChanges, err error) {
 	f, found := api.getFilter(id)
 	if !found {
 		return nil, errFilterNotFound
 	}
 
-	// Not the old delegate full node? This maybe due to client IP change or
-	// rebalance for consistent hash ring of node manager
-	if !f.IsDelegateFullNode(nodeUrl) {
-		logrus.WithFields(logrus.Fields{
-			"filterID": id,
-			"newFnUrl": nodeUrl,
-			"oldFnUrl": f.del.nodeUrl,
-		}).Info("Delegate full node switched over for `GetFilterChanges`")
-
-		// but still use the old delegate full node to keep data consistency
-		nodeUrl = f.del.nodeUrl
-	}
-
 	// refresh filter last polling time
 	api.refreshFilterPollingTime(id)
 
-	w3c, err := api.loadOrGetFnClient(nodeUrl)
+	w3c, err := api.loadOrGetFnClient(f.del.nodeUrl)
 	if err != nil {
 		return nil, filterProxyError(err)
 	}
@@ -233,9 +213,18 @@ func (api *FilterApi) GetFilterChanges(nodeUrl string, id rpc.ID) (res *types.Fi
 		res, err = w3c.Filter.GetFilterChanges(f.del.fid)
 	}
 
+	if err == nil {
+		return res, nil
+	}
+
 	if IsFilterNotFoundError(err) {
 		// remove deprecated proxy filter
 		api.delFilter(id)
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"delegateFn": f.del,
+			"filterID":   id,
+		}).WithError(err).Error("Virtual filter failed to get filter changes")
 	}
 
 	return res, err
@@ -246,6 +235,9 @@ func (api *FilterApi) loadOrGetFnClient(nodeUrl string) (*node.Web3goClient, err
 	client, _, err := api.clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
 		client, err := rpcutil.NewEthClient(nodeUrl, rpcutil.WithClientHookMetrics(true))
 		if err != nil {
+			logrus.WithField("fnNodeUrl", nodeUrl).
+				WithError(err).
+				Error("Failed to new eth client for virtual filter")
 			return nil, err
 		}
 

@@ -10,6 +10,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3Types "github.com/openweb3/web3go/types"
@@ -21,8 +22,9 @@ var (
 )
 
 type EthAPIOption struct {
-	StoreHandler  *handler.EthStoreHandler
-	LogApiHandler *handler.EthLogsApiHandler
+	StoreHandler        *handler.EthStoreHandler
+	LogApiHandler       *handler.EthLogsApiHandler
+	VirtualFilterClient *vfclient.Client
 }
 
 // ethAPI provides Ethereum relative API within evm space according to:
