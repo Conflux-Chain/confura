@@ -122,7 +122,7 @@ func (api *FilterApi) NewFilter(nodeUrl string, crit types.FilterQuery) (rpc.ID,
 	}
 
 	pfid := rpc.NewID()
-	api.addFilter(pfid, newFilter(FilterTypePendingTxn, fnDelegateInfo{
+	api.addFilter(pfid, newFilter(FilterTypeLog, fnDelegateInfo{
 		fid: *fid, nodeUrl: nodeUrl,
 	}, &crit))
 
@@ -300,7 +300,7 @@ func (api *FilterApi) expireFilters(ttl time.Duration) {
 
 		delete(api.filters, id)
 
-		if f.typ == FilterTypeLog {
+		if api.sys != nil && f.typ == FilterTypeLog {
 			// also uninstall delegate log filters from `FilterSystem`
 			api.sys.UninstallFilter(f.del.fid)
 		}
