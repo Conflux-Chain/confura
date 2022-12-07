@@ -5,7 +5,7 @@ import (
 	"github.com/openweb3/web3go/types"
 )
 
-func UpdateEthLogFilter(method string, eth *client.RpcEthClient, filter *types.FilterQuery) {
+func UpdateEthRpcLogFilter(method string, eth *client.RpcEthClient, filter *types.FilterQuery) {
 	Registry.RPC.Percentage(method, "filter/hash").Mark(filter.BlockHash != nil)
 	Registry.RPC.Percentage(method, "filter/address/null").Mark(len(filter.Addresses) == 0)
 	Registry.RPC.Percentage(method, "address/single").Mark(len(filter.Addresses) == 1)

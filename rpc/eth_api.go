@@ -17,6 +17,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	rpcMethodEthGetLogs = "eth_getLogs"
+)
+
 var (
 	ethEmptyLogs = []web3Types.Log{}
 )
@@ -311,7 +315,7 @@ func (api *ethAPI) GetLogs(ctx context.Context, fq web3Types.FilterQuery) ([]web
 // getLogs helper method to get logs from store or fullnode.
 func (api *ethAPI) getLogs(ctx context.Context, fq *web3Types.FilterQuery) ([]web3Types.Log, bool, error) {
 	w3c := GetEthClientFromContext(ctx)
-	metrics.UpdateEthLogFilter("eth_getLogs", w3c.Eth, fq)
+	metrics.UpdateEthRpcLogFilter(rpcMethodEthGetLogs, w3c.Eth, fq)
 
 	flag, ok := ParseEthLogFilterType(fq)
 	if !ok {
@@ -332,8 +336,8 @@ func (api *ethAPI) getLogs(ctx context.Context, fq *web3Types.FilterQuery) ([]we
 	}
 
 	if api.LogApiHandler != nil {
-		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client.Eth, fq)
-		metrics.Registry.RPC.StoreHit("eth_getLogs", "store").Mark(hitStore)
+		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client.Eth, fq, rpcMethodEthGetLogs)
+		metrics.Registry.RPC.StoreHit(rpcMethodEthGetLogs, "store").Mark(hitStore)
 		if logs == nil { // uniform empty logs
 			logs = ethEmptyLogs
 		}
