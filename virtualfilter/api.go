@@ -264,7 +264,7 @@ func (api *FilterApi) addFilter(id rpc.ID, filter *Filter) {
 	api.metricSessionCount(filter.typ, filter.del.nodeUrl)
 }
 
-func (api *FilterApi) delFilter(id rpc.ID, lockfree ...bool) (*Filter, bool) {
+func (api *FilterApi) delFilter(id rpc.ID) (*Filter, bool) {
 	api.filtersMu.Lock()
 	defer api.filtersMu.Unlock()
 

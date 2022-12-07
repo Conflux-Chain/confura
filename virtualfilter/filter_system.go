@@ -161,7 +161,6 @@ func (fs *FilterSystem) GetFilterChanges(id web3rpc.ID) (*types.FilterChanges, e
 				"proxyFilterId": proxy.fid,
 				"logFilter":     sfilter,
 				"blockHashes":   missingBlockhashes,
-				"blockRange":    []uint64{bnMin, bnMax},
 			}).WithError(err).Error("Virtual filter failed to get change logs from db store")
 			return nil, filterProxyError(err)
 		}
