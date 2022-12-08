@@ -8,7 +8,9 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	gethmetrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 )
@@ -45,7 +47,10 @@ func (api *FilterApi) timeoutLoop(timeout time.Duration) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		api.expireFilters(timeout)
+		expiredFilters := api.getExpiredFilters(timeout)
+		for fid := range expiredFilters {
+			api.UninstallFilter(fid)
+		}
 	}
 }
 
@@ -103,8 +108,6 @@ func (api *FilterApi) NewFilter(nodeUrl string, crit types.FilterQuery) (rpc.ID,
 	if err != nil {
 		return nilRpcId, filterProxyError(err)
 	}
-
-	metrics.UpdateEthLogFilter("eth_newFilter", w3c.Eth, &crit)
 
 	var fid *rpc.ID
 	if api.sys != nil { // create a delegate log filter to the allocated full node
@@ -171,14 +174,10 @@ func (api *FilterApi) GetFilterLogs(id rpc.ID) (logs []types.Log, err error) {
 		logs = ethEmptyLogs
 	}
 
-	if err == nil {
-		return logs, nil
-	}
-
 	if IsFilterNotFoundError(err) {
-		// remove deprecated proxy filter
-		api.delFilter(id)
-	} else {
+		// uninstall deprecated proxy filter
+		api.UninstallFilter(id)
+	} else if err != nil && !utils.IsRPCJSONError(err) {
 		logrus.WithFields(logrus.Fields{
 			"delegateFn": f.del,
 			"filterID":   id,
@@ -213,14 +212,10 @@ func (api *FilterApi) GetFilterChanges(id rpc.ID) (res *types.FilterChanges, err
 		res, err = w3c.Filter.GetFilterChanges(f.del.fid)
 	}
 
-	if err == nil {
-		return res, nil
-	}
-
 	if IsFilterNotFoundError(err) {
-		// remove deprecated proxy filter
-		api.delFilter(id)
-	} else {
+		// uninstall deprecated proxy filter
+		api.UninstallFilter(id)
+	} else if err != nil && !utils.IsRPCJSONError(err) {
 		logrus.WithFields(logrus.Fields{
 			"delegateFn": f.del,
 			"filterID":   id,
@@ -266,6 +261,7 @@ func (api *FilterApi) addFilter(id rpc.ID, filter *Filter) {
 	defer api.filtersMu.Unlock()
 
 	api.filters[id] = filter
+	api.metricSessionCount(filter.typ, filter.del.nodeUrl)
 }
 
 func (api *FilterApi) delFilter(id rpc.ID) (*Filter, bool) {
@@ -275,6 +271,7 @@ func (api *FilterApi) delFilter(id rpc.ID) (*Filter, bool) {
 	f, found := api.filters[id]
 	if found {
 		delete(api.filters, id)
+		api.metricSessionCount(f.typ, f.del.nodeUrl)
 	}
 
 	return f, found
@@ -289,20 +286,34 @@ func (api *FilterApi) refreshFilterPollingTime(id rpc.ID) {
 	}
 }
 
-func (api *FilterApi) expireFilters(ttl time.Duration) {
+func (api *FilterApi) getExpiredFilters(ttl time.Duration) map[rpc.ID]*Filter {
 	api.filtersMu.Lock()
 	defer api.filtersMu.Unlock()
 
+	res := make(map[rpc.ID]*Filter)
 	for id, f := range api.filters {
-		if time.Since(f.lastPollingTime) < ttl { // not expired yet
-			continue
+		if time.Since(f.lastPollingTime) >= ttl {
+			res[id] = f
 		}
+	}
 
-		delete(api.filters, id)
+	return res
+}
 
-		if api.sys != nil && f.typ == FilterTypeLog {
-			// also uninstall delegate log filters from `FilterSystem`
-			api.sys.UninstallFilter(f.del.fid)
-		}
+func (api *FilterApi) metricSessionCount(ft FilterType, nodeUrl string) {
+	var gauge gethmetrics.Gauge
+	nodeName := rpcutil.Url2NodeName(nodeUrl)
+
+	switch ft {
+	case FilterTypeBlock:
+		gauge = metrics.Registry.VirtualFilter.Sessions("block", nodeName)
+	case FilterTypePendingTxn:
+		gauge = metrics.Registry.VirtualFilter.Sessions("pendingTxn", nodeName)
+	case FilterTypeLog:
+		gauge = metrics.Registry.VirtualFilter.Sessions("log", nodeName)
+	}
+
+	if gauge != nil {
+		gauge.Update(int64(len(api.filters)))
 	}
 }

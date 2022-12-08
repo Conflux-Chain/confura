@@ -28,6 +28,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 	ctx context.Context,
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
+	delegatedRpcMethod ...string,
 ) ([]types.Log, bool, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
 	defer cancel()
@@ -39,7 +40,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 	}
 
 	for {
-		logs, hitStore, err := handler.getLogsReorgGuard(timeoutCtx, eth, filter)
+		logs, hitStore, err := handler.getLogsReorgGuard(timeoutCtx, eth, filter, delegatedRpcMethod...)
 		if err != nil {
 			return nil, false, err
 		}
@@ -68,6 +69,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	ctx context.Context,
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
+	delegatedRpcMethod ...string,
 ) ([]types.Log, bool, error) {
 	// Try to query event logs from database and fullnode.
 	dbFilter, fnFilter, err := handler.splitLogFilter(eth, filter)
@@ -75,9 +77,11 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		return nil, false, err
 	}
 
-	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/split/alldatabase").Mark(fnFilter == nil)
-	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/split/allfullnode").Mark(dbFilter == nil)
-	metrics.Registry.RPC.Percentage("eth_getLogs", "filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
+	if len(delegatedRpcMethod) > 0 {
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod[0], "filter/split/alldatabase").Mark(fnFilter == nil)
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod[0], "filter/split/allfullnode").Mark(dbFilter == nil)
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod[0], "filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
+	}
 
 	var logs []types.Log
 

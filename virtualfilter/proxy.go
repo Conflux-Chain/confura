@@ -7,6 +7,7 @@ import (
 
 	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	web3rpc "github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
@@ -113,6 +114,9 @@ func (p *proxyStub) getFilterChanges(id DelegateFilterID) ([]FilterBlock, error)
 		return nil, errFilterNotFound
 	}
 
+	metricTimer := metrics.Registry.VirtualFilter.QueryFilterChanges(p.client.NodeName(), "memory")
+	defer metricTimer.Update()
+
 	var res []FilterBlock
 
 	err := p.chain.Traverse(fctx.cursor, func(node *FilterNode, forkPoint bool) bool {
@@ -202,10 +206,15 @@ func (p *proxyStub) poll() {
 				return
 			}
 
-			if !p.pollOnce(&lastPollingTime) {
+			start := time.Now()
+			ok, err := p.pollOnce(&lastPollingTime)
+			metrics.Registry.VirtualFilter.PollOnceQps(p.client.NodeName(), err).UpdateSince(start)
+
+			if !ok {
 				p.close()
 				return
 			}
+
 		case <-p.shutdownCtx.Ctx.Done():
 			atomic.StoreInt32(&p.quitflag, 1)
 			p.close()
@@ -214,7 +223,7 @@ func (p *proxyStub) poll() {
 	}
 }
 
-func (p *proxyStub) pollOnce(lastPollingTime *time.Time) bool {
+func (p *proxyStub) pollOnce(lastPollingTime *time.Time) (bool, error) {
 	logger := logrus.WithFields(logrus.Fields{
 		"proxyFullNode": p.client.URL,
 		"proxyContext":  p.proxyContext,
@@ -225,37 +234,42 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) bool {
 		// proxy filter not found by full node? this may be due to full node reboot.
 		if IsFilterNotFoundError(err) {
 			logger.WithError(err).Info("Proxy filter already removed on full node side")
-			return false
+			return false, err
 		}
 
 		duration := time.Since(*lastPollingTime)
 		if duration < maxPollingDelayDuration { // retry
-			return true
+			return true, err
 		}
 
 		logger.WithFields(logrus.Fields{
 			"delayedDuration": duration,
 		}).WithError(err).Error("Filter proxy failed to poll filter changes due to too long delays")
-		return false
+		return false, err
 	}
 
 	// merge the filter changes
 	if err = p.merge(fchanges); err != nil {
 		logger.WithError(err).Error("Filter proxy failed to merge filter changes")
-		return false
+		return false, err
 	}
 
 	// notify polled change data
 	if p.obs != nil {
 		if err := p.obs.onPolled(p, fchanges); err != nil {
 			logger.WithError(err).Error("Filter proxy failed to notify polled change data")
-			return false
+			return false, errors.WithMessage(err, "poll event handled error")
 		}
 	}
 
 	// update polling time
 	*lastPollingTime = time.Now()
-	return true
+
+	// metric poll size
+	pollsize := int64(len(fchanges.Logs))
+	metrics.Registry.VirtualFilter.PollOnceSize(p.client.NodeName()).Update(pollsize)
+
+	return true, nil
 }
 
 func (p *proxyStub) merge(changes *types.FilterChanges) error {
@@ -263,6 +277,9 @@ func (p *proxyStub) merge(changes *types.FilterChanges) error {
 	if len(chainedBlocksList) == 0 {
 		return nil
 	}
+
+	metricTimer := metrics.Registry.VirtualFilter.PersistFilterChanges(p.client.NodeName(), "memory")
+	defer metricTimer.Update()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()

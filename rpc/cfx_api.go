@@ -13,6 +13,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -268,12 +269,14 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 
 	if api.LogApiHandler != nil {
 		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, cfx, &filter)
-
-		logrus.WithFields(logrus.Fields{
-			"filter": filter, "hitStore": hitStore,
-		}).WithError(err).Debug("Delegated `cfx_getLogs` to log api handler")
-
 		api.collectHitStats("cfx_getLogs", hitStore)
+
+		if err != nil && !utils.IsRPCJSONError(err) {
+			logrus.WithFields(logrus.Fields{
+				"filter":   filter,
+				"hitStore": hitStore,
+			}).WithError(err).Debug("Failed to get logs from Log api handler")
+		}
 
 		if logs == nil { // uniform empty logs
 			logs = emptyLogs

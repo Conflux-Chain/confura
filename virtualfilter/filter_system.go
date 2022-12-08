@@ -23,6 +23,8 @@ const (
 	// filter change polling settings
 	pollingInterval         = 1 * time.Second
 	maxPollingDelayDuration = 1 * time.Minute
+
+	rpcMethodGetFilterLogs = "eth_getFilterLogs"
 )
 
 // FilterSystem creates proxy log filter to full node, and instantly polls event logs from
@@ -111,8 +113,8 @@ func (fs *FilterSystem) GetFilterLogs(id web3rpc.ID) ([]types.Log, error) {
 		return nil, nil
 	}
 
-	logs, hitStore, err := fs.lhandler.GetLogs(context.Background(), w3c.Client.Eth, crit)
-	metrics.Registry.RPC.StoreHit("eth_getFilterLogs", "store").Mark(hitStore)
+	logs, hitStore, err := fs.lhandler.GetLogs(context.Background(), w3c.Client.Eth, crit, rpcMethodGetFilterLogs)
+	metrics.Registry.RPC.StoreHit(rpcMethodGetFilterLogs, "store").Mark(hitStore)
 
 	return logs, err
 }
@@ -141,13 +143,25 @@ func (fs *FilterSystem) GetFilterChanges(id web3rpc.ID) (*types.FilterChanges, e
 
 	blockLogs := make(map[string][]types.Log, len(missingBlockhashes))
 
-	if len(missingBlockhashes) > 0 { // load missing event logs from store
+	nodeName := proxy.client.NodeName()
+	metrics.Registry.VirtualFilter.StoreQueryPercentage(nodeName, "mysql").Mark(len(missingBlockhashes) > 0)
+
+	if len(missingBlockhashes) > 0 { // load missing event logs from db store
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), store.TimeoutGetLogs)
 		defer cancel()
+
+		metricTimer := metrics.Registry.VirtualFilter.QueryFilterChanges(nodeName, "mysql")
+		defer metricTimer.Update()
 
 		sfilter := store.ParseEthLogFilterRaw(bnMin, bnMax, fctx.crit)
 		logs, err := fs.logStore.GetLogs(timeoutCtx, string(proxy.fid), sfilter, missingBlockhashes...)
 		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"proxyFullNode": proxy.client.URL,
+				"proxyFilterId": proxy.fid,
+				"logFilter":     sfilter,
+				"blockHashes":   missingBlockhashes,
+			}).WithError(err).Error("Virtual filter failed to get change logs from db store")
 			return nil, filterProxyError(err)
 		}
 
@@ -253,6 +267,9 @@ func (fs *FilterSystem) onClosed(proxy *proxyStub) {
 }
 
 func (fs *FilterSystem) onPolled(proxy *proxyStub, changes *types.FilterChanges) error {
+	metricTimer := metrics.Registry.VirtualFilter.PersistFilterChanges(proxy.client.NodeName(), "mysql")
+	defer metricTimer.Update()
+
 	// prepare table partition for insert at first
 	partition, newCreated, err := fs.logStore.PreparePartition(string(proxy.fid))
 	if err != nil {

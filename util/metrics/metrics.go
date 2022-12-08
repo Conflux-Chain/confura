@@ -12,11 +12,12 @@ import (
 var Registry Metrics
 
 type Metrics struct {
-	RPC    RpcMetrics
-	PubSub PubSubMetrics
-	Sync   SyncMetrics
-	Store  StoreMetrics
-	Nodes  NodeManagerMetrics
+	RPC           RpcMetrics
+	PubSub        PubSubMetrics
+	Sync          SyncMetrics
+	Store         StoreMetrics
+	Nodes         NodeManagerMetrics
+	VirtualFilter VirtualFilterMetrics
 }
 
 // RPC metrics
@@ -179,4 +180,37 @@ func (*PubSubMetrics) Sessions(space, topic, node string) metrics.Gauge {
 
 func (*PubSubMetrics) InputLogFilter(space string) Percentage {
 	return GetOrRegisterTimeWindowPercentageDefault("infura/pubsub/%v/input/logFilter", space)
+}
+
+// Virtual filter metrics
+type VirtualFilterMetrics struct{}
+
+func (*VirtualFilterMetrics) Sessions(filterType, node string) metrics.Gauge {
+	return GetOrRegisterGauge("infura/virtualFilter/%v/sessions/%v", filterType, node)
+}
+
+func (*VirtualFilterMetrics) PollOnceQps(node string, err error) metrics.Timer {
+	if util.IsInterfaceValNil(err) {
+		return GetOrRegisterTimer("infura/virtualFilter/poll/%v/once/success", node)
+	}
+
+	return GetOrRegisterTimer("infura/virtualFilter/poll/%v/once/failure", node)
+}
+
+func (*VirtualFilterMetrics) PollOnceSize(node string) metrics.Histogram {
+	return GetOrRegisterHistogram("infura/virtualFilter/poll/%v/once/size", node)
+}
+
+func (*VirtualFilterMetrics) PersistFilterChanges(node, store string) TimerUpdater {
+	return NewTimerUpdaterByName(fmt.Sprintf("infura/virtualFilter/persist/%v/filterChanges/%v", node, store))
+}
+
+func (*VirtualFilterMetrics) QueryFilterChanges(node, store string) TimerUpdater {
+	metricName := fmt.Sprintf("infura/virtualFilter/query/%v/filterChanges/%v", node, store)
+	return NewTimerUpdaterByName(metricName)
+}
+
+func (*VirtualFilterMetrics) StoreQueryPercentage(node, store string) Percentage {
+	metricName := fmt.Sprintf("infura/virtualFilter/percentage/query/%v/filterChanges/%v", node, store)
+	return GetOrRegisterTimeWindowPercentageDefault(metricName)
 }
