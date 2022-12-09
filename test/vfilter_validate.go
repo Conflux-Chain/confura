@@ -1,0 +1,375 @@
+package test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"reflect"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/Conflux-Chain/confura/node"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/openweb3/web3go/types"
+	"github.com/sirupsen/logrus"
+	ring "github.com/zealws/golang-ring"
+)
+
+const (
+	// default channel buffer size for virtual filter validation
+	vfValidChBufferSize = 1000
+)
+
+// VFValidConfig validation config for virtual filter
+type VFValidConfig struct {
+	FullnodeRpcEndpoint string // fullnode rpc endpoint used as benchmark
+	InfuraRpcEndpoint   string // infura rpc endpoint used to be validated against
+}
+
+// VFValidator polls filter changes from fullnode and infura endpoints, and then compares
+// the filter change to validate if the poll results comply to fullnode.
+type VFValidator struct {
+	infura *node.Web3goClient // infura rpc service client instance
+	fn     *node.Web3goClient // fullnode client instance
+	conf   *VFValidConfig     // validation configuration
+}
+
+func MustNewVFValidator(conf *VFValidConfig) *VFValidator {
+	// Prepare fullnode client instance
+	fn := &node.Web3goClient{
+		URL:    conf.FullnodeRpcEndpoint,
+		Client: rpcutil.MustNewEthClient(conf.FullnodeRpcEndpoint),
+	}
+
+	// Prepare infura rpc service client instance
+	infura := &node.Web3goClient{
+		URL:    conf.InfuraRpcEndpoint,
+		Client: rpcutil.MustNewEthClient(conf.InfuraRpcEndpoint),
+	}
+
+	return &VFValidator{fn: fn, infura: infura, conf: conf}
+}
+
+func (validator *VFValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
+	validator.validateFilterChanges()
+}
+
+func (validator *VFValidator) Destroy() {
+	// Close client instance
+	validator.fn.Close()
+	validator.infura.Close()
+}
+
+func (validator *VFValidator) validateFilterChanges() {
+	var fnCh, infuraCh chan []*types.Log
+	var fnCtx, infuraCtx *vfValidationContext
+
+	fnFilter := func() *vfValidationContext { // fullnode
+		fnCh = make(chan []*types.Log, vfValidChBufferSize)
+		fnCtx = newVFValidationContext(validator.fn, fnCh)
+		go validator.pollFilterChangesWithContext(fnCtx)
+
+		return fnCtx
+	}
+
+	infuraFilter := func() *vfValidationContext { // infura
+		infuraCh = make(chan []*types.Log, vfValidChBufferSize)
+		infuraCtx = newVFValidationContext(validator.infura, infuraCh)
+		go validator.pollFilterChangesWithContext(infuraCtx)
+
+		return infuraCtx
+	}
+
+	validator.doValidate(fnFilter, infuraFilter, func(calibrate, validate, reset func() error) {
+		for {
+			var valErr error // validation error
+
+			if err := calibrate(); err != nil {
+				logrus.WithError(err).Error("Filter validator failed to calibrate filter changes")
+			}
+
+			select {
+			case fnlogs := <-fnCh:
+				for i := range fnlogs {
+					fnCtx.rBuf.Enqueue(fnlogs[i])
+				}
+				valErr = validate()
+			case inflogs := <-infuraCh:
+				for i := range inflogs {
+					fnCtx.rBuf.Enqueue(inflogs[i])
+				}
+				valErr = validate()
+			case err := <-fnCtx.errCh:
+				logrus.WithError(err).Error("full node filter validator error")
+				reset()
+			case err := <-infuraCtx.errCh:
+				logrus.WithError(err).Error("infura filter validator error")
+				reset()
+			}
+
+			if valErr != nil {
+				logrus.WithError(valErr).Error("Filter validator failed to validate filter changes")
+			}
+		}
+	})
+}
+
+func (validator *VFValidator) pollFilterChangesWithContext(vfCtx *vfValidationContext) {
+	logger := logrus.WithField("nodeUrl", vfCtx.w3c.URL)
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		fid, err := vfCtx.w3c.Filter.NewLogFilter(&types.FilterQuery{})
+		if err != nil {
+			logger.WithError(err).Error("Virtual filter validator failed to new log filter")
+			time.Sleep(time.Second * 1)
+			continue
+		}
+
+		vfCtx.setStatus(true)
+
+		for range ticker.C {
+			if !vfCtx.getStatus() {
+				break
+			}
+
+			fc, err := vfCtx.w3c.Filter.GetFilterChanges(*fid)
+			if err != nil {
+				logger.WithError(err).Error("Virtual filter validator validation error")
+
+				if vfCtx.setStatus(false) {
+					vfCtx.errCh <- err
+				}
+
+				break
+			}
+
+			vfCtx.notify(fc.Logs)
+		}
+	}
+}
+
+type vfFunc func() *vfValidationContext
+
+func (validator *VFValidator) doValidate(fnFilter, infuraFilter vfFunc, watch watchFunc) {
+	fnCtx, infuraCtx := fnFilter(), infuraFilter()
+	calibTryTimes, calibStatus := 0, notCalibratedYet
+
+	reset := func() error {
+		calibTryTimes = 0
+		calibStatus = calibrationExpired
+
+		validator.resetWithContext(fnCtx, infuraCtx)
+		return nil
+	}
+
+	calibrate := func() error {
+		if calibStatus == calibratedAlready {
+			return nil
+		}
+
+		if validator.doCalibrate(fnCtx, infuraCtx) {
+			calibStatus = calibratedAlready
+			calibTryTimes = 0
+
+			return nil
+		}
+
+		calibTryTimes++
+
+		if calibTryTimes >= maxCalibrationTries { // in case of endless calibration
+			reset()
+			return errors.New("too many retries for calibration")
+		}
+
+		return nil
+	}
+
+	validate := func() error {
+		if calibStatus != calibratedAlready {
+			return nil
+		}
+
+		if err := validator.validateWithContext(fnCtx, infuraCtx); err != nil {
+			reset()
+			return err
+		}
+
+		return nil
+	}
+
+	go watch(calibrate, validate, reset)
+}
+
+func (validator *VFValidator) resetWithContext(fnCtx, infuraCtx *vfValidationContext) {
+	fnCtx.drainRead()
+	fnCtx.resetBuf()
+
+	infuraCtx.drainRead()
+	infuraCtx.resetBuf()
+}
+
+func (validator *VFValidator) validateWithContext(fnCtx, infuraCtx *vfValidationContext) error {
+	fnBufSize, infuraBufSize := fnCtx.rBuf.ContentSize(), infuraCtx.rBuf.ContentSize()
+	logger := logrus.WithFields(logrus.Fields{
+		"fnBufSize":     fnBufSize,
+		"infuraBufSize": infuraBufSize,
+		"ctxChType":     fnCtx.etype,
+	})
+
+	if fnBufSize == 0 || infuraBufSize == 0 {
+		logger.Debug("Pubsub validator validation skipped due to no enough data")
+		return nil
+	}
+
+	fnVal := fnCtx.rBuf.Peek()
+	infuraVal := infuraCtx.rBuf.Peek()
+
+	for fnVal != nil && infuraVal != nil {
+		fnVal = fnCtx.rBuf.Dequeue()
+		infuraVal = infuraCtx.rBuf.Dequeue()
+
+		if !reflect.DeepEqual(fnVal, infuraVal) {
+			fnValStr, _ := json.Marshal(fnVal)
+			infuraValStr, _ := json.Marshal(infuraVal)
+
+			logrus.WithFields(logrus.Fields{
+				"fnVal":     fnValStr,
+				"infuraVal": infuraValStr,
+			}).Error("Virtual filter validator validation result not matched")
+
+			return errResultNotMatched
+		}
+
+		fnVal = fnCtx.rBuf.Peek()
+		infuraVal = infuraCtx.rBuf.Peek()
+	}
+
+	logger.Debug("Virtual filter validator validation passed")
+
+	return nil
+}
+
+func (validator *VFValidator) doCalibrate(fnCtx, infuraCtx *vfValidationContext) bool {
+	fnBufSize, infuraBufSize := fnCtx.rBuf.ContentSize(), infuraCtx.rBuf.ContentSize()
+	minSubSize := minCommonSubArraySize
+
+	logger := logrus.WithFields(logrus.Fields{
+		"fnBufSize":     fnBufSize,
+		"infuraBufSize": infuraBufSize,
+	})
+
+	if fnBufSize < minSubSize || infuraBufSize < minSubSize {
+		logger.Debug("Virtual filter validator calibration skipped due to no enough data")
+		return false
+	}
+
+	fnArr := fnCtx.rBuf.Values()
+	infuraArr := infuraCtx.rBuf.Values()
+	i, j, l := findFirstCommonSubArrayOfLength(fnArr, infuraArr, minSubSize)
+
+	logger.WithFields(logrus.Fields{
+		"fnStartPos":     i,
+		"infuraStartPos": j,
+		"commonLength":   l,
+	}).Debug("Virtual filter validator found first common subarray joint points")
+
+	// left trim elements until first non-common element from ring buffer
+	if l >= minSubSize {
+		for i += l; i > 0; i-- {
+			fnCtx.rBuf.Dequeue()
+		}
+
+		for j += l; j > 0; j-- {
+			infuraCtx.rBuf.Dequeue()
+		}
+
+		return true
+	}
+
+	return false
+}
+
+type vfValidationContext struct {
+	status  int32              // validation status: 0 for normal, -1 for abnormal
+	w3c     *node.Web3goClient // node client
+	etype   reflect.Type       // channel type
+	channel reflect.Value      // channel to receive result(s)
+	errCh   chan error         // channel to notify validation error
+	rBuf    *ring.Ring         // ring buffer to hold data for comparision
+}
+
+func newVFValidationContext(w3c *node.Web3goClient, channel interface{}) *vfValidationContext {
+	// check type of channel first
+	chanVal := reflect.ValueOf(channel)
+	if chanVal.Kind() != reflect.Chan ||
+		chanVal.Type().ChanDir()&reflect.SendDir == 0 || chanVal.IsNil() {
+		logrus.Fatal(
+			"Virtual filter validation context subscription channel must be a writable channel and not be nil",
+		)
+	}
+
+	rbuf := &ring.Ring{}
+	rbuf.SetCapacity(ringBufferSize)
+
+	return &vfValidationContext{
+		w3c:     w3c,
+		etype:   chanVal.Type().Elem(),
+		channel: chanVal,
+		errCh:   make(chan error, 1),
+		rBuf:    rbuf,
+	}
+}
+
+func (ctx *vfValidationContext) resetBuf() {
+	rbuf := &ring.Ring{}
+	rbuf.SetCapacity(ringBufferSize)
+	ctx.rBuf = rbuf
+}
+
+func (ctx *vfValidationContext) drainRead() {
+	cases := []reflect.SelectCase{
+		{Dir: reflect.SelectRecv, Chan: ctx.channel},
+		{Dir: reflect.SelectDefault},
+	}
+
+	for {
+		index, _, _ := reflect.Select(cases)
+		if index != 0 {
+			break
+		}
+	}
+}
+
+func (ctx *vfValidationContext) setStatus(ok bool) bool {
+	var expect, set int32 = -1, 0
+	if !ok {
+		expect, set = 0, -1
+	}
+
+	return atomic.CompareAndSwapInt32(&ctx.status, expect, set)
+}
+
+func (ctx *vfValidationContext) getStatus() bool {
+	return atomic.LoadInt32(&ctx.status) == 0
+}
+
+func (ctx *vfValidationContext) notify(result interface{}) bool {
+	cases := []reflect.SelectCase{
+		{Dir: reflect.SelectSend, Chan: ctx.channel, Send: reflect.ValueOf(result)},
+		{Dir: reflect.SelectDefault},
+	}
+
+	switch index, _, _ := reflect.Select(cases); index {
+	case 0: // sub.channel<-
+		return true
+	case 1: // never blocking for queue overflow
+		ctx.errCh <- errors.New("queue overflow")
+		return false
+	}
+
+	return false
+}
