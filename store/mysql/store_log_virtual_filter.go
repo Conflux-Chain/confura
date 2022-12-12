@@ -24,7 +24,7 @@ const (
 type vflog struct {
 	ID              uint64
 	BlockNumber     uint64 `gorm:"column:bn;not null;index:idx_bn"`
-	BlockHash       string `gorm:"size:66;not null"`
+	BlockHash       string `gorm:"column:bh;size:66;not null"`
 	ContractAddress string `gorm:"size:66;not null"`
 	Topic0          string `gorm:"size:66;not null"`
 	Topic1          string `gorm:"size:66"`

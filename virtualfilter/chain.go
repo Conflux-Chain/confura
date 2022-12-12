@@ -2,19 +2,18 @@ package virtualfilter
 
 import (
 	"container/list"
-	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 )
 
 var (
-	errRevertedBlockNotMatched  = errors.New("reverted block not matched")
-	errRewindBlockNotFound      = errors.New("rewind block not found")
-	errFilterBlockAlreadyExists = errors.New("filter block already exists")
-	errBadFilterCursor          = errors.New("bad filter cursor")
+	errRevertedBlockNotMatched = errors.New("reverted block not matched")
+	errRewindBlockNotFound     = errors.New("rewind block not found")
+	errBadFilterCursor         = errors.New("bad filter cursor")
 )
 
 // parseFilterChanges parses filter chagnes to return multiple linked lists
@@ -172,7 +171,7 @@ func (fc *FilterChain) Extend(extended *list.List) error {
 		nblock := ele.Value.(*FilterBlock)
 
 		if fc.exists(nblock.blockHash) {
-			return errFilterBlockAlreadyExists
+			return errors.Errorf("filter block with hash %v already exists", nblock.blockHash)
 		}
 
 		fc.PushBack(nblock)
