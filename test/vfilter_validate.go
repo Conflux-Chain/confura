@@ -83,11 +83,11 @@ func (validator *VFValidator) validateFilterChanges() {
 
 	validator.doValidate(fnFilter, infuraFilter, func(calibrate, validate, reset func() error) {
 		for {
-			var valErr error // validation error
-
 			if err := calibrate(); err != nil {
-				logrus.WithError(err).Error("Filter validator failed to calibrate filter changes")
+				logrus.WithError(err).Error("Virtual filter validator failed to calibrate filter changes")
 			}
+
+			var valErr error // validation error
 
 			select {
 			case fnlogs := <-fnCh:
@@ -100,16 +100,14 @@ func (validator *VFValidator) validateFilterChanges() {
 					infuraCtx.rBuf.Enqueue(&inflogs[i])
 				}
 				valErr = validate()
-			case err := <-fnCtx.errCh:
-				logrus.WithError(err).Error("full node filter validator error")
+			case <-fnCtx.errCh:
 				reset()
-			case err := <-infuraCtx.errCh:
-				logrus.WithError(err).Error("infura filter validator error")
+			case <-infuraCtx.errCh:
 				reset()
 			}
 
 			if valErr != nil {
-				logrus.WithError(valErr).Error("Filter validator failed to validate filter changes")
+				logrus.WithError(valErr).Error("Virtual filter validator validation error")
 			}
 		}
 	})
@@ -137,17 +135,16 @@ func (validator *VFValidator) pollFilterChangesWithContext(vfCtx *vfValidationCo
 			}
 
 			fc, err := vfCtx.w3c.Filter.GetFilterChanges(*fid)
-			if err != nil {
-				logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator validation error")
-
-				if vfCtx.setStatus(false) {
-					vfCtx.errCh <- err
-				}
-
-				break
+			if err == nil {
+				vfCtx.notify(fc.Logs)
+				continue
 			}
 
-			vfCtx.notify(fc.Logs)
+			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to poll changes")
+
+			if vfCtx.setStatus(false) {
+				vfCtx.errCh <- err
+			}
 		}
 	}
 }
@@ -367,7 +364,7 @@ func (ctx *vfValidationContext) notify(result interface{}) bool {
 	case 0: // sub.channel<-
 		return true
 	case 1: // never blocking for queue overflow
-		ctx.errCh <- errors.New("queue overflow")
+		ctx.errCh <- errors.New("buffer queue overflow")
 		return false
 	}
 
