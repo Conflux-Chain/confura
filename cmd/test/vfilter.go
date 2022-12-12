@@ -14,7 +14,7 @@ var (
 	vfTestCmd = &cobra.Command{
 		Use:   "vf",
 		Short: "validate if filter changes from virtual filter service complies with fullnode",
-		Run:   startVFtest,
+		Run:   startVFTest,
 	}
 )
 
@@ -36,7 +36,7 @@ func init() {
 	Cmd.AddCommand(vfTestCmd)
 }
 
-func startVFtest(cmd *cobra.Command, args []string) {
+func startVFTest(cmd *cobra.Command, args []string) {
 	if len(vfValidConf.FullnodeRpcEndpoint) == 0 || len(vfValidConf.InfuraRpcEndpoint) == 0 {
 		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for virtual filter validation")
 	}

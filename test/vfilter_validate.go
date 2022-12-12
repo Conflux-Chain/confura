@@ -18,7 +18,7 @@ import (
 
 const (
 	// default channel buffer size for virtual filter validation
-	vfValidChBufferSize = 1000
+	vfValidChBufferSize = 100
 )
 
 // VFValidConfig validation config for virtual filter
@@ -62,11 +62,11 @@ func (validator *VFValidator) Destroy() {
 }
 
 func (validator *VFValidator) validateFilterChanges() {
-	var fnCh, infuraCh chan []*types.Log
+	var fnCh, infuraCh chan []types.Log
 	var fnCtx, infuraCtx *vfValidationContext
 
 	fnFilter := func() *vfValidationContext { // fullnode
-		fnCh = make(chan []*types.Log, vfValidChBufferSize)
+		fnCh = make(chan []types.Log, vfValidChBufferSize)
 		fnCtx = newVFValidationContext(validator.fn, fnCh)
 		go validator.pollFilterChangesWithContext(fnCtx)
 
@@ -74,7 +74,7 @@ func (validator *VFValidator) validateFilterChanges() {
 	}
 
 	infuraFilter := func() *vfValidationContext { // infura
-		infuraCh = make(chan []*types.Log, vfValidChBufferSize)
+		infuraCh = make(chan []types.Log, vfValidChBufferSize)
 		infuraCtx = newVFValidationContext(validator.infura, infuraCh)
 		go validator.pollFilterChangesWithContext(infuraCtx)
 
@@ -92,12 +92,12 @@ func (validator *VFValidator) validateFilterChanges() {
 			select {
 			case fnlogs := <-fnCh:
 				for i := range fnlogs {
-					fnCtx.rBuf.Enqueue(fnlogs[i])
+					fnCtx.rBuf.Enqueue(&fnlogs[i])
 				}
 				valErr = validate()
 			case inflogs := <-infuraCh:
 				for i := range inflogs {
-					fnCtx.rBuf.Enqueue(inflogs[i])
+					infuraCtx.rBuf.Enqueue(&inflogs[i])
 				}
 				valErr = validate()
 			case err := <-fnCtx.errCh:
@@ -124,7 +124,7 @@ func (validator *VFValidator) pollFilterChangesWithContext(vfCtx *vfValidationCo
 	for {
 		fid, err := vfCtx.w3c.Filter.NewLogFilter(&types.FilterQuery{})
 		if err != nil {
-			logger.WithError(err).Error("Virtual filter validator failed to new log filter")
+			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to new log filter")
 			time.Sleep(time.Second * 1)
 			continue
 		}
@@ -138,7 +138,7 @@ func (validator *VFValidator) pollFilterChangesWithContext(vfCtx *vfValidationCo
 
 			fc, err := vfCtx.w3c.Filter.GetFilterChanges(*fid)
 			if err != nil {
-				logger.WithError(err).Error("Virtual filter validator validation error")
+				logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator validation error")
 
 				if vfCtx.setStatus(false) {
 					vfCtx.errCh <- err
@@ -221,7 +221,7 @@ func (validator *VFValidator) validateWithContext(fnCtx, infuraCtx *vfValidation
 	})
 
 	if fnBufSize == 0 || infuraBufSize == 0 {
-		logger.Debug("Pubsub validator validation skipped due to no enough data")
+		logger.Debug("Virtual filter validator validation skipped due to no enough data")
 		return nil
 	}
 
