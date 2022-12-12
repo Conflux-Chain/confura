@@ -107,7 +107,7 @@ func (validator *VFValidator) validateFilterChanges() {
 			}
 
 			if valErr != nil {
-				logrus.WithError(valErr).Error("Virtual filter validator validation error")
+				logrus.WithError(valErr).Error("Virtual filter validation error")
 			}
 		}
 	})
@@ -218,7 +218,7 @@ func (validator *VFValidator) validateWithContext(fnCtx, infuraCtx *vfValidation
 	})
 
 	if fnBufSize == 0 || infuraBufSize == 0 {
-		logger.Debug("Virtual filter validator validation skipped due to no enough data")
+		logger.Debug("Virtual filter validation skipped due to no enough data")
 		return nil
 	}
 
@@ -236,7 +236,7 @@ func (validator *VFValidator) validateWithContext(fnCtx, infuraCtx *vfValidation
 			logrus.WithFields(logrus.Fields{
 				"fnVal":     fnValStr,
 				"infuraVal": infuraValStr,
-			}).Error("Virtual filter validator validation result not matched")
+			}).Error("Virtual filter validation result not matched")
 
 			return errResultNotMatched
 		}
@@ -245,7 +245,7 @@ func (validator *VFValidator) validateWithContext(fnCtx, infuraCtx *vfValidation
 		infuraVal = infuraCtx.rBuf.Peek()
 	}
 
-	logger.Debug("Virtual filter validator validation passed")
+	logger.Debug("Virtual filter validation passed")
 
 	return nil
 }
