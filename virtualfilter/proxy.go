@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -231,6 +232,8 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) (bool, error) {
 
 	fchanges, err := p.client.Filter.GetFilterChanges(p.fid)
 	if err != nil {
+		logger.WithError(err).Info("Filter proxy failed to poll filter changes")
+
 		// proxy filter not found by full node? this may be due to full node reboot.
 		if IsFilterNotFoundError(err) {
 			logger.WithError(err).Info("Proxy filter already removed on full node side")
@@ -244,12 +247,16 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) (bool, error) {
 
 		logger.WithFields(logrus.Fields{
 			"delayedDuration": duration,
-		}).WithError(err).Error("Filter proxy failed to poll filter changes due to too long delays")
+		}).WithError(err).Error("Filter proxy failed to poll filter changes for too long delays")
 		return false, err
 	}
 
 	// merge the filter changes
 	if err = p.merge(fchanges); err != nil {
+		// logging the invalid polled filter changes for debug
+		fcJsonStr, _ := json.Marshal(fchanges)
+		logger.WithField("filterChanges", string(fcJsonStr)).Info("Invalid filter changes logs to merge")
+
 		logger.WithError(err).Error("Filter proxy failed to merge filter changes")
 		return false, err
 	}

@@ -215,7 +215,7 @@ func (fs *FilterSystem) loadOrNewFnProxy(shutdownCtx cmdutil.GracefulShutdownCon
 
 // filterLogs creates a slice of logs matching the given criteria.
 func filterLogs(logs []types.Log, crit *types.FilterQuery) []types.Log {
-	var ret []types.Log
+	ret := make([]types.Log, 0, len(logs))
 
 	for i := range logs {
 		if crit.FromBlock != nil && crit.FromBlock.Int64() >= 0 && uint64(*crit.FromBlock) > logs[i].BlockNumber {
