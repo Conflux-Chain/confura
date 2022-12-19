@@ -272,7 +272,7 @@ func (validator *VFValidator) doCalibrate(fnCtx, infuraCtx *vfValidationContext)
 		"fnStartPos":     i,
 		"infuraStartPos": j,
 		"commonLength":   l,
-	}).Debug("Virtual filter validator found first common subarray joint points")
+	}).Debug("Virtual filter validator searching first common subarray joint points...")
 
 	// left trim elements until first non-common element from ring buffer
 	if l >= minSubSize {

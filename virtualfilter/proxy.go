@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"sync/atomic"
@@ -230,7 +231,13 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) (bool, error) {
 		"proxyContext":  p.proxyContext,
 	})
 
-	fchanges, err := p.client.Filter.GetFilterChanges(p.fid)
+	// set as much timeout as possible for more fault tolerance
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), maxPollingDelayDuration)
+	defer cancel()
+
+	// fchanges, err := p.client.Filter.GetFilterChanges(p.fid)
+	var fchanges *types.FilterChanges
+	err := p.client.Filter.CallContext(timeoutCtx, &fchanges, "eth_getFilterChanges", p.fid)
 	if err != nil {
 		logger.WithError(err).Info("Filter proxy failed to poll filter changes")
 

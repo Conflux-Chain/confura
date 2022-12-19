@@ -302,6 +302,17 @@ node:
 #     - trace_transaction
 #     # parity RPC
 #     - parity_getBlockReceipts
+#     # pubsub RPC
+#     - cfx_subscribe
+#     - cfx_unsubscribe
+#     - eth_subscribe
+#     - eth_unsubscribe
+#     # filter API
+#     - eth_newFilter
+#     - eth_newBlockFilter
+#     - eth_newPendingTransactionFilter
+#     - eth_uninstallFilter
+#     - eth_getFilterChanges
 
 # # Virtual filters configurations
 # virtualFilters:
