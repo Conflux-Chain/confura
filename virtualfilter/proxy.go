@@ -287,35 +287,13 @@ func (p *proxyStub) pollOnce(lastPollingTime *time.Time) (bool, error) {
 }
 
 func (p *proxyStub) merge(changes *types.FilterChanges) error {
-	chainedBlocksList := parseFilterChanges(changes)
-	if len(chainedBlocksList) == 0 {
-		return nil
-	}
-
 	metricTimer := metrics.Registry.VirtualFilter.PersistFilterChanges(p.client.NodeName(), "memory")
 	defer metricTimer.Update()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// update the virtual filter blockchain
-	for i := range chainedBlocksList {
-		if head := chainedBlocksList[i].Front(); head.Value.(*FilterBlock).reorg {
-			// reorg the chain
-			if err := p.chain.Reorg(chainedBlocksList[i]); err != nil {
-				return errors.WithMessage(err, "failed to reorg filter chain")
-			}
-
-			continue
-		}
-
-		// extend the chain
-		if err := p.chain.Extend(chainedBlocksList[i]); err != nil {
-			return errors.WithMessage(err, "failed to extend filter chain")
-		}
-	}
-
-	return nil
+	return p.chain.Merge(changes)
 }
 
 // close closes the proxy so that new shared proxy filter can be recreated
