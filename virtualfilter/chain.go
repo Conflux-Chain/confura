@@ -139,9 +139,36 @@ func NewFilterChain(maxFilterBlocks int) *FilterChain {
 	}
 
 	// init root node
+	fc.root = FilterNode{chain: fc}
 	fc.root.prev, fc.root.next = &fc.root, &fc.root
 
 	return fc
+}
+
+func (fc *FilterChain) Merge(changes *types.FilterChanges) error {
+	chainedBlocksList := parseFilterChanges(changes)
+	if len(chainedBlocksList) == 0 {
+		return nil
+	}
+
+	// update the virtual filter blockchain
+	for i := range chainedBlocksList {
+		if head := chainedBlocksList[i].Front(); head.Value.(*FilterBlock).reorg {
+			// reorg the chain
+			if err := fc.Reorg(chainedBlocksList[i]); err != nil {
+				return errors.WithMessage(err, "failed to reorg filter chain")
+			}
+
+			continue
+		}
+
+		// extend the chain
+		if err := fc.Extend(chainedBlocksList[i]); err != nil {
+			return errors.WithMessage(err, "failed to extend filter chain")
+		}
+	}
+
+	return nil
 }
 
 func (fc *FilterChain) Reorg(reverted *list.List) error {
