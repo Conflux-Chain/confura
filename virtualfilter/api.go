@@ -22,10 +22,11 @@ var (
 
 // FilterApi offers support to proxy through full nodes to create and manage filters.
 type FilterApi struct {
-	sys       *FilterSystem
-	filtersMu sync.Mutex
-	filters   map[rpc.ID]*Filter
-	clients   util.ConcurrentMap
+	sys         *FilterSystem
+	filtersMu   sync.Mutex
+	filters     map[rpc.ID]*Filter
+	clients     util.ConcurrentMap
+	filterStats [FilterTypeLastIndex]int64
 }
 
 // NewFilterApi returns a new FilterApi instance.
@@ -260,6 +261,7 @@ func (api *FilterApi) addFilter(id rpc.ID, filter *Filter) {
 	api.filtersMu.Lock()
 	defer api.filtersMu.Unlock()
 
+	api.filterStats[filter.typ]++
 	api.filters[id] = filter
 	api.metricSessionCount(filter.typ, filter.del.nodeUrl)
 }
@@ -271,6 +273,7 @@ func (api *FilterApi) delFilter(id rpc.ID) (*Filter, bool) {
 	f, found := api.filters[id]
 	if found {
 		delete(api.filters, id)
+		api.filterStats[f.typ]--
 		api.metricSessionCount(f.typ, f.del.nodeUrl)
 	}
 
@@ -314,6 +317,6 @@ func (api *FilterApi) metricSessionCount(ft FilterType, nodeUrl string) {
 	}
 
 	if gauge != nil {
-		gauge.Update(int64(len(api.filters)))
+		gauge.Update(api.filterStats[ft])
 	}
 }
