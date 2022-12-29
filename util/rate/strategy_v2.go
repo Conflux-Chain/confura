@@ -43,16 +43,16 @@ func (s *StrategyV2) UnmarshalJSON(data []byte) error {
 		return errors.WithMessage(err, "malformed json for limit rule sets")
 	}
 
-	// unmarshal each rule set per to limit algorithm type
+	// append each rule set per to limit algorithm type
 	for _, rs := range tmp.RuleSets {
 		switch rs.Algo {
 		case LimitAlgoTimeWindow:
-			if err := s.unmarshalTimeWindowRuleSet(rs.Rules); err != nil {
-				return err
+			if err := s.appendTimeWindowRuleSet(rs.Rules); err != nil {
+				return errors.WithMessage(err, "invalid time window rule sets")
 			}
 		case LimitAlgoTokenBucket:
-			if err := s.unmarshalTokenBucketRuleSet(rs.Rules); err != nil {
-				return err
+			if err := s.appendTokenBucketRuleSet(rs.Rules); err != nil {
+				return errors.WithMessage(err, "invalid token bucket rule sets")
 			}
 		default:
 			return errors.New("invalid limit algorithm")
@@ -62,28 +62,31 @@ func (s *StrategyV2) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (s *StrategyV2) unmarshalTimeWindowRuleSet(data json.RawMessage) error {
-	var valPairs []int64
-	if err := json.Unmarshal(data, &valPairs); err != nil {
+func (s *StrategyV2) appendTimeWindowRuleSet(rawJson json.RawMessage) error {
+	kvMaps := make(map[string][]int64)
+	if err := json.Unmarshal(rawJson, &kvMaps); err != nil {
 		return errors.WithMessage(err, "malformed json for time window limit option")
 	}
 
-	if len(valPairs) != 2 {
-		return errors.New("invalid limit option (must be integer quota/interval pairs)")
+	twoptions := make(map[string]TimeWindowOption)
+	for name, value := range kvMaps {
+		if len(value) != 2 {
+			return errors.New("invalid limit option (must be quota/interval pairs)")
+		}
+
+		twoptions[name] = TimeWindowOption{
+			Quota:    value[0],
+			Interval: time.Duration(value[1]) * time.Second,
+		}
 	}
 
-	twoption := TimeWindowOption{
-		Quota:    valPairs[0],
-		Interval: time.Duration(valPairs[1]) * time.Second,
-	}
-
-	s.RuleSets = append(s.RuleSets, NewTimeWindowRuleSet(twoption))
+	s.RuleSets = append(s.RuleSets, NewTimeWindowRuleSet(twoptions))
 	return nil
 }
 
-func (s *StrategyV2) unmarshalTokenBucketRuleSet(data json.RawMessage) error {
+func (s *StrategyV2) appendTokenBucketRuleSet(rawJson json.RawMessage) error {
 	kvMaps := make(map[string][]int)
-	if err := json.Unmarshal(data, &kvMaps); err != nil {
+	if err := json.Unmarshal(rawJson, &kvMaps); err != nil {
 		return errors.WithMessage(err, "malformed json for token bucket limit option")
 	}
 
@@ -106,11 +109,11 @@ type TimeWindowOption struct {
 }
 
 type TimeWindowRuleSet struct {
-	Rules TimeWindowOption
+	Rules map[string]TimeWindowOption // resource => limit rule
 }
 
-func NewTimeWindowRuleSet(option TimeWindowOption) TimeWindowRuleSet {
-	return TimeWindowRuleSet{Rules: option}
+func NewTimeWindowRuleSet(options map[string]TimeWindowOption) TimeWindowRuleSet {
+	return TimeWindowRuleSet{Rules: options}
 }
 
 type TokenBucketOption struct {
@@ -126,7 +129,7 @@ func NewTokenBucketOption(r int, b int) TokenBucketOption {
 }
 
 type TokenBucketRuleSet struct {
-	Rules map[string]TokenBucketOption
+	Rules map[string]TokenBucketOption // resource => limit rule
 }
 
 func NewTokenBucketRuleSet(options map[string]TokenBucketOption) TokenBucketRuleSet {

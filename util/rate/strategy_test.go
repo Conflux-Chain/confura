@@ -13,7 +13,7 @@ func TestUnmarshalStrategy(t *testing.T) {
 	"rulesets":[
 		{
 			"algo": "time_window",
-			"rules": [100000,86400]
+			"rules": {"rpc_all":[100000,86400]}
 		},
 		{
 			"algo": "token_bucket",
@@ -27,9 +27,11 @@ func TestUnmarshalStrategy(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(stg.RuleSets), 2)
 
-	assert.Equal(t, stg.RuleSets[0], NewTimeWindowRuleSet(TimeWindowOption{
-		Quota:    100000,
-		Interval: 86400 * time.Second,
+	assert.Equal(t, stg.RuleSets[0], NewTimeWindowRuleSet(map[string]TimeWindowOption{
+		"rpc_all": {
+			Quota:    100000,
+			Interval: 86400 * time.Second,
+		},
 	}))
 
 	assert.Equal(t, stg.RuleSets[1], NewTokenBucketRuleSet(map[string]TokenBucketOption{
