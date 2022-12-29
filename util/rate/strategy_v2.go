@@ -9,14 +9,12 @@ import (
 	"golang.org/x/time/rate"
 )
 
-type LimitAlgoType uint8
+type LimitAlgoType string
 
 const (
 	// rate limit algorithms, only `time window` and `token bucket` are supported for now.
-	LimitAlgoUnknown LimitAlgoType = iota
-	LimitAlgoTimeWindow
-	LimitAlgoTokenBucket
-	LimitAlgoLastIndex
+	LimitAlgoTimeWindow  LimitAlgoType = "time_window"
+	LimitAlgoTokenBucket LimitAlgoType = "token_bucket"
 )
 
 // Strategy rate limit strategy
@@ -24,13 +22,15 @@ type StrategyV2 struct {
 	ID   uint32 // strategy ID
 	Name string // strategy name
 
-	RuleSets []LimitRuleSet // limit rule sets
-	MD5      [md5.Size]byte `json:"-"` // config data fingerprint
+	// limit rule sets of type `TimeWindowRuleSet` or `TokenBucketRuleSet`
+	RuleSets []interface{}
+
+	MD5 [md5.Size]byte `json:"-"` // config data fingerprint
 }
 
 type jsonUnmarshalUsedStrategy struct {
 	RuleSets []struct {
-		baseLimitRuleSet
+		Algo  LimitAlgoType
 		Rules json.RawMessage
 	}
 }
@@ -59,7 +59,6 @@ func (s *StrategyV2) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	s.MD5 = md5.Sum(data)
 	return nil
 }
 
@@ -101,37 +100,17 @@ func (s *StrategyV2) unmarshalTokenBucketRuleSet(data json.RawMessage) error {
 	return nil
 }
 
-type LimitRuleSet interface {
-	Algorithm() LimitAlgoType
-}
-
-type baseLimitRuleSet struct {
-	Algo LimitAlgoType // used algorithm
-}
-
-func newBaseLimitRuleSet(algo LimitAlgoType) baseLimitRuleSet {
-	return baseLimitRuleSet{Algo: algo}
-}
-
-func (rs baseLimitRuleSet) Algorithm() LimitAlgoType {
-	return rs.Algo
-}
-
 type TimeWindowOption struct {
 	Interval time.Duration
 	Quota    int64
 }
 
 type TimeWindowRuleSet struct {
-	baseLimitRuleSet
 	Rules TimeWindowOption
 }
 
 func NewTimeWindowRuleSet(option TimeWindowOption) TimeWindowRuleSet {
-	return TimeWindowRuleSet{
-		baseLimitRuleSet: newBaseLimitRuleSet(LimitAlgoTimeWindow),
-		Rules:            option,
-	}
+	return TimeWindowRuleSet{Rules: option}
 }
 
 type TokenBucketOption struct {
@@ -147,13 +126,9 @@ func NewTokenBucketOption(r int, b int) TokenBucketOption {
 }
 
 type TokenBucketRuleSet struct {
-	baseLimitRuleSet
 	Rules map[string]TokenBucketOption
 }
 
 func NewTokenBucketRuleSet(options map[string]TokenBucketOption) TokenBucketRuleSet {
-	return TokenBucketRuleSet{
-		baseLimitRuleSet: newBaseLimitRuleSet(LimitAlgoTokenBucket),
-		Rules:            options,
-	}
+	return TokenBucketRuleSet{Rules: options}
 }

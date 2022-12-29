@@ -1,7 +1,6 @@
 package rate
 
 import (
-	"crypto/md5"
 	"encoding/json"
 	"testing"
 	"time"
@@ -13,11 +12,11 @@ func TestUnmarshalStrategy(t *testing.T) {
 	stgJsonStr := `{
 	"rulesets":[
 		{
-			"algo":1,
+			"algo": "time_window",
 			"rules": [100000,86400]
 		},
 		{
-			"algo":2,
+			"algo": "token_bucket",
 			"rules": {"rpc_all":[100,1000],"cfx_call":[10,200]}
 		}
 	]
@@ -37,6 +36,4 @@ func TestUnmarshalStrategy(t *testing.T) {
 		"rpc_all":  NewTokenBucketOption(100, 1000),
 		"cfx_call": NewTokenBucketOption(10, 200),
 	}))
-
-	assert.Equal(t, stg.MD5, md5.Sum(([]byte)(stgJsonStr)))
 }
