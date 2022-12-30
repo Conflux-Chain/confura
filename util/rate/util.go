@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	LimitKeyLength = 16
+	LimitKeyLength = 32
 )
 
 func GenerateRandomLimitKey(limitType int) (string, error) {
