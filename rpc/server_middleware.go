@@ -11,6 +11,7 @@ import (
 	"github.com/scroll-tech/rpc-gateway/util/rpc/handlers"
 	"github.com/scroll-tech/rpc-gateway/util/rpc/middlewares"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -20,6 +21,7 @@ const (
 
 // go-rpc-provider only supports static middlewares for RPC server.
 func init() {
+	viper.SetDefault("rpc.loadBalancerMode", "consistentHashing")
 	// middlewares executed in order
 
 	// panic recovery
@@ -70,6 +72,7 @@ func httpMiddleware(registry *rate.Registry, clientProvider interface{}) handler
 }
 
 func clientMiddleware(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
+	loadBalancerMode := viper.GetString("rpc.loadBalancerMode")
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
 		var client interface{}
 		var err error
@@ -82,11 +85,20 @@ func clientMiddleware(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 				client, err = cfxProvider.GetClientByIP(ctx)
 			}
 		} else if ethProvider, ok := ctx.Value(ctxKeyClientProvider).(*node.EthClientProvider); ok {
-			switch msg.Method {
-			case "eth_getLogs":
-				client, err = ethProvider.GetClientByIPGroup(ctx, node.GroupEthLogs)
-			default:
-				client, err = ethProvider.GetClientByIP(ctx)
+			if (loadBalancerMode == "consistentHashing") {
+				switch msg.Method {
+				case "eth_getLogs":
+					client, err = ethProvider.GetClientByIPGroup(ctx, node.GroupEthLogs)
+				default:
+					client, err = ethProvider.GetClientByIP(ctx)
+				}
+			} else {
+				switch msg.Method{
+				case "eth_getLogs":
+					client, err = ethProvider.GetClientRandomByGroup(node.GroupEthLogs)
+				default:
+					client, err = ethProvider.GetClientRandom()
+				}
 			}
 		} else {
 			return next(ctx, msg)

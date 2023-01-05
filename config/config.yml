@@ -23,6 +23,8 @@ rpc:
   # throttling:
   #   # Redis used for throttling based on reference counter
   #   redisUrl: redis://<user>:<pass>@localhost:6379/<db>
+  # Available modes are `consistentHashing` and `random`. Default is `consistentHashing`
+  loadBalancerMode: consistentHashing
 
 # EVM space RPC proxy server configurations
 ethrpc:

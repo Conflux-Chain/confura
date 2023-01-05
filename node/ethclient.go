@@ -53,8 +53,12 @@ func (p *EthClientProvider) GetClientByIPGroup(ctx context.Context, group Group)
 }
 
 func (p *EthClientProvider) GetClientRandom() (*Web3goClient, error) {
+	return p.GetClientRandomByGroup(GroupEthHttp);
+}
+
+func (p *EthClientProvider) GetClientRandomByGroup(group Group) (*Web3goClient, error) {
 	key := fmt.Sprintf("random_key_%v", rand.Int())
-	client, err := p.getClient(key, GroupEthHttp)
+	client, err := p.getClient(key, group)
 
 	return client.(*Web3goClient), err
 }
