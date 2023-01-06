@@ -26,7 +26,7 @@ func TestUnmarshalStrategy(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(stg.LimitOptions))
 
-	assert.Equal(t, stg.LimitOptions["rpc_all_qps"], NewTokenBucketOption(100, 1000))
+	assert.Equal(t, NewTokenBucketOption(100, 1000), stg.LimitOptions["rpc_all_qps"])
 
 	fwopt := FixedWindowOption{Interval: 24 * time.Hour, Quota: 100000}
 	assert.Equal(t, fwopt, stg.LimitOptions["rpc_all_daily"])
