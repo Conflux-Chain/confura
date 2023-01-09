@@ -2,10 +2,11 @@ package mysql
 
 import (
 	"crypto/md5"
+	"encoding/json"
 	"strconv"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/rate"
+	rate "github.com/Conflux-Chain/confura/util/rate/v2"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -144,16 +145,12 @@ func (cs *confStore) loadRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
 	}
 
 	data := []byte(cfg.Value)
+	stg := rate.NewStrategy(cfg.ID, name)
 
-	ruleOpts, err := rate.JsonUnmarshalStrategyRules(data)
-	if err != nil {
+	if err := json.Unmarshal(data, stg); err != nil {
 		return nil, err
 	}
 
-	return &rate.Strategy{
-		ID:    cfg.ID,
-		Name:  name,
-		Rules: ruleOpts,
-		MD5:   md5.Sum(data), // calculate fingerprint
-	}, nil
+	stg.MD5 = md5.Sum(data) // calculate fingerprint
+	return stg, nil
 }
