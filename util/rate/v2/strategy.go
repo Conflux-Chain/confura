@@ -1,4 +1,4 @@
-package v3
+package v2
 
 import (
 	"crypto/md5"
@@ -15,6 +15,21 @@ const (
 	// rate limit algorithms, only `fixed_window` and `token bucket` are supported for now.
 	LimitAlgoFixedWindow LimitAlgoType = "fixed_window"
 	LimitAlgoTokenBucket LimitAlgoType = "token_bucket"
+)
+
+type LimitType int
+
+const (
+	// rate limit types, only `ip` or `key` are supported for now.
+	LimitTypeByKey LimitType = iota
+	LimitTypeByIp
+)
+
+const (
+	// pre-defined default strategy name
+	DefaultStrategy = "default"
+	// pre-defined strategy config key prefix
+	ConfigStrategyPrefix = "ratelimit.strategy."
 )
 
 // Strategy rate limit strategy
