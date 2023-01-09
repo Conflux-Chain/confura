@@ -14,7 +14,7 @@ import (
 	"github.com/Conflux-Chain/confura/rpc"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/store/redis"
-	rate "github.com/Conflux-Chain/confura/util/rate/v2"
+	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/relay"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"

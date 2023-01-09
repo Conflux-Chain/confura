@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Conflux-Chain/confura/node"
-	rate "github.com/Conflux-Chain/confura/util/rate/v2"
+	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/confura/util/rpc/middlewares"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"

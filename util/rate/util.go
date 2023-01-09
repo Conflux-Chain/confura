@@ -1,7 +1,6 @@
 package rate
 
 import (
-	"encoding/json"
 	"math/rand"
 	"time"
 
@@ -13,7 +12,7 @@ const (
 	LimitKeyLength = 32
 )
 
-func GenerateRandomLimitKey(limitType int) (string, error) {
+func GenerateRandomLimitKey(limitType LimitType) (string, error) {
 	data := make([]byte, LimitKeyLength)
 
 	source := rand.NewSource(time.Now().UnixNano())
@@ -28,22 +27,4 @@ func GenerateRandomLimitKey(limitType int) (string, error) {
 	secretb[0] = '0' + uint8(limitType)
 
 	return string(secretb), nil
-}
-
-func JsonUnmarshalStrategyRules(data []byte) (map[string]Option, error) {
-	ruleMap := make(map[string][]int)
-	if err := json.Unmarshal(data, &ruleMap); err != nil {
-		return nil, errors.WithMessage(err, "malformed json string")
-	}
-
-	rules := make(map[string]Option)
-	for name, value := range ruleMap {
-		if len(value) != 2 {
-			return nil, errors.New("invalid limit option (must be rate/burst integer pairs)")
-		}
-
-		rules[name] = NewOption(value[0], value[1])
-	}
-
-	return rules, nil
 }

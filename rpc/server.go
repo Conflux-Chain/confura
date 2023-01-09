@@ -3,7 +3,7 @@ package rpc
 import (
 	infuraNode "github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc/handler"
-	rate "github.com/Conflux-Chain/confura/util/rate/v2"
+	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/sirupsen/logrus"
 )

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	rate "github.com/Conflux-Chain/confura/util/rate/v2"
+	"github.com/Conflux-Chain/confura/util/rate"
 	"gorm.io/gorm"
 )
 
