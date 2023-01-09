@@ -20,8 +20,11 @@ const (
 // via the RPC interface. If the module list is empty, all RPC API endpoints designated
 // public will be exposed.
 func MustNewNativeSpaceServer(
-	router infuraNode.Router, gashandler *handler.GasStationHandler,
-	exposedModules []string, option ...CfxAPIOption,
+	registry *rate.Registry,
+	router infuraNode.Router,
+	gashandler *handler.GasStationHandler,
+	exposedModules []string,
+	option ...CfxAPIOption,
 ) *rpc.Server {
 	// retrieve all available core space rpc apis
 	clientProvider := infuraNode.NewCfxClientProvider(router)
@@ -34,7 +37,7 @@ func MustNewNativeSpaceServer(
 		)
 	}
 
-	middleware := httpMiddleware(rate.DefaultRegistryCfx, clientProvider)
+	middleware := httpMiddleware(registry, clientProvider)
 
 	return rpc.MustNewServer(nativeSpaceRpcServerName, exposedApis, middleware)
 }
@@ -43,7 +46,10 @@ func MustNewNativeSpaceServer(
 // `exposedModules` is a list of API modules to expose via the RPC interface. If the module
 // list is empty, all RPC API endpoints designated public will be exposed.
 func MustNewEvmSpaceServer(
-	router infuraNode.Router, exposedModules []string, option ...EthAPIOption,
+	registry *rate.Registry,
+	router infuraNode.Router,
+	exposedModules []string,
+	option ...EthAPIOption,
 ) *rpc.Server {
 	// retrieve all available evm space rpc apis
 	clientProvider := infuraNode.NewEthClientProvider(router)
@@ -59,7 +65,7 @@ func MustNewEvmSpaceServer(
 		)
 	}
 
-	middleware := httpMiddleware(rate.DefaultRegistryEth, clientProvider)
+	middleware := httpMiddleware(registry, clientProvider)
 
 	return rpc.MustNewServer(evmSpaceRpcServerName, exposedApis, middleware)
 }

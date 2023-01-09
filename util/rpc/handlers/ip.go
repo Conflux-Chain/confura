@@ -94,14 +94,6 @@ func GetIPAddress(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-func RealIP(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := GetIPAddress(r)
-		ctx := context.WithValue(r.Context(), CtxKeyRealIP, ip)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
 func GetIPAddressFromContext(ctx context.Context) (string, bool) {
 	val, ok := ctx.Value(CtxKeyRealIP).(string)
 	return val, ok

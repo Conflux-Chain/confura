@@ -36,9 +36,9 @@ func NewRateLimitStore(db *gorm.DB) *RateLimitStore {
 	}
 }
 
-func (rls *RateLimitStore) AddRateLimit(sid uint32, limitType int, limitKey string) error {
+func (rls *RateLimitStore) AddRateLimit(sid uint32, limitType rate.LimitType, limitKey string) error {
 	ratelimit := &RateLimit{
-		SID: sid, LimitType: limitType, LimitKey: limitKey,
+		SID: sid, LimitType: int(limitType), LimitKey: limitKey,
 	}
 
 	return rls.db.Create(ratelimit).Error
@@ -70,7 +70,7 @@ func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res [
 	rs := db.FindInBatches(&ratelimits, 200, func(tx *gorm.DB, batch int) error {
 		for i := range ratelimits {
 			res = append(res, &rate.KeyInfo{
-				Type: ratelimits[i].LimitType,
+				Type: rate.LimitType(ratelimits[i].LimitType),
 				Key:  ratelimits[i].LimitKey,
 				SID:  ratelimits[i].SID,
 			})

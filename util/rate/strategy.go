@@ -2,196 +2,140 @@ package rate
 
 import (
 	"crypto/md5"
-	"fmt"
+	"encoding/json"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/pkg/errors"
+	"golang.org/x/time/rate"
+)
+
+type LimitAlgoType string
+
+const (
+	// rate limit algorithms, only `fixed_window` and `token bucket` are supported for now.
+	LimitAlgoFixedWindow LimitAlgoType = "fixed_window"
+	LimitAlgoTokenBucket LimitAlgoType = "token_bucket"
+)
+
+type LimitType int
+
+const (
+	// rate limit types, only `ip` or `key` are supported for now.
+	LimitTypeByKey LimitType = iota
+	LimitTypeByIp
 )
 
 const (
-	// limit types
-	LimitTypeByKey = iota
-	LimitTypeByIp
-
+	// pre-defined default strategy name
+	DefaultStrategy = "default"
+	// pre-defined strategy config key prefix
 	ConfigStrategyPrefix = "ratelimit.strategy."
 )
 
-//  Strategy rate limit strategy
+// Strategy rate limit strategy
 type Strategy struct {
-	ID    uint32            // strategy ID
-	Name  string            // strategy name
-	Rules map[string]Option // limit rules: rule name => rule option
+	ID   uint32 // strategy ID
+	Name string // strategy name
+
+	LimitOptions map[string]interface{} // resource => limit option
 
 	MD5 [md5.Size]byte `json:"-"` // config data fingerprint
 }
 
-// LimiterSet limiter set assembled by strategy
-type LimiterSet interface {
-	Get(vc *VisitContext) (Limiter, bool)
-	GC(timeout time.Duration)
-	Update(s *Strategy)
-}
-
-// limiterCreator limiter factory method
-type limiterCreator func(option Option) Limiter
-
-type baseLimiterSet struct {
-	*Strategy // used strategy
-
-	uid      string             // unique identifier
-	lcreator limiterCreator     // limiter factory
-	limiters map[string]Limiter // limit rule => Limiter
-}
-
-func newBaseLimiterSet(uid string, s *Strategy, lcreator limiterCreator) *baseLimiterSet {
-	limiters := make(map[string]Limiter, len(s.Rules))
-
-	for name, option := range s.Rules {
-		limiters[name] = lcreator(option)
-	}
-
-	return &baseLimiterSet{
-		Strategy: s, uid: uid, lcreator: lcreator, limiters: limiters,
+func NewStrategy(id uint32, name string) *Strategy {
+	return &Strategy{
+		ID:           id,
+		Name:         name,
+		LimitOptions: make(map[string]interface{}),
 	}
 }
 
-// Get returns limiter for current visit context
-func (ls *baseLimiterSet) Get(vc *VisitContext) (Limiter, bool) {
-	l, ok := ls.limiters[vc.Resource]
-	return l, ok
+// UnmarshalJSON implements `json.Unmarshaler`
+func (s *Strategy) UnmarshalJSON(data []byte) error {
+	tmpRules := make(map[string]*LimitRule)
+	if err := json.Unmarshal(data, &tmpRules); err != nil {
+		return errors.WithMessage(err, "malformed json format")
+	}
+
+	for resource, rule := range tmpRules {
+		s.LimitOptions[resource] = rule.Option
+	}
+
+	return nil
 }
 
-// GC garbage collects limiter stale resources
-func (ls *baseLimiterSet) GC(timeout time.Duration) {
-	for _, l := range ls.limiters {
-		l.GC(timeout)
+// FixedWindowOption limit option for fixed window
+type FixedWindowOption struct {
+	Interval time.Duration
+	Quota    int
+}
+
+// UnmarshalJSON implements `json.Unmarshaler`
+func (fwo *FixedWindowOption) UnmarshalJSON(data []byte) error {
+	var tmp struct {
+		Interval string
+		Quota    int
+	}
+
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+
+	fwo.Quota = tmp.Quota
+
+	interval, err := time.ParseDuration(tmp.Interval)
+	if err == nil {
+		fwo.Interval = interval
+	}
+
+	return err
+}
+
+// FixedWindowOption limit option for token bucket
+type TokenBucketOption struct {
+	Rate  rate.Limit
+	Burst int
+}
+
+func NewTokenBucketOption(r, b int) TokenBucketOption {
+	return TokenBucketOption{
+		Rate:  rate.Limit(r),
+		Burst: b,
 	}
 }
 
-// Update updates with new strategy
-func (ls *baseLimiterSet) Update(s *Strategy) {
-	// remove limit rules
-	for name, option := range ls.Rules {
-		if _, ok := s.Rules[name]; !ok {
-			logrus.WithFields(logrus.Fields{
-				"limiterSetUid": ls.uid,
-				"rule":          name,
-				"option":        option,
-			}).Info("Strategy rule removed")
+// LimitRule resource limit rule
+type LimitRule struct {
+	Algo   LimitAlgoType
+	Option interface{}
+}
 
-			delete(ls.limiters, name)
+func (r *LimitRule) UnmarshalJSON(data []byte) (err error) {
+	var tmp struct {
+		Algo   LimitAlgoType
+		Option json.RawMessage
+	}
+
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+
+	r.Algo = tmp.Algo
+
+	switch tmp.Algo {
+	case LimitAlgoFixedWindow:
+		var fwopt FixedWindowOption
+		if err = json.Unmarshal(tmp.Option, &fwopt); err == nil {
+			r.Option = fwopt
 		}
-	}
-
-	// add or update limit rules
-	for name, newOption := range s.Rules {
-		logger := logrus.WithFields(logrus.Fields{
-			"limiterSetUid": ls.uid,
-			"rule":          name,
-			"option":        newOption,
-		})
-
-		option, ok := ls.Rules[name]
-		if !ok { // add
-			logger.Info("Strategy rule added")
-
-			ls.limiters[name] = ls.lcreator(newOption)
-			continue
+	case LimitAlgoTokenBucket:
+		var tbopt TokenBucketOption
+		if err = json.Unmarshal(tmp.Option, &tbopt); err == nil {
+			r.Option = tbopt
 		}
-
-		if newOption == option { // no change
-			continue
-		}
-
-		if l, ok := ls.limiters[name]; ok { // update
-			logger.Info("Strategy rule updated")
-
-			l.Update(newOption)
-		}
-	}
-}
-
-// IpLimiterSet limiting by IP address
-type IpLimiterSet struct {
-	*baseLimiterSet
-}
-
-func NewIpLimiterSet(s *Strategy) *IpLimiterSet {
-	uid := fmt.Sprintf("IpLimiterSet-%s", s.Name)
-	base := newBaseLimiterSet(uid, s, func(option Option) Limiter {
-		return NewIpLimiter(option)
-	})
-
-	return &IpLimiterSet{baseLimiterSet: base}
-}
-
-// KeyLimiterSet limiting by key
-type KeyLimiterSet struct {
-	*baseLimiterSet
-}
-
-func NewKeyLimiterSet(s *Strategy) *KeyLimiterSet {
-	uid := fmt.Sprintf("KeyLimiterSet-%s", s.Name)
-	base := newBaseLimiterSet(uid, s, func(option Option) Limiter {
-		return NewKeyLimiter(option)
-	})
-
-	return &KeyLimiterSet{baseLimiterSet: base}
-}
-
-// KeyBasedIpLimiterSet limiting by IP address yet grouped by limit key
-type KeyBasedIpLimiterSet struct {
-	*baseLimiterSet
-}
-
-func NewKeyBasedIpLimiterSet(s *Strategy) *KeyBasedIpLimiterSet {
-	uid := fmt.Sprintf("KeyBasedIpLimiterSet-%s", s.Name)
-	base := newBaseLimiterSet(uid, s, func(option Option) Limiter {
-		return newkeyBasedIpLimiter(option)
-	})
-
-	return &KeyBasedIpLimiterSet{baseLimiterSet: base}
-}
-
-// keyBasedIpLimiter limits visits per IP address grouped by limit key
-type keyBasedIpLimiter struct {
-	Option
-
-	// limit key => *IpLimiter
-	limiters map[string]*IpLimiter
-}
-
-func newkeyBasedIpLimiter(opt Option) *keyBasedIpLimiter {
-	return &keyBasedIpLimiter{
-		Option: opt, limiters: make(map[string]*IpLimiter),
-	}
-}
-
-func (ls *keyBasedIpLimiter) Allow(vc *VisitContext, n int) bool {
-	l, ok := ls.limiters[vc.Key]
-	if !ok {
-		l = NewIpLimiter(ls.Option)
-		ls.limiters[vc.Key] = l
+	default:
+		return errors.New("invalid rate limit algorithm")
 	}
 
-	return l.Allow(vc, n)
-}
-
-func (ls *keyBasedIpLimiter) GC(timeout time.Duration) {
-	for _, l := range ls.limiters {
-		l.GC(timeout)
-	}
-}
-
-func (ls *keyBasedIpLimiter) Update(opt Option) bool {
-	if ls.Rate == opt.Rate && ls.Burst == opt.Burst {
-		return false
-	}
-
-	for _, l := range ls.limiters {
-		l.Update(opt)
-	}
-
-	ls.Option = opt
-	return true
+	return err
 }

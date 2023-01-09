@@ -83,6 +83,8 @@ func startRpcService(*cobra.Command, []string) {
 
 // startNativeSpaceRpcServer starts core space RPC server
 func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+	var rateReg *rate.Registry
+
 	router := node.Factory().CreateRouter()
 	option := rpc.CfxAPIOption{
 		Relayer: relay.MustNewTxnRelayerFromViper(),
@@ -91,6 +93,12 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	// initialize store handler
 	if storeCtx.CfxDB != nil {
 		option.StoreHandler = handler.NewCfxCommonStoreHandler("db", storeCtx.CfxDB, option.StoreHandler)
+
+		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyset)
+		rateReg = rate.NewRegistry(rateKeyLoader)
+
+		// periodically reload rate limit settings from db
+		go rateReg.AutoReload(15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs)
 	}
 
 	if storeCtx.CfxCache != nil {
@@ -114,16 +122,11 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 		// initialize logs api handler
 		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.CfxDB, prunedHandler)
-
-		// periodically reload rate limit settings from db
-		go rate.DefaultRegistryCfx.AutoReload(
-			15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs, storeCtx.CfxDB.LoadRateLimitKeyset,
-		)
 	}
 
 	// initialize RPC server
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
-	server := rpc.MustNewNativeSpaceServer(router, gasHandler, exposedModules, option)
+	server := rpc.MustNewNativeSpaceServer(rateReg, router, gasHandler, exposedModules, option)
 
 	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("rpc.endpoint")
@@ -137,6 +140,8 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 // startEvmSpaceRpcServer starts evm space RPC server
 func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+	var rateReg *rate.Registry
+
 	router := node.EthFactory().CreateRouter()
 	option := rpc.EthAPIOption{
 		VirtualFilterClient: vfclient.MustNewClientFromViper(),
@@ -148,15 +153,16 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 		// initialize logs api handler
 		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB)
 
+		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyset)
+		rateReg = rate.NewRegistry(rateKeyLoader)
+
 		// periodically reload rate limit settings from db
-		go rate.DefaultRegistryEth.AutoReload(
-			15*time.Second, storeCtx.EthDB.LoadRateLimitConfigs, storeCtx.EthDB.LoadRateLimitKeyset,
-		)
+		go rateReg.AutoReload(15*time.Second, storeCtx.EthDB.LoadRateLimitConfigs)
 	}
 
 	// initialize RPC server
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
-	server := rpc.MustNewEvmSpaceServer(router, exposedModules, option)
+	server := rpc.MustNewEvmSpaceServer(rateReg, router, exposedModules, option)
 
 	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("ethrpc.endpoint")

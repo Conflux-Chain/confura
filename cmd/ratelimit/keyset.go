@@ -12,16 +12,16 @@ import (
 )
 
 type keysetCmdConfig struct {
-	Network   string // RPC network space ("cfx" or "eth")
-	Strategy  string // rate limit strategy
-	LimitKey  string // rate limit key
-	LimitType int    // rate limit type (0 - by key, 1 - by IP)
+	Network   string         // RPC network space ("cfx" or "eth")
+	Strategy  string         // rate limit strategy
+	LimitKey  string         // rate limit key
+	LimitType rate.LimitType // rate limit type (0 - by key, 1 - by IP)
 }
 
 var (
 	keysetCfg keysetCmdConfig
 
-	limitTypeMap = map[int]string{
+	limitTypeMap = map[rate.LimitType]string{
 		rate.LimitTypeByIp:  "byIp",
 		rate.LimitTypeByKey: "byKey",
 	}
@@ -101,7 +101,7 @@ func addKey(cmd *cobra.Command, args []string) {
 	logrus.WithFields(logrus.Fields{
 		"strategyID":    strategy.ID,
 		"strategyName":  strategy.Name,
-		"strategyRules": strategy.Rules,
+		"strategyRules": strategy.LimitOptions,
 		"limitKey":      limitKey,
 		"limitType":     limitTypeMap[keysetCfg.LimitType],
 	}).Info("Press the Enter Key to add new rate limit key")
@@ -262,7 +262,9 @@ func hookKeysetCmdFlags(keysetCmd *cobra.Command, hookNetwork, hookStrategy, hoo
 
 	if hookLimitType { // rate limit type
 		keysetCmd.Flags().IntVarP(
-			&keysetCfg.LimitType, "type", "t", 0, "rate limit type (0 - by Key, 1 - by IP)",
+			(*int)(&keysetCfg.LimitType),
+			"type", "t", 0,
+			"rate limit type (0 - by Key, 1 - by IP)",
 		)
 		keysetCmd.MarkFlagRequired("type")
 	}

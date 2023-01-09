@@ -1,269 +1,176 @@
 package rate
 
 import (
+	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/acl"
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
+	"github.com/Conflux-Chain/go-conflux-util/rate"
+	"github.com/Conflux-Chain/go-conflux-util/rate/http"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	DefaultStrategy       = "default"
-	LimitKeyCacheSize     = 5000
-	LimitKeyExpirationTTL = 75 * time.Second
+	GCScheduleInterval = 5 * time.Minute
 )
-
-var (
-	DefaultRegistryCfx = NewRegistry()
-	DefaultRegistryEth = NewRegistry()
-)
-
-func init() {
-	go DefaultRegistryCfx.gcPeriodically(5*time.Minute, 3*time.Minute)
-	go DefaultRegistryEth.gcPeriodically(5*time.Minute, 3*time.Minute)
-}
 
 type Registry struct {
-	mu sync.Mutex
+	*http.Registry
 
-	// available strategies: ID => *Strategy
-	strategies map[uint32]*Strategy
+	mu      sync.Mutex
+	kloader *KeyLoader
 
-	// limit key cache: limit key => *KeyInfo (nil if missing)
-	keyCache *util.ExpirableLruCache
-	// loader to retrieve keyset from store
-	keyLoader func(key string) (*KeyInfo, error)
-
-	// default IP limiter set
-	defaultLimiterSet *IpLimiterSet
-	// key based IP limiter sets: strategy ID => *KeyBasedIpLimiterSet
-	kbIpLimiterSets map[uint32]*KeyBasedIpLimiterSet
-	// key limiter sets: strategy ID => *KeyLimiterSet
-	keyLimiterSets map[uint32]*KeyLimiterSet
+	// all available strategies
+	strategies    map[string]*Strategy // strategy name => *Strategy
+	id2Strategies map[uint32]*Strategy // strategy id => *Strategy
 }
 
-func NewRegistry() *Registry {
-	cache := util.NewExpirableLruCache(LimitKeyCacheSize, LimitKeyExpirationTTL)
-	return &Registry{
-		keyCache:        cache,
-		strategies:      make(map[uint32]*Strategy),
-		kbIpLimiterSets: make(map[uint32]*KeyBasedIpLimiterSet),
-		keyLimiterSets:  make(map[uint32]*KeyLimiterSet),
+func NewRegistry(kloader *KeyLoader) *Registry {
+	m := &Registry{
+		kloader:       kloader,
+		strategies:    make(map[string]*Strategy),
+		id2Strategies: make(map[uint32]*Strategy),
 	}
+
+	m.Registry = http.NewRegistry(m)
+	go m.ScheduleGC(GCScheduleInterval)
+
+	return m
 }
 
-func (m *Registry) Get(vc *VisitContext) (Limiter, bool) {
-	if len(vc.Key) == 0 { // no limit key provided?
-		logrus.WithField("visitContext", vc).
-			Debug("Use default limiter due to no limit key provided")
+// implements `http.LimiterFactory`
 
-		return m.getDefaultLimiter(vc)
+func (r *Registry) GetGroupAndKey(
+	ctx context.Context,
+	resource string,
+) (group, key string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	limitKey, ok := handlers.GetAccessTokenFromContext(ctx)
+	if !ok || len(limitKey) == 0 {
+		// use default strategy if no limit key provided
+		return r.genDefaultGroupAndKey(ctx, resource)
 	}
 
-	if vc.Status != nil && vc.Status.Tier != acl.VipTierNone { // VIP access
-		return m.getVipLimiter(vc)
+	vip, ok := handlers.VipStatusFromContext(ctx)
+	if ok && vip != nil && vip.Tier != acl.VipTierNone {
+		// use vip strategy with corresponding tier
+		return r.genVipGroupAndKey(ctx, resource, limitKey, vip)
 	}
 
-	ki, ok := m.loadKeyInfo(vc.Key)
-	if !ok || ki == nil { // limit key not loaded or missing
-		logrus.WithFields(logrus.Fields{
-			"visitContext": vc,
-			"keyInfo":      ki,
-		}).Debug("Use default limiter due to limit key loaded failure or missing")
-
-		return m.getDefaultLimiter(vc)
+	if ki, ok := r.kloader.Load(limitKey); ok && ki != nil {
+		// use strategy with corresponding key info
+		return r.genKeyInfoGroupAndKey(ctx, resource, limitKey, ki)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// load limiter set by key info from where limiter is looked up
-	// for current visit context
-	if ls, ok := m.getLimiterSetByKeyInfo(ki); ok {
-		logrus.WithFields(logrus.Fields{
-			"visitContext":   vc,
-			"limiterSetType": fmt.Sprintf("%T", ls),
-			"keyInfo":        ki,
-		}).Debug("Use limiter from some strategy limiter set")
-
-		return ls.Get(vc)
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"visitContext": vc,
-		"keyInfo":      ki,
-	}).Debug("Use default limiter due to not limiter set avaliable")
-
-	return m.getDefaultLimiter(vc, true)
+	// use default strategy as fallback
+	return r.genDefaultGroupAndKey(ctx, resource)
 }
 
-func (m *Registry) GC(timeout time.Duration) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (r *Registry) Create(ctx context.Context, resource, group string) (rate.Limiter, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	if m.defaultLimiterSet != nil {
-		m.defaultLimiterSet.GC(timeout)
+	stg, ok := r.strategies[group]
+	if !ok {
+		return nil, errors.New("strategy not found")
 	}
 
-	for _, ls := range m.kbIpLimiterSets {
-		ls.GC(timeout)
+	opt, ok := stg.LimitOptions[resource]
+	if !ok {
+		return nil, errors.New("limit rule not found")
 	}
 
-	for _, ls := range m.keyLimiterSets {
-		ls.GC(timeout)
-	}
+	return r.createWithOption(opt)
 }
 
-// gcPeriodically peridically garbage collecting stale limiters
-func (m *Registry) gcPeriodically(interval time.Duration, timeout time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		m.GC(timeout)
+func (r *Registry) genDefaultGroupAndKey(
+	ctx context.Context,
+	resource string,
+) (group, key string, err error) {
+	stg, ok := r.strategies[DefaultStrategy]
+	if !ok { // no default strategy
+		return
 	}
+
+	if _, ok := stg.LimitOptions[resource]; !ok {
+		// limit rule not defined
+		return
+	}
+
+	ip, _ := handlers.GetIPAddressFromContext(ctx)
+	key = fmt.Sprintf("ip:%v", ip)
+
+	return stg.Name, key, nil
 }
 
-func (m *Registry) getVipLimiter(vc *VisitContext) (Limiter, bool) {
-	logger := logrus.WithFields(logrus.Fields{
-		"visitContext": vc,
-		"vipStatus":    vc.Status,
-	})
-
-	strategy := m.getVipStrategy(vc.Status.Tier)
-	if strategy == nil {
-		logger.Info("No VIP strategy available")
-		return nil, false
+func (r *Registry) genVipGroupAndKey(
+	ctx context.Context,
+	resource, limitKey string,
+	vip *acl.VipStatus,
+) (group, key string, err error) {
+	stg, ok := r.getVipStrategy(vip.Tier)
+	if !ok { // vip strategy not configured
+		logrus.WithField("vip", vip).Info("No VIP strategy configured")
+		return
 	}
 
-	logger = logger.WithField("strategy", strategy.Name)
-	ki := &KeyInfo{
-		SID: strategy.ID, Key: vc.Key, Type: LimitTypeByKey,
+	if _, ok := stg.LimitOptions[resource]; !ok {
+		// limit rule not defined
+		return
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// load limiter set by key info from where limiter is looked up
-	// for current visit context
-	if ls, ok := m.getLimiterSetByKeyInfo(ki); ok {
-		logger.WithField("limiterSetType", fmt.Sprintf("%T", ls)).
-			Debug("Use limiter from VIP strategy limiter set")
-		return ls.Get(vc)
-	}
-
-	logger.Info("No VIP limiter available")
-	return nil, false
+	key = fmt.Sprintf("key:%v", limitKey)
+	return stg.Name, key, nil
 }
 
-func (m *Registry) getVipStrategy(tier acl.VipTier) *Strategy {
-	vipStrategy := getVipStrategyByTier(tier)
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for _, s := range m.strategies {
-		if strings.EqualFold(s.Name, vipStrategy) {
-			return s
-		}
+func (r *Registry) genKeyInfoGroupAndKey(
+	ctx context.Context,
+	resource, limitKey string,
+	ki *KeyInfo,
+) (group, key string, err error) {
+	stg, ok := r.id2Strategies[ki.SID]
+	if !ok {
+		err = errors.New("strategy not found")
+		return
 	}
 
-	return nil
+	if _, ok := stg.LimitOptions[resource]; !ok {
+		// limit rule not defined
+		return
+	}
+
+	group = stg.Name
+
+	switch ki.Type {
+	case LimitTypeByIp: // limit by key-based IP
+		ip, _ := handlers.GetIPAddressFromContext(ctx)
+		key = fmt.Sprintf("key:%v/ip:%v", limitKey, ip)
+
+	case LimitTypeByKey: // limit by key only
+		key = fmt.Sprintf("key:%v", limitKey)
+
+	default:
+		err = errors.New("invalid limit type")
+	}
+
+	return group, key, err
 }
 
-func getVipStrategyByTier(tier acl.VipTier) string {
-	return fmt.Sprintf("vip%d", tier)
-}
-
-// getLimiterSet gets limiter set for the specified strategy and limiter type
-func (m *Registry) getLimiterSetByKeyInfo(ki *KeyInfo) (LimiterSet, bool) {
-	if ki.Type == LimitTypeByIp {
-		ls, ok := m.kbIpLimiterSets[ki.SID]
-		return ls, ok
+func (r *Registry) createWithOption(option interface{}) (l rate.Limiter, err error) {
+	switch opt := option.(type) {
+	case FixedWindowOption:
+		l = rate.NewFixedWindow(opt.Interval, opt.Quota)
+	case TokenBucketOption:
+		l = rate.NewTokenBucket(int(opt.Rate), opt.Burst)
+	default:
+		err = errors.New("invalid limit option")
 	}
 
-	if ki.Type == LimitTypeByKey {
-		ls, ok := m.keyLimiterSets[ki.SID]
-		return ls, ok
-	}
-
-	return nil, false
-}
-
-// getDefaultLimiter returns the default limiter for current visit context
-func (m *Registry) getDefaultLimiter(vc *VisitContext, lockfree ...bool) (Limiter, bool) {
-	if len(lockfree) == 0 || !lockfree[0] {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-	}
-
-	if m.defaultLimiterSet != nil {
-		l, ok := m.defaultLimiterSet.Get(vc)
-		return l, ok
-	}
-
-	return nil, false
-}
-
-// loadKeyInfo loads limit key info from cache or store
-func (m *Registry) loadKeyInfo(key string) (*KeyInfo, bool) {
-	// load from cache first
-	if cv, ok := m.keyCache.Get(key); ok {
-		// found in cache
-		return cv.(*KeyInfo), true
-	}
-
-	if m.keyLoader == nil {
-		return nil, false
-	}
-
-	// load from store if not found in cache
-	ki, err := m.keyLoader(key)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to load limit key info")
-		return nil, false
-	}
-
-	// cache limit key
-	m.keyCache.Add(key, ki)
-	return ki, true
-}
-
-// Strategy Management
-
-func (m *Registry) removeStrategy(s *Strategy) {
-	if s.Name == DefaultStrategy {
-		m.defaultLimiterSet = nil
-		logrus.Info("Default IP limiter set unmounted")
-	}
-
-	delete(m.strategies, s.ID)
-	delete(m.kbIpLimiterSets, s.ID)
-	delete(m.keyLimiterSets, s.ID)
-}
-
-func (m *Registry) addStrategy(s *Strategy) {
-	if s.Name == DefaultStrategy {
-		m.defaultLimiterSet = NewIpLimiterSet(s)
-		logrus.WithField("strategy", s).Info("Default IP limiter set mounted")
-	}
-
-	m.strategies[s.ID] = s
-	m.kbIpLimiterSets[s.ID] = NewKeyBasedIpLimiterSet(s)
-	m.keyLimiterSets[s.ID] = NewKeyLimiterSet(s)
-}
-
-func (m *Registry) updateStrategy(s *Strategy) {
-	if s.Name == DefaultStrategy {
-		m.defaultLimiterSet.Update(s)
-		logrus.WithField("strategy", s).Info("Default IP limiter set updated")
-	}
-
-	m.strategies[s.ID] = s
-	m.kbIpLimiterSets[s.ID].Update(s)
-	m.keyLimiterSets[s.ID].Update(s)
+	return l, err
 }
