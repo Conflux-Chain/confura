@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -105,7 +106,8 @@ func addStrategy(cmd *cobra.Command, args []string) {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"name": strategy.Name, "rules": strategy.Rules,
+		"name":  strategy.Name,
+		"rules": strategy.LimitOptions,
 	}).Info("Press the Enter Key to ", op)
 	fmt.Scanln() // wait for Enter Key
 
@@ -210,15 +212,12 @@ func validateStrategyCmdConfig(validateName, validateRules bool) (*rate.Strategy
 		return nil, nil
 	}
 
-	ruleOpts, err := rate.JsonUnmarshalStrategyRules([]byte(stratCfg.Rules))
-	if err != nil {
+	stg := rate.NewStrategy(0, stratCfg.Name)
+	if err := json.Unmarshal([]byte(stratCfg.Rules), stg); err != nil {
 		return nil, errors.WithMessage(err, "invalid strategy rules config json")
 	}
 
-	return &rate.Strategy{
-		Name:  stratCfg.Name,
-		Rules: ruleOpts,
-	}, nil
+	return stg, nil
 }
 
 func validateNetwork(network string) error {

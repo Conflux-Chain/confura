@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	rate "github.com/Conflux-Chain/confura/util/rate/v2"
+	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/pkg/errors"

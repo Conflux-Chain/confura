@@ -1,8 +1,12 @@
 package rate
 
 import (
+	"fmt"
+	"reflect"
+	"strings"
 	"time"
 
+	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/sirupsen/logrus"
 )
 
@@ -10,30 +14,9 @@ type Config struct {
 	Strategies map[uint32]*Strategy // limit strategies
 }
 
-type KeyInfo struct {
-	SID  uint32 // bound strategy ID
-	Key  string // limit key
-	Type int    // limit type
-}
-
-type KeysetFilter struct {
-	SIDs   []uint32 // strategy IDs
-	KeySet []string // limit keyset
-	Limit  int      // result limit size (<= 0 means none)
-}
-
-// KeysetLoader limit keyset loader
-type KeysetLoader func(filter *KeysetFilter) ([]*KeyInfo, error)
-
-func (m *Registry) AutoReload(interval time.Duration, reloader func() (*Config, error), kloader KeysetLoader) {
+func (m *Registry) AutoReload(interval time.Duration, reloader func() (*Config, error)) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-
-	// init registry key loader
-	m.initKeyLoader(kloader)
-
-	// warm up limit key cache for better performance
-	m.warmUpKeyCache(kloader)
 
 	// load immediately at first
 	if rconf, err := reloader(); err == nil {
@@ -52,30 +35,25 @@ func (m *Registry) AutoReload(interval time.Duration, reloader func() (*Config, 
 	}
 }
 
-func (m *Registry) reloadOnce(rconf *Config) {
-	if rconf == nil {
+func (m *Registry) reloadOnce(rc *Config) {
+	if rc == nil {
 		return
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// refresh rate limit strategies
-	m.refreshStrategies(rconf.Strategies)
-}
-
-func (m *Registry) refreshStrategies(strategies map[uint32]*Strategy) {
-	// remove limiter sets
-	for sid, strategy := range m.strategies {
-		if _, ok := strategies[sid]; !ok {
+	// remove strategy
+	for sid, strategy := range m.id2Strategies {
+		if _, ok := rc.Strategies[sid]; !ok {
 			m.removeStrategy(strategy)
 			logrus.WithField("strategy", strategy).Info("RateLimit strategy removed")
 		}
 	}
 
-	// add or update limiter sets
-	for sid, strategy := range strategies {
-		s, ok := m.strategies[sid]
+	// add or update strategy
+	for sid, strategy := range rc.Strategies {
+		s, ok := m.id2Strategies[sid]
 		if !ok { // add
 			m.addStrategy(strategy)
 			logrus.WithField("strategy", strategy).Info("RateLimit strategy added")
@@ -83,36 +61,64 @@ func (m *Registry) refreshStrategies(strategies map[uint32]*Strategy) {
 		}
 
 		if s.MD5 != strategy.MD5 { // update
-			m.updateStrategy(strategy)
+			m.updateStrategy(s, strategy)
 			logrus.WithField("strategy", strategy).Info("RateLimit strategy updated")
 		}
 	}
 }
 
-func (m *Registry) initKeyLoader(kloader KeysetLoader) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Registry) getVipStrategy(tier acl.VipTier) (*Strategy, bool) {
+	// assemble vip strategy name by tier
+	vipStrategy := fmt.Sprintf("vip%d", tier)
 
-	m.keyLoader = func(key string) (*KeyInfo, error) {
-		kinfos, err := kloader(&KeysetFilter{KeySet: []string{key}})
-		if err == nil && len(kinfos) > 0 {
-			return kinfos[0], nil
+	for _, s := range m.strategies {
+		if strings.EqualFold(s.Name, vipStrategy) {
+			return s, true
 		}
-
-		return nil, err
 	}
+
+	return nil, false
 }
 
-func (m *Registry) warmUpKeyCache(kloader KeysetLoader) {
-	kis, err := kloader(&KeysetFilter{Limit: (LimitKeyCacheSize * 3 / 4)})
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to load limit keyset to warm up cache")
+func (m *Registry) removeStrategy(s *Strategy) {
+	// remove all limiters under this strategy
+	for resource := range s.LimitOptions {
+		m.Remove(resource, s.Name)
+		logrus.WithField("resource", resource).Info("RateLimit rule deleted")
+	}
+
+	delete(m.strategies, s.Name)
+	delete(m.id2Strategies, s.ID)
+}
+
+func (m *Registry) addStrategy(s *Strategy) {
+	m.strategies[s.Name] = s
+	m.id2Strategies[s.ID] = s
+}
+
+func (m *Registry) updateStrategy(old, new *Strategy) {
+	m.strategies[new.Name] = new
+	m.id2Strategies[new.ID] = new
+
+	if old.Name != new.Name {
+		// strategy name changed? this shall be rare, but we also need to
+		// delete all limiters with the groups of old strategy name.
+		delete(m.strategies, old.Name)
+		for resource := range old.LimitOptions {
+			m.Remove(resource, old.Name)
+			logrus.WithField("resource", resource).Info("RateLimit rule deleted")
+		}
+
 		return
 	}
 
-	for i := range kis {
-		m.keyCache.Add(kis[i].Key, kis[i])
+	// check the changes from old to new limit rule, and delete all old limiters
+	// with resource whose limit rule has been altered.
+	for resource, oldopt := range old.LimitOptions {
+		newopt, ok := new.LimitOptions[resource]
+		if !ok || !reflect.DeepEqual(oldopt, newopt) {
+			m.Remove(resource, old.Name)
+			logrus.WithField("resource", resource).Info("RateLimit rule deleted")
+		}
 	}
-
-	logrus.WithField("totalKeys", len(kis)).Info("Limit keyset loaded to cache")
 }

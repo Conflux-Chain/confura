@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
-	rate "github.com/Conflux-Chain/confura/util/rate/v2"
+	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
