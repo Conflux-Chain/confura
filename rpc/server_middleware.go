@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/util/rate"
+	rate "github.com/Conflux-Chain/confura/util/rate/v2"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/confura/util/rpc/middlewares"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -39,8 +39,8 @@ func init() {
 	rpc.HookHandleCallMsg(acmw)
 
 	// rate limit
-	rpc.HookHandleBatch(middlewares.RateLimitBatch)
-	rpc.HookHandleCallMsg(middlewares.RateLimit)
+	rpc.HookHandleCallMsg(middlewares.DailyMaxReqRateLimit)
+	rpc.HookHandleCallMsg(middlewares.QpsRateLimit)
 
 	// metrics
 	rpc.HookHandleBatch(middlewares.MetricsBatch)
@@ -68,8 +68,14 @@ func httpMiddleware(registry *rate.Registry, clientProvider interface{}) handler
 			}
 
 			ctx = context.WithValue(ctx, handlers.CtxKeyRealIP, handlers.GetIPAddress(r))
-			ctx = context.WithValue(ctx, handlers.CtxKeyRateRegistry, registry)
-			ctx = context.WithValue(ctx, ctxKeyClientProvider, clientProvider)
+
+			if registry != nil {
+				ctx = context.WithValue(ctx, handlers.CtxKeyRateRegistry, registry)
+			}
+
+			if clientProvider != nil {
+				ctx = context.WithValue(ctx, ctxKeyClientProvider, clientProvider)
+			}
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

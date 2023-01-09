@@ -2,43 +2,56 @@ package middlewares
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
+	rate "github.com/Conflux-Chain/confura/util/rate/v2"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/pkg/errors"
 )
 
-var (
-	errRateLimit = errors.New("too many requests")
-)
-
-func RateLimitBatch(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
-	return func(ctx context.Context, msgs []*rpc.JsonRpcMessage) []*rpc.JsonRpcMessage {
-		if handlers.RateLimitAllow(ctx, "rpc_batch", len(msgs)) {
-			return next(ctx, msgs)
-		}
-
-		var responses []*rpc.JsonRpcMessage
-		for _, v := range msgs {
-			responses = append(responses, v.ErrorResponse(errRateLimit))
-		}
-
-		return responses
-	}
-}
-
-func RateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
+func QpsRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
+		registry, ok := ctx.Value(handlers.CtxKeyRateRegistry).(*rate.Registry)
+		if !ok {
+			return nil
+		}
+
 		// overall rate limit
-		if !handlers.RateLimitAllow(ctx, "rpc_all", 1) {
-			return msg.ErrorResponse(errRateLimit)
+		if err := registry.Limit(ctx, "rpc_all_qps"); err != nil {
+			return msg.ErrorResponse(errQpsRateLimited(err))
 		}
 
 		// single method rate limit
-		if !handlers.RateLimitAllow(ctx, msg.Method, 1) {
-			return msg.ErrorResponse(errRateLimit)
+		resource := fmt.Sprintf("%v_qps", msg.Method)
+		if err := registry.Limit(ctx, resource); err != nil {
+			return msg.ErrorResponse(errQpsRateLimited(err))
 		}
 
 		return next(ctx, msg)
 	}
+}
+
+func errQpsRateLimited(err error) error {
+	return errors.WithMessage(err, "allowed qps exceeded")
+}
+
+func DailyMaxReqRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
+	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
+		registry, ok := ctx.Value(handlers.CtxKeyRateRegistry).(*rate.Registry)
+		if !ok {
+			return nil
+		}
+
+		// constrain daily total requests
+		if err := registry.Limit(ctx, "rpc_all_daily"); err != nil {
+			return msg.ErrorResponse(errDailyMaxReqRateLimited(err))
+		}
+
+		return next(ctx, msg)
+	}
+}
+
+func errDailyMaxReqRateLimited(err error) error {
+	return errors.WithMessage(err, "daily request count exceeded")
 }

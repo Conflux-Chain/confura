@@ -182,7 +182,9 @@ func listStrategies(cmd *cobra.Command, args []string) {
 
 	for i, s := range config.Strategies {
 		logrus.WithFields(logrus.Fields{
-			"name": s.Name, "ID": s.ID, "rules": s.Rules,
+			"name":  s.Name,
+			"ID":    s.ID,
+			"rules": s.LimitOptions,
 		}).Info("Strategy #", i)
 	}
 }
