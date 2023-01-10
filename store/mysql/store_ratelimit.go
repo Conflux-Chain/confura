@@ -18,6 +18,8 @@ type RateLimit struct {
 	SID       uint32 `gorm:"index"`                    // strategy ID
 	LimitType int    `gorm:"default:0;not null"`       // limit type
 	LimitKey  string `gorm:"unique;size:128;not null"` // limit key
+	SVip      int    `gorm:"default:0;not null"`       // svip level - 0 means no SVIP
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -36,9 +38,17 @@ func NewRateLimitStore(db *gorm.DB) *RateLimitStore {
 	}
 }
 
-func (rls *RateLimitStore) AddRateLimit(sid uint32, limitType rate.LimitType, limitKey string) error {
+func (rls *RateLimitStore) AddRateLimit(
+	sid uint32,
+	limitType rate.LimitType,
+	limitKey string,
+	svip int,
+) error {
 	ratelimit := &RateLimit{
-		SID: sid, LimitType: int(limitType), LimitKey: limitKey,
+		SID:       sid,
+		LimitType: int(limitType),
+		LimitKey:  limitKey,
+		SVip:      svip,
 	}
 
 	return rls.db.Create(ratelimit).Error
@@ -73,6 +83,7 @@ func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res [
 				Type: rate.LimitType(ratelimits[i].LimitType),
 				Key:  ratelimits[i].LimitKey,
 				SID:  ratelimits[i].SID,
+				SVip: ratelimits[i].SVip,
 			})
 		}
 
