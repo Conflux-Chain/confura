@@ -16,6 +16,7 @@ type KeyInfo struct {
 	SID  uint32    // bound strategy ID
 	Key  string    // limit key
 	Type LimitType // limit type
+	SVip int       // svip level
 }
 
 type KeysetFilter struct {

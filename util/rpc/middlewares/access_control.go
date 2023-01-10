@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/go-rpc-provider"
@@ -34,12 +35,20 @@ func MustNewVipOnlyAccessControlMiddlewareFromViper() rpc.HandleCallMsgMiddlewar
 				return next(ctx, msg)
 			}
 
-			if _, ok := handlers.VipStatusFromContext(ctx); !ok {
-				// forbidden for non-VIP user
-				return msg.ErrorResponse(errAccessForbidden)
+			if _, ok := handlers.VipStatusFromContext(ctx); ok {
+				// access allowed for VIP user
+				return next(ctx, msg)
 			}
 
-			return next(ctx, msg)
+			if registry, ok := ctx.Value(handlers.CtxKeyRateRegistry).(*rate.Registry); ok {
+				svip, ok := registry.SVipStatusFromContext(ctx)
+				if ok && svip > 0 { // access allowed for SVIP user
+					return next(ctx, msg)
+				}
+			}
+
+			// otherwise access forbidden
+			return msg.ErrorResponse(errAccessForbidden)
 		}
 	}
 }

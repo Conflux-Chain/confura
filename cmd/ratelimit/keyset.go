@@ -16,6 +16,7 @@ type keysetCmdConfig struct {
 	Strategy  string         // rate limit strategy
 	LimitKey  string         // rate limit key
 	LimitType rate.LimitType // rate limit type (0 - by key, 1 - by IP)
+	SVip      int            // svip level (default 0 - no svip)
 }
 
 var (
@@ -56,6 +57,7 @@ func init() {
 	Cmd.AddCommand(addKeyCmd)
 	hookKeysetCmdFlags(addKeyCmd, true, true, false, true)
 	hookKeysetCmdLimitKeyFlag(addKeyCmd, false)
+	hookKeysetCmdSVipFlag(addKeyCmd, false)
 
 	Cmd.AddCommand(delKeyCmd)
 	hookKeysetCmdFlags(delKeyCmd, true, false, true, false)
@@ -104,10 +106,11 @@ func addKey(cmd *cobra.Command, args []string) {
 		"strategyRules": strategy.LimitOptions,
 		"limitKey":      limitKey,
 		"limitType":     limitTypeMap[keysetCfg.LimitType],
+		"svip":          keysetCfg.SVip,
 	}).Info("Press the Enter Key to add new rate limit key")
 	fmt.Scanln() // wait for Enter Key
 
-	err = dbs.RateLimitStore.AddRateLimit(strategy.ID, keysetCfg.LimitType, limitKey)
+	err = dbs.RateLimitStore.AddRateLimit(strategy.ID, keysetCfg.LimitType, limitKey, keysetCfg.SVip)
 	if err != nil {
 		logrus.WithField("limitType", keysetCfg.LimitType).Info("Failed to add rate limit key")
 		return
@@ -192,6 +195,7 @@ func listKeys(cmd *cobra.Command, args []string) {
 			"strategy":  strategy.Name,
 			"limitKey":  k.Key,
 			"limitType": limitTypeMap[k.Type],
+			"svip":      k.SVip,
 		}).Info("Key #", i)
 	}
 }
@@ -277,5 +281,15 @@ func hookKeysetCmdLimitKeyFlag(keysetCmd *cobra.Command, required bool) {
 
 	if required {
 		keysetCmd.MarkFlagRequired("key")
+	}
+}
+
+func hookKeysetCmdSVipFlag(keysetCmd *cobra.Command, required bool) {
+	keysetCmd.Flags().IntVarP(
+		&keysetCfg.SVip, "svip", "v", 0, "svip level (default 0 - no SVIP)",
+	)
+
+	if required {
+		keysetCmd.MarkFlagRequired("svip")
 	}
 }

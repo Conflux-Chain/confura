@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/go-conflux-util/rate"
 	"github.com/Conflux-Chain/go-conflux-util/rate/http"
@@ -42,6 +41,20 @@ func NewRegistry(kloader *KeyLoader) *Registry {
 	return m
 }
 
+// SVipStatusFromContext returns SVIP status from context
+func (r *Registry) SVipStatusFromContext(ctx context.Context) (svip int, ok bool) {
+	limitKey, ok := handlers.GetAccessTokenFromContext(ctx)
+	if !ok || len(limitKey) == 0 { // no limit key provided
+		return
+	}
+
+	if ki, ok := r.kloader.Load(limitKey); ok && ki != nil {
+		svip, ok = ki.SVip, true
+	}
+
+	return svip, ok
+}
+
 // implements `http.LimiterFactory`
 
 func (r *Registry) GetGroupAndKey(
@@ -58,7 +71,7 @@ func (r *Registry) GetGroupAndKey(
 	}
 
 	vip, ok := handlers.VipStatusFromContext(ctx)
-	if ok && vip != nil && vip.Tier != acl.VipTierNone {
+	if ok && vip != nil && vip.Tier != handlers.VipTierNone {
 		// use vip strategy with corresponding tier
 		return r.genVipGroupAndKey(ctx, resource, limitKey, vip)
 	}
@@ -112,7 +125,7 @@ func (r *Registry) genDefaultGroupAndKey(
 func (r *Registry) genVipGroupAndKey(
 	ctx context.Context,
 	resource, limitKey string,
-	vip *acl.VipStatus,
+	vip *handlers.VipStatus,
 ) (group, key string, err error) {
 	stg, ok := r.getVipStrategy(vip.Tier)
 	if !ok { // vip strategy not configured

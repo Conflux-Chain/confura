@@ -6,18 +6,34 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/acl"
 	web3pay "github.com/Conflux-Chain/web3pay-service/client/middleware"
 	"github.com/Conflux-Chain/web3pay-service/types"
 )
 
+type VipTier uint
+
 const (
 	VipSubPropTierKey = "tier"
+
+	// none VIP tier
+	VipTierNone VipTier = iota
+	// VIP subscription tier
+	VipTierSubscription1
+	VipTierSubscription2
+	VipTierSubscription3
+	VipTierSubscriptionEnd
+	// VIP Billing tier
+	VipTierBilling = 100
 )
 
+type VipStatus struct {
+	ID   string  // VIP ID
+	Tier VipTier // VIP tier
+}
+
 // VipStatusFromContext returns VIP status from context
-func VipStatusFromContext(ctx context.Context) (*acl.VipStatus, bool) {
-	var vs *acl.VipStatus
+func VipStatusFromContext(ctx context.Context) (*VipStatus, bool) {
+	var vs *VipStatus
 
 	if ss, ok := web3pay.VipSubscriptionStatusFromContext(ctx); ok {
 		// check VIP subscription status
@@ -27,62 +43,62 @@ func VipStatusFromContext(ctx context.Context) (*acl.VipStatus, bool) {
 		vs, _ = GetVipStatusByBillingStatus(bs)
 	}
 
-	if vs != nil && vs.Tier != acl.VipTierNone {
+	if vs != nil && vs.Tier != VipTierNone {
 		return vs, true
 	}
 
 	return nil, false
 }
 
-func GetVipStatusBySubscriptionStatus(vss *web3pay.VipSubscriptionStatus) (*acl.VipStatus, bool) {
+func GetVipStatusBySubscriptionStatus(vss *web3pay.VipSubscriptionStatus) (*VipStatus, bool) {
 	vi, err := vss.GetVipInfo()
 	if err != nil {
 		return nil, false
 	}
 
 	if tier, ok := GetVipTierBySubscription(vi); ok {
-		return &acl.VipStatus{Tier: tier, ID: vi.Account.String()}, true
+		return &VipStatus{Tier: tier, ID: vi.Account.String()}, true
 	}
 
 	return nil, false
 }
 
-func GetVipStatusByBillingStatus(bs *web3pay.BillingStatus) (*acl.VipStatus, bool) {
+func GetVipStatusByBillingStatus(bs *web3pay.BillingStatus) (*VipStatus, bool) {
 	if bs.Success() {
-		vs := &acl.VipStatus{Tier: acl.VipTierBilling, ID: bs.Receipt.Customer.String()}
+		vs := &VipStatus{Tier: VipTierBilling, ID: bs.Receipt.Customer.String()}
 		return vs, true
 	}
 
 	return nil, false
 }
 
-func GetVipTierBySubscription(vi *types.VipInfo) (acl.VipTier, bool) {
+func GetVipTierBySubscription(vi *types.VipInfo) (VipTier, bool) {
 	if vi.ExpireAt.Int64() < time.Now().Unix() { // already expired
-		return acl.VipTierNone, false
+		return VipTierNone, false
 	}
 
 	props := vi.ICardTrackerVipInfo.Props
 	if len(props.Keys) == 0 { // no prop
-		return acl.VipTierNone, false
+		return VipTierNone, false
 	}
 
 	if len(props.Keys) != len(props.Values) { // malformed kv
-		return acl.VipTierNone, false
+		return VipTierNone, false
 	}
 
 	if !strings.EqualFold(props.Keys[0], VipSubPropTierKey) { // invalid kv
-		return acl.VipTierNone, false
+		return VipTierNone, false
 	}
 
 	tier, err := strconv.Atoi(props.Values[0])
 	if err != nil { // no integer value
-		return acl.VipTierNone, false
+		return VipTierNone, false
 	}
 
-	vt := acl.VipTier(tier)
-	if vt < acl.VipTierSubscription1 || vt >= acl.VipTierSubscriptionEnd {
+	vt := VipTier(tier)
+	if vt < VipTierSubscription1 || vt >= VipTierSubscriptionEnd {
 		// beyond acceptable range
-		return acl.VipTierNone, false
+		return VipTierNone, false
 	}
 
 	return vt, true

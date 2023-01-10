@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/acl"
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/sirupsen/logrus"
 )
 
@@ -67,7 +67,7 @@ func (m *Registry) reloadOnce(rc *Config) {
 	}
 }
 
-func (m *Registry) getVipStrategy(tier acl.VipTier) (*Strategy, bool) {
+func (m *Registry) getVipStrategy(tier handlers.VipTier) (*Strategy, bool) {
 	// assemble vip strategy name by tier
 	vipStrategy := fmt.Sprintf("vip%d", tier)
 
