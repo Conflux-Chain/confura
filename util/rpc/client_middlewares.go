@@ -33,7 +33,7 @@ func middlewareMetrics(fullnode, space string) providers.CallContextMiddleware {
 
 			err := handler(ctx, result, method, args...)
 
-			metrics.Registry.RPC.FullnodeQps(space, method, err).UpdateSince(start)
+			metrics.Registry.RPC.FullnodeQps(fullnode, space, method, err).UpdateSince(start)
 
 			// overall error rate for each full node
 			metrics.Registry.RPC.FullnodeErrorRate().Mark(err != nil)
