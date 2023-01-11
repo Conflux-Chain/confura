@@ -94,12 +94,12 @@ func (*RpcMetrics) StoreHit(method, storeName string) Percentage {
 
 // RPC metrics - fullnode
 
-func (*RpcMetrics) FullnodeQps(space, method string, err error) metrics.Timer {
+func (*RpcMetrics) FullnodeQps(node, space, method string, err error) metrics.Timer {
 	if util.IsInterfaceValNil(err) {
-		return GetOrRegisterTimer("infura/rpc/fullnode/%v/%v/success", space, method)
+		return GetOrRegisterTimer("infura/rpc/fullnode/%v/%v/%v/success", node, space, method)
 	}
 
-	return GetOrRegisterTimer("infura/rpc/fullnode/%v/%v/failure", space, method)
+	return GetOrRegisterTimer("infura/rpc/fullnode/%v/%v/%v/failure", node, space, method)
 }
 
 func (*RpcMetrics) FullnodeErrorRate(node ...string) Percentage {
