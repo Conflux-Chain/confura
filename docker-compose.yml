@@ -52,6 +52,21 @@ services:
       - INFURA_SYNC_ETH_FROMBLOCK=36935000
     container_name: confura-ethsync
 
+  # virtual filter
+  virtual-filter:
+    image: conflux/confura:latest
+    command: vf
+    ports:
+      - "48545:48545"
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      - INFURA_LOG_LEVEL=debug
+      - INFURA_ETHSTORE_MYSQL_ENABLED=true
+      - INFURA_ETHSTORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_eth?parseTime=true
+    container_name: confura-virtual-filter
+
   # rpc proxy
   rpc-proxy:
     image: conflux/confura:latest
@@ -81,11 +96,13 @@ services:
     depends_on:
       - db
       - ethnode-management
+      - virtual-filter
     environment:
       - INFURA_LOG_LEVEL=debug
       - INFURA_STORE_MYSQL_ENABLED=true
       - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_eth?parseTime=true
       - INFURA_NODE_ROUTER_ETHNODERPCURL=http://ethnode-management:28530
+      - INFURA_VIRTUALFILTERS_SERVICERPCURL=http://virtual-filter:48545
     container_name: confura-ethrpc
 
   # data validator
