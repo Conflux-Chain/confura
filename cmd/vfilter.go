@@ -16,7 +16,7 @@ import (
 var (
 	virtualFilterCmd = &cobra.Command{
 		Use:   "vf",
-		Short: "Start virtual filter service, only eSpace supported for now",
+		Short: "Start virtual filter service (for eSpace only)",
 		Run:   startVirtualFilterService,
 	}
 )

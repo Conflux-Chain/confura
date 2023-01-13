@@ -13,7 +13,7 @@ var (
 
 	vfTestCmd = &cobra.Command{
 		Use:   "vf",
-		Short: "validate if filter changes from virtual filter service complies with fullnode",
+		Short: "validate if filter changes polled from Virtual-Filter proxy complies with fullnode",
 		Run:   startVFTest,
 	}
 )
