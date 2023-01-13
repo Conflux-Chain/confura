@@ -14,7 +14,7 @@ func QpsRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
 		registry, ok := ctx.Value(handlers.CtxKeyRateRegistry).(*rate.Registry)
 		if !ok {
-			return nil
+			return next(ctx, msg)
 		}
 
 		// overall rate limit
@@ -40,7 +40,7 @@ func DailyMaxReqRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
 		registry, ok := ctx.Value(handlers.CtxKeyRateRegistry).(*rate.Registry)
 		if !ok {
-			return nil
+			return next(ctx, msg)
 		}
 
 		// constrain daily total requests
