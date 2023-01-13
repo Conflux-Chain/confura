@@ -153,7 +153,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 		// initialize logs api handler
 		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB)
 
-		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyset)
+		rateKeyLoader := rate.NewKeyLoader(storeCtx.EthDB.LoadRateLimitKeyset)
 		rateReg = rate.NewRegistry(rateKeyLoader)
 
 		// periodically reload rate limit settings from db
