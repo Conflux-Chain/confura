@@ -15,6 +15,8 @@ Comparatively running your full node, Confura makes it easy to build a high perf
 
 - Expiry cache for some high frequency RPC methods such as `cfx_getStatus` and `cfx_epochNumber`.
 - Off-chain index of event logs, by which `getLogs` (both `cfx_getLogs` and `eth_getLogs`) are handled rather than directly by a full node. This index is backed by a traditional database, which allows us to index and query on more data, without the added overhead of false positives experienced with a bloom filter on full node. All event logs (with total amount less than 10,000) of some contract can even be retrieved within single request.
+- Shared proxy subscription for Pub/Sub per full node hence more concurrent sessions supported are possible.
+- Improvements over the standard filter APIs by migrating the storage of filter "state" (only event logs for now) out of the full node into memory and database of a new backend system we've dubbed "Virtual Filters" so that a more reliable, high performance and more customizable (eg., long polling timeout for filter changes) filter APIs can be achieved.
 
 #### Node Cluster Management
 
@@ -25,11 +27,16 @@ Comparatively running your full node, Confura makes it easy to build a high perf
 
 #### Rate Limit
 
-- API rate limit per RPC method using token bucket algorithm.
+- Command line toolset to add/delete/manage custom rate limit strategy and API key.
+- Support to rate limit per RPC method with `fixed window` or `token bucket` algorithm.
+
+#### VIP Support
+
+- Billing payment or VIP subscription with our decentralized [Web3 Payment Service](https://github.com/Conflux-Chain/web3pay-service).
 
 #### Metrics
 
-* Component instrumentation && monitoring using RED method.
+* Component instrumentation && monitoring using [RED](https://www.weave.works/blog/the-red-method-key-metrics-for-microservices-architecture/) method.
 
 ## Prerequisites
 
@@ -91,11 +98,12 @@ This will override value for the config item of path `rpc.endpoint` within the c
 Confura is comprised of serveral components as below:
 
 * Blockchain Sync *(synchronizes blockchain data to persistent storage or memory cache)*
-* Node Management *(manages full node clusters including health monitoring and routing distribution etc.)*
-* RPC Proxy *(serves RPC requests by optimizing some RPC methods (especially *`cfx/eth_getLogs`*) responding directly from cache or persistent storage)*
-* Data Validator *(constantly scrapes blockchain data from both full node and RPC Proxy for comparision validation)*
+* Node Management *(manages full node clusters including health monitoring and routing etc.)*
+* Virtual Filter *(polls filter changes instantly into cache and persistent storage, also acts as a proxy to serves filter API requests)*
+* RPC Proxy *(optimizes some RPC methods (especially *`cfx/eth_getLogs`*) to serve by responding directly from cache or persistent storage)*
+* Data Validator *(constantly scrapes blockchain data from both full node and RPC Proxy for validation comparision)*
 
-### Blockchain Sync Component
+### Blockchain Sync
 
 You can use the `sync` subcommand to start sync service, including DB/KV/ETH sync as well as fast catchup.
 
@@ -122,7 +130,7 @@ $ confura sync --db
 
 *Note: You may need to prepare for the configuration before you start the service.*
 
-### Node Management Component
+### Node Management
 
 You can use the `nm` subcommand to start node management service for core space or evm space.
 
@@ -143,8 +151,26 @@ $ confura nm --cfx
 
 *Note: You may need to prepare for the configuration before you start the service.*
 
+### Virtual Filter
 
-### RPC Proxy Component
+You can use the `vf` subcommand to start virtual filter service (for eSpace only).
+
+> Usage:
+>  confura vf [flags]
+>
+> Flags:
+>
+>      --help   help for nm
+
+eg., you can run the following for virtual filter server:
+
+```shell
+$ confura vf
+```
+
+*Note: You may need to prepare for the configuration before you start the service.*
+
+### RPC Proxy
 
 You can use the `rpc` subcommand to start RPC service, including core space, evm space and core space bridge RPC servers.
 
@@ -166,10 +192,9 @@ $ confura rpc --cfx
 
 *Note: You may need to prepare for the configuration before you start the service.*
 
+### Data Validator
 
-### Data Validator Component
-
-You can use the `test` subcommand to start data validity test for JSON-RPC and Pub/Sub proxy including core space and evm space.
+You can use the `test` subcommand to start data validity test for `JSON-RPC`, `Pub/Sub` or `Filter API` proxy.
 
 > Usage:
 >  confura test [command] [flags]
@@ -177,8 +202,9 @@ You can use the `test` subcommand to start data validity test for JSON-RPC and P
 > Available Commands:
 >
 >       cfx         validate if epoch data from core space JSON-RPC proxy complies with fullnode
->       ws          validate if epoch data from core space websocket Pub/Sub proxy complies with fullnode
+>       ws          validate if epoch data from core space Pub/Sub proxy complies with fullnode
 >       eth         validate if epoch data from evm space JSON-RPC proxy complies with fullnode
+>       vf          validate if filter changes polled from Virtual-Filter proxy complies with fullnode
 >
 > Flags: Use `confura test [command] --help` to list all possible flags for each specific command.
 
@@ -188,7 +214,7 @@ eg., you can run the following to kick off data validity test for core space JSO
 $ confura test cfx --fn-endpoint http://test.confluxrpc.com --infura-endpoint http://127.0.0.1:22537
 ```
 
-*Note: You need to boot up RPC proxy before you start the validation test.*
+*Note: You need to boot up RPC proxy (or Virtual Filter proxy) before you start the validation test.*
 
 ### Docker Quick Start
 
@@ -209,18 +235,19 @@ This will start `MySQL` and `Redis` dependency middleware containers, for each o
 ```shell
 $ docker-compose ps 
 
-           Name                         Command               State                       Ports                    
--------------------------------------------------------------------------------------------------------------------
-confura-data-validator       ./confura test cfx -f http ...   Up                                               
-confura-database             docker-entrypoint.sh mysqld      Up       0.0.0.0:50421->3306/tcp, 33060/tcp          
-confura-ethdata-validator    ./confura test eth -f http ...   Up                                                   
-confura-ethnode-management   ./confura nm --eth               Up       0.0.0.0:28530->28530/tcp,:::28530->28530/tcp
-confura-ethrpc               ./confura rpc --eth              Up       0.0.0.0:28545->28545/tcp,:::28545->28545/tcp
-confura-ethsync              ./confura sync --eth             Up                                                   
-confura-node-management      ./confura nm --cfx               Up       0.0.0.0:22530->22530/tcp,:::22530->22530/tcp
-confura-redis                docker-entrypoint.sh redis ...   Up       0.0.0.0:50422->6379/tcp                     
-confura-rpc                  ./confura rpc --cfx              Up       0.0.0.0:22537->22537/tcp,:::22537->22537/tcp
-confura-sync                 ./confura sync --db --kv         Up   
+           Name                         Command               State                      Ports                    
+------------------------------------------------------------------------------------------------------------------
+confura-data-validator       ./confura test cfx -f http ...   Up                                                  
+confura-database             docker-entrypoint.sh mysqld      Up      0.0.0.0:53780->3306/tcp, 33060/tcp          
+confura-ethdata-validator    ./confura test eth -f http ...   Up                                                  
+confura-ethnode-management   ./confura nm --eth               Up      0.0.0.0:28530->28530/tcp,:::28530->28530/tcp
+confura-ethrpc               ./confura rpc --eth              Up      0.0.0.0:28545->28545/tcp,:::28545->28545/tcp
+confura-ethsync              ./confura sync --eth             Up                                                  
+confura-node-management      ./confura nm --cfx               Up      0.0.0.0:22530->22530/tcp,:::22530->22530/tcp
+confura-redis                docker-entrypoint.sh redis ...   Up      0.0.0.0:53779->6379/tcp                     
+confura-rpc                  ./confura rpc --cfx              Up      0.0.0.0:22537->22537/tcp,:::22537->22537/tcp
+confura-sync                 ./confura sync --db --kv         Up                                                  
+confura-virtual-filter       ./confura vf                     Up      0.0.0.0:48545->48545/tcp,:::48545->48545/tcp
 ```
 
 ## TODO
