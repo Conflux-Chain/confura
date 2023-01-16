@@ -108,6 +108,7 @@ func (r *Registry) genDefaultGroupAndKey(
 ) (group, key string, err error) {
 	stg, ok := r.strategies[DefaultStrategy]
 	if !ok { // no default strategy
+		logrus.WithField("resource", resource).Info("Default strategy not configured")
 		return
 	}
 
@@ -129,7 +130,11 @@ func (r *Registry) genVipGroupAndKey(
 ) (group, key string, err error) {
 	stg, ok := r.getVipStrategy(vip.Tier)
 	if !ok { // vip strategy not configured
-		logrus.WithField("vip", vip).Info("No VIP strategy configured")
+		logrus.WithFields(logrus.Fields{
+			"limitKey": limitKey,
+			"resource": resource,
+			"vip":      vip,
+		}).Info("VIP strategy not found")
 		return
 	}
 
@@ -149,7 +154,11 @@ func (r *Registry) genKeyInfoGroupAndKey(
 ) (group, key string, err error) {
 	stg, ok := r.id2Strategies[ki.SID]
 	if !ok {
-		err = errors.New("strategy not found")
+		logrus.WithFields(logrus.Fields{
+			"limitKey": limitKey,
+			"resource": resource,
+			"keyInfo":  ki,
+		}).Warn("Rate limit strategy not found")
 		return
 	}
 
