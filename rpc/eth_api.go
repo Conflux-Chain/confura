@@ -179,8 +179,11 @@ func (api *ethAPI) ProtocolVersion(ctx context.Context) (string, error) {
 
 // GasPrice returns the current gas price in wei.
 func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
-	w3c := GetEthClientFromContext(ctx)
-	return cache.EthDefault.GetGasPrice(w3c.Client)
+	/*
+		w3c := GetEthClientFromContext(ctx)
+		return cache.EthDefault.GetGasPrice(w3c.Client)
+	*/
+	return (*hexutil.Big)(big.NewInt(20_000_000_000)), nil // (20G)
 }
 
 // GetStorageAt returns the value from a storage position at a given address.
