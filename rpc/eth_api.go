@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3Types "github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -221,14 +222,28 @@ func (api *ethAPI) GetTransactionCount(
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
 func (api *ethAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
+	var tx web3Types.Transaction
+
+	if err := tx.UnmarshalBinary(signedTx); err != nil {
+		return common.Hash{}, errors.WithMessage(err, "invalid raw txn data")
+	}
+
+	if tx.GasPrice().Cmp(big.NewInt(20_000_000_000)) < 0 { // gas price must be at least 20G drip
+		return common.Hash{}, errors.Errorf(
+			"transaction gas price %v less than the minimum value %v",
+			tx.GasPrice().Int64(), 20_000_000_000,
+		)
+	}
+
 	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.SendRawTransaction(signedTx)
 }
 
 // SubmitTransaction is an alias of `SendRawTransaction` method.
 func (api *ethAPI) SubmitTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
-	w3c := GetEthClientFromContext(ctx)
-	return w3c.Eth.SubmitTransaction(signedTx)
+	return api.SendRawTransaction(ctx, signedTx)
+	//w3c := GetEthClientFromContext(ctx)
+	//return w3c.Eth.SubmitTransaction(signedTx)
 }
 
 // Call executes a new message call immediately without creating a transaction on the block chain.
