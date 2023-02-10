@@ -159,7 +159,7 @@ func (api *ethAPI) pubsubCtxFromContext(ctx context.Context) (psCtx *epubsubCont
 		return
 	}
 
-	eth, err := api.provider.GetClientByIPGroup(ctx, node.GroupEthWs)
+	eth, err := api.provider.GetClientByIP(ctx, node.GroupEthWs)
 	if err != nil {
 		err = errors.WithMessage(err, "failed to get eth wsclient by ip")
 		return

@@ -21,15 +21,15 @@ const (
 	// Note, group name must begin with cfx or eth as space name for metrics
 
 	// core space fullnode groups
-	GroupCfxHttp     = "cfxhttp"
-	GroupCfxWs       = "cfxws"
-	GroupCfxLogs     = "cfxlog"
-	GroupCfxArchives = "cfxarchives"
+	GroupCfxHttp     Group = "cfxhttp"
+	GroupCfxWs       Group = "cfxws"
+	GroupCfxLogs     Group = "cfxlog"
+	GroupCfxArchives Group = "cfxarchives"
 
 	// evm space fullnode groups
-	GroupEthHttp = "ethhttp"
-	GroupEthWs   = "ethws"
-	GroupEthLogs = "ethlogs"
+	GroupEthHttp Group = "ethhttp"
+	GroupEthWs   Group = "ethws"
+	GroupEthLogs Group = "ethlogs"
 )
 
 // Space parses space from group name

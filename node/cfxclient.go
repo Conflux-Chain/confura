@@ -26,19 +26,33 @@ func NewCfxClientProvider(router Router) *CfxClientProvider {
 	return cp
 }
 
-// GetClientByIP gets client of normal HTTP group by remote IP address.
-func (p *CfxClientProvider) GetClientByIP(ctx context.Context) (sdk.ClientOperator, error) {
-	return p.GetClientByIPGroup(ctx, GroupCfxHttp)
-}
-
-// GetClientByIPGroup gets client of specific group by remote IP address.
-func (p *CfxClientProvider) GetClientByIPGroup(ctx context.Context, group Group) (sdk.ClientOperator, error) {
-	remoteAddr := remoteAddrFromContext(ctx)
-
-	client, err := p.getClient(remoteAddr, group)
+// GetClientByToken gets client of specific group (or use normal HTTP group as default) by access token.
+func (p *CfxClientProvider) GetClientByToken(ctx context.Context, groups ...Group) (sdk.ClientOperator, error) {
+	accessToken := accessTokenFromContext(ctx)
+	client, err := p.getClient(accessToken, cfxNodeGroup(groups...))
 	if err != nil {
 		return nil, err
 	}
 
 	return client.(sdk.ClientOperator), nil
+}
+
+// GetClientByIP gets client of specific group (or use normal HTTP group as default) by remote IP address.
+func (p *CfxClientProvider) GetClientByIP(ctx context.Context, groups ...Group) (sdk.ClientOperator, error) {
+	remoteAddr := remoteAddrFromContext(ctx)
+	client, err := p.getClient(remoteAddr, cfxNodeGroup(groups...))
+	if err != nil {
+		return nil, err
+	}
+
+	return client.(sdk.ClientOperator), nil
+}
+
+func cfxNodeGroup(groups ...Group) Group {
+	grp := GroupCfxHttp
+	if len(groups) > 0 {
+		grp = groups[0]
+	}
+
+	return grp
 }
