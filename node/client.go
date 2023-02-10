@@ -107,3 +107,11 @@ func remoteAddrFromContext(ctx context.Context) string {
 
 	return "unknown_ip"
 }
+
+func accessTokenFromContext(ctx context.Context) string {
+	if token, ok := handlers.GetAccessTokenFromContext(ctx); ok {
+		return token
+	}
+
+	return "unknown_access_token"
+}

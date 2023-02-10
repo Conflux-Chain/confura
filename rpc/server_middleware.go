@@ -53,7 +53,7 @@ func init() {
 	// cfx/eth client
 	rpc.HookHandleCallMsg(clientMiddleware)
 
-	// invalid json rpc request without `ID``
+	// invalid json rpc request without `ID`
 	rpc.HookHandleCallMsg(rpc.PreventMessagesWithouID)
 }
 
@@ -90,16 +90,16 @@ func clientMiddleware(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		if cfxProvider, ok := ctx.Value(ctxKeyClientProvider).(*node.CfxClientProvider); ok {
 			switch msg.Method {
 			case "cfx_getLogs":
-				client, err = cfxProvider.GetClientByIPGroup(ctx, node.GroupCfxLogs)
+				client, err = getCfxClientFromProviderWithContext(ctx, cfxProvider, node.GroupCfxLogs)
 			default:
-				client, err = cfxProvider.GetClientByIP(ctx)
+				client, err = getCfxClientFromProviderWithContext(ctx, cfxProvider)
 			}
 		} else if ethProvider, ok := ctx.Value(ctxKeyClientProvider).(*node.EthClientProvider); ok {
 			switch msg.Method {
 			case "eth_getLogs":
-				client, err = ethProvider.GetClientByIPGroup(ctx, node.GroupEthLogs)
+				client, err = getEthClientFromProviderWithContext(ctx, ethProvider, node.GroupEthLogs)
 			default:
-				client, err = ethProvider.GetClientByIP(ctx)
+				client, err = getEthClientFromProviderWithContext(ctx, ethProvider)
 			}
 		} else {
 			return next(ctx, msg)
@@ -122,4 +122,36 @@ func GetCfxClientFromContext(ctx context.Context) sdk.ClientOperator {
 
 func GetEthClientFromContext(ctx context.Context) *node.Web3goClient {
 	return ctx.Value(ctxKeyClient).(*node.Web3goClient)
+}
+
+func getEthClientFromProviderWithContext(
+	ctx context.Context,
+	p *node.EthClientProvider,
+	group ...node.Group,
+) (*node.Web3goClient, error) {
+	if _, ok := handlers.VipStatusFromContext(ctx); ok {
+		return p.GetClientByToken(ctx, group...)
+	}
+
+	if _, ok := rate.SVipStatusFromContext(ctx); ok {
+		return p.GetClientByToken(ctx, group...)
+	}
+
+	return p.GetClientByIP(ctx, group...)
+}
+
+func getCfxClientFromProviderWithContext(
+	ctx context.Context,
+	p *node.CfxClientProvider,
+	group ...node.Group,
+) (sdk.ClientOperator, error) {
+	if _, ok := handlers.VipStatusFromContext(ctx); ok {
+		return p.GetClientByToken(ctx, group...)
+	}
+
+	if _, ok := rate.SVipStatusFromContext(ctx); ok {
+		return p.GetClientByToken(ctx, group...)
+	}
+
+	return p.GetClientByIP(ctx, group...)
 }

@@ -40,11 +40,9 @@ func MustNewVipOnlyAccessControlMiddlewareFromViper() rpc.HandleCallMsgMiddlewar
 				return next(ctx, msg)
 			}
 
-			if registry, ok := ctx.Value(handlers.CtxKeyRateRegistry).(*rate.Registry); ok {
-				svip, ok := registry.SVipStatusFromContext(ctx)
-				if ok && svip > 0 { // access allowed for SVIP user
-					return next(ctx, msg)
-				}
+			if _, ok := rate.SVipStatusFromContext(ctx); ok {
+				// access allowed for SVIP user
+				return next(ctx, msg)
 			}
 
 			// otherwise access forbidden

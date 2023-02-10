@@ -17,6 +17,24 @@ const (
 	GCScheduleInterval = 5 * time.Minute
 )
 
+type SVipStatus = KeyInfo
+
+// SVipStatusFromContext returns SVIP status from context
+func SVipStatusFromContext(ctx context.Context) (*SVipStatus, bool) {
+	limitKey, ok := handlers.GetAccessTokenFromContext(ctx)
+	if !ok || len(limitKey) == 0 { // no limit key provided
+		return nil, false
+	}
+
+	reg, ok := ctx.Value(handlers.CtxKeyRateRegistry).(*Registry)
+	if !ok || reg == nil {
+		return nil, false
+	}
+
+	ki, ok := reg.LoadKeyInfo(limitKey)
+	return ki, ok && ki.SVip > 0
+}
+
 type Registry struct {
 	*http.Registry
 
@@ -41,18 +59,9 @@ func NewRegistry(kloader *KeyLoader) *Registry {
 	return m
 }
 
-// SVipStatusFromContext returns SVIP status from context
-func (r *Registry) SVipStatusFromContext(ctx context.Context) (svip int, ok bool) {
-	limitKey, ok := handlers.GetAccessTokenFromContext(ctx)
-	if !ok || len(limitKey) == 0 { // no limit key provided
-		return
-	}
-
-	if ki, ok := r.kloader.Load(limitKey); ok && ki != nil {
-		svip, ok = ki.SVip, true
-	}
-
-	return svip, ok
+// LoadKeyInfo loads key info
+func (r *Registry) LoadKeyInfo(limitKey string) (*KeyInfo, bool) {
+	return r.kloader.Load(limitKey)
 }
 
 // implements `http.LimiterFactory`
