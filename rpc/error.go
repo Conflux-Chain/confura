@@ -36,3 +36,21 @@ func ErrExceedLogFilterBlockHashLimit(size int) error {
 		store.MaxLogBlockHashesSize, size,
 	)
 }
+
+func ErrExceedLogFilterAddrLimit(size int) error {
+	return errors.Errorf(
+		"filter.address can contain up to %v addresses; %v were provided.",
+		store.MaxLogFilterAddrCount, size,
+	)
+}
+
+func ErrExceedLogFilterTopicDimension(size int) error {
+	return errors.Errorf("filter.topics must be no more than 4-dimensional array; %v were provided.", size)
+}
+
+func ErrExceedLogFilterTopicLimit(size int) error {
+	return errors.Errorf(
+		"filter.topics can contain up to  %v topics per dimension; %v were provided.",
+		store.MaxLogFilterTopicCount, size,
+	)
+}
