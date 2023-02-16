@@ -12,10 +12,12 @@ import (
 
 const (
 	// Log filter constants
-	MaxLogBlockHashesSize int    = 128
-	MaxLogEpochRange      uint64 = 1000
-	MaxLogBlockRange      uint64 = 1000
-	MaxLogLimit           uint64 = 10000 // adjust max log limit accordingly
+	MaxLogBlockHashesSize  int    = 16
+	MaxLogFilterAddrCount         = 16
+	MaxLogFilterTopicCount        = 16
+	MaxLogEpochRange       uint64 = 1000
+	MaxLogBlockRange       uint64 = 1000
+	MaxLogLimit            uint64 = 10000 // adjust max log limit accordingly
 )
 
 var (
