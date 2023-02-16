@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -112,6 +113,9 @@ func NormalizeEthLogFilter(
 	}
 
 	filter.FromBlock, filter.ToBlock = blocks[0], blocks[1]
+
+	// deduplicate log filter if necessary
+	dedupEthLogFilter(filter)
 	return nil
 }
 
@@ -123,6 +127,23 @@ func ValidateEthLogFilter(flag LogFilterType, filter *web3Types.FilterQuery) err
 
 	if flag&LogFilterTypeBlockRange != 0 && *filter.FromBlock > *filter.ToBlock {
 		return ErrInvalidLogFilterBlockRange
+	}
+
+	if len(filter.Addresses) > store.MaxLogFilterAddrCount {
+		// num of filter address bounded
+		return ErrExceedLogFilterAddrLimit(len(filter.Addresses))
+	}
+
+	if len(filter.Topics) > 4 {
+		// num of filter topic dimensions bounded
+		return ErrExceedLogFilterTopicDimension(len(filter.Topics))
+	}
+
+	for i := range filter.Topics {
+		if len(filter.Topics[i]) > store.MaxLogFilterTopicCount {
+			// num of filter topics per dimension bounded
+			return ErrExceedLogFilterTopicLimit(len(filter.Topics[i]))
+		}
 	}
 
 	return nil
@@ -154,6 +175,8 @@ func NormalizeLogFilter(cfx sdk.ClientOperator, flag LogFilterType, filter *type
 		filter.FromEpoch, filter.ToEpoch = epochs[0], epochs[1]
 	}
 
+	// deduplicate log filter if necessary
+	dedupLogFilter(filter)
 	return nil
 }
 
@@ -188,5 +211,112 @@ func ValidateLogFilter(flag LogFilterType, filter *types.LogFilter) error {
 		}
 	}
 
+	if len(filter.Address) > store.MaxLogFilterAddrCount {
+		// num of filter address bounded
+		return ErrExceedLogFilterAddrLimit(len(filter.Address))
+	}
+
+	if len(filter.Topics) > 4 {
+		// num of filter topic dimensions bounded
+		return ErrExceedLogFilterTopicDimension(len(filter.Topics))
+	}
+
+	for i := range filter.Topics {
+		if len(filter.Topics[i]) > store.MaxLogFilterTopicCount {
+			// num of filter topics per dimension bounded
+			return ErrExceedLogFilterTopicLimit(len(filter.Topics[i]))
+		}
+	}
+
 	return nil
+}
+
+// dedupLogFilter deduplicate log filter such as block hashes, contract addresses and topics.
+func dedupLogFilter(filter *types.LogFilter) {
+	// dedup block hashes
+	var hashes []types.Hash
+
+	dupset := make(map[string]bool)
+	for _, hash := range filter.BlockHashes {
+		if !dupset[string(hash)] {
+			hashes = append(hashes, hash)
+		}
+
+		dupset[string(hash)] = true
+	}
+
+	if len(hashes) != len(filter.BlockHashes) {
+		filter.BlockHashes = hashes
+	}
+
+	// depup contract addresses
+	var addrs []types.Address
+
+	dupset = make(map[string]bool)
+	for _, addr := range filter.Address {
+		if !dupset[addr.String()] {
+			addrs = append(addrs, addr)
+		}
+
+		dupset[addr.String()] = true
+	}
+
+	if len(addrs) != len(filter.Address) {
+		filter.Address = addrs
+	}
+
+	// dedup topics
+	for i, topics := range filter.Topics {
+		var dtopics []types.Hash
+
+		dupset = make(map[string]bool)
+		for _, topic := range topics {
+			if !dupset[topic.String()] {
+				dtopics = append(dtopics, topic)
+			}
+
+			dupset[topic.String()] = true
+		}
+
+		if len(dtopics) != len(topics) {
+			filter.Topics[i] = dtopics
+		}
+	}
+}
+
+// dedupEthLogFilter deduplicate log filter such as contract addresses and topics.
+func dedupEthLogFilter(filter *web3Types.FilterQuery) {
+	// depup contract addresses
+	var addrs []common.Address
+
+	dupset := make(map[string]bool)
+	for _, addr := range filter.Addresses {
+		if !dupset[addr.String()] {
+			addrs = append(addrs, addr)
+		}
+
+		dupset[addr.String()] = true
+	}
+
+	if len(addrs) != len(filter.Addresses) {
+		filter.Addresses = addrs
+	}
+
+	// dedup topics
+	for i, topics := range filter.Topics {
+		var dtopics []common.Hash
+
+		dupset = make(map[string]bool)
+		for _, topic := range topics {
+			if !dupset[topic.String()] {
+				dtopics = append(dtopics, topic)
+			}
+
+			dupset[topic.String()] = true
+		}
+
+		if len(dtopics) != len(topics) {
+			filter.Topics[i] = dtopics
+		}
+	}
 }
