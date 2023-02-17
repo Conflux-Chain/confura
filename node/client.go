@@ -3,12 +3,19 @@ package node
 import (
 	"context"
 	"sync"
+	"time"
 
+	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+)
+
+const (
+	RouteKeyCacheSize       = 5000
+	RouteCacheExpirationTTL = 90 * time.Second
 )
 
 var (
@@ -24,48 +31,98 @@ type clientFactory func(url string) (interface{}, error)
 type clientProvider struct {
 	router  Router
 	factory clientFactory
-	mutex   sync.Mutex
+	mu      sync.Mutex
+
+	// db store to load node route configs
+	db *mysql.MysqlStore
+	// route key cache: route key => route group
+	routeKeyCache *util.ExpirableLruCache
 
 	// group => node name => RPC client
-	clients map[Group]*util.ConcurrentMap
+	clients *util.ConcurrentMap
 }
 
-func newClientProvider(router Router, factory clientFactory) *clientProvider {
+func newClientProvider(db *mysql.MysqlStore, router Router, factory clientFactory) *clientProvider {
 	return &clientProvider{
-		router:  router,
-		factory: factory,
-		clients: make(map[Group]*util.ConcurrentMap),
+		db:            db,
+		router:        router,
+		factory:       factory,
+		clients:       &util.ConcurrentMap{},
+		routeKeyCache: util.NewExpirableLruCache(RouteKeyCacheSize, RouteCacheExpirationTTL),
 	}
 }
 
-// registerGroup registers node group
-func (p *clientProvider) registerGroup(group Group) *util.ConcurrentMap {
-	if _, ok := p.clients[group]; !ok {
-		p.mutex.Lock()
-		defer p.mutex.Unlock()
+// getOrRegisterGroup gets or registers node group
+func (p *clientProvider) getOrRegisterGroup(group Group) *util.ConcurrentMap {
+	v, _ := p.clients.LoadOrStoreFn(group, func(k interface{}) interface{} {
+		return &util.ConcurrentMap{}
+	})
 
-		if _, ok := p.clients[group]; !ok { // double check
-			p.clients[group] = &util.ConcurrentMap{}
-		}
+	return v.(*util.ConcurrentMap)
+}
+
+func (p *clientProvider) getClientByToken(token string, group Group) (interface{}, error) {
+	if p.db == nil { // use provided group if db not available
+		return p.getClient(token, group)
 	}
 
-	return p.clients[group]
+	routeGrp, err := p.getRouteGroup(token)
+	if err != nil {
+		logrus.WithField("token", token).
+			WithError(err).
+			Error("Client provider failed to load node route info")
+		return nil, errors.WithMessage(err, "failed to load route group")
+	}
+
+	if len(routeGrp) > 0 { // use custom route group if configured
+		group = Group(routeGrp)
+	}
+
+	return p.getClient(token, group)
+}
+
+func (p *clientProvider) getRouteGroup(token string) (Group, error) {
+	v, expired, found := p.routeKeyCache.GetNoExp(token)
+	if found && !expired { // cache hit
+		return v.(Group), nil
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	v, expired, found = p.routeKeyCache.GetNoExp(token)
+	if found && !expired { // double check
+		return v.(Group), nil
+	}
+
+	if expired && v != nil {
+		// extend lifespan for expired cache kv temporarliy for performance
+		p.routeKeyCache.Add(token, v.(Group))
+	}
+
+	// load route group from database
+	routegrp, err := p.db.GetRouteGroup(token)
+	if err != nil {
+		return Group(""), errors.WithMessage(err, "failed to load route group")
+	}
+
+	// cache the new route group
+	grp := Group(routegrp)
+	p.routeKeyCache.Add(token, grp)
+
+	return grp, nil
 }
 
 // getClient gets client based on keyword and node group type.
 func (p *clientProvider) getClient(key string, group Group) (interface{}, error) {
-	clients, ok := p.clients[group]
-	if !ok {
-		return nil, errors.Errorf("Unknown node group %v", group)
-	}
-
-	url := p.router.Route(group, []byte(key))
+	clients := p.getOrRegisterGroup(group)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"key":   key,
 		"group": group,
 	})
 
+	url := p.router.Route(group, []byte(key))
 	if len(url) == 0 {
 		logger.WithError(ErrClientUnavailable).Error("Failed to get full node client from provider")
 		return nil, ErrClientUnavailable

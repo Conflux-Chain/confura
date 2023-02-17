@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 
+	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 )
@@ -12,15 +13,11 @@ type CfxClientProvider struct {
 	*clientProvider
 }
 
-func NewCfxClientProvider(router Router) *CfxClientProvider {
+func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvider {
 	cp := &CfxClientProvider{
-		clientProvider: newClientProvider(router, func(url string) (interface{}, error) {
+		clientProvider: newClientProvider(db, router, func(url string) (interface{}, error) {
 			return rpc.NewCfxClient(url, rpc.WithClientHookMetrics(true))
 		}),
-	}
-
-	for grp := range urlCfg {
-		cp.registerGroup(grp)
 	}
 
 	return cp
@@ -29,7 +26,7 @@ func NewCfxClientProvider(router Router) *CfxClientProvider {
 // GetClientByToken gets client of specific group (or use normal HTTP group as default) by access token.
 func (p *CfxClientProvider) GetClientByToken(ctx context.Context, groups ...Group) (sdk.ClientOperator, error) {
 	accessToken := accessTokenFromContext(ctx)
-	client, err := p.getClient(accessToken, cfxNodeGroup(groups...))
+	client, err := p.getClientByToken(accessToken, cfxNodeGroup(groups...))
 	if err != nil {
 		return nil, err
 	}

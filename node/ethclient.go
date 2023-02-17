@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/Conflux-Chain/confura/store/mysql"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/openweb3/web3go"
 )
@@ -25,10 +25,10 @@ type EthClientProvider struct {
 	*clientProvider
 }
 
-func NewEthClientProvider(router Router) *EthClientProvider {
+func NewEthClientProvider(db *mysql.MysqlStore, router Router) *EthClientProvider {
 	cp := &EthClientProvider{
-		clientProvider: newClientProvider(router, func(url string) (interface{}, error) {
-			client, err := rpc.NewEthClient(url, rpc.WithClientHookMetrics(true))
+		clientProvider: newClientProvider(db, router, func(url string) (interface{}, error) {
+			client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true))
 			if err != nil {
 				return nil, err
 			}
@@ -37,17 +37,13 @@ func NewEthClientProvider(router Router) *EthClientProvider {
 		}),
 	}
 
-	for grp := range ethUrlCfg {
-		cp.registerGroup(grp)
-	}
-
 	return cp
 }
 
 // GetClientByToken gets client of specific group (or use normal HTTP group as default) by access token.
 func (p *EthClientProvider) GetClientByToken(ctx context.Context, groups ...Group) (*Web3goClient, error) {
 	accessToken := accessTokenFromContext(ctx)
-	client, err := p.getClient(accessToken, ethNodeGroup(groups...))
+	client, err := p.getClientByToken(accessToken, ethNodeGroup(groups...))
 	if err != nil {
 		return nil, err
 	}
