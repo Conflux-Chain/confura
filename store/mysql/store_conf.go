@@ -19,6 +19,10 @@ const (
 	// pre-defined strategy config key prefix
 	RateLimitStrategyConfKeyPrefix   = "ratelimit.strategy."
 	rateLimitStrategySqlMatchPattern = RateLimitStrategyConfKeyPrefix + "%"
+
+	// pre-defined node route group config key prefix
+	NodeRouteGroupConfKeyPrefix   = "noderoute.group."
+	nodeRouteGroupSqlMatchPattern = NodeRouteGroupConfKeyPrefix + "%"
 )
 
 // configuration tables
@@ -110,7 +114,7 @@ func (cs *confStore) LoadRateLimitStrategy(name string) (*rate.Strategy, error) 
 		return nil, err
 	}
 
-	return cs.loadRateLimitStrategy(cfg)
+	return cs.decodeRateLimitStrategy(cfg)
 }
 
 func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
@@ -125,27 +129,25 @@ func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
 
 	strategies := make(map[uint32]*rate.Strategy)
 
-	// load ratelimit strategies
+	// decode ratelimit strategy from config item
 	for _, v := range cfgs {
-		strategy, err := cs.loadRateLimitStrategy(v)
+		strategy, err := cs.decodeRateLimitStrategy(v)
 		if err != nil {
 			logrus.WithField("cfg", v).WithError(err).Warn("Invalid rate limit strategy config")
 			continue
 		}
 
-		if strategy != nil {
-			strategies[v.ID] = strategy
-		}
+		strategies[v.ID] = strategy
 	}
 
 	return &rate.Config{Strategies: strategies}, nil
 }
 
-func (cs *confStore) loadRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
+func (cs *confStore) decodeRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
 	// eg., ratelimit.strategy.whitelist
 	name := cfg.Name[len(RateLimitStrategyConfKeyPrefix):]
 	if len(name) == 0 {
-		return nil, errors.New("name is too short")
+		return nil, errors.New("strategy name is too short")
 	}
 
 	data := []byte(cfg.Value)
@@ -157,4 +159,57 @@ func (cs *confStore) loadRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
 
 	stg.MD5 = md5.Sum(data) // calculate fingerprint
 	return stg, nil
+}
+
+// node route config
+
+type NodeRouteGroup struct {
+	ID    uint32         // group ID
+	Name  string         `json:"-"` // group name
+	Nodes []string       // node urls
+	MD5   [md5.Size]byte `json:"-"` // config data fingerprint
+}
+
+func (cs *confStore) LoadNodeRouteGroups() (map[uint32]*NodeRouteGroup, error) {
+	var cfgs []conf
+	if err := cs.db.Where("name LIKE ?", nodeRouteGroupSqlMatchPattern).Find(&cfgs).Error; err != nil {
+		return nil, err
+	}
+
+	if len(cfgs) == 0 {
+		return nil, nil
+	}
+
+	routeGroups := make(map[uint32]*NodeRouteGroup)
+
+	// decode node route group from config item
+	for _, v := range cfgs {
+		grp, err := cs.decodeNodeRouteGroup(v)
+		if err != nil {
+			logrus.WithField("cfg", v).WithError(err).Warn("Invalid node route config")
+			continue
+		}
+
+		routeGroups[grp.ID] = grp
+	}
+
+	return routeGroups, nil
+}
+
+func (cs *confStore) decodeNodeRouteGroup(cfg conf) (*NodeRouteGroup, error) {
+	// eg., noderoute.group.cfxvip
+	name := cfg.Name[len(NodeRouteGroupConfKeyPrefix):]
+	if len(name) == 0 {
+		return nil, errors.New("route group name is too short")
+	}
+
+	grp := NodeRouteGroup{ID: cfg.ID, Name: name}
+	data := []byte(cfg.Value)
+
+	if err := json.Unmarshal(data, &grp); err != nil {
+		return nil, err
+	}
+
+	grp.MD5 = md5.Sum(data) // calculate fingerprint
+	return &grp, nil
 }

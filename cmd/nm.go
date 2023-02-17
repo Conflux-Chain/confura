@@ -44,26 +44,29 @@ func startNodeManagerService(*cobra.Command, []string) {
 		logrus.Fatal("No node mananger server specified")
 	}
 
+	storeCtx := util.MustInitStoreContext()
+	defer storeCtx.Close()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
 	if nmOpt.cfxEnabled {
-		startNativeSpaceNodeServer(ctx, &wg)
+		startNativeSpaceNodeServer(ctx, &wg, storeCtx)
 	}
 
 	if nmOpt.ethEnabled {
-		startEvmSpaceNodeServer(ctx, &wg)
+		startEvmSpaceNodeServer(ctx, &wg, storeCtx)
 	}
 
 	util.GracefulShutdown(&wg, cancel)
 }
 
-func startNativeSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup) {
-	server, endpoint := node.Factory().CreatRpcServer()
+func startNativeSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+	server, endpoint := node.Factory().CreatRpcServer(storeCtx.CfxDB)
 	go server.MustServeGraceful(ctx, wg, endpoint, rpc.ProtocolHttp)
 }
 
-func startEvmSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup) {
-	server, endpoint := node.EthFactory().CreatRpcServer()
+func startEvmSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+	server, endpoint := node.EthFactory().CreatRpcServer(storeCtx.EthDB)
 	go server.MustServeGraceful(ctx, wg, endpoint, rpc.ProtocolHttp)
 }

@@ -58,6 +58,16 @@ func NewManagerWithRepartition(group Group, nf nodeFactory, urls []string, resol
 	return &manager
 }
 
+// Close closes the manager to reclaim resources
+func (m *Manager) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, node := range m.nodes {
+		node.Close()
+	}
+}
+
 // Add adds fullnode to monitor
 func (m *Manager) Add(url string) {
 	m.mu.Lock()

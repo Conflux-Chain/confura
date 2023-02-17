@@ -3,6 +3,7 @@ package node
 import (
 	"sync"
 
+	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/rpc"
 )
 
@@ -60,8 +61,8 @@ func newFactory(nf nodeFactory, rpcSrvEndpoint string, groupConf map[Group]UrlCo
 }
 
 // CreatRpcServer creates node manager RPC server
-func (f *factory) CreatRpcServer() (*rpc.Server, string) {
-	return NewServer(f.nodeFactory, f.groupConf), f.rpcSrvEndpoint
+func (f *factory) CreatRpcServer(db *mysql.MysqlStore) (*rpc.Server, string) {
+	return NewServer(db, f.nodeFactory, f.groupConf), f.rpcSrvEndpoint
 }
 
 // CreateRouter creates node router
