@@ -42,7 +42,7 @@ func (c *ExpirableLruCache) Add(key, value interface{}) bool {
 
 // Get looks up a key's value from the cache. Will purge the entry and return nil
 // if the entry expired.
-func (c *ExpirableLruCache) Get(key interface{}) (interface{}, bool) {
+func (c *ExpirableLruCache) Get(key interface{}) (v interface{}, found bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -54,8 +54,27 @@ func (c *ExpirableLruCache) Get(key interface{}) (interface{}, bool) {
 	ev := cv.(*expirableValue)
 	if ev.expiresAt.Before(time.Now()) { // expired
 		c.lru.Remove(key)
-		return nil, false
+		return ev.value, false
 	}
 
 	return ev.value, true
+}
+
+// Get looks up a key's value from the cache without expiration action.
+func (c *ExpirableLruCache) GetNoExp(key interface{}) (v interface{}, expired, found bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	cv, ok := c.lru.Get(key) // not found
+	if !ok {
+		return nil, false, false
+	}
+
+	ev := cv.(*expirableValue)
+
+	if ev.expiresAt.Before(time.Now()) { // expired
+		return ev.value, true, true
+	}
+
+	return ev.value, false, true
 }
