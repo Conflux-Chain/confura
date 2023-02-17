@@ -91,7 +91,7 @@ func addStrategy(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	name := rate.ConfigStrategyPrefix + stratCfg.Name
+	name := mysql.RateLimitStrategyConfKeyPrefix + stratCfg.Name
 	cfgmap, err := dbs.LoadConfig(name)
 	if err != nil {
 		logrus.WithField("strategy", stratCfg.Name).
@@ -139,7 +139,7 @@ func delStrategy(cmd *cobra.Command, args []string) {
 		Info("Press the Enter Key to delete the rate limit strategy!")
 	fmt.Scanln() // wait for Enter Key
 
-	name := rate.ConfigStrategyPrefix + stratCfg.Name
+	name := mysql.RateLimitStrategyConfKeyPrefix + stratCfg.Name
 	removed, err := dbs.DeleteConfig(name)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to delete the rate limit strategy")

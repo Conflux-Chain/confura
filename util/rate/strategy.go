@@ -28,8 +28,6 @@ const (
 const (
 	// pre-defined default strategy name
 	DefaultStrategy = "default"
-	// pre-defined strategy config key prefix
-	ConfigStrategyPrefix = "ratelimit.strategy."
 )
 
 // Strategy rate limit strategy
