@@ -31,7 +31,7 @@ func SVipStatusFromContext(ctx context.Context) (*SVipStatus, bool) {
 		return nil, false
 	}
 
-	ki, ok := reg.LoadKeyInfo(limitKey)
+	ki, ok := reg.kloader.Load(limitKey)
 	return ki, ok && ki.SVip > 0
 }
 
@@ -59,20 +59,12 @@ func NewRegistry(kloader *KeyLoader) *Registry {
 	return m
 }
 
-// LoadKeyInfo loads key info
-func (r *Registry) LoadKeyInfo(limitKey string) (*KeyInfo, bool) {
-	return r.kloader.Load(limitKey)
-}
-
 // implements `http.LimiterFactory`
 
 func (r *Registry) GetGroupAndKey(
 	ctx context.Context,
 	resource string,
 ) (group, key string, err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	limitKey, ok := handlers.GetAccessTokenFromContext(ctx)
 	if !ok || len(limitKey) == 0 {
 		// use default strategy if no limit key provided
@@ -115,6 +107,9 @@ func (r *Registry) genDefaultGroupAndKey(
 	ctx context.Context,
 	resource string,
 ) (group, key string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	stg, ok := r.strategies[DefaultStrategy]
 	if !ok { // no default strategy
 		logrus.WithField("resource", resource).Info("Default strategy not configured")
@@ -137,6 +132,9 @@ func (r *Registry) genVipGroupAndKey(
 	resource, limitKey string,
 	vip *handlers.VipStatus,
 ) (group, key string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	stg, ok := r.getVipStrategy(vip.Tier)
 	if !ok { // vip strategy not configured
 		logrus.WithFields(logrus.Fields{
@@ -161,6 +159,9 @@ func (r *Registry) genKeyInfoGroupAndKey(
 	resource, limitKey string,
 	ki *KeyInfo,
 ) (group, key string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	stg, ok := r.id2Strategies[ki.SID]
 	if !ok {
 		logrus.WithFields(logrus.Fields{

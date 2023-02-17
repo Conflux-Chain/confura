@@ -1,6 +1,7 @@
 package rate
 
 import (
+	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util"
@@ -29,6 +30,7 @@ type KeysetFilter struct {
 type ksLoadFunc func(filter *KeysetFilter) ([]*KeyInfo, error)
 
 type KeyLoader struct {
+	mu sync.Mutex
 	// raw keyset load function
 	ksload ksLoadFunc
 	// limit key cache: limit key => *KeyInfo (nil if missing)
@@ -53,15 +55,28 @@ func NewKeyLoader(ksload ksLoadFunc) *KeyLoader {
 // if cache missed.
 func (l *KeyLoader) Load(key string) (*KeyInfo, bool) {
 	// load from cache first
-	if cv, ok := l.keyCache.Get(key); ok {
-		// found in cache
+	cv, expired, found := l.keyCache.GetNoExp(key)
+	if found && !expired { // found in cache
 		return cv.(*KeyInfo), true
 	}
 
-	// load from store if not found in cache
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	cv, expired, found = l.keyCache.GetNoExp(key)
+	if found && !expired { // double check
+		return cv.(*KeyInfo), true
+	}
+
+	if found && expired {
+		// extend lifespan for expired cache kv temporarliy for performance
+		l.keyCache.Add(key, cv.(*KeyInfo))
+	}
+
+	// load key info from db
 	ki, err := l.rawLoad(key)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to load limit key info")
+		logrus.WithField("key", key).WithError(err).Error("Key loader failed to load limit key info")
 		return nil, false
 	}
 
