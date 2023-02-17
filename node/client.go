@@ -33,7 +33,7 @@ type clientProvider struct {
 	factory clientFactory
 	mu      sync.Mutex
 
-	// db store to load route configs
+	// db store to load node route configs
 	db *mysql.MysqlStore
 	// route key cache: route key => route group
 	routeKeyCache *util.ExpirableLruCache
@@ -62,22 +62,19 @@ func (p *clientProvider) getOrRegisterGroup(group Group) *util.ConcurrentMap {
 }
 
 func (p *clientProvider) getClientByToken(token string, group Group) (interface{}, error) {
-	if p.db == nil {
-		// use provided group if no custom db provided
+	if p.db == nil { // use provided group if db not available
 		return p.getClient(token, group)
 	}
 
 	routeGrp, err := p.getRouteGroup(token)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"token":        token,
-			"defaultGroup": group,
-		}).Error("Client provider failed to load node route info")
+		logrus.WithField("token", token).
+			WithError(err).
+			Error("Client provider failed to load node route info")
 		return nil, errors.WithMessage(err, "failed to load route group")
 	}
 
-	if len(routeGrp) > 0 {
-		// use custom route group if configured
+	if len(routeGrp) > 0 { // use custom route group if configured
 		group = Group(routeGrp)
 	}
 
