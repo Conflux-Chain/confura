@@ -16,7 +16,9 @@ import (
 const (
 	MysqlConfKeyReorgVersion = "reorg.version"
 
-	rateLimitStrategySqlMatchPattern = rate.ConfigStrategyPrefix + "%"
+	// pre-defined strategy config key prefix
+	RateLimitStrategyConfKeyPrefix   = "ratelimit.strategy."
+	rateLimitStrategySqlMatchPattern = RateLimitStrategyConfKeyPrefix + "%"
 )
 
 // configuration tables
@@ -72,6 +74,8 @@ func (cs *confStore) DeleteConfig(confName string) (bool, error) {
 	return res.RowsAffected > 0, res.Error
 }
 
+// reorg config
+
 func (cs *confStore) GetReorgVersion() (int, error) {
 	var result conf
 	exists, err := cs.exists(&result, "name = ?", MysqlConfKeyReorgVersion)
@@ -102,7 +106,7 @@ func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
 
 func (cs *confStore) LoadRateLimitStrategy(name string) (*rate.Strategy, error) {
 	var cfg conf
-	if err := cs.db.Where("name = ?", rate.ConfigStrategyPrefix+name).First(&cfg).Error; err != nil {
+	if err := cs.db.Where("name = ?", RateLimitStrategyConfKeyPrefix+name).First(&cfg).Error; err != nil {
 		return nil, err
 	}
 
@@ -139,7 +143,7 @@ func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
 
 func (cs *confStore) loadRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
 	// eg., ratelimit.strategy.whitelist
-	name := cfg.Name[len(rate.ConfigStrategyPrefix):]
+	name := cfg.Name[len(RateLimitStrategyConfKeyPrefix):]
 	if len(name) == 0 {
 		return nil, errors.New("name is too short")
 	}
