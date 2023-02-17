@@ -76,7 +76,7 @@ func (api *api) ListAll() map[Group][]string {
 	result := make(map[Group][]string)
 
 	for group := range api.pool.AllManagers() {
-		result[Group(group)] = api.List(Group(group))
+		result[group] = api.List(group)
 	}
 
 	return result

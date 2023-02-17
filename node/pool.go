@@ -58,14 +58,14 @@ func (p *nodePool) GetManager(group Group) (*Manager, bool) {
 }
 
 // AllManagers makes a snapshot of all managers and then returns
-func (p *nodePool) AllManagers() map[string]*Manager {
+func (p *nodePool) AllManagers() map[Group]*Manager {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	// make snapshot
-	res := make(map[string]*Manager)
+	res := make(map[Group]*Manager)
 	for grp, mgr := range p.managers {
-		res[grp] = mgr
+		res[Group(grp)] = mgr
 	}
 
 	return res
@@ -93,8 +93,7 @@ func (p *nodePool) pollOnce(db *mysql.MysqlStore) {
 	}
 
 	if len(routeGroups) == 0 {
-		// no route groups configured
-		return
+		return // no route groups configured
 	}
 
 	p.mu.Lock()
@@ -149,9 +148,11 @@ func (p *nodePool) updateGroup(old, new *mysql.NodeRouteGroup) {
 
 	if old.Name != new.Name {
 		// group name changed? this shall be rare, but we also need to
-		// close all cluster managers associated with the old group
-		p.managers[old.Name].Close()
+		// close the cluster manager associated with the old group
+		if mgr, ok := p.managers[old.Name]; ok {
+			mgr.Close()
+		}
+
 		delete(p.managers, old.Name)
-		return
 	}
 }
