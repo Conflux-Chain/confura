@@ -86,6 +86,8 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	var rateReg *rate.Registry
 
 	router := node.Factory().CreateRouter()
+	clientProvider := node.NewCfxClientProvider(storeCtx.CfxDB, router)
+
 	option := rpc.CfxAPIOption{
 		Relayer: relay.MustNewTxnRelayerFromViper(),
 	}
@@ -114,7 +116,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
 			prunedHandler = handler.NewCfxPrunedLogsHandler(
-				node.NewCfxClientProvider(router),
+				clientProvider,
 				storeCtx.CfxDB.UserStore,
 				redis.MustNewRedisClient(redisUrl),
 			)
@@ -126,7 +128,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 	// initialize RPC server
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
-	server := rpc.MustNewNativeSpaceServer(rateReg, router, gasHandler, exposedModules, option)
+	server := rpc.MustNewNativeSpaceServer(rateReg, clientProvider, gasHandler, exposedModules, option)
 
 	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("rpc.endpoint")
@@ -143,6 +145,8 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 	var rateReg *rate.Registry
 
 	router := node.EthFactory().CreateRouter()
+	clientProvider := node.NewEthClientProvider(storeCtx.EthDB, router)
+
 	option := rpc.EthAPIOption{
 		VirtualFilterClient: vfclient.MustNewClientFromViper(),
 	}
@@ -162,7 +166,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 
 	// initialize RPC server
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
-	server := rpc.MustNewEvmSpaceServer(rateReg, router, exposedModules, option)
+	server := rpc.MustNewEvmSpaceServer(rateReg, clientProvider, exposedModules, option)
 
 	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("ethrpc.endpoint")

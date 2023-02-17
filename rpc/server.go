@@ -21,13 +21,12 @@ const (
 // public will be exposed.
 func MustNewNativeSpaceServer(
 	registry *rate.Registry,
-	router infuraNode.Router,
+	clientProvider *infuraNode.CfxClientProvider,
 	gashandler *handler.GasStationHandler,
 	exposedModules []string,
 	option ...CfxAPIOption,
 ) *rpc.Server {
 	// retrieve all available core space rpc apis
-	clientProvider := infuraNode.NewCfxClientProvider(router)
 	allApis := nativeSpaceApis(clientProvider, gashandler, option...)
 
 	exposedApis, err := filterExposedApis(allApis, exposedModules)
@@ -47,12 +46,11 @@ func MustNewNativeSpaceServer(
 // list is empty, all RPC API endpoints designated public will be exposed.
 func MustNewEvmSpaceServer(
 	registry *rate.Registry,
-	router infuraNode.Router,
+	clientProvider *infuraNode.EthClientProvider,
 	exposedModules []string,
 	option ...EthAPIOption,
 ) *rpc.Server {
 	// retrieve all available evm space rpc apis
-	clientProvider := infuraNode.NewEthClientProvider(router)
 	allApis, err := evmSpaceApis(clientProvider, option...)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new EVM space RPC server")
