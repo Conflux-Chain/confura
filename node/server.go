@@ -1,43 +1,41 @@
 package node
 
 import (
+	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // NewServer creates node management RPC server
-func NewServer(nf nodeFactory, groupConf map[Group]UrlConfig) *rpc.Server {
-	managers := make(map[Group]*Manager)
-	for k, v := range groupConf {
-		managers[k] = NewManager(k, nf, v.Nodes)
-	}
+func NewServer(db *mysql.MysqlStore, nf nodeFactory, groupConf map[Group]UrlConfig) *rpc.Server {
+	pool := newNodePool(db, nf, groupConf)
 
 	return rpc.MustNewServer("node", map[string]interface{}{
-		"node": &api{managers},
+		"node": &api{pool: pool},
 	})
 }
 
 // api node management RPC APIs.
 type api struct {
-	managers map[Group]*Manager
+	pool *nodePool
 }
 
 func (api *api) Add(group Group, url string) {
-	if m, ok := api.managers[group]; ok {
+	if m, ok := api.pool.GetManager(group); ok {
 		m.Add(url)
 	}
 }
 
 func (api *api) Remove(group Group, url string) {
-	if m, ok := api.managers[group]; ok {
+	if m, ok := api.pool.GetManager(group); ok {
 		m.Remove(url)
 	}
 }
 
 // List returns the URL list of all nodes.
 func (api *api) List(group Group) []string {
-	m, ok := api.managers[group]
+	m, ok := api.pool.GetManager(group)
 	if !ok {
 		return nil
 	}
@@ -52,8 +50,8 @@ func (api *api) List(group Group) []string {
 }
 
 func (api *api) Status(group Group, url *string) (res []Status) {
-	mgr := api.managers[group]
-	if mgr == nil { // no group found
+	mgr, ok := api.pool.GetManager(group)
+	if !ok { // no group found
 		return
 	}
 
@@ -77,7 +75,7 @@ func (api *api) Status(group Group, url *string) (res []Status) {
 func (api *api) ListAll() map[Group][]string {
 	result := make(map[Group][]string)
 
-	for group := range api.managers {
+	for group := range api.pool.AllManagers() {
 		result[group] = api.List(group)
 	}
 
@@ -87,7 +85,7 @@ func (api *api) ListAll() map[Group][]string {
 // Route implements the Router interface. It routes the specified key to any node
 // and return the node URL.
 func (api *api) Route(group Group, key hexutil.Bytes) string {
-	if m, ok := api.managers[group]; ok {
+	if m, ok := api.pool.GetManager(group); ok {
 		return m.Route(key)
 	}
 

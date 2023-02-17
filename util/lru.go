@@ -60,7 +60,7 @@ func (c *ExpirableLruCache) Get(key interface{}) (v interface{}, found bool) {
 	return ev.value, true
 }
 
-// Get looks up a key's value from the cache without expiration action.
+// GetNoExp looks up a key's value from the cache without expiration action.
 func (c *ExpirableLruCache) GetNoExp(key interface{}) (v interface{}, expired, found bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

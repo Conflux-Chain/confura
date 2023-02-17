@@ -89,8 +89,8 @@ func start(cmd *cobra.Command, args []string) {
 	}
 
 	if nodeServerEnabled { // start node management
-		startNativeSpaceNodeServer(ctx, wg)
-		startEvmSpaceNodeServer(ctx, wg)
+		startNativeSpaceNodeServer(ctx, wg, storeCtx)
+		startEvmSpaceNodeServer(ctx, wg, storeCtx)
 	}
 
 	if vfilterServerEnabled { // start virtual filter
