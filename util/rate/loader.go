@@ -54,7 +54,16 @@ func NewKeyLoader(ksload ksLoadFunc) *KeyLoader {
 // Load loads key info from cache or raw loading from somewhere else
 // if cache missed.
 func (l *KeyLoader) Load(key string) (*KeyInfo, bool) {
-	// load from cache first
+	// load from cache at first
+	if ki, ok := l.cacheLoad(key); ok { // cache hit
+		return ki, ok
+	}
+
+	// otherwise, populate the cache
+	return l.populateCache(key)
+}
+
+func (l *KeyLoader) cacheLoad(key string) (*KeyInfo, bool) {
 	cv, expired, found := l.keyCache.GetNoExp(key)
 	if found && !expired { // found in cache
 		return cv.(*KeyInfo), true
@@ -73,12 +82,19 @@ func (l *KeyLoader) Load(key string) (*KeyInfo, bool) {
 		l.keyCache.Add(key, cv.(*KeyInfo))
 	}
 
+	return nil, false
+}
+
+func (l *KeyLoader) populateCache(key string) (*KeyInfo, bool) {
 	// load key info from db
 	ki, err := l.rawLoad(key)
 	if err != nil {
 		logrus.WithField("key", key).WithError(err).Error("Key loader failed to load limit key info")
 		return nil, false
 	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	// cache limit key
 	l.keyCache.Add(key, ki)
