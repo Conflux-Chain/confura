@@ -82,9 +82,19 @@ func (p *clientProvider) getClientByToken(token string, group Group) (interface{
 }
 
 func (p *clientProvider) getRouteGroup(token string) (Group, error) {
+	// load from cache at first
+	if group, ok := p.cacheLoad(token); ok {
+		return group, nil
+	}
+
+	// otherwise, populate the cache
+	return p.populateCache(token)
+}
+
+func (p *clientProvider) cacheLoad(token string) (Group, bool) {
 	v, expired, found := p.routeKeyCache.GetNoExp(token)
 	if found && !expired { // cache hit
-		return v.(Group), nil
+		return v.(Group), true
 	}
 
 	p.mu.Lock()
@@ -92,7 +102,7 @@ func (p *clientProvider) getRouteGroup(token string) (Group, error) {
 
 	v, expired, found = p.routeKeyCache.GetNoExp(token)
 	if found && !expired { // double check
-		return v.(Group), nil
+		return v.(Group), true
 	}
 
 	if expired && v != nil {
@@ -100,11 +110,18 @@ func (p *clientProvider) getRouteGroup(token string) (Group, error) {
 		p.routeKeyCache.Add(token, v.(Group))
 	}
 
+	return Group(""), false
+}
+
+func (p *clientProvider) populateCache(token string) (Group, error) {
 	// load route group from database
 	routegrp, err := p.db.GetRouteGroup(token)
 	if err != nil {
 		return Group(""), errors.WithMessage(err, "failed to load route group")
 	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	// cache the new route group
 	grp := Group(routegrp)
