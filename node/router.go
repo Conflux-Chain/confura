@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
@@ -11,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -78,7 +80,7 @@ func MustNewRouter(redisURL string, nodeRPCURL string, groupConf map[Group]UrlCo
 		routers = append(routers, NewNodeRpcRouter(client))
 
 		// Also add local router in case node rpc temporary unavailable
-		localRouter, err := NewLocalRouterFromNodeRPC(client, groupConf)
+		localRouter, err := NewLocalRouterFromNodeRPC(client)
 		if err != nil {
 			logrus.WithError(err).Fatal("Failed to new local router with node rpc")
 		}
@@ -219,6 +221,7 @@ func newLocalNodeGroup(urls []string) *localNodeGroup {
 
 // LocalRouter routes RPC requests based on local hash ring.
 type LocalRouter struct {
+	mu     sync.Mutex
 	groups map[Group]*localNodeGroup
 }
 
@@ -229,10 +232,13 @@ func NewLocalRouter(group2Urls map[Group][]string) *LocalRouter {
 		groups[k] = newLocalNodeGroup(v)
 	}
 
-	return &LocalRouter{groups}
+	return &LocalRouter{groups: groups}
 }
 
 func (r *LocalRouter) Route(group Group, key []byte) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	item, ok := r.groups[group]
 	if !ok {
 		return ""
@@ -245,72 +251,81 @@ func (r *LocalRouter) Route(group Group, key []byte) string {
 	return ""
 }
 
-func NewLocalRouterFromNodeRPC(client *rpc.Client, groupConf map[Group]UrlConfig) (*LocalRouter, error) {
-	group2Urls := make(map[Group][]string)
-
-	for key := range groupConf {
-		var urls []string
-		if err := client.Call(&urls, "node_list", key); err != nil {
-			logrus.WithError(err).WithField("group", key).Error("Failed to get nodes from node manager RPC")
-			return nil, err
-		}
-
-		group2Urls[key] = urls
+func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
+	router := &LocalRouter{
+		groups: make(map[Group]*localNodeGroup),
 	}
 
-	router := NewLocalRouter(group2Urls)
+	if err := router.pollOnce(client); err != nil {
+		return router, err
+	}
 
-	go router.update(client)
+	go router.poll(client)
 
 	return router, nil
 }
 
-func (r *LocalRouter) update(client *rpc.Client) {
+func (r *LocalRouter) poll(client *rpc.Client) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 
 	// could update nodes periodically all the time
 	for range ticker.C {
-		for grp := range r.groups {
-			var urls []string
-			if err := client.Call(&urls, "node_list", grp); err != nil {
-				logrus.WithError(err).WithField("group", grp).Debug("Failed to get nodes from node manager RPC periodically")
-				continue
-			}
-
-			r.updateOnce(urls, grp)
+		if err := r.pollOnce(client); err != nil {
+			logrus.WithError(err).Error("Failed to poll route groups from node manager RPC")
 		}
 	}
 }
 
-func (r *LocalRouter) updateOnce(urls []string, group Group) {
-	fnNodes, hashRing := r.groups[group].nodes, r.groups[group].hashRing
+func (r *LocalRouter) pollOnce(client *rpc.Client) error {
+	groupNodes := make(map[Group][]string)
 
-	// detect new added
-	for _, v := range urls {
-		nodeName := rpcutil.Url2NodeName(v)
-		if _, ok := fnNodes[nodeName]; !ok {
-			fnNodes[nodeName] = localNode(v)
-			hashRing.Add(localNode(v))
+	if err := client.Call(&groupNodes, "node_listAll"); err != nil {
+		return errors.WithMessage(err, "failed to list all group nodes")
+	}
+
+	r.update(groupNodes)
+	return nil
+}
+
+func (r *LocalRouter) update(groupNodes map[Group][]string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for grp, urls := range groupNodes {
+		if _, ok := r.groups[grp]; !ok { // create new local node group
+			r.groups[grp] = newLocalNodeGroup(urls)
+			continue
 		}
-	}
 
-	// detect removed
-	nodes := make(map[string]bool)
-	for _, v := range urls {
-		nodes[rpcutil.Url2NodeName(v)] = true
-	}
+		fnNodes, hashRing := r.groups[grp].nodes, r.groups[grp].hashRing
 
-	var removed []string
-	for name := range fnNodes {
-		if !nodes[name] {
-			removed = append(removed, name)
+		// detect new added
+		for _, v := range urls {
+			nodeName := rpcutil.Url2NodeName(v)
+			if _, ok := fnNodes[nodeName]; !ok {
+				fnNodes[nodeName] = localNode(v)
+				hashRing.Add(localNode(v))
+			}
 		}
-	}
 
-	for _, v := range removed {
-		node := fnNodes[v]
-		delete(fnNodes, v)
-		hashRing.Remove(node.String())
+		// detect removed
+		nodes := make(map[string]bool)
+		for _, v := range urls {
+			nodes[rpcutil.Url2NodeName(v)] = true
+		}
+
+		var removed []string
+		for name := range fnNodes {
+			if !nodes[name] {
+				removed = append(removed, name)
+			}
+		}
+
+		for _, v := range removed {
+			node := fnNodes[v]
+			delete(fnNodes, v)
+			hashRing.Remove(node.String())
+		}
 	}
 }
