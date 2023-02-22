@@ -2,157 +2,181 @@ package node
 
 import (
 	"sync"
-	"time"
 
-	"github.com/Conflux-Chain/confura/store/mysql"
-	"github.com/sirupsen/logrus"
-)
-
-const (
-	nodeRoutePollingInterval = time.Second * 60
+	"github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/pkg/errors"
 )
 
 // nodePool manages all full nodes by group
 type nodePool struct {
 	mu sync.Mutex
 
-	// factory method to create a node
+	// factory method to create node
 	nf nodeFactory
-
-	// benchmark groups used for polling against:
-	// group id => group info
-	id2Groups map[uint32]*mysql.NodeRouteGroup
-
 	// node cluster managers by group:
 	// group name => node cluster manager
-	managers map[string]*Manager
+	managers map[Group]*Manager
 }
 
-func newNodePool(db *mysql.MysqlStore, nf nodeFactory, groupConf map[Group]UrlConfig) *nodePool {
-	// create pre-defined node cluster manager by group
-	managers := make(map[string]*Manager)
-	for k, v := range groupConf {
-		managers[string(k)] = NewManager(k, nf, v.Nodes)
+func newNodePool(nf nodeFactory) *nodePool {
+	return &nodePool{
+		nf:       nf,
+		managers: make(map[Group]*Manager),
 	}
-
-	pool := &nodePool{
-		nf:        nf,
-		managers:  managers,
-		id2Groups: make(map[uint32]*mysql.NodeRouteGroup),
-	}
-
-	if db != nil {
-		go pool.poll(db)
-	}
-
-	return pool
 }
 
-// GetManager gets node cluster manager of specific group
-func (p *nodePool) GetManager(group Group) (*Manager, bool) {
+// add adds node(s) by url into the pool group
+func (p *nodePool) add(grp Group, urls ...string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	mgr, ok := p.managers[string(group)]
-	return mgr, ok
+	if _, ok := p.managers[grp]; !ok {
+		// create group if not exited yet
+		p.managers[grp] = NewManager(grp)
+	}
+
+	m := p.managers[grp]
+	nodes := make([]Node, 0, len(urls))
+
+	for i := range urls {
+		nn := rpc.Url2NodeName(urls[i])
+		if _, ok := m.Get(nn); ok {
+			continue
+		}
+
+		n, err := p.nf(grp, nn, urls[i], m)
+		if err != nil {
+			return errors.WithMessagef(err, "failed to new node with url %v", urls[i])
+		}
+
+		nodes = append(nodes, n)
+	}
+
+	m.Add(nodes...)
+	return nil
 }
 
-// AllManagers makes a snapshot of all managers and then returns
-func (p *nodePool) AllManagers() map[Group]*Manager {
+// del deletes node(s) of some group from the pool
+func (p *nodePool) del(grp Group, urls ...string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// make snapshot
-	res := make(map[Group]*Manager)
-	for grp, mgr := range p.managers {
-		res[Group(grp)] = mgr
+	m, ok := p.managers[grp]
+	if !ok { // group not existed
+		return
+	}
+
+	for i := range urls {
+		m.Remove(rpc.Url2NodeName(urls[i]))
+	}
+
+	if len(m.List()) == 0 {
+		// uninstall group manager if no node exists anymore
+		m.Close()
+		delete(p.managers, grp)
+	}
+}
+
+// get gets url of (all or with some excluded) nodes by group
+func (p *nodePool) get(grp Group, excluded ...string) (urls []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	m, ok := p.managers[grp]
+	if !ok {
+		return nil
+	}
+
+	// build exclusive mapset
+	excludeset := make(map[string]bool)
+	for _, exurl := range excluded {
+		excludeset[rpc.Url2NodeName(exurl)] = true
+	}
+
+	for _, n := range m.List() {
+		if !excludeset[n.Name()] {
+			urls = append(urls, n.Url())
+		}
+	}
+
+	return urls
+}
+
+// status returns status for (all or some specific) nodes by group
+func (p *nodePool) status(grp Group, includedOrAll ...string) (res []Status) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	mgr, ok := p.managers[grp]
+	if !ok { // group not found
+		return nil
+	}
+
+	includeset := make(map[string]bool)
+	for _, url := range includedOrAll {
+		includeset[rpc.Url2NodeName(url)] = true
+	}
+
+	// get all group node status
+	for _, n := range mgr.List() {
+		if len(includeset) == 0 || includeset[n.Name()] {
+			res = append(res, n.Status())
+		}
 	}
 
 	return res
 }
 
-// poll instantly polls node route groups from database
-func (p *nodePool) poll(db *mysql.MysqlStore) {
-	ticker := time.NewTicker(nodeRoutePollingInterval)
-	defer ticker.Stop()
-
-	// trigger initial poll immediately
-	p.pollOnce(db)
-
-	// polls db instantly
-	for range ticker.C {
-		p.pollOnce(db)
-	}
-}
-
-func (p *nodePool) pollOnce(db *mysql.MysqlStore) {
-	routeGroups, err := db.LoadNodeRouteGroups()
-	if err != nil {
-		logrus.WithError(err).Error("Failed to poll node route groups")
-		return
-	}
-
-	if len(routeGroups) == 0 {
-		return // no route groups configured
-	}
-
+// groups lists all available route groups
+func (p *nodePool) groups() (res []Group) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// remove node route group
-	for gid, group := range p.id2Groups {
-		if _, ok := routeGroups[gid]; !ok {
-			p.removeGroup(group)
-			logrus.WithField("group", group).Info("Node route group removed")
-		}
+	for grp := range p.managers {
+		res = append(res, grp)
 	}
 
-	// add or update node route group
-	for gid, group := range routeGroups {
-		g, ok := p.id2Groups[gid]
-		if !ok { // add
-			p.addGroup(group)
-			logrus.WithField("group", group).Info("Node route group added")
-			continue
-		}
-
-		if g.MD5 != group.MD5 { // update
-			p.updateGroup(g, group)
-			logrus.WithField("group", group).Info("Node route group updated")
-		}
-	}
+	return res
 }
 
-func (p *nodePool) removeGroup(grp *mysql.NodeRouteGroup) {
-	if m, ok := p.managers[grp.Name]; ok {
-		m.Close()
-	}
+// manager returns the node manager for specific group
+func (p *nodePool) manager(group Group) (*Manager, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	delete(p.managers, grp.Name)
-	delete(p.id2Groups, grp.ID)
+	m, ok := p.managers[group]
+	return m, ok
 }
 
-func (p *nodePool) addGroup(grp *mysql.NodeRouteGroup) {
-	if m, ok := p.managers[grp.Name]; ok {
-		// in case of any pre-defined node cluster manager
-		m.Close()
+// has checks if a pool group has specific node
+func (p *nodePool) has(grp Group, url string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	m, ok := p.managers[grp]
+	if !ok {
+		return false
 	}
 
-	p.id2Groups[grp.ID] = grp
-	p.managers[grp.Name] = NewManager(Group(grp.Name), p.nf, grp.Nodes)
+	dupset := make(map[string]bool)
+	for _, n := range m.List() {
+		dupset[n.Name()] = true
+	}
+
+	return dupset[rpc.Url2NodeName(url)]
 }
 
-func (p *nodePool) updateGroup(old, new *mysql.NodeRouteGroup) {
-	p.id2Groups[new.ID] = new
-	p.managers[new.Name] = NewManager(Group(new.Name), p.nf, new.Nodes)
+func dedupNodeUrls(urls []string) (dedups []string) {
+	dupset := make(map[string]bool)
 
-	if old.Name != new.Name {
-		// group name changed? this shall be rare, but we also need to
-		// close the cluster manager associated with the old group
-		if mgr, ok := p.managers[old.Name]; ok {
-			mgr.Close()
+	for _, url := range urls {
+		nn := rpc.Url2NodeName(url)
+		if !dupset[nn] {
+			dedups = append(dedups, url)
 		}
 
-		delete(p.managers, old.Name)
+		dupset[nn] = true
 	}
+
+	return dedups
 }
