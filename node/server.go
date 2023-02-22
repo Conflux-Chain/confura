@@ -31,7 +31,7 @@ func MustNewServer(db *mysql.MysqlStore, nf nodeFactory, grpConf map[Group]UrlCo
 		}
 	}
 
-	// add route group nodes to the node pool
+	// add group nodes to the pool
 	for grp, cfg := range grpConf {
 		if err := npool.add(grp, cfg.Nodes...); err != nil {
 			logrus.WithFields(logrus.Fields{

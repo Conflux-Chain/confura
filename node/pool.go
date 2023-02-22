@@ -25,8 +25,12 @@ func newNodePool(nf nodeFactory) *nodePool {
 	}
 }
 
-// add adds node(s) by url into the pool group
+// add adds some node(s) into specific pool group
 func (p *nodePool) add(grp Group, urls ...string) error {
+	if len(urls) == 0 {
+		return nil
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -56,7 +60,7 @@ func (p *nodePool) add(grp Group, urls ...string) error {
 	return nil
 }
 
-// del deletes node(s) of some group from the pool
+// del deletes node(s) from specific pool group
 func (p *nodePool) del(grp Group, urls ...string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -103,7 +107,7 @@ func (p *nodePool) get(grp Group, excluded ...string) (urls []string) {
 }
 
 // status returns status for (all or some specific) nodes by group
-func (p *nodePool) status(grp Group, includedOrAll ...string) (res []Status) {
+func (p *nodePool) status(grp Group, included ...string) (res []Status) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -113,7 +117,7 @@ func (p *nodePool) status(grp Group, includedOrAll ...string) (res []Status) {
 	}
 
 	includeset := make(map[string]bool)
-	for _, url := range includedOrAll {
+	for _, url := range included {
 		includeset[rpc.Url2NodeName(url)] = true
 	}
 
@@ -146,24 +150,6 @@ func (p *nodePool) manager(group Group) (*Manager, bool) {
 
 	m, ok := p.managers[group]
 	return m, ok
-}
-
-// has checks if a pool group has specific node
-func (p *nodePool) has(grp Group, url string) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	m, ok := p.managers[grp]
-	if !ok {
-		return false
-	}
-
-	dupset := make(map[string]bool)
-	for _, n := range m.List() {
-		dupset[n.Name()] = true
-	}
-
-	return dupset[rpc.Url2NodeName(url)]
 }
 
 func dedupNodeUrls(urls []string) (dedups []string) {
