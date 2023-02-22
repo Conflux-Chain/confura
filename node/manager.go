@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
-	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
 )
@@ -24,38 +23,22 @@ type Manager struct {
 	resolver RepartitionResolver    // support repartition for hash ring
 	mu       sync.RWMutex
 
-	nodeFactory     nodeFactory       // factory method to create node instance
 	nodeName2Epochs map[string]uint64 // node name => epoch
 	midEpoch        uint64            // middle epoch of managed full nodes.
 }
 
-func NewManager(group Group, nf nodeFactory, urls []string) *Manager {
-	return NewManagerWithRepartition(group, nf, urls, &noopRepartitionResolver{})
+func NewManager(group Group) *Manager {
+	return NewManagerWithRepartition(group, &noopRepartitionResolver{})
 }
 
-func NewManagerWithRepartition(group Group, nf nodeFactory, urls []string, resolver RepartitionResolver) *Manager {
-	manager := Manager{
+func NewManagerWithRepartition(group Group, resolver RepartitionResolver) *Manager {
+	return &Manager{
 		group:           group,
-		nodeFactory:     nf,
 		nodes:           make(map[string]Node),
 		resolver:        resolver,
 		nodeName2Epochs: make(map[string]uint64),
+		hashRing:        consistent.New(nil, cfg.HashRingRaw()),
 	}
-
-	var members []consistent.Member
-
-	for _, url := range urls {
-		nodeName := rpc.Url2NodeName(url)
-		if _, ok := manager.nodes[nodeName]; !ok {
-			node, _ := nf(group, nodeName, url, &manager)
-			manager.nodes[nodeName] = node
-			members = append(members, node)
-		}
-	}
-
-	manager.hashRing = consistent.New(members, cfg.HashRingRaw())
-
-	return &manager
 }
 
 // Close closes the manager to reclaim resources
@@ -69,39 +52,40 @@ func (m *Manager) Close() {
 }
 
 // Add adds fullnode to monitor
-func (m *Manager) Add(url string) {
+func (m *Manager) Add(nodes ...Node) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	nodeName := rpc.Url2NodeName(url)
-	if _, ok := m.nodes[nodeName]; !ok {
-		node, _ := m.nodeFactory(m.group, nodeName, url, m)
-		m.nodes[nodeName] = node
-		m.hashRing.Add(node)
+	for _, n := range nodes {
+		if _, ok := m.nodes[n.Name()]; !ok {
+			m.nodes[n.Name()] = n
+			m.hashRing.Add(n)
+		}
 	}
 }
 
 // Remove removes monitored fullnode
-func (m *Manager) Remove(url string) {
+func (m *Manager) Remove(nodeNames ...string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	nodeName := rpc.Url2NodeName(url)
-	if node, ok := m.nodes[nodeName]; ok {
-		node.Close()
-		delete(m.nodes, nodeName)
-		delete(m.nodeName2Epochs, nodeName)
-		m.hashRing.Remove(nodeName)
+	for _, nn := range nodeNames {
+		if node, ok := m.nodes[nn]; ok {
+			node.Close()
+			delete(m.nodes, nn)
+			delete(m.nodeName2Epochs, nn)
+			m.hashRing.Remove(nn)
+		}
 	}
 }
 
 // Get gets monitored fullnode from url
-func (m *Manager) Get(url string) Node {
+func (m *Manager) Get(nodeName string) (Node, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	nodeName := rpc.Url2NodeName(url)
-	return m.nodes[nodeName]
+	n, ok := m.nodes[nodeName]
+	return n, ok
 }
 
 // List lists all monitored fullnodes

@@ -93,19 +93,23 @@ type EthNode struct {
 
 // NewEthNode creates an instance of evm space node and start to monitor
 // node health in a separate goroutine until node closed.
-func NewEthNode(group Group, name, url string, hm HealthMonitor) *EthNode {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewEthNode(group Group, name, url string, hm HealthMonitor) (*EthNode, error) {
+	eth, err := rpc.NewEthClient(url)
+	if err != nil {
+		return nil, err
+	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	n := &EthNode{
 		baseNode: newBaseNode(name, url, cancel),
-		Client:   rpc.MustNewEthClient(url),
+		Client:   eth,
 	}
 
 	n.atomicStatus.Store(NewStatus(group, name))
 
 	go n.monitor(ctx, n, hm)
 
-	return n
+	return n, nil
 }
 
 // LatestEpochNumber returns the latest block height of the evm space fullnode
@@ -131,19 +135,23 @@ type CfxNode struct {
 
 // NewCfxNode creates an instance of core space fullnode and start to monitor
 // node health in a separate goroutine until node closed.
-func NewCfxNode(group Group, name, url string, hm HealthMonitor) *CfxNode {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewCfxNode(group Group, name, url string, hm HealthMonitor) (*CfxNode, error) {
+	cfx, err := rpc.NewCfxClient(url)
+	if err != nil {
+		return nil, err
+	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	n := &CfxNode{
 		baseNode:       newBaseNode(name, url, cancel),
-		ClientOperator: rpc.MustNewCfxClient(url),
+		ClientOperator: cfx,
 	}
 
 	n.atomicStatus.Store(NewStatus(group, name))
 
 	go n.monitor(ctx, n, hm)
 
-	return n
+	return n, nil
 }
 
 // LatestEpochNumber returns the latest epoch height of the core space fullnode

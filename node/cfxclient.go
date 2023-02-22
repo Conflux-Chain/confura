@@ -13,14 +13,14 @@ type CfxClientProvider struct {
 	*clientProvider
 }
 
-func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvider {
-	cp := &CfxClientProvider{
-		clientProvider: newClientProvider(db, router, func(url string) (interface{}, error) {
-			return rpc.NewCfxClient(url, rpc.WithClientHookMetrics(true))
-		}),
-	}
+func newCfxClient(url string) (interface{}, error) {
+	return rpc.NewCfxClient(url, rpc.WithClientHookMetrics(true))
+}
 
-	return cp
+func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvider {
+	return &CfxClientProvider{
+		clientProvider: newClientProvider(db, router, newCfxClient),
+	}
 }
 
 // GetClientByToken gets client of specific group (or use normal HTTP group as default) by access token.

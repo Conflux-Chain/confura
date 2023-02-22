@@ -25,16 +25,18 @@ type EthClientProvider struct {
 	*clientProvider
 }
 
+func newEthClient(url string) (interface{}, error) {
+	client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true))
+	if err != nil {
+		return nil, err
+	}
+
+	return &Web3goClient{client, url}, nil
+}
+
 func NewEthClientProvider(db *mysql.MysqlStore, router Router) *EthClientProvider {
 	cp := &EthClientProvider{
-		clientProvider: newClientProvider(db, router, func(url string) (interface{}, error) {
-			client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true))
-			if err != nil {
-				return nil, err
-			}
-
-			return &Web3goClient{client, url}, nil
-		}),
+		clientProvider: newClientProvider(db, router, newEthClient),
 	}
 
 	return cp

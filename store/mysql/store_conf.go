@@ -164,15 +164,32 @@ func (cs *confStore) decodeRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
 // node route config
 
 type NodeRouteGroup struct {
-	ID    uint32         // group ID
-	Name  string         `json:"-"` // group name
-	Nodes []string       // node urls
-	MD5   [md5.Size]byte `json:"-"` // config data fingerprint
+	ID    uint32   `json:"-"`     // group ID
+	Name  string   `json:"-"`     // group name
+	Nodes []string `json:"nodes"` // node urls
 }
 
-func (cs *confStore) LoadNodeRouteGroups() (map[uint32]*NodeRouteGroup, error) {
+func (cs *confStore) StoreNodeRouteGroup(routeGrp *NodeRouteGroup) error {
+	cfgVal, err := json.Marshal(routeGrp)
+	if err != nil {
+		return errors.WithMessage(err, "failed to marshal node route group")
+	}
+
+	cfgKey := NodeRouteGroupConfKeyPrefix + routeGrp.Name
+	return cs.StoreConfig(cfgKey, string(cfgVal))
+}
+
+func (cs *confStore) DelNodeRouteGroup(group string) error {
+	cfgKey := NodeRouteGroupConfKeyPrefix + group
+	_, err := cs.DeleteConfig(cfgKey)
+	return err
+}
+
+func (cs *confStore) LoadNodeRouteGroups() (map[string]*NodeRouteGroup, error) {
 	var cfgs []conf
-	if err := cs.db.Where("name LIKE ?", nodeRouteGroupSqlMatchPattern).Find(&cfgs).Error; err != nil {
+
+	err := cs.db.Where("name LIKE ?", nodeRouteGroupSqlMatchPattern).Find(&cfgs).Error
+	if err != nil {
 		return nil, err
 	}
 
@@ -180,7 +197,7 @@ func (cs *confStore) LoadNodeRouteGroups() (map[uint32]*NodeRouteGroup, error) {
 		return nil, nil
 	}
 
-	routeGroups := make(map[uint32]*NodeRouteGroup)
+	routeGroups := make(map[string]*NodeRouteGroup)
 
 	// decode node route group from config item
 	for _, v := range cfgs {
@@ -190,7 +207,7 @@ func (cs *confStore) LoadNodeRouteGroups() (map[uint32]*NodeRouteGroup, error) {
 			continue
 		}
 
-		routeGroups[grp.ID] = grp
+		routeGroups[grp.Name] = grp
 	}
 
 	return routeGroups, nil
@@ -210,6 +227,5 @@ func (cs *confStore) decodeNodeRouteGroup(cfg conf) (*NodeRouteGroup, error) {
 		return nil, err
 	}
 
-	grp.MD5 = md5.Sum(data) // calculate fingerprint
 	return &grp, nil
 }

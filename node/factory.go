@@ -20,7 +20,7 @@ func Factory() *factory {
 	cfxOnce.Do(func() {
 		cfxFactory = newFactory(
 			func(group Group, name, url string, hm HealthMonitor) (Node, error) {
-				return NewCfxNode(group, name, url, hm), nil
+				return NewCfxNode(group, name, url, hm)
 			},
 			cfg.Endpoint, urlCfg, cfg.Router.NodeRPCURL,
 		)
@@ -34,7 +34,7 @@ func EthFactory() *factory {
 	ethOnce.Do(func() {
 		ethFactory = newFactory(
 			func(group Group, name, url string, hm HealthMonitor) (Node, error) {
-				return NewEthNode(group, name, url, hm), nil
+				return NewEthNode(group, name, url, hm)
 			},
 			cfg.EthEndpoint, ethUrlCfg, cfg.Router.EthNodeRPCURL,
 		)
@@ -62,7 +62,7 @@ func newFactory(nf nodeFactory, rpcSrvEndpoint string, groupConf map[Group]UrlCo
 
 // CreatRpcServer creates node manager RPC server
 func (f *factory) CreatRpcServer(db *mysql.MysqlStore) (*rpc.Server, string) {
-	return NewServer(db, f.nodeFactory, f.groupConf), f.rpcSrvEndpoint
+	return MustNewServer(db, f.nodeFactory, f.groupConf), f.rpcSrvEndpoint
 }
 
 // CreateRouter creates node router
