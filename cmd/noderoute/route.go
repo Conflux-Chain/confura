@@ -132,9 +132,9 @@ func delRoute(cmd *cobra.Command, args []string) {
 	}
 
 	if removed {
-		logrus.WithField("routeKey", routeCfg.Key).Info("Node route deleted")
+		logrus.Info("Node route deleted")
 	} else {
-		logrus.WithField("routeKey", routeCfg.Key).Info("Node route does not exist")
+		logrus.Info("Node route does not exist")
 	}
 }
 
