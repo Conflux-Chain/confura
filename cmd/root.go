@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/Conflux-Chain/confura/cmd/noderoute"
 	"github.com/Conflux-Chain/confura/cmd/ratelimit"
 	"github.com/Conflux-Chain/confura/cmd/test"
 	"github.com/Conflux-Chain/confura/cmd/util"
@@ -56,6 +57,7 @@ func init() {
 
 	rootCmd.AddCommand(test.Cmd)
 	rootCmd.AddCommand(ratelimit.Cmd)
+	rootCmd.AddCommand(noderoute.Cmd)
 }
 
 func start(cmd *cobra.Command, args []string) {

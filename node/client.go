@@ -114,8 +114,8 @@ func (p *clientProvider) cacheLoad(token string) (Group, bool) {
 }
 
 func (p *clientProvider) populateCache(token string) (Group, error) {
-	// load route group from database
-	routegrp, err := p.db.GetRouteGroup(token)
+	// find node route by key from database
+	route, err := p.db.FindNodeRoute(token)
 	if err != nil {
 		return Group(""), errors.WithMessage(err, "failed to load route group")
 	}
@@ -124,7 +124,7 @@ func (p *clientProvider) populateCache(token string) (Group, error) {
 	defer p.mu.Unlock()
 
 	// cache the new route group
-	grp := Group(routegrp)
+	grp := Group(route.Group)
 	p.routeKeyCache.Add(token, grp)
 
 	return grp, nil

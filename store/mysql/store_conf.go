@@ -185,19 +185,30 @@ func (cs *confStore) DelNodeRouteGroup(group string) error {
 	return err
 }
 
-func (cs *confStore) LoadNodeRouteGroups() (map[string]*NodeRouteGroup, error) {
+func (cs *confStore) LoadNodeRouteGroups(inclusiveGroups ...string) (res map[string]*NodeRouteGroup, err error) {
+	var nodeRouteGrpConfKeys []string
+	for _, grp := range inclusiveGroups {
+		confKey := NodeRouteGroupConfKeyPrefix + grp
+		nodeRouteGrpConfKeys = append(nodeRouteGrpConfKeys, confKey)
+	}
+
 	var cfgs []conf
 
-	err := cs.db.Where("name LIKE ?", nodeRouteGroupSqlMatchPattern).Find(&cfgs).Error
+	if len(nodeRouteGrpConfKeys) == 0 {
+		err = cs.db.Where("name LIKE ?", nodeRouteGroupSqlMatchPattern).Find(&cfgs).Error
+	} else {
+		err = cs.db.Where("name IN (?)", nodeRouteGrpConfKeys).Find(&cfgs).Error
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	if len(cfgs) == 0 {
+	if len(cfgs) == 0 { // no data
 		return nil, nil
 	}
 
-	routeGroups := make(map[string]*NodeRouteGroup)
+	res = make(map[string]*NodeRouteGroup)
 
 	// decode node route group from config item
 	for _, v := range cfgs {
@@ -207,10 +218,10 @@ func (cs *confStore) LoadNodeRouteGroups() (map[string]*NodeRouteGroup, error) {
 			continue
 		}
 
-		routeGroups[grp.Name] = grp
+		res[grp.Name] = grp
 	}
 
-	return routeGroups, nil
+	return res, nil
 }
 
 func (cs *confStore) decodeNodeRouteGroup(cfg conf) (*NodeRouteGroup, error) {
