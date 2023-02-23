@@ -3,7 +3,6 @@ package ratelimit
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/store/mysql"
@@ -85,7 +84,12 @@ func addStrategy(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs := getMysqlStore(&storeCtx, stratCfg.Network)
+	dbs, err := storeCtx.GetMysqlStore(stratCfg.Network)
+	if err != nil {
+		logrus.WithError(err).Info("Failed to get mysql store by network")
+		return
+	}
+
 	if dbs == nil {
 		logrus.Info("DB store is unavailable")
 		return
@@ -129,7 +133,12 @@ func delStrategy(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs := getMysqlStore(&storeCtx, stratCfg.Network)
+	dbs, err := storeCtx.GetMysqlStore(stratCfg.Network)
+	if err != nil {
+		logrus.WithError(err).Info("Failed to get mysql store by network")
+		return
+	}
+
 	if dbs == nil {
 		logrus.Info("DB store is unavailable")
 		return
@@ -157,13 +166,12 @@ func listStrategies(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	_, err := validateStrategyCmdConfig(false, false)
+	dbs, err := storeCtx.GetMysqlStore(stratCfg.Network)
 	if err != nil {
-		logrus.WithField("config", stratCfg).WithError(err).Info("Invalid command config")
+		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return
 	}
 
-	dbs := getMysqlStore(&storeCtx, stratCfg.Network)
 	if dbs == nil {
 		logrus.Info("DB store is unavailable")
 		return
@@ -191,19 +199,7 @@ func listStrategies(cmd *cobra.Command, args []string) {
 	}
 }
 
-func getMysqlStore(storeCtx *util.StoreContext, network string) *mysql.MysqlStore {
-	if strings.EqualFold(network, "eth") {
-		return storeCtx.EthDB
-	}
-
-	return storeCtx.CfxDB
-}
-
 func validateStrategyCmdConfig(validateName, validateRules bool) (*rate.Strategy, error) {
-	if err := validateNetwork(stratCfg.Network); err != nil {
-		return nil, err
-	}
-
 	if validateName && len(stratCfg.Name) == 0 {
 		return nil, errors.New("name must not be empty")
 	}
@@ -218,16 +214,4 @@ func validateStrategyCmdConfig(validateName, validateRules bool) (*rate.Strategy
 	}
 
 	return stg, nil
-}
-
-func validateNetwork(network string) error {
-	if len(network) == 0 {
-		return errors.New("network space must not be empty")
-	}
-
-	if !strings.EqualFold(network, "cfx") && !strings.EqualFold(network, "eth") {
-		return errors.New("invalid network space (only `cfx` and `eth` are acceptable)")
-	}
-
-	return nil
 }
