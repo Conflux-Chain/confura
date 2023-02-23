@@ -1,6 +1,9 @@
 package util
 
 import (
+	"errors"
+	"strings"
+
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/store/redis"
@@ -52,6 +55,18 @@ func (ctx *StoreContext) Close() {
 
 	if ctx.CfxCache != nil {
 		ctx.CfxCache.Close()
+	}
+}
+
+// GetMysqlStore returns mysql store by network space
+func (ctx *StoreContext) GetMysqlStore(network string) (store *mysql.MysqlStore, err error) {
+	switch {
+	case strings.EqualFold(network, "eth"):
+		return ctx.EthDB, nil
+	case strings.EqualFold(network, "cfx"):
+		return ctx.CfxDB, nil
+	default:
+		return nil, errors.New("invalid network space (only `cfx` and `eth` acceptable)")
 	}
 }
 

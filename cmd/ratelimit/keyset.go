@@ -73,13 +73,18 @@ func addKey(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	err := validateKeysetCmdConfig(true, true, false, true)
+	err := validateKeysetCmdConfig(true, false, true)
 	if err != nil {
 		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
 		return
 	}
 
-	dbs := getMysqlStore(&storeCtx, keysetCfg.Network)
+	dbs, err := storeCtx.GetMysqlStore(keysetCfg.Network)
+	if err != nil {
+		logrus.WithError(err).Info("Failed to get mysql store by network")
+		return
+	}
+
 	if dbs == nil {
 		logrus.Info("DB store is unavailable")
 		return
@@ -112,7 +117,7 @@ func addKey(cmd *cobra.Command, args []string) {
 
 	err = dbs.RateLimitStore.AddRateLimit(strategy.ID, keysetCfg.LimitType, limitKey, keysetCfg.SVip)
 	if err != nil {
-		logrus.WithField("limitType", keysetCfg.LimitType).Info("Failed to add rate limit key")
+		logrus.WithError(err).Info("Failed to add rate limit key")
 		return
 	}
 
@@ -123,13 +128,18 @@ func delKey(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	err := validateKeysetCmdConfig(true, false, true, false)
+	err := validateKeysetCmdConfig(false, true, false)
 	if err != nil {
 		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
 		return
 	}
 
-	dbs := getMysqlStore(&storeCtx, keysetCfg.Network)
+	dbs, err := storeCtx.GetMysqlStore(keysetCfg.Network)
+	if err != nil {
+		logrus.WithError(err).Info("Failed to get mysql store by network")
+		return
+	}
+
 	if dbs == nil {
 		logrus.Info("DB store is unavailable")
 		return
@@ -156,13 +166,18 @@ func listKeys(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	err := validateKeysetCmdConfig(true, true, false, false)
+	err := validateKeysetCmdConfig(true, false, false)
 	if err != nil {
 		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
 		return
 	}
 
-	dbs := getMysqlStore(&storeCtx, keysetCfg.Network)
+	dbs, err := storeCtx.GetMysqlStore(keysetCfg.Network)
+	if err != nil {
+		logrus.WithError(err).Info("Failed to get mysql store by network")
+		return
+	}
+
 	if dbs == nil {
 		logrus.Info("DB store is unavailable")
 		return
@@ -201,7 +216,7 @@ func listKeys(cmd *cobra.Command, args []string) {
 }
 
 func genKey(cmd *cobra.Command, args []string) {
-	err := validateKeysetCmdConfig(false, false, false, true)
+	err := validateKeysetCmdConfig(false, false, true)
 	if err != nil {
 		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
 		return
@@ -219,13 +234,7 @@ func genKey(cmd *cobra.Command, args []string) {
 	}).Info("New random rate limit key generated")
 }
 
-func validateKeysetCmdConfig(validateNet, validateStrategy, validateLimitKey, validateLimitType bool) error {
-	if validateNet {
-		if err := validateNetwork(keysetCfg.Network); err != nil {
-			return err
-		}
-	}
-
+func validateKeysetCmdConfig(validateStrategy, validateLimitKey, validateLimitType bool) error {
 	if validateStrategy && len(keysetCfg.Strategy) == 0 {
 		return errors.New("rate limit strategy must not be empty")
 	}
