@@ -26,6 +26,7 @@ func influxDB(r metrics.Registry, d time.Duration, url, database, username, pass
 	rep, err := newInfluxReporter(taggableRegistry, d, url, database, username, password, namespace, nil)
 	if err != nil {
 		logrus.WithField("url", url).WithError(err).Warn("Failed to new custom InfluxDB reporter")
+		return
 	}
 
 	go rep.run()
