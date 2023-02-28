@@ -17,6 +17,7 @@ type Metrics struct {
 	Sync          SyncMetrics
 	Store         StoreMetrics
 	Nodes         NodeManagerMetrics
+	ClientP       ClientProviderMetrics
 	VirtualFilter VirtualFilterMetrics
 }
 
@@ -169,6 +170,20 @@ func (*NodeManagerMetrics) NodeLatency(space, group, node string) string {
 
 func (*NodeManagerMetrics) NodeAvailability(space, group, node string) string {
 	return fmt.Sprintf("infura/nodes/%v/availability/%v/%v", space, group, node)
+}
+
+// Client provider metrics
+type ClientProviderMetrics struct{}
+
+func (*ClientProviderMetrics) Allocs(space, group, node, key string) metrics.Counter {
+	tags := map[string]string{
+		"group": group,
+		"key":   key,
+		"node":  node,
+	}
+
+	name := fmt.Sprintf("infura/clientp/%v/node/allocs", space)
+	return GetOrRegisterTaggableCounter(name, tags)
 }
 
 // PubSub metrics

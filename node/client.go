@@ -7,6 +7,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/pkg/errors"
@@ -171,6 +172,7 @@ func (p *clientProvider) getClient(key string, group Group) (interface{}, error)
 		logger.Info("Succeeded to connect to full node")
 	}
 
+	metrics.Registry.ClientP.Allocs(group.Space(), string(group), nodeName, key).Inc(1)
 	return client, nil
 }
 

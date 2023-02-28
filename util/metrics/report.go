@@ -5,7 +5,6 @@ import (
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/influxdb"
 	"github.com/sirupsen/logrus"
 )
 
@@ -37,7 +36,8 @@ func Init() {
 		return
 	}
 
-	go influxdb.InfluxDB(
+	// start InfluxDB reporting
+	go influxDB(
 		InfuraRegistry,
 		config.Report.Interval,
 		config.Influxdb.Host,
