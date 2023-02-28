@@ -126,7 +126,7 @@ func (r *influxReporter) send() (err error) {
 
 		switch metric := i.(type) {
 		case TaggableCounterSet:
-			for _, tc := range metric.SnapshotT() {
+			for _, tc := range metric.counters {
 				v := tc.Count()
 				l := r.cache[name+tc.tags.Md5()]
 

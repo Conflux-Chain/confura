@@ -12,7 +12,7 @@ var taggableRegistry = metrics.NewRegistry()
 
 func GetOrRegisterTaggableCounter(name string, tags map[string]string) metrics.Counter {
 	tcs := taggableRegistry.GetOrRegister(name, NewTaggableCounterSet).(*TaggableCounterSet)
-	return tcs.getOrRegisterTaggableCounter(tags)
+	return tcs.GetOrRegisterTaggableCounter(tags)
 }
 
 // TagSet tag set in the form of key value pairs
@@ -59,56 +59,8 @@ func NewTaggableCounterSet() *TaggableCounterSet {
 	}
 }
 
-// DecT decrements the counter with the specified tag set by the given amount.
-func (tcs *TaggableCounterSet) DecT(i int64, tags TagSet) {
-	tcs.getOrRegisterTaggableCounter(tags).Dec(i)
-}
-
-func (tcs *TaggableCounterSet) Dec(i int64) {
-	panic("Dec called on a TaggableCounterSet")
-}
-
-// IncT increments the counter with the specified tag set by the given amount.
-func (tcs *TaggableCounterSet) IncT(i int64, tags TagSet) {
-	tcs.getOrRegisterTaggableCounter(tags).Inc(i)
-}
-
-func (tcs *TaggableCounterSet) Inc(i int64) {
-	panic("Inc called on a TaggableCounterSet")
-}
-
-// ClearT sets the counter with the specified tag set to zero.
-func (tcs *TaggableCounterSet) ClearT(tags TagSet) {
-	tcs.mu.Lock()
-	defer tcs.mu.Unlock()
-
-	if c, ok := tcs.counters[tags.Md5()]; ok {
-		c.Clear()
-	}
-}
-
-func (tcs *TaggableCounterSet) Clear() {
-	panic("Clear called on a TaggableCounterSet")
-}
-
-// CountT returns the current count of the counter with the specified tag set.
-func (tcs *TaggableCounterSet) CountT(tags TagSet) int64 {
-	tcs.mu.Lock()
-	defer tcs.mu.Unlock()
-
-	if c, ok := tcs.counters[tags.Md5()]; ok {
-		return c.Count()
-	}
-
-	return 0
-}
-
-func (tcs *TaggableCounterSet) Count() int64 {
-	panic("Count called on a TaggableCounterSet")
-}
-
-// SnapshotT returns copy of the counter set.
-func (tcs *TaggableCounterSet) SnapshotT() (res []TaggableCounter) {
+// Counters returns a snapshot of all the taggable counters
+func (tcs *TaggableCounterSet) Counters() (res []TaggableCounter) {
 	tcs.mu.Lock()
 	defer tcs.mu.Unlock()
 
@@ -119,11 +71,7 @@ func (tcs *TaggableCounterSet) SnapshotT() (res []TaggableCounter) {
 	return res
 }
 
-func (tcs *TaggableCounterSet) Snapshot() metrics.Counter {
-	panic("Snapshot called on a TaggableCounterSet")
-}
-
-func (tcs *TaggableCounterSet) getOrRegisterTaggableCounter(tags TagSet) *TaggableCounter {
+func (tcs *TaggableCounterSet) GetOrRegisterTaggableCounter(tags TagSet) *TaggableCounter {
 	tcs.mu.Lock()
 	defer tcs.mu.Unlock()
 
@@ -133,4 +81,26 @@ func (tcs *TaggableCounterSet) getOrRegisterTaggableCounter(tags TagSet) *Taggab
 	}
 
 	return tcs.counters[tagh]
+}
+
+// implement `metrics.Counter` interface
+
+func (tcs *TaggableCounterSet) Dec(i int64) {
+	panic("Dec called on a TaggableCounterSet")
+}
+
+func (tcs *TaggableCounterSet) Inc(i int64) {
+	panic("Inc called on a TaggableCounterSet")
+}
+
+func (tcs *TaggableCounterSet) Clear() {
+	panic("Clear called on a TaggableCounterSet")
+}
+
+func (tcs *TaggableCounterSet) Count() int64 {
+	panic("Count called on a TaggableCounterSet")
+}
+
+func (tcs *TaggableCounterSet) Snapshot() metrics.Counter {
+	panic("Snapshot called on a TaggableCounterSet")
 }
