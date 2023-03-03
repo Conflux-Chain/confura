@@ -15,7 +15,7 @@ import (
 
 const (
 	RouteKeyCacheSize       = 5000
-	RouteCacheExpirationTTL = 90 * time.Second
+	RouteCacheExpirationTTL = 60 * time.Second
 )
 
 var (
@@ -62,29 +62,23 @@ func (p *clientProvider) getOrRegisterGroup(group Group) *util.ConcurrentMap {
 }
 
 func (p *clientProvider) getClientByToken(token string, group Group) (interface{}, error) {
-	if p.db == nil { // use provided group if db not available
-		return p.getClient(token, group)
-	}
-
-	routeGrp, err := p.getRouteGroup(token)
-	if err != nil {
-		logrus.WithField("token", token).
-			WithError(err).
-			Error("Client provider failed to load node route info")
-		return nil, errors.WithMessage(err, "failed to load route group")
-	}
-
-	if len(routeGrp) > 0 { // use custom route group if configured
+	routeGrp, ok := p.getRouteGroup(token)
+	if ok && len(routeGrp) > 0 {
+		// use custom route group if configured
 		group = Group(routeGrp)
 	}
 
 	return p.getClient(token, group)
 }
 
-func (p *clientProvider) getRouteGroup(token string) (Group, error) {
+func (p *clientProvider) getRouteGroup(token string) (grp Group, ok bool) {
+	if p.db == nil { // db not available
+		return grp, false
+	}
+
 	// load from cache at first
-	if group, ok := p.cacheLoad(token); ok {
-		return group, nil
+	if grp, ok = p.cacheLoad(token); ok {
+		return grp, true
 	}
 
 	// otherwise, populate the cache
@@ -105,7 +99,7 @@ func (p *clientProvider) cacheLoad(token string) (Group, bool) {
 		return v.(Group), true
 	}
 
-	if expired && v != nil {
+	if found && expired {
 		// extend lifespan for expired cache kv temporarliy for performance
 		p.routeKeyCache.Add(token, v.(Group))
 	}
@@ -113,21 +107,33 @@ func (p *clientProvider) cacheLoad(token string) (Group, bool) {
 	return Group(""), false
 }
 
-func (p *clientProvider) populateCache(token string) (Group, error) {
+func (p *clientProvider) populateCache(token string) (grp Group, ok bool) {
 	// find node route by key from database
 	route, err := p.db.FindNodeRoute(token)
+
 	if err != nil {
-		return Group(""), errors.WithMessage(err, "failed to load route group")
+		p.mu.Lock()
+		defer p.mu.Unlock()
+
+		// for db error, we cache an empty group for the key by which no expiry cache value existed
+		// so that db pressure can be mitigrated by reducing too many subsequential queries.
+		if _, _, found := p.routeKeyCache.GetNoExp(token); !found {
+			p.routeKeyCache.Add(token, grp)
+		}
+
+		logrus.WithField("key", token).
+			WithError(err).
+			Error("Client provider failed to load node route from db")
+		return grp, false
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	if route != nil {
+		grp = Group(route.Group)
+	}
 
 	// cache the new route group
-	grp := Group(route.Group)
 	p.routeKeyCache.Add(token, grp)
-
-	return grp, nil
+	return grp, true
 }
 
 // getClient gets client based on keyword and node group type.
