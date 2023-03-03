@@ -32,7 +32,7 @@ func SVipStatusFromContext(ctx context.Context) (*SVipStatus, bool) {
 	}
 
 	ki, ok := reg.kloader.Load(limitKey)
-	return ki, ok && ki.SVip > 0
+	return ki, ok && ki != nil && ki.SVip > 0
 }
 
 type Registry struct {

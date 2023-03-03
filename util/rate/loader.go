@@ -10,7 +10,7 @@ import (
 
 const (
 	LimitKeyCacheSize     = 5000
-	LimitKeyExpirationTTL = 90 * time.Second
+	LimitKeyExpirationTTL = 60 * time.Second
 )
 
 type KeyInfo struct {
@@ -89,7 +89,18 @@ func (l *KeyLoader) populateCache(key string) (*KeyInfo, bool) {
 	// load key info from db
 	ki, err := l.rawLoad(key)
 	if err != nil {
-		logrus.WithField("key", key).WithError(err).Error("Key loader failed to load limit key info")
+		l.mu.Lock()
+		defer l.mu.Unlock()
+
+		// for db error, we cache nil for the key by which no expiry cache value existed
+		// so that db pressure can be mitigrated by reducing too many subsequential queries.
+		if _, _, found := l.keyCache.GetNoExp(key); !found {
+			l.keyCache.Add(key, nil)
+		}
+
+		logrus.WithField("key", key).
+			WithError(err).
+			Error("Key loader failed to load limit key info")
 		return nil, false
 	}
 
