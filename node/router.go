@@ -16,6 +16,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	// Default number of nodes distributed for each route by key, which is userful to support
+	// shard replication or similar scenarios such as finding members for replication etc.
+	routeDistNodeCount = 3
+)
+
+var ( // ensure interface implementation
+	_ Router = (*chainedRouter)(nil)
+	_ Router = (*LocalRouter)(nil)
+	_ Router = (*RedisRouter)(nil)
+)
+
 // Group allows to manage full nodes in multiple groups.
 type Group string
 
@@ -49,8 +61,9 @@ func (g Group) String() string {
 
 // Router is used to route RPC requests to multiple full nodes.
 type Router interface {
-	// Route returns the full node URL for specified group and key.
-	Route(group Group, key []byte) string
+	// Route returns the full nodes routed for specified group and key by consistent order.
+	// This can be used to support shard replication or similar scenarios.
+	Route(group Group, key []byte) []string
 }
 
 // MustNewRouter creates an instance of Router.
@@ -113,7 +126,7 @@ func NewChainedRouter(groupConf map[Group]UrlConfig, routers ...Router) Router {
 	}
 }
 
-func (r *chainedRouter) Route(group Group, key []byte) string {
+func (r *chainedRouter) Route(group Group, key []byte) []string {
 	for _, r := range r.routers {
 		if val := r.Route(group, key); len(val) > 0 {
 			return val
@@ -123,15 +136,15 @@ func (r *chainedRouter) Route(group Group, key []byte) string {
 	// Failover if configured
 	config, ok := r.groupConf[group]
 	if !ok {
-		return ""
+		return nil
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"failover": config.Failover,
-		"key":      string(key),
+		"routeKey": string(key),
 	}).Warn("No router handled the route key, failover to chained default")
 
-	return config.Failover
+	return []string{config.Failover}
 }
 
 // RedisRouter routes RPC requests via redis.
@@ -146,21 +159,24 @@ func NewRedisRouter(client *redis.Client) *RedisRouter {
 	}
 }
 
-func (r *RedisRouter) Route(group Group, key []byte) string {
+func (r *RedisRouter) Route(group Group, key []byte) []string {
 	uintKey := xxhash.Sum64(key)
 	redisKey := redisRepartitionKey(uintKey, string(group))
 
 	node, err := r.client.Get(context.Background(), redisKey).Result()
 	if err == redis.Nil {
-		return ""
+		return nil
 	}
 
 	if err != nil {
-		logrus.WithError(err).WithField("key", redisKey).Error("Failed to route key from redis")
-		return ""
+		logrus.WithFields(logrus.Fields{
+			"routeKey": string(key),
+			"redisKey": redisKey,
+		}).WithError(err).Error("Failed to route key from redis")
+		return nil
 	}
 
-	return node
+	return strings.Split(node, ",")
 }
 
 // NodeRpcRouter routes RPC requests via node management RPC service.
@@ -174,14 +190,13 @@ func NewNodeRpcRouter(client *rpc.Client) *NodeRpcRouter {
 	}
 }
 
-func (r *NodeRpcRouter) Route(group Group, key []byte) string {
-	var result string
-	if err := r.client.Call(&result, "node_route", group, hexutil.Bytes(key)); err != nil {
+func (r *NodeRpcRouter) Route(group Group, key []byte) (res []string) {
+	if err := r.client.Call(&res, "node_route", group, hexutil.Bytes(key)); err != nil {
 		logrus.WithError(err).Error("Failed to route key from node RPC")
-		return ""
+		return nil
 	}
 
-	return result
+	return res
 }
 
 type localNode string
@@ -235,20 +250,36 @@ func NewLocalRouter(group2Urls map[Group][]string) *LocalRouter {
 	return &LocalRouter{groups: groups}
 }
 
-func (r *LocalRouter) Route(group Group, key []byte) string {
+func (r *LocalRouter) Route(group Group, key []byte) (res []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	item, ok := r.groups[group]
 	if !ok {
-		return ""
+		return nil
 	}
 
-	if member := item.hashRing.LocateKey(key); member != nil {
-		return member.String()
+	distcnt := len(item.hashRing.GetMembers())
+	if distcnt < routeDistNodeCount {
+		distcnt = routeDistNodeCount
 	}
 
-	return ""
+	members, err := item.hashRing.GetClosestN(key, distcnt)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"key":      string(key),
+			"group":    group,
+			"closestN": distcnt,
+		}).WithError(err).Error("Local router failed to get closestN nodes")
+		return nil
+	}
+
+	for i := range members {
+		n := members[i].(Node)
+		res = append(res, n.String())
+	}
+
+	return res
 }
 
 func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {

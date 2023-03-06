@@ -43,32 +43,35 @@ func NewEthClientProvider(db *mysql.MysqlStore, router Router) *EthClientProvide
 }
 
 // GetClientByToken gets client of specific group (or use normal HTTP group as default) by access token.
-func (p *EthClientProvider) GetClientByToken(ctx context.Context, groups ...Group) (*Web3goClient, error) {
+func (p *EthClientProvider) GetClientSetByToken(ctx context.Context, groups ...Group) ([]*Web3goClient, error) {
 	accessToken := accessTokenFromContext(ctx)
-	client, err := p.getClientByToken(accessToken, ethNodeGroup(groups...))
+	clients, err := p.getClientSetByToken(accessToken, ethNodeGroup(groups...))
 	if err != nil {
 		return nil, err
 	}
 
-	return client.(*Web3goClient), nil
+	return unwrapEthClientSet(clients), nil
 }
 
 // GetClientByIP gets client of specific group (or use normal HTTP group as default) by remote IP address.
-func (p *EthClientProvider) GetClientByIP(ctx context.Context, groups ...Group) (*Web3goClient, error) {
+func (p *EthClientProvider) GetClientSetByIP(ctx context.Context, groups ...Group) ([]*Web3goClient, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
-	client, err := p.getClient(remoteAddr, ethNodeGroup(groups...))
+	clients, err := p.getClientSet(remoteAddr, ethNodeGroup(groups...))
 	if err != nil {
 		return nil, err
 	}
 
-	return client.(*Web3goClient), nil
+	return unwrapEthClientSet(clients), nil
 }
 
-func (p *EthClientProvider) GetClientRandom() (*Web3goClient, error) {
+func (p *EthClientProvider) GetClientSetRandom() ([]*Web3goClient, error) {
 	key := fmt.Sprintf("random_key_%v", rand.Int())
-	client, err := p.getClient(key, GroupEthHttp)
+	clients, err := p.getClientSet(key, GroupEthHttp)
+	if err != nil {
+		return nil, err
+	}
 
-	return client.(*Web3goClient), err
+	return unwrapEthClientSet(clients), nil
 }
 
 func ethNodeGroup(groups ...Group) Group {
@@ -78,4 +81,12 @@ func ethNodeGroup(groups ...Group) Group {
 	}
 
 	return grp
+}
+
+func unwrapEthClientSet(clients []*wrapClient) (res []*Web3goClient) {
+	for _, c := range clients {
+		res = append(res, c.wrapped.(*Web3goClient))
+	}
+
+	return res
 }

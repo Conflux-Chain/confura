@@ -44,12 +44,12 @@ type ethAPI struct {
 }
 
 func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *ethAPI {
-	client, err := provider.GetClientRandom()
+	clients, err := provider.GetClientSetRandom()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get eth client randomly")
 	}
 
-	chainId, err := client.Eth.ChainId()
+	chainId, err := clients[0].Eth.ChainId()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get eth chain id")
 	}

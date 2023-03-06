@@ -22,6 +22,12 @@ var (
 	ErrClientUnavailable = errors.New("no full node available")
 )
 
+// wrapClient wrapps sdk client for full node
+type wrapClient struct {
+	group   Group
+	wrapped interface{}
+}
+
 // clientFactory factory method to create RPC client for fullnode proxy.
 type clientFactory func(url string) (interface{}, error)
 
@@ -61,14 +67,14 @@ func (p *clientProvider) getOrRegisterGroup(group Group) *util.ConcurrentMap {
 	return v.(*util.ConcurrentMap)
 }
 
-func (p *clientProvider) getClientByToken(token string, group Group) (interface{}, error) {
+func (p *clientProvider) getClientSetByToken(token string, group Group) ([]*wrapClient, error) {
 	routeGrp, ok := p.getRouteGroup(token)
 	if ok && len(routeGrp) > 0 {
 		// use custom route group if configured
 		group = Group(routeGrp)
 	}
 
-	return p.getClient(token, group)
+	return p.getClientSet(token, group)
 }
 
 func (p *clientProvider) getRouteGroup(token string) (grp Group, ok bool) {
@@ -136,8 +142,8 @@ func (p *clientProvider) populateCache(token string) (grp Group, ok bool) {
 	return grp, true
 }
 
-// getClient gets client based on keyword and node group type.
-func (p *clientProvider) getClient(key string, group Group) (interface{}, error) {
+// getClient gets client set based on keyword and node group type.
+func (p *clientProvider) getClientSet(key string, group Group) (res []*wrapClient, err error) {
 	clients := p.getOrRegisterGroup(group)
 
 	logger := logrus.WithFields(logrus.Fields{
@@ -145,39 +151,46 @@ func (p *clientProvider) getClient(key string, group Group) (interface{}, error)
 		"group": group,
 	})
 
-	url := p.router.Route(group, []byte(key))
-	if len(url) == 0 {
-		logger.WithError(ErrClientUnavailable).Error("Failed to get full node client from provider")
+	urls := p.router.Route(group, []byte(key))
+	if len(urls) == 0 {
+		logger.WithError(ErrClientUnavailable).Error("Failed to get node urls from router")
 		return nil, ErrClientUnavailable
 	}
 
-	nodeName := rpc.Url2NodeName(url)
+	for _, url := range urls {
+		nodeName := rpc.Url2NodeName(url)
 
-	logger = logger.WithFields(logrus.Fields{
-		"node": nodeName,
-		"url":  url,
-	})
-	logger.Trace("Route RPC requests")
+		logger = logger.WithFields(logrus.Fields{
+			"node": nodeName,
+			"url":  url,
+		})
+		logger.Trace("Route RPC requests")
 
-	client, loaded, err := clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
-		// TODO improvements required
-		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
-		// 2. Different metrics for different full nodes.
-		return p.factory(url)
-	})
+		client, loaded, err := clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+			// TODO improvements required
+			// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
+			// 2. Different metrics for different full nodes.
+			return p.factory(url)
+		})
 
-	if err != nil {
-		err := errors.WithMessage(err, "bad full node connection")
-		logger.WithError(err).Error("Failed to get full node client from provider")
+		if err != nil {
+			err := errors.WithMessage(err, "bad full node connection")
+			logger.WithError(err).Error("Failed to get full node client from provider")
+			continue
+		}
 
-		return nil, err
+		if !loaded {
+			logger.Info("Succeeded to connect to full node")
+		}
+
+		res = append(res, &wrapClient{group: group, wrapped: client})
 	}
 
-	if !loaded {
-		logger.Info("Succeeded to connect to full node")
+	if len(res) == 0 {
+		return nil, ErrClientUnavailable
 	}
 
-	return client, nil
+	return res, nil
 }
 
 func remoteAddrFromContext(ctx context.Context) string {

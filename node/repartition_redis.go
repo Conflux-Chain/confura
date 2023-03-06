@@ -29,24 +29,24 @@ func NewRedisRepartitionResolver(client *redis.Client, ttl time.Duration, keyPre
 	}
 }
 
-func (r *RedisRepartitionResolver) Get(key uint64) (string, bool) {
+func (r *RedisRepartitionResolver) Get(key uint64) ([]string, bool) {
 	redisKey := redisRepartitionKey(key, r.keyPrefix)
 	node, err := r.client.GetEx(r.ctx, redisKey, r.ttl).Result()
 	if err == redis.Nil {
-		return "", false
+		return nil, false
 	}
 
 	if err != nil {
 		r.logger.WithError(err).WithField("key", redisKey).Error("Failed to read key from redis")
-		return "", false
+		return nil, false
 	}
 
-	return node, true
+	return strings.Split(node, ","), true
 }
 
-func (r *RedisRepartitionResolver) Put(key uint64, value string) {
+func (r *RedisRepartitionResolver) Put(key uint64, value []string) {
 	redisKey := redisRepartitionKey(key, r.keyPrefix)
-	if err := r.client.Set(r.ctx, redisKey, value, r.ttl).Err(); err != nil {
+	if err := r.client.Set(r.ctx, redisKey, strings.Join(value, ","), r.ttl).Err(); err != nil {
 		r.logger.WithError(err).WithField("key", redisKey).Error("Failed to set key-value to redis")
 	}
 }
@@ -55,5 +55,6 @@ func redisRepartitionKey(key uint64, prefixs ...string) string {
 	prefixs = append(prefixs, "key")
 	prefixStr := strings.Join(prefixs, ":")
 
+	// node:repartition:cfxhttp:key:0xabcd
 	return fmt.Sprintf("node:repartition:%v:%v", prefixStr, key)
 }

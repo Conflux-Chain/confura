@@ -6,21 +6,27 @@ import (
 	"time"
 )
 
+var ( // ensure interface implementation
+	_ RepartitionResolver = (*noopRepartitionResolver)(nil)
+	_ RepartitionResolver = (*SimpleRepartitionResolver)(nil)
+	_ RepartitionResolver = (*RedisRepartitionResolver)(nil)
+)
+
 // RepartitionResolver is implemented to support repartition when item added or removed
 // in the consistent hash ring.
 type RepartitionResolver interface {
-	Get(key uint64) (string, bool)
-	Put(key uint64, value string)
+	Get(key uint64) ([]string, bool)
+	Put(key uint64, value []string)
 }
 
 type noopRepartitionResolver struct{}
 
-func (r *noopRepartitionResolver) Get(key uint64) (string, bool) { return "", false }
-func (r *noopRepartitionResolver) Put(key uint64, value string)  {}
+func (r *noopRepartitionResolver) Get(key uint64) ([]string, bool) { return nil, false }
+func (r *noopRepartitionResolver) Put(key uint64, value []string)  {}
 
 type partitionInfo struct {
 	key      uint64
-	node     string
+	node     []string
 	deadline time.Time
 }
 
@@ -38,10 +44,10 @@ func NewSimpleRepartitionResolver(ttl time.Duration) *SimpleRepartitionResolver 
 	}
 }
 
-func (r *SimpleRepartitionResolver) Get(key uint64) (string, bool) {
+func (r *SimpleRepartitionResolver) Get(key uint64) ([]string, bool) {
 	value, ok := r.key2Items.Load(key)
 	if !ok {
-		return "", false
+		return nil, false
 	}
 
 	r.mu.Lock()
@@ -55,7 +61,7 @@ func (r *SimpleRepartitionResolver) Get(key uint64) (string, bool) {
 	if info.deadline.Before(now) {
 		r.items.Remove(item)
 		r.key2Items.Delete(key)
-		return "", false
+		return nil, false
 	}
 
 	// update expiration
@@ -66,7 +72,7 @@ func (r *SimpleRepartitionResolver) Get(key uint64) (string, bool) {
 	return info.node, true
 }
 
-func (r *SimpleRepartitionResolver) Put(key uint64, value string) {
+func (r *SimpleRepartitionResolver) Put(key uint64, value []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

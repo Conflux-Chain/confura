@@ -15,7 +15,7 @@ import (
 
 const (
 	ctxKeyClientProvider = handlers.CtxKey("Infura-RPC-Client-Provider")
-	ctxKeyClient         = handlers.CtxKey("Infura-RPC-Client")
+	ctxKeyClientSet      = handlers.CtxKey("Infura-RPC-Client-Set")
 )
 
 // go-rpc-provider only supports static middlewares for RPC server.
@@ -84,22 +84,22 @@ func httpMiddleware(registry *rate.Registry, clientProvider interface{}) handler
 
 func clientMiddleware(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
-		var client interface{}
+		var clients interface{}
 		var err error
 
 		if cfxProvider, ok := ctx.Value(ctxKeyClientProvider).(*node.CfxClientProvider); ok {
 			switch msg.Method {
 			case "cfx_getLogs":
-				client, err = getCfxClientFromProviderWithContext(ctx, cfxProvider, node.GroupCfxLogs)
+				clients, err = getCfxClientSetFromProviderWithContext(ctx, cfxProvider, node.GroupCfxLogs)
 			default:
-				client, err = getCfxClientFromProviderWithContext(ctx, cfxProvider)
+				clients, err = getCfxClientSetFromProviderWithContext(ctx, cfxProvider)
 			}
 		} else if ethProvider, ok := ctx.Value(ctxKeyClientProvider).(*node.EthClientProvider); ok {
 			switch msg.Method {
 			case "eth_getLogs":
-				client, err = getEthClientFromProviderWithContext(ctx, ethProvider, node.GroupEthLogs)
+				clients, err = getEthClientSetFromProviderWithContext(ctx, ethProvider, node.GroupEthLogs)
 			default:
-				client, err = getEthClientFromProviderWithContext(ctx, ethProvider)
+				clients, err = getEthClientSetFromProviderWithContext(ctx, ethProvider)
 			}
 		} else {
 			return next(ctx, msg)
@@ -110,48 +110,55 @@ func clientMiddleware(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 			return msg.ErrorResponse(err)
 		}
 
-		ctx = context.WithValue(ctx, ctxKeyClient, client)
-
+		ctx = context.WithValue(ctx, ctxKeyClientSet, clients)
 		return next(ctx, msg)
 	}
 }
 
+func GetCfxClientSetFromContext(ctx context.Context) []sdk.ClientOperator {
+	return ctx.Value(ctxKeyClientSet).([]sdk.ClientOperator)
+}
+
+func GetEthClientSetFromContext(ctx context.Context) []*node.Web3goClient {
+	return ctx.Value(ctxKeyClientSet).([]*node.Web3goClient)
+}
+
 func GetCfxClientFromContext(ctx context.Context) sdk.ClientOperator {
-	return ctx.Value(ctxKeyClient).(sdk.ClientOperator)
+	return GetCfxClientSetFromContext(ctx)[0]
 }
 
 func GetEthClientFromContext(ctx context.Context) *node.Web3goClient {
-	return ctx.Value(ctxKeyClient).(*node.Web3goClient)
+	return GetEthClientSetFromContext(ctx)[0]
 }
 
-func getEthClientFromProviderWithContext(
+func getEthClientSetFromProviderWithContext(
 	ctx context.Context,
 	p *node.EthClientProvider,
 	group ...node.Group,
-) (*node.Web3goClient, error) {
+) ([]*node.Web3goClient, error) {
 	if _, ok := handlers.VipStatusFromContext(ctx); ok {
-		return p.GetClientByToken(ctx, group...)
+		return p.GetClientSetByToken(ctx, group...)
 	}
 
 	if _, ok := rate.SVipStatusFromContext(ctx); ok {
-		return p.GetClientByToken(ctx, group...)
+		return p.GetClientSetByToken(ctx, group...)
 	}
 
-	return p.GetClientByIP(ctx, group...)
+	return p.GetClientSetByIP(ctx, group...)
 }
 
-func getCfxClientFromProviderWithContext(
+func getCfxClientSetFromProviderWithContext(
 	ctx context.Context,
 	p *node.CfxClientProvider,
 	group ...node.Group,
-) (sdk.ClientOperator, error) {
+) ([]sdk.ClientOperator, error) {
 	if _, ok := handlers.VipStatusFromContext(ctx); ok {
-		return p.GetClientByToken(ctx, group...)
+		return p.GetClientSetByToken(ctx, group...)
 	}
 
 	if _, ok := rate.SVipStatusFromContext(ctx); ok {
-		return p.GetClientByToken(ctx, group...)
+		return p.GetClientSetByToken(ctx, group...)
 	}
 
-	return p.GetClientByIP(ctx, group...)
+	return p.GetClientSetByIP(ctx, group...)
 }

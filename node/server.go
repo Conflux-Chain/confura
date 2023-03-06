@@ -91,12 +91,12 @@ func (api *api) ListAll() map[Group][]string {
 
 // Route implements the Router interface. It routes the specified key to any node
 // and return the node URL.
-func (api *api) Route(group Group, key hexutil.Bytes) string {
+func (api *api) Route(group Group, key hexutil.Bytes) []string {
 	if m, ok := api.h.pool.manager(group); ok {
 		return m.Route(key)
 	}
 
-	return ""
+	return nil
 }
 
 // apiHandler rpc handler for node api

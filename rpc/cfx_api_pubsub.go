@@ -225,12 +225,12 @@ func (api *cfxAPI) pubsubCtxFromContext(ctx context.Context) (psCtx *pubsubConte
 		return
 	}
 
-	cfx, err := api.provider.GetClientByIP(ctx, node.GroupCfxWs)
+	cfxs, err := api.provider.GetClientSetByIP(ctx, node.GroupCfxWs)
 	if err != nil {
 		err = errors.WithMessage(err, "failed to get cfx wsclient by ip")
 		return
 	}
 
-	psCtx = &pubsubContext{notifier, rpcClient, cfx}
+	psCtx = &pubsubContext{notifier, rpcClient, cfxs[0]}
 	return
 }

@@ -50,7 +50,7 @@ func (h *CfxPrunedLogsHandler) GetLogs(ctx context.Context, filter types.LogFilt
 		return logs, nil
 	}
 
-	client, err := h.pool.GetClientByIP(ctx, node.GroupCfxArchives)
+	clients, err := h.pool.GetClientSetByIP(ctx, node.GroupCfxArchives)
 	if err == node.ErrClientUnavailable {
 		return nil, errQuotaNotEnough
 	}
@@ -59,7 +59,7 @@ func (h *CfxPrunedLogsHandler) GetLogs(ctx context.Context, filter types.LogFilt
 		return nil, err
 	}
 
-	return h.getLogsThrottled(client, filter)
+	return h.getLogsThrottled(clients[0], filter)
 }
 
 func (h *CfxPrunedLogsHandler) getLogsByUser(ctx context.Context, filter types.LogFilter) ([]types.Log, bool, error) {

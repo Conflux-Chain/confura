@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
+	"github.com/sirupsen/logrus"
 )
 
 // nodeFactory factory method to create node instance
@@ -117,38 +118,62 @@ func (m *Manager) String() string {
 }
 
 // Distribute distributes a full node by specified key.
-func (m *Manager) Distribute(key []byte) Node {
+func (m *Manager) Distribute(key []byte) (res []Node) {
 	k := xxhash.Sum64(key)
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	// Use repartition resolver to distribute if configured.
-	if name, ok := m.resolver.Get(k); ok {
-		return m.nodes[name]
+	if names, ok := m.resolver.Get(k); ok {
+		for _, n := range names {
+			res = append(res, m.nodes[n])
+		}
+		return res
 	}
 
-	member := m.hashRing.LocateKey(key)
-	if member == nil { // in case of empty consistent member
+	// restrict the number of nodes to be distributed with no more than
+	// the member size of the hash ring.
+	distcnt := len(m.hashRing.GetMembers())
+	if distcnt < routeDistNodeCount {
+		distcnt = routeDistNodeCount
+	}
+
+	members, err := m.hashRing.GetClosestN(key, distcnt)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"key":      string(key),
+			"closestN": distcnt,
+		}).WithError(err).Error("Node manager failed to get closestN nodes")
 		return nil
 	}
 
-	node := member.(Node)
-	m.resolver.Put(k, node.Name())
+	var nodeNames []string
+	for i := range members {
+		n := members[i].(Node)
+		res = append(res, n)
+		nodeNames = append(nodeNames, n.Name())
+	}
 
-	return node
+	m.resolver.Put(k, nodeNames)
+	return res
 }
 
 // Route implements the Router interface.
-func (m *Manager) Route(key []byte) string {
-	if n := m.Distribute(key); n != nil {
-		// metrics overall route QPS
-		metrics.Registry.Nodes.Routes(m.group.Space(), m.group.String(), "overall").Mark(1)
-		// metrics per node route QPS
-		metrics.Registry.Nodes.Routes(m.group.Space(), m.group.String(), n.Name()).Mark(1)
-
-		return n.Url()
+func (m *Manager) Route(key []byte) (res []string) {
+	distNodes := m.Distribute(key)
+	if len(distNodes) == 0 {
+		return
 	}
 
-	return ""
+	// metrics overall route QPS
+	metrics.Registry.Nodes.Routes(m.group.Space(), m.group.String(), "overall").Mark(1)
+
+	for _, n := range distNodes {
+		res = append(res, n.Url())
+		// metrics per node route QPS
+		metrics.Registry.Nodes.Routes(m.group.Space(), m.group.String(), n.Name()).Mark(1)
+	}
+
+	return res
 }
