@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -22,48 +23,25 @@ type TxnRelayerConfig struct {
 // TxnRelayer relays raw transaction by broadcasting to node pool
 // of different regions to accelerate P2P diffusion.
 type TxnRelayer struct {
-	poolClients []*sdk.Client      // fullnode pool
-	txnQueue    chan hexutil.Bytes // transactions queued to relay
+	poolClients *util.ConcurrentMap // fullnode client pool
+	txnQueue    chan hexutil.Bytes  // transactions queued to relay
 	config      *TxnRelayerConfig
 }
 
 func MustNewTxnRelayerFromViper() *TxnRelayer {
-	relayer, err := NewTxnRelayerFromViper()
-	if err != nil {
-		logrus.WithError(err).Fatal("Failed to new transaction relayer from viper")
-	}
-
-	return relayer
-}
-
-func NewTxnRelayerFromViper() (*TxnRelayer, error) {
 	var relayConf TxnRelayerConfig
 	viper.MustUnmarshalKey("relay", &relayConf)
+
 	return NewTxnRelayer(&relayConf)
 }
 
-func NewTxnRelayer(relayConf *TxnRelayerConfig) (*TxnRelayer, error) {
+func NewTxnRelayer(relayConf *TxnRelayerConfig) *TxnRelayer {
 	if len(relayConf.NodeUrls) == 0 {
-		return &TxnRelayer{}, nil
-	}
-
-	var cfxClients []*sdk.Client
-
-	for _, url := range relayConf.NodeUrls {
-		cfx, err := sdk.NewClient(url, sdk.ClientOption{
-			RetryCount:     relayConf.Retry,
-			RetryInterval:  relayConf.RetryInterval,
-			RequestTimeout: relayConf.RequestTimeout,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		cfxClients = append(cfxClients, cfx)
+		return &TxnRelayer{config: relayConf}
 	}
 
 	relayer := &TxnRelayer{
-		poolClients: cfxClients,
+		poolClients: &util.ConcurrentMap{},
 		txnQueue:    make(chan hexutil.Bytes, relayConf.BufferSize),
 		config:      relayConf,
 	}
@@ -78,12 +56,12 @@ func NewTxnRelayer(relayConf *TxnRelayerConfig) (*TxnRelayer, error) {
 		}()
 	}
 
-	return relayer, nil
+	return relayer
 }
 
 // AsyncRelay relays raw transaction broadcasting asynchronously.
 func (relayer *TxnRelayer) AsyncRelay(signedTx hexutil.Bytes) bool {
-	if len(relayer.poolClients) == 0 {
+	if len(relayer.config.NodeUrls) == 0 {
 		return true
 	}
 
@@ -96,11 +74,25 @@ func (relayer *TxnRelayer) AsyncRelay(signedTx hexutil.Bytes) bool {
 }
 
 func (relayer *TxnRelayer) doRelay(signedTx hexutil.Bytes) {
-	for _, client := range relayer.poolClients {
-		txHash, err := client.SendRawTransaction(signedTx)
+	for _, url := range relayer.config.NodeUrls {
+		nodeName := rpcutil.Url2NodeName(url)
+		cfx, _, err := relayer.poolClients.LoadOrStoreFnErr(nodeName, func(k interface{}) (interface{}, error) {
+			return sdk.NewClient(url, sdk.ClientOption{
+				RetryCount:     relayer.config.Retry,
+				RetryInterval:  relayer.config.RetryInterval,
+				RequestTimeout: relayer.config.RequestTimeout,
+			})
+		})
 
+		if err != nil {
+			logrus.WithField("url", url).Debug("Txn relayer failed to new cfx client")
+			continue
+		}
+
+		txHash, err := cfx.(sdk.ClientOperator).SendRawTransaction(signedTx)
 		logrus.WithFields(logrus.Fields{
-			"nodeUrl": client.GetNodeURL(), "txHash": txHash,
+			"url":    url,
+			"txHash": txHash,
 		}).WithError(err).Trace("Raw transaction relayed")
 	}
 }

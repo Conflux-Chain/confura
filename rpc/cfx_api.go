@@ -8,7 +8,6 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	"github.com/Conflux-Chain/confura/util/relay"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
@@ -25,7 +24,7 @@ var (
 type CfxAPIOption struct {
 	StoreHandler  *handler.CfxStoreHandler
 	LogApiHandler *handler.CfxLogsApiHandler
-	Relayer       *relay.TxnRelayer
+	TxnHandler    *handler.CfxTxnHandler
 }
 
 // cfxAPI provides main proxy API for core space.
@@ -230,15 +229,13 @@ func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoc
 
 func (api *cfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (types.Hash, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	txHash, err := cfx.SendRawTransaction(signedTx)
-	if err == nil && api.Relayer != nil {
-		// relay transaction broadcasting asynchronously
-		if !api.Relayer.AsyncRelay(signedTx) {
-			logrus.Info("Transaction relay pool is full, dropping transaction relay")
-		}
+
+	if api.TxnHandler != nil {
+		cgroup := GetClientGroupFromContext(ctx)
+		return api.TxnHandler.SendRawTxn(cfx, cgroup, signedTx)
 	}
 
-	return txHash, err
+	return cfx.SendRawTransaction(signedTx)
 }
 
 func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *types.Epoch) (hexutil.Bytes, error) {

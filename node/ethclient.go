@@ -45,7 +45,7 @@ func NewEthClientProvider(db *mysql.MysqlStore, router Router) *EthClientProvide
 // GetClientByToken gets client of specific group (or use normal HTTP group as default) by access token.
 func (p *EthClientProvider) GetClientByToken(ctx context.Context, groups ...Group) (*Web3goClient, error) {
 	accessToken := accessTokenFromContext(ctx)
-	client, err := p.getClientByToken(accessToken, ethNodeGroup(groups...))
+	client, err := p.getClient(accessToken, ethNodeGroup(groups...))
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +69,11 @@ func (p *EthClientProvider) GetClientRandom() (*Web3goClient, error) {
 	client, err := p.getClient(key, GroupEthHttp)
 
 	return client.(*Web3goClient), err
+}
+
+func (p *EthClientProvider) GetGroupByToken(ctx context.Context) (Group, bool) {
+	token := accessTokenFromContext(ctx)
+	return p.getRouteGroup(token)
 }
 
 func ethNodeGroup(groups ...Group) Group {
