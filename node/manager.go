@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
@@ -134,15 +135,12 @@ func (m *Manager) Distribute(key []byte) (res []Node) {
 
 	// restrict the number of nodes to be distributed with no more than
 	// the member size of the hash ring.
-	distcnt := len(m.hashRing.GetMembers())
-	if distcnt < routeDistNodeCount {
-		distcnt = routeDistNodeCount
-	}
+	distcnt := util.MinInt(routeDistNodeCount, len(m.hashRing.GetMembers()))
 
 	members, err := m.hashRing.GetClosestN(key, distcnt)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"key":      string(key),
+			"routeKey": string(key),
 			"closestN": distcnt,
 		}).WithError(err).Error("Node manager failed to get closestN nodes")
 		return nil
@@ -161,18 +159,15 @@ func (m *Manager) Distribute(key []byte) (res []Node) {
 
 // Route implements the Router interface.
 func (m *Manager) Route(key []byte) (res []string) {
-	distNodes := m.Distribute(key)
-	if len(distNodes) == 0 {
-		return
-	}
-
-	// metrics overall route QPS
-	metrics.Registry.Nodes.Routes(m.group.Space(), m.group.String(), "overall").Mark(1)
-
-	for _, n := range distNodes {
+	for _, n := range m.Distribute(key) {
 		res = append(res, n.Url())
 		// metrics per node route QPS
 		metrics.Registry.Nodes.Routes(m.group.Space(), m.group.String(), n.Name()).Mark(1)
+	}
+
+	if len(res) > 0 {
+		// metrics overall route QPS
+		metrics.Registry.Nodes.Routes(m.group.Space(), m.group.String(), "overall").Mark(1)
 	}
 
 	return res

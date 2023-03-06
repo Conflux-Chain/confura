@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
@@ -259,16 +260,15 @@ func (r *LocalRouter) Route(group Group, key []byte) (res []string) {
 		return nil
 	}
 
-	distcnt := len(item.hashRing.GetMembers())
-	if distcnt < routeDistNodeCount {
-		distcnt = routeDistNodeCount
-	}
+	// restrict the number of nodes to be distributed with no more than
+	// the member size of the hash ring.
+	distcnt := util.MinInt(routeDistNodeCount, len(item.hashRing.GetMembers()))
 
 	members, err := item.hashRing.GetClosestN(key, distcnt)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"key":      string(key),
 			"group":    group,
+			"routeKey": string(key),
 			"closestN": distcnt,
 		}).WithError(err).Error("Local router failed to get closestN nodes")
 		return nil
