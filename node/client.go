@@ -122,6 +122,9 @@ func (p *clientProvider) populateCache(token string) (grp Group, ok bool) {
 		grp = Group(route.Group)
 	}
 
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	// cache the new route group
 	p.routeKeyCache.Add(token, grp)
 	return grp, true
