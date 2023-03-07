@@ -28,6 +28,7 @@ var (
 type EthAPIOption struct {
 	StoreHandler        *handler.EthStoreHandler
 	LogApiHandler       *handler.EthLogsApiHandler
+	TxnHandler          *handler.EthTxnHandler
 	VirtualFilterClient *vfclient.Client
 }
 
@@ -219,13 +220,18 @@ func (api *ethAPI) GetTransactionCount(
 // contract address after the transaction has been mined.
 func (api *ethAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
 	w3c := GetEthClientFromContext(ctx)
+
+	if api.TxnHandler != nil {
+		cgroup := GetClientGroupFromContext(ctx)
+		return api.TxnHandler.SendRawTxn(w3c, cgroup, signedTx)
+	}
+
 	return w3c.Eth.SendRawTransaction(signedTx)
 }
 
 // SubmitTransaction is an alias of `SendRawTransaction` method.
 func (api *ethAPI) SubmitTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
-	w3c := GetEthClientFromContext(ctx)
-	return w3c.Eth.SubmitTransaction(signedTx)
+	return api.SendRawTransaction(ctx, signedTx)
 }
 
 // Call executes a new message call immediately without creating a transaction on the block chain.
