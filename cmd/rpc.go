@@ -87,9 +87,10 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 	router := node.Factory().CreateRouter()
 	clientProvider := node.NewCfxClientProvider(storeCtx.CfxDB, router)
+	relayer := relay.MustNewTxnRelayerFromViper()
 
 	option := rpc.CfxAPIOption{
-		Relayer: relay.MustNewTxnRelayerFromViper(),
+		TxnHandler: handler.MustNewCfxTxnHandler(relayer),
 	}
 
 	// initialize store handler

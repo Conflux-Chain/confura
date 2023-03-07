@@ -61,32 +61,23 @@ func (p *clientProvider) getOrRegisterGroup(group Group) *util.ConcurrentMap {
 	return v.(*util.ConcurrentMap)
 }
 
-func (p *clientProvider) getClientByToken(token string, group Group) (interface{}, error) {
-	routeGrp, ok := p.getRouteGroup(token)
-	if ok && len(routeGrp) > 0 {
-		// use custom route group if configured
-		group = Group(routeGrp)
-	}
-
-	return p.getClient(token, group)
-}
-
-func (p *clientProvider) getRouteGroup(token string) (grp Group, ok bool) {
+// getRouteGroup get custom route group for specific route key
+func (p *clientProvider) getRouteGroup(key string) (grp Group, ok bool) {
 	if p.db == nil { // db not available
 		return grp, false
 	}
 
 	// load from cache at first
-	if grp, ok = p.cacheLoad(token); ok {
+	if grp, ok = p.cacheLoad(key); ok {
 		return grp, true
 	}
 
 	// otherwise, populate the cache
-	return p.populateCache(token)
+	return p.populateCache(key)
 }
 
-func (p *clientProvider) cacheLoad(token string) (Group, bool) {
-	v, expired, found := p.routeKeyCache.GetNoExp(token)
+func (p *clientProvider) cacheLoad(key string) (Group, bool) {
+	v, expired, found := p.routeKeyCache.GetNoExp(key)
 	if found && !expired { // cache hit
 		return v.(Group), true
 	}
@@ -94,14 +85,14 @@ func (p *clientProvider) cacheLoad(token string) (Group, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	v, expired, found = p.routeKeyCache.GetNoExp(token)
+	v, expired, found = p.routeKeyCache.GetNoExp(key)
 	if found && !expired { // double check
 		return v.(Group), true
 	}
 
 	if found && expired {
 		// extend lifespan for expired cache kv temporarliy for performance
-		p.routeKeyCache.Add(token, v.(Group))
+		p.routeKeyCache.Add(key, v.(Group))
 	}
 
 	return Group(""), false

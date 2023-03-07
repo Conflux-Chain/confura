@@ -100,7 +100,19 @@ func (c *config) HashRingRaw() consistent.Config {
 	}
 }
 
+func Config() *config {
+	return &cfg
+}
+
 type UrlConfig struct {
 	Nodes    []string
 	Failover string
+}
+
+func CfxUrlConfig() map[Group]UrlConfig {
+	return urlCfg
+}
+
+func EthUrlConfig() map[Group]UrlConfig {
+	return ethUrlCfg
 }
