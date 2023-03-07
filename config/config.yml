@@ -266,6 +266,8 @@ node:
 #   requestTimeout: 3s
 #   # List of core space fullnodes to be broadcasted.
 #   nodeUrls: []
+#   # List of evm space fullnodes to be broadcasted.
+#   ethNodeUrls: []
 
 # # Web3Pay client middleware configurations
 # web3pay:

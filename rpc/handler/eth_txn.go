@@ -1,40 +1,28 @@
 package handler
 
 import (
-	"regexp"
-
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/relay"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/openweb3/web3go"
 	"github.com/sirupsen/logrus"
 )
 
-var (
-	errPatternTxnAlreadyExists = regexp.MustCompile(`(.*)tx already exist(.*)`)
-)
-
-func isTxnAlreadyExistError(err error) bool {
-	return errPatternTxnAlreadyExists.MatchString(err.Error())
-}
-
-// CfxTxnHandler RPC handler to optimize sending transaction by relaying txn broadcasting asynchronously
-// and replicating txn sending synchronously to all full nodes of some node group to improve consistency
-// and availability once consistent hashing LB repartitioned.
-type CfxTxnHandler struct {
+// EthTxnHandler evm space RPC handler to optimize sending transaction by relay and replication.
+type EthTxnHandler struct {
 	relayer relay.TxnRelayer    // transaction relayer
 	nclient *rpc.Client         // node RPC client
 	clients *util.ConcurrentMap // sdk clients: node name => RPC client
 }
 
-func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
+func MustNewEthTxnHandler(relayer relay.TxnRelayer) *EthTxnHandler {
 	var nodeRpcClient *rpc.Client
 
-	if nodeRpcUrl := node.Config().Router.NodeRPCURL; len(nodeRpcUrl) > 0 {
+	if nodeRpcUrl := node.Config().Router.EthNodeRPCURL; len(nodeRpcUrl) > 0 {
 		var err error
 
 		nodeRpcClient, err = rpc.DialHTTP(nodeRpcUrl)
@@ -45,15 +33,15 @@ func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
 		}
 	}
 
-	return &CfxTxnHandler{
+	return &EthTxnHandler{
 		relayer: relayer,
 		nclient: nodeRpcClient,
 		clients: &util.ConcurrentMap{},
 	}
 }
 
-func (h *CfxTxnHandler) SendRawTxn(cfx sdk.ClientOperator, group node.Group, signedTx hexutil.Bytes) (types.Hash, error) {
-	txHash, err := cfx.SendRawTransaction(signedTx)
+func (h *EthTxnHandler) SendRawTxn(w3c *node.Web3goClient, group node.Group, signedTx hexutil.Bytes) (common.Hash, error) {
+	txHash, err := w3c.Eth.SendRawTransaction(signedTx)
 	if err != nil {
 		return txHash, err
 	}
@@ -69,7 +57,7 @@ func (h *CfxTxnHandler) SendRawTxn(cfx sdk.ClientOperator, group node.Group, sig
 }
 
 // replicateRawTxnSendingByGroup synchronously replicate raw txn sending to all full nodes of some specific group
-func (h *CfxTxnHandler) replicateRawTxnSendingByGroup(group node.Group, signedTx hexutil.Bytes) {
+func (h *EthTxnHandler) replicateRawTxnSendingByGroup(group node.Group, signedTx hexutil.Bytes) {
 	if h.nclient != nil { // fetch group nodes from node RPC
 		var nodeUrls []string
 
@@ -85,30 +73,30 @@ func (h *CfxTxnHandler) replicateRawTxnSendingByGroup(group node.Group, signedTx
 	}
 
 	// otherwise get group nodes from local config
-	if conf, ok := node.CfxUrlConfig()[group]; ok {
+	if conf, ok := node.EthUrlConfig()[group]; ok {
 		h.replicateRawTxnSendingToNodes(conf.Nodes, signedTx)
 	}
 }
 
-func (h *CfxTxnHandler) replicateRawTxnSendingToNodes(nodeUrls []string, signedTx hexutil.Bytes) {
+func (h *EthTxnHandler) replicateRawTxnSendingToNodes(nodeUrls []string, signedTx hexutil.Bytes) {
 	for _, url := range nodeUrls {
 		nodeName := rpcutil.Url2NodeName(url)
 		c, _, err := h.clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
-			return rpcutil.NewCfxClient(url)
+			return rpcutil.NewEthClient(url)
 		})
 
 		if err != nil {
 			logrus.WithField("url", url).
 				WithError(err).
-				Error("Txn handler failed to new cfx client for raw txn replication")
+				Error("Txn handler failed to new eth client for raw txn replication")
 			continue
 		}
 
-		_, err = c.(sdk.ClientOperator).SendRawTransaction(signedTx)
+		_, err = c.(*web3go.Client).Eth.SendRawTransaction(signedTx)
 		if err != nil && !isTxnAlreadyExistError(err) {
 			logrus.WithField("url", url).
 				WithError(err).
-				Error("Txn handler failed to replicate sending cfx raw transaction")
+				Error("Txn handler failed to replicate sending evm raw transaction")
 		}
 	}
 }
