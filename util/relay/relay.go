@@ -85,7 +85,7 @@ func (relayer *TxnRelayer) doRelay(signedTx hexutil.Bytes) {
 		})
 
 		if err != nil {
-			logrus.WithField("url", url).Debug("Txn relayer failed to new cfx client")
+			logrus.WithField("url", url).Trace("Txn relayer failed to new cfx client")
 			continue
 		}
 

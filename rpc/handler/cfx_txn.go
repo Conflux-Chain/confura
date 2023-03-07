@@ -58,8 +58,8 @@ func (h *CfxTxnHandler) SendRawTxn(cfx sdk.ClientOperator, group node.Group, sig
 		return txHash, err
 	}
 
+	// relay transaction broadcasting asynchronously
 	if h.relayer != nil && !h.relayer.AsyncRelay(signedTx) {
-		// relay transaction broadcasting asynchronously
 		logrus.Info("Txn relay pool is full, dropping transaction")
 	}
 
