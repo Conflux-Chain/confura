@@ -9,18 +9,23 @@ type slotFactory func(ctx slotContext) slot
 
 // slot slot sliced for time-based window
 type slot interface {
-	expired(now time.Time) bool // check if slot expired or not
-	update(v interface{})       // update slot data
-	snapshot() interface{}      // snapshot slot data
+	outdated(now time.Time) bool // check if slot outdated (not open for update)
+	expired(now time.Time) bool  // check if slot expired (can be purged)
+	update(v interface{})        // update slot data
+	snapshot() interface{}       // snapshot slot data
 }
 
 type slotContext struct {
-	endTime  time.Time // slot end time
+	endTime  time.Time // end time for slot update
 	expireAt time.Time // expiry time to remove
 }
 
 func (ctx slotContext) expired(now time.Time) bool {
-	return !ctx.expireAt.After(now)
+	return ctx.expireAt.Before(now)
+}
+
+func (ctx slotContext) outdated(now time.Time) bool {
+	return ctx.endTime.Before(now)
 }
 
 // slotter slot slices time window and maintains slot expiry and creation
@@ -85,7 +90,7 @@ func (s *slotter) getOrAddSlot(now time.Time, slotf slotFactory) slot {
 
 	// last slot is not out of date
 	lastSlot := s.slots.Back().Value.(slot)
-	if !lastSlot.expired(now) {
+	if !lastSlot.outdated(now) {
 		return lastSlot
 	}
 
