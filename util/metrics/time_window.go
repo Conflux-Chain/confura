@@ -5,95 +5,116 @@ import (
 	"time"
 )
 
-type slotFactory func(ctx slotContext) slot
-
-// slot slot sliced for time-based window
-type slot interface {
-	outdated(now time.Time) bool // check if slot outdated (not open for update)
-	expired(now time.Time) bool  // check if slot expired (can be purged)
-	update(v interface{})        // update slot data
-	snapshot() interface{}       // snapshot slot data
+// time window slot data
+type SlotData interface {
+	Accumulate(SlotData) SlotData
+	Dissipate(SlotData) SlotData
 }
 
-type slotContext struct {
+// time window slot
+type slot struct {
+	data     SlotData  // slot data
 	endTime  time.Time // end time for slot update
 	expireAt time.Time // expiry time to remove
 }
 
-func (ctx slotContext) expired(now time.Time) bool {
-	return ctx.expireAt.Before(now)
+// check if slot expired (can be purged)
+func (s slot) expired(now time.Time) bool {
+	return s.expireAt.Before(now)
 }
 
-func (ctx slotContext) outdated(now time.Time) bool {
-	return ctx.endTime.Before(now)
+// check if slot outdated (not open for update)
+func (s slot) outdated(now time.Time) bool {
+	return s.endTime.Before(now)
 }
 
-// slotter slot slices time window and maintains slot expiry and creation
-type slotter struct {
+// TimeWindow slices time window into slots and maintains slot expiry and creation
+type TimeWindow struct {
 	slots          *list.List    // double linked slots chronologically
 	slotInterval   time.Duration // time interval per slot
 	windowInterval time.Duration // time window interval
+	aggData        SlotData      // aggregation slot data
 }
 
-func newSlotter(slotInterval time.Duration, numSlots int) *slotter {
-	return &slotter{
+func NewTimeWindow(slotInterval time.Duration, numSlots int) *TimeWindow {
+	return &TimeWindow{
 		slots:          list.New(),
 		slotInterval:   slotInterval,
 		windowInterval: slotInterval * time.Duration(numSlots),
 	}
 }
 
+// Add adds data sample to time window
+func (tw *TimeWindow) Add(sample SlotData) {
+	now := time.Now()
+
+	// expired slots
+	tw.expire(now)
+
+	// update slot data
+	if slot, ok := tw.getOrAddSlot(now, sample); ok {
+		slot.data = slot.data.Accumulate(sample)
+	}
+
+	// update aggregation data
+	tw.aggData = tw.aggData.Accumulate(sample)
+}
+
+// Aggregate aggregates the time window
+func (tw *TimeWindow) Aggregate() SlotData {
+	return tw.aggData
+}
+
 // expire removes expired slots.
-func (sl *slotter) expire(now time.Time) (expired []slot) {
+func (tw *TimeWindow) expire(now time.Time) {
 	for {
 		// time window is empty
-		front := sl.slots.Front()
+		front := tw.slots.Front()
 		if front == nil {
-			break
+			return
 		}
 
 		// not expired yet
-		s := front.Value.(slot)
+		s := front.Value.(*slot)
 		if !s.expired(now) {
-			break
+			return
 		}
 
 		// remove expired slot
-		sl.slots.Remove(front)
-		expired = append(expired, s)
-	}
+		tw.slots.Remove(front)
 
-	return expired
+		// dissipate expired slot data
+		tw.aggData = tw.aggData.Dissipate(s.data)
+	}
 }
 
 // addNewSlot always appends a new slot to time window.
-func (sl *slotter) addNewSlot(now time.Time, slotf slotFactory) slot {
-	slotStartTime := now.Truncate(sl.slotInterval)
+func (tw *TimeWindow) addNewSlot(now time.Time, data SlotData) *slot {
+	slotStartTime := now.Truncate(tw.slotInterval)
 
-	slotCtx := slotContext{
-		endTime:  slotStartTime.Add(sl.slotInterval),
-		expireAt: slotStartTime.Add(sl.windowInterval),
+	newSlot := &slot{
+		data:     data,
+		endTime:  slotStartTime.Add(tw.slotInterval),
+		expireAt: slotStartTime.Add(tw.windowInterval),
 	}
 
-	newSlot := slotf(slotCtx)
-	sl.slots.PushBack(newSlot)
-
+	tw.slots.PushBack(newSlot)
 	return newSlot
 }
 
 // getOrAddSlot gets the last slot or adds a new slot if the last one out of date.
-func (s *slotter) getOrAddSlot(now time.Time, slotf slotFactory) slot {
+func (tw *TimeWindow) getOrAddSlot(now time.Time, data SlotData) (*slot, bool) {
 	// time window is empty
-	if s.slots.Len() == 0 {
-		return s.addNewSlot(now, slotf)
+	if tw.slots.Len() == 0 {
+		return tw.addNewSlot(now, data), false
 	}
 
 	// last slot is not out of date
-	lastSlot := s.slots.Back().Value.(slot)
+	lastSlot := tw.slots.Back().Value.(*slot)
 	if !lastSlot.outdated(now) {
-		return lastSlot
+		return lastSlot, true
 	}
 
 	// otherwise, add new slot
-	return s.addNewSlot(now, slotf)
+	return tw.addNewSlot(now, data), false
 }

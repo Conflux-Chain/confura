@@ -46,39 +46,36 @@ func GetOrRegisterTimeWindowPercentage(
 	return getOrRegisterPercentage(factory, name, args...)
 }
 
-// percentageSlot time window slot for percentage
-type percentageSlot struct {
-	slotContext
+// twPercentageData time window percentage data
+type twPercentageData percentageData
 
-	data percentageData
-}
+// implements `SlotData` interface
 
-func newPercentageSlot(ctx slotContext) slot {
-	return &percentageSlot{slotContext: ctx}
-}
-
-// implement `slot` interface
-func (ps *percentageSlot) update(v interface{}) {
-	if marked, ok := v.(bool); ok {
-		ps.data.update(marked)
+func (d twPercentageData) Accumulate(v SlotData) SlotData {
+	rhs := v.(twPercentageData)
+	return twPercentageData{
+		total: d.total + rhs.total,
+		marks: d.marks + rhs.marks,
 	}
 }
 
-func (ps *percentageSlot) snapshot() interface{} {
-	return ps.data
+func (d twPercentageData) Dissipate(v SlotData) SlotData {
+	rhs := v.(twPercentageData)
+	return twPercentageData{
+		total: d.total - rhs.total,
+		marks: d.marks - rhs.marks,
+	}
 }
 
 // timeWindowPercentage implements Percentage interface to record recent percentage.
 type timeWindowPercentage struct {
-	*slotter
-
 	mu     sync.Mutex
-	window percentageData
+	window *TimeWindow
 }
 
 func newTimeWindowPercentage(slotInterval time.Duration, numSlots int) *timeWindowPercentage {
 	return &timeWindowPercentage{
-		slotter: newSlotter(slotInterval, numSlots),
+		window: NewTimeWindow(slotInterval, numSlots),
 	}
 }
 
@@ -86,22 +83,12 @@ func (p *timeWindowPercentage) Mark(marked bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// remove expired slots
-	now := time.Now()
-	eslots := p.expire(now)
-
-	// update window changes brought by expired slots
-	for i := range eslots {
-		data := eslots[i].snapshot().(percentageData)
-		p.window.total -= data.total
-		p.window.marks -= data.marks
+	data := twPercentageData{total: 1}
+	if marked {
+		data.marks++
 	}
 
-	// prepare slot to update
-	curslot := p.getOrAddSlot(now, newPercentageSlot)
-	curslot.update(marked)
-
-	p.window.update(marked)
+	p.window.Add(data)
 }
 
 // Value implements the metrics.GaugeFloat64 interface.
@@ -109,11 +96,8 @@ func (p *timeWindowPercentage) Value() float64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// remove expired slots
-	now := time.Now()
-	p.expire(now)
-
-	return p.window.value()
+	aggdata := p.window.Aggregate().(twPercentageData)
+	return (*percentageData)(&aggdata).value()
 }
 
 // Update implements the metrics.GaugeFloat64 interface.
