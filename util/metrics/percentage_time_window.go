@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"container/list"
 	"sync"
 	"time"
 
@@ -47,83 +46,40 @@ func GetOrRegisterTimeWindowPercentage(
 	return getOrRegisterPercentage(factory, name, args...)
 }
 
-type slot struct {
-	percentageData
+// percentageSlot time window slot for percentage
+type percentageSlot struct {
+	slotContext
 
-	endTime  time.Time // end time to update percentage data
-	expireAt time.Time // time to remove the slot
+	data percentageData
+}
+
+func newPercentageSlot(ctx slotContext) slot {
+	return &percentageSlot{slotContext: ctx}
+}
+
+// implement `slot` interface
+func (ps *percentageSlot) update(v interface{}) {
+	if marked, ok := v.(bool); ok {
+		ps.data.update(marked)
+	}
+}
+
+func (ps *percentageSlot) snapshot() interface{} {
+	return ps.data
 }
 
 // timeWindowPercentage implements Percentage interface to record recent percentage.
 type timeWindowPercentage struct {
+	*slotter
+
+	mu     sync.Mutex
 	window percentageData
-
-	slots          *list.List
-	slotInterval   time.Duration
-	windowInterval time.Duration
-
-	mu sync.Mutex
 }
 
 func newTimeWindowPercentage(slotInterval time.Duration, numSlots int) *timeWindowPercentage {
 	return &timeWindowPercentage{
-		slots:          list.New(),
-		slotInterval:   slotInterval,
-		windowInterval: slotInterval * time.Duration(numSlots),
+		slotter: newSlotter(slotInterval, numSlots),
 	}
-}
-
-// expire removes expired slots.
-func (p *timeWindowPercentage) expire(now time.Time) {
-	for {
-		// time window is empty
-		front := p.slots.Front()
-		if front == nil {
-			return
-		}
-
-		// not expired yet
-		slot := front.Value.(*slot)
-		if slot.expireAt.After(now) {
-			return
-		}
-
-		// updates when slot expired
-		p.slots.Remove(front)
-		p.window.total -= slot.total
-		p.window.marks -= slot.marks
-	}
-}
-
-// addNewSlot always appends a new slot to time window.
-func (p *timeWindowPercentage) addNewSlot(now time.Time) *slot {
-	slotStartTime := now.Truncate(p.slotInterval)
-
-	newSlot := &slot{
-		endTime:  slotStartTime.Add(p.slotInterval),
-		expireAt: slotStartTime.Add(p.windowInterval),
-	}
-
-	p.slots.PushBack(newSlot)
-
-	return newSlot
-}
-
-// getOrAddSlot gets the last slot or adds a new slot if the last one out of date.
-func (p *timeWindowPercentage) getOrAddSlot(now time.Time) *slot {
-	// time window is empty
-	if p.slots.Len() == 0 {
-		return p.addNewSlot(now)
-	}
-
-	// last slot is not out of date
-	lastSlot := p.slots.Back().Value.(*slot)
-	if lastSlot.endTime.After(now) {
-		return lastSlot
-	}
-
-	// otherwise, add new slot
-	return p.addNewSlot(now)
 }
 
 func (p *timeWindowPercentage) Mark(marked bool) {
@@ -132,11 +88,18 @@ func (p *timeWindowPercentage) Mark(marked bool) {
 
 	// remove expired slots
 	now := time.Now()
-	p.expire(now)
+	eslots := p.expire(now)
+
+	// update window changes brought by expired slots
+	for i := range eslots {
+		data := eslots[i].snapshot().(percentageData)
+		p.window.total -= data.total
+		p.window.marks -= data.marks
+	}
 
 	// prepare slot to update
-	currentSlot := p.getOrAddSlot(now)
-	currentSlot.update(marked)
+	curslot := p.getOrAddSlot(now, newPercentageSlot)
+	curslot.update(marked)
 
 	p.window.update(marked)
 }
