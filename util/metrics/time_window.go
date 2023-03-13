@@ -31,7 +31,7 @@ func (s slot) outdated(now time.Time) bool {
 
 // TimeWindow slices time window into slots and maintains slot expiry and creation
 type TimeWindow struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	slots          *list.List    // double linked slots chronologically
 	slotInterval   time.Duration // time interval per slot
@@ -62,6 +62,9 @@ func (tw *TimeWindow) Add(sample SlotData) {
 
 // Data returns the aggregation data within the time window scope
 func (tw *TimeWindow) Data() SlotData {
+	tw.mu.RLock()
+	defer tw.mu.RUnlock()
+
 	return tw.aggData
 }
 
