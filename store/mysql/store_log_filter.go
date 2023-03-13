@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"database/sql"
+	"fmt"
 
 	"github.com/Conflux-Chain/confura/store"
 	"gorm.io/gorm"
@@ -83,9 +84,24 @@ type LogFilter struct {
 // Note, the result is not accurate, because some records are popped during chain reorg.
 // However, it is tolerable for the business.
 func (filter *LogFilter) calculateQuerySetSize(db *gorm.DB) (uint64, error) {
-	db = db.Select("MIN(id) AS min, MAX(id) AS max").
+	// Having rough estimation by selecting id range of the query with specified filter
+	// condition, with following sql statement eg.,
+	/*
+		SELECT MIN(t0.id) AS min, MAX(t0.id) AS max
+			FROM `logs_0` as t0,
+				(SELECT MIN(bn) as minb, max(bn) as maxb
+					FROM `logs_0` WHERE bn BETWEEN 55095000 AND 114601549) as t1
+			WHERE t0.bn IN (t1.minb, t1.maxb);
+	*/
+
+	// sub query to get available block range within db
+	subq := db.Select("MIN(bn) AS minb, MAX(bn) AS maxb").
 		Table(filter.TableName).
 		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
+
+	db = db.Select("MIN(t0.id) AS min, MAX(t0.id) AS max").
+		Table(fmt.Sprintf("`%v` AS t0, (?) AS t1", filter.TableName), subq).
+		Where("t0.bn IN (t1.minb, t1.maxb)")
 
 	var result struct {
 		Min sql.NullInt64
