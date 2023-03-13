@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/metrics"
@@ -51,7 +50,7 @@ type twPercentageData percentageData
 
 // implements `SlotData` interface
 
-func (d twPercentageData) Accumulate(v SlotData) SlotData {
+func (d twPercentageData) Add(v SlotData) SlotData {
 	rhs := v.(twPercentageData)
 	return twPercentageData{
 		total: d.total + rhs.total,
@@ -59,7 +58,7 @@ func (d twPercentageData) Accumulate(v SlotData) SlotData {
 	}
 }
 
-func (d twPercentageData) Dissipate(v SlotData) SlotData {
+func (d twPercentageData) Sub(v SlotData) SlotData {
 	rhs := v.(twPercentageData)
 	return twPercentageData{
 		total: d.total - rhs.total,
@@ -69,7 +68,6 @@ func (d twPercentageData) Dissipate(v SlotData) SlotData {
 
 // timeWindowPercentage implements Percentage interface to record recent percentage.
 type timeWindowPercentage struct {
-	mu     sync.Mutex
 	window *TimeWindow
 }
 
@@ -80,9 +78,6 @@ func newTimeWindowPercentage(slotInterval time.Duration, numSlots int) *timeWind
 }
 
 func (p *timeWindowPercentage) Mark(marked bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	data := twPercentageData{total: 1}
 	if marked {
 		data.marks++
@@ -93,11 +88,8 @@ func (p *timeWindowPercentage) Mark(marked bool) {
 
 // Value implements the metrics.GaugeFloat64 interface.
 func (p *timeWindowPercentage) Value() float64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	aggdata := p.window.Aggregate().(twPercentageData)
-	return (*percentageData)(&aggdata).value()
+	aggdata := percentageData(p.window.Data().(twPercentageData))
+	return aggdata.value()
 }
 
 // Update implements the metrics.GaugeFloat64 interface.

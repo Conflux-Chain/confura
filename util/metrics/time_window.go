@@ -2,13 +2,14 @@ package metrics
 
 import (
 	"container/list"
+	"sync"
 	"time"
 )
 
-// time window slot data
+// SlotData aggregatable slot data for time window
 type SlotData interface {
-	Accumulate(SlotData) SlotData
-	Dissipate(SlotData) SlotData
+	Add(SlotData) SlotData // accumulate
+	Sub(SlotData) SlotData // dissipate
 }
 
 // time window slot
@@ -30,10 +31,12 @@ func (s slot) outdated(now time.Time) bool {
 
 // TimeWindow slices time window into slots and maintains slot expiry and creation
 type TimeWindow struct {
+	mu sync.Mutex
+
 	slots          *list.List    // double linked slots chronologically
 	slotInterval   time.Duration // time interval per slot
 	windowInterval time.Duration // time window interval
-	aggData        SlotData      // aggregation slot data
+	aggData        SlotData      // aggregation data within the time window scope
 }
 
 func NewTimeWindow(slotInterval time.Duration, numSlots int) *TimeWindow {
@@ -48,25 +51,23 @@ func NewTimeWindow(slotInterval time.Duration, numSlots int) *TimeWindow {
 func (tw *TimeWindow) Add(sample SlotData) {
 	now := time.Now()
 
-	// expired slots
+	// expired outdated slots
 	tw.expire(now)
 
-	// update slot data
-	if slot, ok := tw.getOrAddSlot(now, sample); ok {
-		slot.data = slot.data.Accumulate(sample)
-	}
-
-	// update aggregation data
-	tw.aggData = tw.aggData.Accumulate(sample)
+	// update or add slot data
+	tw.addOrUpdateSlot(now, sample)
 }
 
-// Aggregate aggregates the time window
-func (tw *TimeWindow) Aggregate() SlotData {
+// Data returns the aggregation data within the time window scope
+func (tw *TimeWindow) Data() SlotData {
 	return tw.aggData
 }
 
 // expire removes expired slots.
 func (tw *TimeWindow) expire(now time.Time) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+
 	for {
 		// time window is empty
 		front := tw.slots.Front()
@@ -84,8 +85,34 @@ func (tw *TimeWindow) expire(now time.Time) {
 		tw.slots.Remove(front)
 
 		// dissipate expired slot data
-		tw.aggData = tw.aggData.Dissipate(s.data)
+		tw.aggData = tw.aggData.Sub(s.data)
 	}
+}
+
+// addOrUpdateSlot adds a new slot with the provided slot data if no one exists or
+// the last one is out of date; otherwise update the last slot with the provided data.
+func (tw *TimeWindow) addOrUpdateSlot(now time.Time, data SlotData) *slot {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+
+	defer func() { // update aggregation data
+		tw.aggData = tw.aggData.Add(data)
+	}()
+
+	// time window is empty
+	if tw.slots.Len() == 0 {
+		return tw.addNewSlot(now, data)
+	}
+
+	// last slot is out of date
+	lastSlot := tw.slots.Back().Value.(*slot)
+	if lastSlot.outdated(now) {
+		return tw.addNewSlot(now, data)
+	}
+
+	// otherwise, update the last slot with new data
+	lastSlot.data = lastSlot.data.Add(data)
+	return lastSlot
 }
 
 // addNewSlot always appends a new slot to time window.
@@ -100,21 +127,4 @@ func (tw *TimeWindow) addNewSlot(now time.Time, data SlotData) *slot {
 
 	tw.slots.PushBack(newSlot)
 	return newSlot
-}
-
-// getOrAddSlot gets the last slot or adds a new slot if the last one out of date.
-func (tw *TimeWindow) getOrAddSlot(now time.Time, data SlotData) (*slot, bool) {
-	// time window is empty
-	if tw.slots.Len() == 0 {
-		return tw.addNewSlot(now, data), false
-	}
-
-	// last slot is not out of date
-	lastSlot := tw.slots.Back().Value.(*slot)
-	if !lastSlot.outdated(now) {
-		return lastSlot, true
-	}
-
-	// otherwise, add new slot
-	return tw.addNewSlot(now, data), false
 }
