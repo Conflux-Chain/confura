@@ -156,7 +156,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, nil, err
 	}
 
-	if block == nil {
+	if block == nil || block.Number == nil {
 		return nil, nil, errors.New("unknown block")
 	}
 
