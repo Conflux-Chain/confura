@@ -49,12 +49,14 @@ func NewTimeWindow(slotInterval time.Duration, numSlots int) *TimeWindow {
 
 // Add adds data sample to time window
 func (tw *TimeWindow) Add(sample SlotData) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+
 	now := time.Now()
 
-	// expired outdated slots
+	// expire outdated slots
 	tw.expire(now)
-
-	// update or add slot data
+	// add or update slot data
 	tw.addOrUpdateSlot(now, sample)
 }
 
@@ -65,9 +67,6 @@ func (tw *TimeWindow) Data() SlotData {
 
 // expire removes expired slots.
 func (tw *TimeWindow) expire(now time.Time) {
-	tw.mu.Lock()
-	defer tw.mu.Unlock()
-
 	for {
 		// time window is empty
 		front := tw.slots.Front()
@@ -92,9 +91,6 @@ func (tw *TimeWindow) expire(now time.Time) {
 // addOrUpdateSlot adds a new slot with the provided slot data if no one exists or
 // the last one is out of date; otherwise update the last slot with the provided data.
 func (tw *TimeWindow) addOrUpdateSlot(now time.Time, data SlotData) *slot {
-	tw.mu.Lock()
-	defer tw.mu.Unlock()
-
 	defer func() { // update aggregation data
 		tw.aggData = tw.aggData.Add(data)
 	}()
