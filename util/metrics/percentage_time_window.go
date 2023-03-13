@@ -1,8 +1,6 @@
 package metrics
 
 import (
-	"container/list"
-	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/metrics"
@@ -47,110 +45,51 @@ func GetOrRegisterTimeWindowPercentage(
 	return getOrRegisterPercentage(factory, name, args...)
 }
 
-type slot struct {
-	percentageData
+// twPercentageData time window percentage data
+type twPercentageData percentageData
 
-	endTime  time.Time // end time to update percentage data
-	expireAt time.Time // time to remove the slot
+// implements `SlotData` interface
+
+func (d twPercentageData) Add(v SlotData) SlotData {
+	rhs := v.(twPercentageData)
+	return twPercentageData{
+		total: d.total + rhs.total,
+		marks: d.marks + rhs.marks,
+	}
+}
+
+func (d twPercentageData) Sub(v SlotData) SlotData {
+	rhs := v.(twPercentageData)
+	return twPercentageData{
+		total: d.total - rhs.total,
+		marks: d.marks - rhs.marks,
+	}
 }
 
 // timeWindowPercentage implements Percentage interface to record recent percentage.
 type timeWindowPercentage struct {
-	window percentageData
-
-	slots          *list.List
-	slotInterval   time.Duration
-	windowInterval time.Duration
-
-	mu sync.Mutex
+	window *TimeWindow
 }
 
 func newTimeWindowPercentage(slotInterval time.Duration, numSlots int) *timeWindowPercentage {
 	return &timeWindowPercentage{
-		slots:          list.New(),
-		slotInterval:   slotInterval,
-		windowInterval: slotInterval * time.Duration(numSlots),
+		window: NewTimeWindow(slotInterval, numSlots),
 	}
-}
-
-// expire removes expired slots.
-func (p *timeWindowPercentage) expire(now time.Time) {
-	for {
-		// time window is empty
-		front := p.slots.Front()
-		if front == nil {
-			return
-		}
-
-		// not expired yet
-		slot := front.Value.(*slot)
-		if slot.expireAt.After(now) {
-			return
-		}
-
-		// updates when slot expired
-		p.slots.Remove(front)
-		p.window.total -= slot.total
-		p.window.marks -= slot.marks
-	}
-}
-
-// addNewSlot always appends a new slot to time window.
-func (p *timeWindowPercentage) addNewSlot(now time.Time) *slot {
-	slotStartTime := now.Truncate(p.slotInterval)
-
-	newSlot := &slot{
-		endTime:  slotStartTime.Add(p.slotInterval),
-		expireAt: slotStartTime.Add(p.windowInterval),
-	}
-
-	p.slots.PushBack(newSlot)
-
-	return newSlot
-}
-
-// getOrAddSlot gets the last slot or adds a new slot if the last one out of date.
-func (p *timeWindowPercentage) getOrAddSlot(now time.Time) *slot {
-	// time window is empty
-	if p.slots.Len() == 0 {
-		return p.addNewSlot(now)
-	}
-
-	// last slot is not out of date
-	lastSlot := p.slots.Back().Value.(*slot)
-	if lastSlot.endTime.After(now) {
-		return lastSlot
-	}
-
-	// otherwise, add new slot
-	return p.addNewSlot(now)
 }
 
 func (p *timeWindowPercentage) Mark(marked bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	data := twPercentageData{total: 1}
+	if marked {
+		data.marks++
+	}
 
-	// remove expired slots
-	now := time.Now()
-	p.expire(now)
-
-	// prepare slot to update
-	currentSlot := p.getOrAddSlot(now)
-	currentSlot.update(marked)
-
-	p.window.update(marked)
+	p.window.Add(data)
 }
 
 // Value implements the metrics.GaugeFloat64 interface.
 func (p *timeWindowPercentage) Value() float64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// remove expired slots
-	now := time.Now()
-	p.expire(now)
-
-	return p.window.value()
+	aggdata := percentageData(p.window.Data().(twPercentageData))
+	return aggdata.value()
 }
 
 // Update implements the metrics.GaugeFloat64 interface.
