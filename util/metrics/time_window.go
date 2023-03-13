@@ -10,6 +10,7 @@ import (
 type SlotData interface {
 	Add(SlotData) SlotData // accumulate
 	Sub(SlotData) SlotData // dissipate
+	SnapShot() SlotData    // snapshot copy
 }
 
 // time window slot
@@ -65,7 +66,7 @@ func (tw *TimeWindow) Data() SlotData {
 	tw.mu.RLock()
 	defer tw.mu.RUnlock()
 
-	return tw.aggData
+	return tw.aggData.SnapShot()
 }
 
 // expire removes expired slots.
