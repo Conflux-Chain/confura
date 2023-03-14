@@ -172,7 +172,7 @@ func debugApis() []API {
 			Namespace: "debug",
 			Version:   "1.0",
 			Service:   &debugAPI{},
-			Public:    true,
+			Public:    false,
 		},
 	}
 }
