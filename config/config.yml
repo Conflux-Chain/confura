@@ -5,6 +5,8 @@ rpc:
   exposedModules: []
   # Served HTTP endpoint
   endpoint: ":22537"
+  # Served debug endpoint
+  # debugEndpoint: ":22588"
   # Served websocket endpoint
   # wsEndpoint: ":22535"
   # The websocket ping/pong heartbeating interval
@@ -31,6 +33,8 @@ ethrpc:
   exposedModules: []
   # Served HTTP endpoint
   endpoint: ":28545"
+  # Served debug endpoint
+  # debugEndpoint: ":28588"
   # Served websocket endpoint
   # wsEndpoint: ":28535"
 

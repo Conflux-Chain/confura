@@ -135,9 +135,15 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	httpEndpoint := viper.GetString("rpc.endpoint")
 	go server.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
 
-	// server Websocket endpoint
+	// serve Websocket endpoint
 	if wsEndpoint := viper.GetString("rpc.wsEndpoint"); len(wsEndpoint) > 0 {
 		go server.MustServeGraceful(ctx, wg, wsEndpoint, rpcutil.ProtocolWS)
+	}
+
+	// serve debug endpoint
+	if debugEndpoint := viper.GetString("rpc.debugEndpoint"); len(debugEndpoint) > 0 {
+		server := rpc.MustNewDebugServer()
+		go server.MustServeGraceful(ctx, wg, debugEndpoint, rpcutil.ProtocolHttp)
 	}
 }
 
@@ -178,6 +184,12 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 	// serve Websocket endpoint
 	if wsEndpoint := viper.GetString("ethrpc.wsEndpoint"); len(wsEndpoint) > 0 {
 		go server.MustServeGraceful(ctx, wg, wsEndpoint, rpcutil.ProtocolWS)
+	}
+
+	// serve debug endpoint
+	if debugEndpoint := viper.GetString("ethrpc.debugEndpoint"); len(debugEndpoint) > 0 {
+		server := rpc.MustNewDebugServer()
+		go server.MustServeGraceful(ctx, wg, debugEndpoint, rpcutil.ProtocolHttp)
 	}
 }
 

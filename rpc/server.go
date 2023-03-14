@@ -13,6 +13,8 @@ const (
 	evmSpaceRpcServerName    = "evm_space_rpc"
 
 	nativeSpaceBridgeRpcServerName = "core_space_bridge_rpc"
+
+	debugRpcServerName = "debug_rpc"
 )
 
 // MustNewNativeSpaceServer new core space RPC server by specifying router, handler
@@ -87,4 +89,14 @@ func MustNewNativeSpaceBridgeServer(config *CfxBridgeServerConfig) *rpc.Server {
 	}
 
 	return rpc.MustNewServer(nativeSpaceBridgeRpcServerName, exposedApis)
+}
+
+// MustNewDebugServer new debug RPC server for internal debugging use.
+func MustNewDebugServer() *rpc.Server {
+	servedApis := make(map[string]interface{})
+	for _, api := range debugApis() {
+		servedApis[api.Namespace] = api.Service
+	}
+
+	return rpc.MustNewServer(debugRpcServerName, servedApis)
 }
