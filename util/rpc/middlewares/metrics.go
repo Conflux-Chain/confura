@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/openweb3/go-rpc-provider"
 )
 
@@ -32,9 +33,27 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 			metricMethod = "method_not_found"
 		}
 
+		// collect rpc QPS/latency etc.
 		metrics.Registry.RPC.UpdateDuration(metricMethod, resp.Error, start)
+		// collect traffic hits
+		metrics.DefaultTrafficCollector().MarkHit(getTrafficSourceFromContext(ctx))
+
 		return resp
 	}
+}
+
+func getTrafficSourceFromContext(ctx context.Context) (source string) {
+	if isVipAccessFromContext(ctx) {
+		source, _ = handlers.GetAccessTokenFromContext(ctx)
+	} else {
+		source, _ = handlers.GetIPAddressFromContext(ctx)
+	}
+
+	if len(source) == 0 {
+		source = "unknown_source"
+	}
+
+	return source
 }
 
 func isMethodNotFoundByError(method string, err error) bool {

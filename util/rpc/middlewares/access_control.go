@@ -35,13 +35,8 @@ func MustNewVipOnlyAccessControlMiddlewareFromViper() rpc.HandleCallMsgMiddlewar
 				return next(ctx, msg)
 			}
 
-			if _, ok := handlers.VipStatusFromContext(ctx); ok {
-				// access allowed for VIP user
-				return next(ctx, msg)
-			}
-
-			if _, ok := rate.SVipStatusFromContext(ctx); ok {
-				// access allowed for SVIP user
+			if isVipAccessFromContext(ctx) {
+				// VIP access allowed
 				return next(ctx, msg)
 			}
 
@@ -49,4 +44,18 @@ func MustNewVipOnlyAccessControlMiddlewareFromViper() rpc.HandleCallMsgMiddlewar
 			return msg.ErrorResponse(errAccessForbidden)
 		}
 	}
+}
+
+func isVipAccessFromContext(ctx context.Context) bool {
+	if _, ok := handlers.VipStatusFromContext(ctx); ok {
+		// access from VIP user
+		return true
+	}
+
+	if _, ok := rate.SVipStatusFromContext(ctx); ok {
+		// access from SVIP user
+		return true
+	}
+
+	return false
 }
