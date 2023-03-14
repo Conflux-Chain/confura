@@ -13,13 +13,28 @@ var (
 	defaultTc *timeWindowTrafficCollector
 )
 
-func DefaultTrafficCollector() *timeWindowTrafficCollector {
+func DefaultTrafficCollector() TrafficCollector {
+	if !metrics.Enabled {
+		return &noopTrafficCollector{}
+	}
+
 	tcOncer.Do(func() {
 		defaultTc = newTimeWindowTrafficCollector(time.Minute, 5)
 	})
 
 	return defaultTc
 }
+
+// TrafficCollector collects traffic hits and calculate topK stats.
+type TrafficCollector interface {
+	MarkHit(source string)
+	TopkVisitors(k int) []Visitor
+}
+
+type noopTrafficCollector struct{}
+
+func (ntc *noopTrafficCollector) MarkHit(source string)        {}
+func (ntc *noopTrafficCollector) TopkVisitors(k int) []Visitor { return nil }
 
 // Visitor visitor traffic such as vistor source and hit count
 type Visitor struct {
@@ -83,11 +98,9 @@ func newTimeWindowTrafficCollector(
 
 // MarkHit mark hits from a visitor source
 func (tc *timeWindowTrafficCollector) MarkHit(source string) {
-	if metrics.Enabled {
-		tc.window.Add(twTrafficData{
-			data: map[string]int{source: 1},
-		})
-	}
+	tc.window.Add(twTrafficData{
+		data: map[string]int{source: 1},
+	})
 }
 
 // TopkVisitors statisticize topK visitors.
@@ -100,7 +113,7 @@ func (tc *timeWindowTrafficCollector) MarkHit(source string) {
 // (far less than a million), besides all operation is totally memory
 // based, so there should be no performance bottleneck for usage.
 func (tc *timeWindowTrafficCollector) TopkVisitors(k int) []Visitor {
-	if !metrics.Enabled || k <= 0 {
+	if k <= 0 {
 		return nil
 	}
 
@@ -129,7 +142,7 @@ func (tc *timeWindowTrafficCollector) TopkVisitors(k int) []Visitor {
 	// pop the heap for TopK visitor statistics
 	res := make([]Visitor, topkHeap.Len())
 	for topkHeap.Len() > 0 {
-		item := topkHeap.Pop().(*visitorItem)
+		item := heap.Pop(&topkHeap).(*visitorItem)
 		res[topkHeap.Len()] = item.Visitor
 	}
 
