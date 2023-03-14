@@ -164,3 +164,15 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 		},
 	}, nil
 }
+
+// debugApis returns the collection of non-standard RPC methods for run time diagnostics and debug.
+func debugApis() []API {
+	return []API{
+		{
+			Namespace: "debug",
+			Version:   "1.0",
+			Service:   &debugAPI{},
+			Public:    true,
+		},
+	}
+}
