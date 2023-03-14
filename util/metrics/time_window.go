@@ -53,10 +53,13 @@ func (tw *TimeWindow) Add(sample SlotData) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
-	now := time.Now()
+	tw.add(time.Now(), sample)
+}
 
+func (tw *TimeWindow) add(now time.Time, sample SlotData) {
 	// expire outdated slots
 	tw.expire(now)
+
 	// add or update slot data
 	tw.addOrUpdateSlot(now, sample)
 }
@@ -66,26 +69,38 @@ func (tw *TimeWindow) Data() SlotData {
 	tw.mu.RLock()
 	defer tw.mu.RUnlock()
 
-	return tw.aggData.SnapShot()
+	return tw.data(time.Now())
+}
+
+func (tw *TimeWindow) data(now time.Time) SlotData {
+	// expire outdated slots
+	tw.expire(now)
+
+	if tw.aggData != nil {
+		return tw.aggData.SnapShot()
+	}
+
+	return nil
 }
 
 // expire removes expired slots.
-func (tw *TimeWindow) expire(now time.Time) {
+func (tw *TimeWindow) expire(now time.Time) (res []*slot) {
 	for {
 		// time window is empty
 		front := tw.slots.Front()
 		if front == nil {
-			return
+			return res
 		}
 
 		// not expired yet
 		s := front.Value.(*slot)
 		if !s.expired(now) {
-			return
+			return res
 		}
 
 		// remove expired slot
 		tw.slots.Remove(front)
+		res = append(res, s)
 
 		// dissipate expired slot data
 		if tw.aggData != nil {
@@ -96,7 +111,7 @@ func (tw *TimeWindow) expire(now time.Time) {
 
 // addOrUpdateSlot adds a new slot with the provided slot data if no one exists or
 // the last one is out of date; otherwise update the last slot with the provided data.
-func (tw *TimeWindow) addOrUpdateSlot(now time.Time, data SlotData) *slot {
+func (tw *TimeWindow) addOrUpdateSlot(now time.Time, data SlotData) (*slot, bool) {
 	defer func() { // update aggregation data
 		if tw.aggData != nil {
 			tw.aggData = tw.aggData.Add(data)
@@ -107,18 +122,18 @@ func (tw *TimeWindow) addOrUpdateSlot(now time.Time, data SlotData) *slot {
 
 	// time window is empty
 	if tw.slots.Len() == 0 {
-		return tw.addNewSlot(now, data)
+		return tw.addNewSlot(now, data), true
 	}
 
 	// last slot is out of date
 	lastSlot := tw.slots.Back().Value.(*slot)
 	if lastSlot.outdated(now) {
-		return tw.addNewSlot(now, data)
+		return tw.addNewSlot(now, data), true
 	}
 
 	// otherwise, update the last slot with new data
 	lastSlot.data = lastSlot.data.Add(data)
-	return lastSlot
+	return lastSlot, false
 }
 
 // addNewSlot always appends a new slot to time window.
