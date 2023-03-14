@@ -4,6 +4,8 @@ import (
 	"container/heap"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/metrics"
 )
 
 var (
@@ -81,9 +83,11 @@ func newTimeWindowTrafficCollector(
 
 // MarkHit mark hits from a visitor source
 func (tc *timeWindowTrafficCollector) MarkHit(source string) {
-	tc.window.Add(twTrafficData{
-		data: map[string]int{source: 1},
-	})
+	if metrics.Enabled {
+		tc.window.Add(twTrafficData{
+			data: map[string]int{source: 1},
+		})
+	}
 }
 
 // TopkVisitors statisticize topK visitors.
@@ -96,7 +100,7 @@ func (tc *timeWindowTrafficCollector) MarkHit(source string) {
 // (far less than a million), besides all operation is totally memory
 // based, so there should be no performance bottleneck for usage.
 func (tc *timeWindowTrafficCollector) TopkVisitors(k int) []Visitor {
-	if k <= 0 {
+	if !metrics.Enabled || k <= 0 {
 		return nil
 	}
 

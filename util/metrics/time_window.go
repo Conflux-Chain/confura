@@ -88,7 +88,9 @@ func (tw *TimeWindow) expire(now time.Time) {
 		tw.slots.Remove(front)
 
 		// dissipate expired slot data
-		tw.aggData = tw.aggData.Sub(s.data)
+		if tw.aggData != nil {
+			tw.aggData = tw.aggData.Sub(s.data)
+		}
 	}
 }
 
@@ -96,7 +98,11 @@ func (tw *TimeWindow) expire(now time.Time) {
 // the last one is out of date; otherwise update the last slot with the provided data.
 func (tw *TimeWindow) addOrUpdateSlot(now time.Time, data SlotData) *slot {
 	defer func() { // update aggregation data
-		tw.aggData = tw.aggData.Add(data)
+		if tw.aggData != nil {
+			tw.aggData = tw.aggData.Add(data)
+		} else {
+			tw.aggData = data.SnapShot()
+		}
 	}()
 
 	// time window is empty
