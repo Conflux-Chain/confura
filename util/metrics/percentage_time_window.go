@@ -66,6 +66,10 @@ func (d twPercentageData) Sub(v SlotData) SlotData {
 	}
 }
 
+func (d twPercentageData) SnapShot() SlotData {
+	return d
+}
+
 // timeWindowPercentage implements Percentage interface to record recent percentage.
 type timeWindowPercentage struct {
 	window *TimeWindow
