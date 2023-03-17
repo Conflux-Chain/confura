@@ -221,6 +221,10 @@ func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
 			return nil, nil, fmt.Errorf("unable to identify block %v", hash)
 		}
 
+		if block.BlockNumber == nil { // block already mined but not ordered yet?
+			return nil, nil, fmt.Errorf("block with hash %v is not executed yet", hash)
+		}
+
 		bn := int(block.BlockNumber.ToInt().Uint64())
 
 		// dedupe
