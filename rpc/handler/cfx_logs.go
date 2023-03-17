@@ -217,8 +217,12 @@ func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
 
 		// Fullnode will return error if any block hash not found.
 		// Error processing request: Filter error: Unable to identify block 0xaaaa...
-		if block == nil || block.BlockNumber == nil {
+		if block == nil {
 			return nil, nil, fmt.Errorf("unable to identify block %v", hash)
+		}
+
+		if block.BlockNumber == nil { // block already mined but not ordered yet?
+			return nil, nil, fmt.Errorf("block with hash %v is not executed yet", hash)
 		}
 
 		bn := int(block.BlockNumber.ToInt().Uint64())
