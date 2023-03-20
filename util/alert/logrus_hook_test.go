@@ -16,7 +16,7 @@ func mustInitViperFromConfig() {
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yml")
-	viper.GetViper().AddConfigPath("../config")
+	viper.GetViper().AddConfigPath("../../config")
 
 	if err := viper.ReadInConfig(); err != nil {
 		panic(errors.WithMessage(err, "Failed to initialize viper"))
@@ -33,5 +33,4 @@ func TestLogrusAddHooks(t *testing.T) {
 	logrus.Warn("Test logrus add hooks warn")
 	logrus.Error("Test logrus add hooks error")
 	logrus.Fatal("Test logrus add hooks fatal")
-
 }
