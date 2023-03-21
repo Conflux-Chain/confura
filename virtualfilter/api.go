@@ -216,11 +216,6 @@ func (api *FilterApi) GetFilterChanges(id rpc.ID) (res *types.FilterChanges, err
 	if IsFilterNotFoundError(err) {
 		// uninstall deprecated proxy filter
 		api.UninstallFilter(id)
-	} else if err != nil && !utils.IsRPCJSONError(err) {
-		logrus.WithFields(logrus.Fields{
-			"delegateFn": f.del,
-			"filterID":   id,
-		}).WithError(err).Error("Virtual filter failed to get filter changes")
 	}
 
 	return res, err
