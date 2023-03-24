@@ -8,6 +8,7 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -196,6 +197,17 @@ func (fc *FilterChain) Reorg(reverted *list.List) error {
 func (fc *FilterChain) Extend(extended *list.List) error {
 	for ele := extended.Front(); ele != nil; ele = ele.Next() {
 		nblock := ele.Value.(*FilterBlock)
+
+		if fnode, ok := fc.hashToNodes[nblock.blockHash]; ok {
+			logrus.WithFields(logrus.Fields{
+				"blockHash": fnode.blockHash,
+				"blockNum":  fnode.blockNum,
+				"reorg":     fnode.reorg,
+				"prev":      fnode.prev,
+				"next":      fnode.next,
+				"logs":      fnode.logs,
+			}).Info("!!! Virtual filter block already existed")
+		}
 
 		if fc.exists(nblock.blockHash) {
 			return errors.Errorf("filter block with hash %v already exists", nblock.blockHash)
