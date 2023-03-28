@@ -86,11 +86,12 @@ func newFilterWorker(
 	shutdownCtx cmdutil.GracefulShutdownContext,
 ) *filterWorker {
 	return &filterWorker{
-		observer: obs,
-		space:    space,
-		nodeName: nodeName,
-		client:   client,
-		session:  nilPollingSession,
+		observer:    obs,
+		space:       space,
+		nodeName:    nodeName,
+		client:      client,
+		session:     nilPollingSession,
+		shutdownCtx: shutdownCtx,
 	}
 }
 

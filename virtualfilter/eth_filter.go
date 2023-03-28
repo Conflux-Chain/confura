@@ -150,7 +150,7 @@ func (f *ethLogFilter) fetch() (filterChanges, error) {
 		}
 	}
 
-	var changeLogs []types.Log
+	changeLogs := make([]types.Log, 0)
 	for _, fb := range pchanges.blocks {
 		logs := fb.logs
 		if len(logs) == 0 { // load from store logs

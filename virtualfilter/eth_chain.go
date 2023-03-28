@@ -176,7 +176,7 @@ func (fc *ethFilterChain) exists(blockHash common.Hash) bool {
 
 // pushFront inserts new block at the front of the chain
 func (fc *ethFilterChain) pushFront(block *ethFilterBlock) *filterNode {
-	node := &filterNode{filterCursor: block, chain: fc}
+	node := newFilterNode(fc, block)
 	fc.filterChainBase.pushFront(node)
 
 	if fc.fullBlockhashCache != nil {
@@ -188,7 +188,7 @@ func (fc *ethFilterChain) pushFront(block *ethFilterBlock) *filterNode {
 
 // pushBack inserts new block at the back of the chain
 func (fc *ethFilterChain) pushBack(block *ethFilterBlock) *filterNode {
-	node := &filterNode{filterCursor: block, chain: fc}
+	node := newFilterNode(fc, block)
 	fc.filterChainBase.pushBack(node)
 
 	if fc.fullBlockhashCache != nil {
