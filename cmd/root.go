@@ -96,7 +96,7 @@ func start(cmd *cobra.Command, args []string) {
 	}
 
 	if vfilterServerEnabled { // start virtual filter
-		startVirtualFilterRpcServer(ctx, wg, storeCtx)
+		startEvmSpaceVirtualFilterServer(ctx, wg, storeCtx)
 	}
 
 	util.GracefulShutdown(wg, cancel)

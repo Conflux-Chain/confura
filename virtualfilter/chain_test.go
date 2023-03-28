@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParseFilterChanges(t *testing.T) {
+func TestParseEthFilterChanges(t *testing.T) {
 	testcase := struct {
 		logs              []types.Log
 		expectedNumLists  int
@@ -29,10 +29,10 @@ func TestParseFilterChanges(t *testing.T) {
 			{BlockNumber: 6, BlockHash: common.HexToHash("0x36")},
 		},
 		expectedNumLists:  4,
-		expectedListSizes: []int{2, 4, 2, 2},
+		expectedListSizes: []int{2, 4, 2, 4},
 	}
 
-	filterBlockLists := parseFilterChanges(&types.FilterChanges{Logs: testcase.logs})
+	filterBlockLists := parseEthFilterChanges(&types.FilterChanges{Logs: testcase.logs})
 	assert.Equal(t, testcase.expectedNumLists, len(filterBlockLists))
 
 	for i, j := 0, 0; i < len(filterBlockLists); i++ {
@@ -40,21 +40,20 @@ func TestParseFilterChanges(t *testing.T) {
 		assert.Equal(t, testcase.expectedListSizes[i], ll.Len())
 
 		for node := ll.Front(); node != nil; j++ {
-			block := node.Value.(*FilterBlock)
+			block := node.Value.(*ethFilterBlock)
 
-			expectedBlock := NewFilterBlockFromLog(&testcase.logs[j])
-			assert.Equal(t, expectedBlock.FilterCursor, block.FilterCursor)
-			assert.Equal(t, expectedBlock.reorg, block.reorg)
+			expectedBlock := newEthFilterBlockFromLogs(testcase.logs[j : j+1])
+			assert.Equal(t, expectedBlock, block)
 
 			node = node.Next()
 		}
 	}
 }
 
-func TestFilterChain(t *testing.T) {
-	fchain := NewFilterChain(10)
-	assert.Nil(t, fchain.Front())
-	assert.Nil(t, fchain.Back())
+func TestEthFilterChain(t *testing.T) {
+	fchain := newEthFilterChain(10)
+	assert.Nil(t, fchain.front())
+	assert.Nil(t, fchain.back())
 	assert.Equal(t, 0, fchain.len)
 
 	demolog := []types.Log{
@@ -64,43 +63,43 @@ func TestFilterChain(t *testing.T) {
 		{BlockNumber: 4, BlockHash: common.HexToHash("0x14")},
 		{BlockNumber: 4, BlockHash: common.HexToHash("0x14"), Removed: true},
 	}
-	filterBlockLists := parseFilterChanges(&types.FilterChanges{Logs: demolog})
+	filterBlockLists := parseEthFilterChanges(&types.FilterChanges{Logs: demolog})
 
 	// test case #1 extend the chain
-	err := fchain.Extend(filterBlockLists[0])
+	err := fchain.extend(filterBlockLists[0])
 	assert.NoError(t, err, "failed to extend filter chain")
 	assert.Equal(t, 4, fchain.len)
-	assert.NotNil(t, fchain.Front())
-	assert.NotNil(t, fchain.Back())
-	assert.True(t, fchain.Front().Match(NewFilterBlockFromLog(&demolog[0])))
-	assert.True(t, fchain.Back().Match(NewFilterBlockFromLog(&demolog[3])))
+	assert.NotNil(t, fchain.front())
+	assert.NotNil(t, fchain.back())
+	assert.True(t, fchain.front().pointedAt(newEthFilterBlockFromLogs(demolog[0:1])))
+	assert.True(t, fchain.back().pointedAt(newEthFilterBlockFromLogs(demolog[3:4])))
 
-	fchain.print(nilFilterCursor)
+	printFilterChain(fchain, nil)
 
 	i := 0
-	fchain.Traverse(nilFilterCursor, func(node *FilterNode, forkPoint bool) bool {
-		assert.True(t, node.Match(NewFilterBlockFromLog(&demolog[i])))
+	fchain.traverse(nil, func(node *filterNode, forkPoint bool) bool {
+		assert.True(t, node.pointedAt(newEthFilterBlockFromLogs(demolog[i:i+1])))
 
 		i++
 		return true
 	})
 
 	// test case #2 reorg the chain
-	err = fchain.Reorg(filterBlockLists[1])
+	err = fchain.reorg(filterBlockLists[1])
 	assert.NoError(t, err, "failed to reorg filter chain")
 	assert.Equal(t, 3, fchain.len)
-	assert.NotNil(t, fchain.Front())
-	assert.NotNil(t, fchain.Back())
-	assert.True(t, fchain.Front().Match(NewFilterBlockFromLog(&demolog[0])))
-	assert.True(t, fchain.Back().Match(NewFilterBlockFromLog(&demolog[2])))
+	assert.NotNil(t, fchain.front())
+	assert.NotNil(t, fchain.back())
+	assert.True(t, fchain.front().pointedAt(newEthFilterBlockFromLogs(demolog[0:1])))
+	assert.True(t, fchain.back().pointedAt(newEthFilterBlockFromLogs(demolog[2:3])))
 
 	// traverse the canonical chain
-	fchain.print(nilFilterCursor)
+	printFilterChain(fchain, nil)
 
-	fchain.Traverse(nilFilterCursor, func() FilterChainIteratorFunc {
+	fchain.traverse(nil, func() filterChainIterator {
 		i := 0
-		return func(node *FilterNode, forkPoint bool) bool {
-			assert.True(t, node.Match(NewFilterBlockFromLog(&demolog[i])))
+		return func(node *filterNode, forkPoint bool) bool {
+			assert.True(t, node.pointedAt(newEthFilterBlockFromLogs(demolog[i:i+1])))
 			i++
 
 			return true
@@ -108,16 +107,16 @@ func TestFilterChain(t *testing.T) {
 	}())
 
 	// traverse the fork chain
-	cursor := FilterCursor{
+	cursor := ethFilterCursor{
 		blockNum: demolog[4].BlockNumber, blockHash: demolog[4].BlockHash,
 	}
-	fchain.print(cursor)
+	printFilterChain(fchain, cursor)
 
-	fchain.Traverse(cursor, func() FilterChainIteratorFunc {
-		i := 0
-		return func(node *FilterNode, forkPoint bool) bool {
-			assert.True(t, node.Match(NewFilterBlockFromLog(&demolog[3-i])))
-			i++
+	fchain.traverse(cursor, func() filterChainIterator {
+		i := 3
+		return func(node *filterNode, forkPoint bool) bool {
+			assert.True(t, node.pointedAt(newEthFilterBlockFromLogs(demolog[i:i+1])))
+			i--
 			return true
 		}
 	}())
@@ -132,13 +131,21 @@ func TestFilterChain(t *testing.T) {
 		{BlockNumber: 9, BlockHash: common.HexToHash("0x29")},
 		{BlockNumber: 10, BlockHash: common.HexToHash("0x30")},
 	}
-	filterBlockLists = parseFilterChanges(&types.FilterChanges{Logs: demolog2})
+	filterBlockLists = parseEthFilterChanges(&types.FilterChanges{Logs: demolog2})
 
-	assert.Positive(t, len(fchain.Front().logs))
-	err = fchain.Extend(filterBlockLists[0])
+	headBlock := fchain.front().filterCursor.(*ethFilterBlock)
+	assert.Positive(t, len(headBlock.logs))
+
+	err = fchain.extend(filterBlockLists[0])
 	assert.NoError(t, err, "failed to extend filter chain")
 	assert.Equal(t, 10, fchain.len)
-	assert.Zero(t, len(fchain.Front().logs))
-	assert.Positive(t, len(fchain.Front().Next().logs))
-	assert.Positive(t, len(fchain.Back().logs))
+
+	headBlock = fchain.front().filterCursor.(*ethFilterBlock)
+	assert.Zero(t, len(headBlock.logs))
+
+	nextHeadBlock := fchain.front().getNext().filterCursor.(*ethFilterBlock)
+	assert.Positive(t, len(nextHeadBlock.logs))
+
+	tailBlock := fchain.back().filterCursor.(*ethFilterBlock)
+	assert.Positive(t, len(tailBlock.logs))
 }

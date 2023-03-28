@@ -2,6 +2,7 @@ package virtualfilter
 
 import (
 	"encoding/json"
+	"flag"
 	"math"
 	"os"
 	"reflect"
@@ -19,20 +20,32 @@ import (
 )
 
 var (
+	// network space of data validity test
+	network = flag.String("network", "eth", "network space (`eth` or `cfx`)")
+
 	ethClient   *web3go.Client
 	ethHttpNode = "http://evmtestnet.confluxrpc.com"
 
-	filterCrit = &types.FilterQuery{Addresses: []common.Address{
+	ethFilterCrit = &types.FilterQuery{Addresses: []common.Address{
 		common.HexToAddress("0xfee2359f47617058ce4138cde54bf55fbca0be4b"),
 		common.HexToAddress("0x73d95c9b1b3d4acc22847aa2985521f2adde5988"),
 		common.HexToAddress("0xfee2359f47617058ce4138cde54bf55fbca0be4b"),
 		common.HexToAddress("0x2ed3dddae5b2f321af0806181fbfa6d049be47d8"),
 	}}
 
-	vfchain = NewFilterChain(500)
+	ethVfChain = newEthFilterChain(500)
 )
 
 func setup() error {
+	switch *network {
+	case "eth":
+		return setupEth()
+	default:
+		return errors.New("unknown network space")
+	}
+}
+
+func setupEth() error {
 	var err error
 
 	ethClient, err = rpcutil.NewEthClient(ethHttpNode, rpcutil.WithClientRequestTimeout(15*time.Second))
@@ -65,18 +78,28 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// Instantly polls changed logs from filter API to accumulate event logs from a `finalized` perspective,
+// Please run this test case with timeout disabled if long running validation
+// is tended as follows:
+/*
+	go test -test.timeout 0 -v -run ^TestFilterDataValidity$ \
+		github.com/Conflux-Chain/confura/virtualfilter -args -network=eth
+*/
+func TestFilterDataValidity(t *testing.T) {
+	if *network == "eth" {
+		testEthFilterDataValidity(t)
+	}
+}
+
+// Consistantly polls changed logs from filter API to accumulate event logs from a `finalized` perspective,
 // then fetches corresponding event logs  with `eth_getLogs` to validate the correctness of polled and
 // fetched result data.
-// Please run this test case with timeout disabled if long running validation is tended:
-// `go test -test.timeout 0 -v -run ^TestFilterDataValidity$ github.com/Conflux-Chain/confura/virtualfilter`
-func TestFilterDataValidity(t *testing.T) {
-	fid, err := ethClient.Filter.NewLogFilter(filterCrit)
+func testEthFilterDataValidity(t *testing.T) {
+	fid, err := ethClient.Filter.NewLogFilter(ethFilterCrit)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new log filter")
 	}
 
-	vheadNode := &vfchain.root
+	vheadNode := &ethVfChain.root
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -104,7 +127,7 @@ func TestFilterDataValidity(t *testing.T) {
 		}
 
 		for i := range fc.Logs {
-			if !util.IncludeEthLogAddrs(&fc.Logs[i], filterCrit.Addresses) {
+			if !util.IncludeEthLogAddrs(&fc.Logs[i], ethFilterCrit.Addresses) {
 				fcJsonStr, _ := json.Marshal(fc)
 				logrus.WithField("filterChanges", string(fcJsonStr)).
 					WithError(err).
@@ -113,7 +136,7 @@ func TestFilterDataValidity(t *testing.T) {
 		}
 
 		// merge the filter changes
-		if err = vfchain.Merge(fc); err != nil {
+		if err = ethVfChain.merge(fc); err != nil {
 			// logging the invalid polled filter changes for debug
 			fcJsonStr, _ := json.Marshal(fc)
 			logrus.WithField("filterChanges", string(fcJsonStr)).
@@ -131,19 +154,29 @@ func TestFilterDataValidity(t *testing.T) {
 		fromBlockNum, toBlockNum := uint64(math.MaxUint64), uint64(0)
 
 		vheadBlockNum := int64(-1)
-		if vheadNode.FilterBlock != nil {
-			vheadBlockNum = int64(vheadNode.blockNum)
+		if vheadNode.filterCursor != nil {
+			fblock := vheadNode.filterCursor.(*ethFilterBlock)
+			vheadBlockNum = int64(fblock.blockNum)
 		}
 
-		for cur := vheadNode.Next(); cur != nil && cur.blockNum <= finBlockNum; {
-			if len(cur.logs) == 0 { // pruned?
-				fromBlockNum, toBlockNum = uint64(math.MaxUint64), uint64(0)
-			} else {
-				fromBlockNum, toBlockNum = util.MinUint64(fromBlockNum, cur.blockNum), cur.blockNum
+		for curN := vheadNode.getNext(); curN != nil; {
+			fblock := curN.filterCursor.(*ethFilterBlock)
+			if fblock.blockNum > finBlockNum {
+				logrus.WithFields(logrus.Fields{
+					"finBlockNum":  finBlockNum,
+					"nextBlockNum": fblock.blockNum,
+				}).Info("Finalized block number caught up")
+				break
 			}
 
-			vheadNode = cur
-			cur = cur.Next()
+			if len(fblock.logs) == 0 { // pruned?
+				fromBlockNum, toBlockNum = uint64(math.MaxUint64), uint64(0)
+			} else {
+				fromBlockNum, toBlockNum = util.MinUint64(fromBlockNum, fblock.blockNum), fblock.blockNum
+			}
+
+			vheadNode = curN
+			curN = curN.getNext()
 		}
 
 		logger := logrus.WithFields(logrus.Fields{
@@ -160,7 +193,7 @@ func TestFilterDataValidity(t *testing.T) {
 
 		from, to := rpc.BlockNumber(fromBlockNum), rpc.BlockNumber(toBlockNum)
 		logs, err := ethClient.Eth.Logs(types.FilterQuery{
-			FromBlock: &from, ToBlock: &to, Addresses: filterCrit.Addresses,
+			FromBlock: &from, ToBlock: &to, Addresses: ethFilterCrit.Addresses,
 		})
 		if err != nil {
 			logger.WithError(err).Error("Failed to get logs")
@@ -174,13 +207,15 @@ func TestFilterDataValidity(t *testing.T) {
 		}
 
 		for bh, vlogs := range hash2Logs {
-			node, ok := vfchain.hashToNodes[bh]
+			node, ok := ethVfChain.hashToNodes[bh.String()]
 			if !ok {
 				logger.WithField("blockHash", bh).Fatal("Validation failed due to block not found")
 			}
 
-			if !reflect.DeepEqual(node.logs, vlogs) {
-				changeLogs, _ := json.Marshal(node.logs)
+			fblock := node.filterCursor.(*ethFilterBlock)
+
+			if !reflect.DeepEqual(fblock.logs, vlogs) {
+				changeLogs, _ := json.Marshal(fblock.logs)
 				getLogs, _ := json.Marshal(vlogs)
 
 				logger.WithFields(logrus.Fields{

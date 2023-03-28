@@ -18,13 +18,13 @@ const (
 	defaultClientRequestTimeout = 3 * time.Second
 )
 
-type Client struct {
+type EthClient struct {
 	// underlying rpc client provider to request virtual filter service
 	p interfaces.Provider
 }
 
-func MustNewClientFromViper() *Client {
-	svcRpcUrl := viper.GetString("virtualFilters.serviceRpcUrl")
+func MustNewEthClientFromViper() *EthClient {
+	svcRpcUrl := viper.GetString("ethVirtualFilters.serviceRpcUrl")
 	option := providers.Option{
 		RetryCount:     defaultClientRetryCount,
 		RetryInterval:  defaultClientRetryInterval,
@@ -38,35 +38,35 @@ func MustNewClientFromViper() *Client {
 			Fatal("Failed to create RPC provider for virtual filter client")
 	}
 
-	return &Client{p: p}
+	return &EthClient{p: p}
 }
 
-func (client *Client) NewFilter(delFnUrl string, fq *types.FilterQuery) (val *w3rpc.ID, err error) {
+func (client *EthClient) NewFilter(delFnUrl string, fq *types.FilterQuery) (val *w3rpc.ID, err error) {
 	err = client.p.CallContext(context.Background(), &val, "eth_newFilter", delFnUrl, fq)
 	return
 }
 
-func (client *Client) NewBlockFilter(delFnUrl string) (val *w3rpc.ID, err error) {
+func (client *EthClient) NewBlockFilter(delFnUrl string) (val *w3rpc.ID, err error) {
 	err = client.p.CallContext(context.Background(), &val, "eth_newBlockFilter", delFnUrl)
 	return
 }
 
-func (client *Client) NewPendingTransactionFilter(delFnUrl string) (val *w3rpc.ID, err error) {
+func (client *EthClient) NewPendingTransactionFilter(delFnUrl string) (val *w3rpc.ID, err error) {
 	err = client.p.CallContext(context.Background(), &val, "eth_newPendingTransactionFilter", delFnUrl)
 	return
 }
 
-func (client *Client) GetFilterChanges(filterID w3rpc.ID) (val *types.FilterChanges, err error) {
+func (client *EthClient) GetFilterChanges(filterID w3rpc.ID) (val *types.FilterChanges, err error) {
 	err = client.p.CallContext(context.Background(), &val, "eth_getFilterChanges", filterID)
 	return
 }
 
-func (client *Client) GetFilterLogs(filterID w3rpc.ID) (val []types.Log, err error) {
+func (client *EthClient) GetFilterLogs(filterID w3rpc.ID) (val []types.Log, err error) {
 	err = client.p.CallContext(context.Background(), &val, "eth_getFilterLogs", filterID)
 	return
 }
 
-func (client *Client) UninstallFilter(filterID w3rpc.ID) (val bool, err error) {
+func (client *EthClient) UninstallFilter(filterID w3rpc.ID) (val bool, err error) {
 	err = client.p.CallContext(context.Background(), &val, "eth_uninstallFilter", filterID)
 	return
 }
