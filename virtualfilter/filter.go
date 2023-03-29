@@ -58,10 +58,6 @@ func (f *filterBase) ftype() filterType {
 	return f.typ
 }
 
-func (f *ethLogFilter) uninstall() (bool, error) {
-	return f.worker.reject(f)
-}
-
 type filterManager struct {
 	mu sync.Mutex
 

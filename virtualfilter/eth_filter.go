@@ -41,6 +41,7 @@ func (f *ethFilter) fetch() (filterChanges, error) {
 }
 
 func (f *ethFilter) uninstall() (bool, error) {
+	metricVirtualFilterSession("eth", f, -1)
 	return f.client.Filter.UninstallFilter(f.id)
 }
 
@@ -54,7 +55,10 @@ func newEthBlockFilter(client *node.Web3goClient) (*ethFilter, error) {
 		return nil, err
 	}
 
-	return newEthFilter(*fid, filterTypeBlock, client), nil
+	f := newEthFilter(*fid, filterTypeBlock, client)
+	metricVirtualFilterSession("eth", f, 1)
+
+	return f, nil
 }
 
 func newEthPendingTxnFilter(client *node.Web3goClient) (*ethFilter, error) {
@@ -63,7 +67,10 @@ func newEthPendingTxnFilter(client *node.Web3goClient) (*ethFilter, error) {
 		return nil, err
 	}
 
-	return newEthFilter(*fid, filterTypePendingTxn, client), nil
+	f := newEthFilter(*fid, filterTypePendingTxn, client)
+	metricVirtualFilterSession("eth", f, 1)
+
+	return f, nil
 }
 
 type ethLogFilter struct {
@@ -91,7 +98,13 @@ func newEthLogFilter(
 		return nil, err
 	}
 
+	metricVirtualFilterSession("eth", lf, 1)
 	return lf, nil
+}
+
+func (f *ethLogFilter) uninstall() (bool, error) {
+	metricVirtualFilterSession("eth", f, -1)
+	return f.worker.reject(f)
 }
 
 func (f *ethLogFilter) fetch() (filterChanges, error) {

@@ -38,8 +38,6 @@ func (fs *ethFilterSystem) newBlockFilter(client *node.Web3goClient) (rpc.ID, er
 	}
 
 	fs.filterMgr.add(f)
-	metricVirtualFilterSession("eth", f, 1)
-
 	return f.fid(), nil
 }
 
@@ -50,8 +48,6 @@ func (fs *ethFilterSystem) newPendingTransactionFilter(client *node.Web3goClient
 	}
 
 	fs.filterMgr.add(f)
-	metricVirtualFilterSession("eth", f, 1)
-
 	return f.fid(), nil
 }
 
@@ -68,8 +64,6 @@ func (fs *ethFilterSystem) newFilter(client *node.Web3goClient, crit types.Filte
 	}
 
 	fs.filterMgr.add(f)
-	metricVirtualFilterSession("eth", f, 1)
-
 	return f.fid(), nil
 }
 
@@ -90,7 +84,6 @@ func (fs *ethFilterSystem) getFilterChanges(id rpc.ID) (*types.FilterChanges, er
 
 func (fs *ethFilterSystem) uninstallFilter(id rpc.ID) (bool, error) {
 	if vf, ok := fs.filterMgr.delete(id); ok {
-		metricVirtualFilterSession("eth", vf, -1)
 		return vf.uninstall()
 	}
 
