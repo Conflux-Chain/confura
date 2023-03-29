@@ -98,10 +98,6 @@ func (f *ethLogFilter) fetch() (filterChanges, error) {
 	// get change blocks from filter worker since last polling
 	pchanges, err := f.worker.fetchPollingChanges(f.id)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"fid":  f.id,
-			"crit": f.crit,
-		}).WithError(err).Error("Virtual filter failed to get polling changes from worker")
 		return nil, err
 	}
 

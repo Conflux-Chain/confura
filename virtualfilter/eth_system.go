@@ -34,9 +34,6 @@ func newEthFilterSystem(
 func (fs *ethFilterSystem) newBlockFilter(client *node.Web3goClient) (rpc.ID, error) {
 	f, err := newEthBlockFilter(client)
 	if err != nil {
-		logrus.WithField("nodeUrl", client.URL).
-			WithError(err).
-			Error("Virtual filter failed to create block virtual filter")
 		return nilRpcId, err
 	}
 
@@ -49,9 +46,6 @@ func (fs *ethFilterSystem) newBlockFilter(client *node.Web3goClient) (rpc.ID, er
 func (fs *ethFilterSystem) newPendingTransactionFilter(client *node.Web3goClient) (rpc.ID, error) {
 	f, err := newEthPendingTxnFilter(client)
 	if err != nil {
-		logrus.WithField("nodeUrl", client.URL).
-			WithError(err).
-			Error("Virtual filter failed to create pending txn virtual filter")
 		return nilRpcId, err
 	}
 
@@ -70,9 +64,6 @@ func (fs *ethFilterSystem) newFilter(client *node.Web3goClient, crit types.Filte
 
 	f, err := newEthLogFilter(fs.logStore, worker.(*ethFilterWorker), client, crit)
 	if err != nil {
-		logrus.WithField("nodeUrl", client.URL).
-			WithError(err).
-			Error("Virtual filter failed to create log virtual filter")
 		return nilRpcId, err
 	}
 
