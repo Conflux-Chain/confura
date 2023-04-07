@@ -1,229 +1,114 @@
 package virtualfilter
 
 import (
-	"sync"
-	"time"
+	"context"
 
 	"github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/rpc"
+	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
-	gethmetrics "github.com/ethereum/go-ethereum/metrics"
-	"github.com/openweb3/go-rpc-provider"
-	"github.com/openweb3/go-rpc-provider/utils"
+	w3rpc "github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 var (
-	ethEmptyLogs = []types.Log{}
-	nilRpcId     = rpc.ID("0x0")
+	nilRpcId = w3rpc.ID("0x0")
 )
 
-// FilterApi offers support to proxy through full nodes to create and manage filters.
-type FilterApi struct {
-	sys         *FilterSystem
-	filtersMu   sync.Mutex
-	filters     map[rpc.ID]*Filter
-	clients     util.ConcurrentMap
-	filterStats [FilterTypeLastIndex]int64
+// EVM space filter API
+
+type ethFilterApi struct {
+	fs         *ethFilterSystem           // filter system
+	logHandler *handler.EthLogsApiHandler // handler to get filter logs
+	fnClients  util.ConcurrentMap         // full node clients: node name => sdk client
 }
 
-// NewFilterApi returns a new FilterApi instance.
-func NewFilterApi(system *FilterSystem, ttl time.Duration) *FilterApi {
-	api := &FilterApi{
-		sys:     system,
-		filters: make(map[rpc.ID]*Filter),
-	}
-
-	go api.timeoutLoop(ttl)
-
-	return api
+func newEthFilterApi(sys *ethFilterSystem, handler *handler.EthLogsApiHandler) *ethFilterApi {
+	return &ethFilterApi{fs: sys, logHandler: handler}
 }
 
-// timeoutLoop runs at the interval set by 'timeout' and deletes filters
-// that have not been recently used. It is started when the API is created.
-func (api *FilterApi) timeoutLoop(timeout time.Duration) {
-	ticker := time.NewTicker(timeout / 2)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		expiredFilters := api.getExpiredFilters(timeout)
-		for fid := range expiredFilters {
-			api.UninstallFilter(fid)
-		}
-	}
-}
-
-// NewBlockFilter creates a proxy block filter from full node with specified node URL
-func (api *FilterApi) NewBlockFilter(nodeUrl string) (rpc.ID, error) {
+func (api *ethFilterApi) NewBlockFilter(nodeUrl string) (w3rpc.ID, error) {
 	client, err := api.loadOrGetFnClient(nodeUrl)
 	if err != nil {
-		return nilRpcId, filterProxyError(err)
+		return nilRpcId, err
 	}
 
-	// create a proxy block filter to the allocated full node
-	fid, err := client.Filter.NewBlockFilter()
-	if err != nil {
-		logrus.WithField("fnNodeUrl", nodeUrl).
-			WithError(err).
-			Error("Virtual filter failed to create proxy block filter")
-		return nilRpcId, filterProxyError(err)
-	}
-
-	pfid := rpc.NewID()
-	api.addFilter(pfid, newFilter(FilterTypeBlock, fnDelegateInfo{
-		fid: *fid, nodeUrl: nodeUrl,
-	}))
-
-	return pfid, nil
+	return api.fs.newBlockFilter(client)
 }
 
-// NewPendingTransactionFilter creates a proxy pending txn filter from full node with specified node URL
-func (api *FilterApi) NewPendingTransactionFilter(nodeUrl string) (rpc.ID, error) {
+func (api *ethFilterApi) NewPendingTransactionFilter(nodeUrl string) (w3rpc.ID, error) {
 	client, err := api.loadOrGetFnClient(nodeUrl)
 	if err != nil {
-		return nilRpcId, filterProxyError(err)
+		return nilRpcId, err
 	}
 
-	// create a proxy pending txn filter to the allocated full node
-	fid, err := client.Filter.NewPendingTransactionFilter()
-	if err != nil {
-		logrus.WithField("fnNodeUrl", nodeUrl).
-			WithError(err).
-			Error("Virtual filter failed to create proxy pending txn filter")
-		return nilRpcId, filterProxyError(err)
-	}
-
-	pfid := rpc.NewID()
-	api.addFilter(pfid, newFilter(FilterTypePendingTxn, fnDelegateInfo{
-		fid: *fid, nodeUrl: nodeUrl,
-	}))
-
-	return pfid, nil
+	return api.fs.newPendingTransactionFilter(client)
 }
 
-// NewFilter creates a proxy log filter from full node with specified node URL and filter query condition
-func (api *FilterApi) NewFilter(nodeUrl string, crit types.FilterQuery) (rpc.ID, error) {
-	w3c, err := api.loadOrGetFnClient(nodeUrl)
-	if err != nil {
-		return nilRpcId, filterProxyError(err)
-	}
-
-	var fid *rpc.ID
-	if api.sys != nil { // create a delegate log filter to the allocated full node
-		fid, err = api.sys.NewFilter(w3c, &crit)
-	} else { // fallback to create a proxy log filter to full node
-		fid, err = w3c.Filter.NewLogFilter(&crit)
-	}
-
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"fnNodeUrl":       nodeUrl,
-			"filterCriterion": crit,
-		}).WithError(err).Error("Virtual filter failed to create proxy log filter")
-		return nilRpcId, filterProxyError(err)
-	}
-
-	pfid := rpc.NewID()
-	api.addFilter(pfid, newFilter(FilterTypeLog, fnDelegateInfo{
-		fid: *fid, nodeUrl: nodeUrl,
-	}, &crit))
-
-	return pfid, nil
+func (api *ethFilterApi) UninstallFilter(id w3rpc.ID) (bool, error) {
+	return api.fs.uninstallFilter(id)
 }
 
-// UninstallFilter removes the proxy filter with the given filter id.
-func (api *FilterApi) UninstallFilter(id rpc.ID) (bool, error) {
-	f, found := api.delFilter(id)
-	if !found {
-		return false, nil
-	}
-
-	client, err := api.loadOrGetFnClient(f.del.nodeUrl)
+func (api *ethFilterApi) NewFilter(nodeUrl string, crit types.FilterQuery) (w3rpc.ID, error) {
+	client, err := api.loadOrGetFnClient(nodeUrl)
 	if err != nil {
-		return false, filterProxyError(err)
+		return nilRpcId, err
 	}
 
-	if api.sys != nil && f.typ == FilterTypeLog {
-		return api.sys.UninstallFilter(f.del.fid)
-	}
-
-	return client.Filter.UninstallFilter(f.del.fid)
+	return api.fs.newFilter(client, crit)
 }
 
-// GetFilterLogs returns the logs for the proxy filter with the given id.
-func (api *FilterApi) GetFilterLogs(id rpc.ID) (logs []types.Log, err error) {
-	f, found := api.getFilter(id)
-
-	if !found || f.typ != FilterTypeLog { // not found or wrong filter type?
+func (api *ethFilterApi) GetFilterLogs(id w3rpc.ID) ([]types.Log, error) {
+	vf, ok := api.fs.getFilter(id)
+	if !ok || vf.ftype() != filterTypeLog {
 		return nil, errFilterNotFound
 	}
 
-	w3c, err := api.loadOrGetFnClient(f.del.nodeUrl)
+	ethf := vf.(*ethLogFilter)
+	crit, w3c := ethf.crit, ethf.client
+
+	flag, ok := rpc.ParseEthLogFilterType(&crit)
+	if !ok {
+		return nil, rpc.ErrInvalidEthLogFilter
+	}
+
+	chainId, err := api.logHandler.GetNetworkId(w3c.Eth)
 	if err != nil {
-		return nil, filterProxyError(err)
+		return nil, errors.WithMessage(err, "failed to get chain ID")
 	}
 
-	if api.sys != nil { // get filter logs from `FilterSystem`
-		logs, err = api.sys.GetFilterLogs(f.del.fid)
-	} else { // fallback to the full node for filter logs
-		logs, err = w3c.Filter.GetFilterLogs(f.del.fid)
+	hardforkBlockNum := util.GetEthHardforkBlockNumber(uint64(chainId))
+
+	if err := rpc.NormalizeEthLogFilter(w3c.Client, flag, &crit, hardforkBlockNum); err != nil {
+		return nil, err
 	}
 
-	if logs == nil { // uniform empty logs
-		logs = ethEmptyLogs
+	if err := rpc.ValidateEthLogFilter(flag, &crit); err != nil {
+		return nil, err
 	}
 
-	if IsFilterNotFoundError(err) {
-		// uninstall deprecated proxy filter
-		api.UninstallFilter(id)
-	} else if err != nil && !utils.IsRPCJSONError(err) {
-		logrus.WithFields(logrus.Fields{
-			"delegateFn": f.del,
-			"filterID":   id,
-		}).WithError(err).Error("Virtual filter failed to get filter logs")
+	// return empty directly if filter block range before eSpace hardfork
+	if crit.ToBlock != nil && *crit.ToBlock <= hardforkBlockNum {
+		return nil, nil
 	}
+
+	logs, hitStore, err := api.logHandler.GetLogs(context.Background(), w3c.Eth, &crit, "eth_getFilterLogs")
+	metrics.Registry.RPC.StoreHit("eth_getFilterLogs", "store").Mark(hitStore)
 
 	return logs, err
 }
 
-// GetFilterChanges returns the data for the proxy filter with the given id since
-// last time it was called. This can be used for polling.
-func (api *FilterApi) GetFilterChanges(id rpc.ID) (res *types.FilterChanges, err error) {
-	f, found := api.getFilter(id)
-	if !found {
-		return nil, errFilterNotFound
-	}
-
-	// refresh filter last polling time
-	api.refreshFilterPollingTime(id)
-
-	w3c, err := api.loadOrGetFnClient(f.del.nodeUrl)
-	if err != nil {
-		return nil, filterProxyError(err)
-	}
-
-	if api.sys != nil && f.typ == FilterTypeLog {
-		// get filter changed logs from `FilterSystem`
-		res, err = api.sys.GetFilterChanges(f.del.fid)
-	} else {
-		// otherwise fallback to the full node for filter changed logs,
-		// or get filter changes from full node
-		res, err = w3c.Filter.GetFilterChanges(f.del.fid)
-	}
-
-	if IsFilterNotFoundError(err) {
-		// uninstall deprecated proxy filter
-		api.UninstallFilter(id)
-	}
-
-	return res, err
+func (api *ethFilterApi) GetFilterChanges(id w3rpc.ID) (*types.FilterChanges, error) {
+	return api.fs.getFilterChanges(id)
 }
 
-func (api *FilterApi) loadOrGetFnClient(nodeUrl string) (*node.Web3goClient, error) {
+func (api *ethFilterApi) loadOrGetFnClient(nodeUrl string) (*node.Web3goClient, error) {
 	nodeName := rpcutil.Url2NodeName(nodeUrl)
-	client, _, err := api.clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+	client, _, err := api.fnClients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
 		client, err := rpcutil.NewEthClient(nodeUrl, rpcutil.WithClientHookMetrics(true))
 		if err != nil {
 			logrus.WithField("fnNodeUrl", nodeUrl).
@@ -240,78 +125,4 @@ func (api *FilterApi) loadOrGetFnClient(nodeUrl string) (*node.Web3goClient, err
 	}
 
 	return client.(*node.Web3goClient), nil
-}
-
-// proxy filter management
-
-func (api *FilterApi) getFilter(id rpc.ID) (*Filter, bool) {
-	api.filtersMu.Lock()
-	defer api.filtersMu.Unlock()
-
-	f, ok := api.filters[id]
-	return f, ok
-}
-
-func (api *FilterApi) addFilter(id rpc.ID, filter *Filter) {
-	api.filtersMu.Lock()
-	defer api.filtersMu.Unlock()
-
-	api.filterStats[filter.typ]++
-	api.filters[id] = filter
-	api.metricSessionCount(filter.typ, filter.del.nodeUrl)
-}
-
-func (api *FilterApi) delFilter(id rpc.ID) (*Filter, bool) {
-	api.filtersMu.Lock()
-	defer api.filtersMu.Unlock()
-
-	f, found := api.filters[id]
-	if found {
-		delete(api.filters, id)
-		api.filterStats[f.typ]--
-		api.metricSessionCount(f.typ, f.del.nodeUrl)
-	}
-
-	return f, found
-}
-
-func (api *FilterApi) refreshFilterPollingTime(id rpc.ID) {
-	api.filtersMu.Lock()
-	defer api.filtersMu.Unlock()
-
-	if f, found := api.filters[id]; found {
-		f.lastPollingTime = time.Now()
-	}
-}
-
-func (api *FilterApi) getExpiredFilters(ttl time.Duration) map[rpc.ID]*Filter {
-	api.filtersMu.Lock()
-	defer api.filtersMu.Unlock()
-
-	res := make(map[rpc.ID]*Filter)
-	for id, f := range api.filters {
-		if time.Since(f.lastPollingTime) >= ttl {
-			res[id] = f
-		}
-	}
-
-	return res
-}
-
-func (api *FilterApi) metricSessionCount(ft FilterType, nodeUrl string) {
-	var gauge gethmetrics.Gauge
-	nodeName := rpcutil.Url2NodeName(nodeUrl)
-
-	switch ft {
-	case FilterTypeBlock:
-		gauge = metrics.Registry.VirtualFilter.Sessions("block", nodeName)
-	case FilterTypePendingTxn:
-		gauge = metrics.Registry.VirtualFilter.Sessions("pendingTxn", nodeName)
-	case FilterTypeLog:
-		gauge = metrics.Registry.VirtualFilter.Sessions("log", nodeName)
-	}
-
-	if gauge != nil {
-		gauge.Update(api.filterStats[ft])
-	}
 }

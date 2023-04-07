@@ -157,7 +157,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 
 	option := rpc.EthAPIOption{
 		TxnHandler:          handler.MustNewEthTxnHandler(relayer),
-		VirtualFilterClient: vfclient.MustNewClientFromViper(),
+		VirtualFilterClient: vfclient.MustNewEthClientFromViper(),
 	}
 
 	if storeCtx.EthDB != nil {

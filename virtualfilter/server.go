@@ -7,19 +7,17 @@ import (
 	"github.com/Conflux-Chain/confura/util/rpc"
 )
 
-// MustServeFromViper creates virtual filters RPC server from viper settings
-func MustNewServerFromViper(
-	shutdownContext util.GracefulShutdownContext, vfls *mysql.VirtualFilterLogStore, handler *handler.EthLogsApiHandler,
+// MustNewEvmSpaceServerFromViper creates evm space virtual filters RPC server from viper settings
+func MustNewEvmSpaceServerFromViper(
+	shutdownContext util.GracefulShutdownContext,
+	vfls *mysql.VirtualFilterLogStore,
+	handler *handler.EthLogsApiHandler,
 ) (*rpc.Server, string) {
-	conf := mustNewConfigFromViper()
+	conf := mustNewEthConfigFromViper()
+	fs := newEthFilterSystem(conf, vfls, shutdownContext)
 
-	var fs *FilterSystem
-	if handler != nil {
-		fs = NewFilterSystem(shutdownContext, vfls, handler, conf)
-	}
-
-	srv := rpc.MustNewServer("vfilter", map[string]interface{}{
-		"eth": NewFilterApi(fs, conf.TTL),
+	srv := rpc.MustNewServer("eth_vfilter", map[string]interface{}{
+		"eth": newEthFilterApi(fs, handler),
 	})
 
 	return srv, conf.Endpoint

@@ -32,13 +32,13 @@ func startVirtualFilterService(*cobra.Command, []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	startVirtualFilterRpcServer(ctx, &wg, storeCtx)
+	startEvmSpaceVirtualFilterServer(ctx, &wg, storeCtx)
 
 	util.GracefulShutdown(&wg, cancel)
 }
 
-// startVirtualFilterRpcServer starts virtual filter RPC server (eSpace supported only for now)
-func startVirtualFilterRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+// startEvmSpaceVirtualFilterServer starts virtual filter RPC server (eSpace supported only for now)
+func startEvmSpaceVirtualFilterServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
 	var vfls *mysql.VirtualFilterLogStore
 	var logApiHandler *handler.EthLogsApiHandler
 
@@ -50,6 +50,9 @@ func startVirtualFilterRpcServer(ctx context.Context, wg *sync.WaitGroup, storeC
 	shutdownCtx := util.GracefulShutdownContext{Ctx: ctx, Wg: wg}
 
 	// serve HTTP endpoint
-	vfServer, httpEndpoint := virtualfilter.MustNewServerFromViper(shutdownCtx, vfls, logApiHandler)
+	vfServer, httpEndpoint := virtualfilter.MustNewEvmSpaceServerFromViper(
+		shutdownCtx, vfls, logApiHandler,
+	)
+
 	go vfServer.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
 }

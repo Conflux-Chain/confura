@@ -320,8 +320,8 @@ node:
 #     - eth_uninstallFilter
 #     - eth_getFilterChanges
 
-# # Virtual filters configurations
-# virtualFilters:
+# # EVM space virtual filters configurations
+# ethVirtualFilters:
 #   # Served HTTP endpoint
 #   endpoint: ":48545"
 #   # Time to live for inactive filter

@@ -2,14 +2,12 @@ package mysql
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util"
-	w3types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -20,8 +18,8 @@ const (
 	maxArchiveVirtualFilterLogPartitions = 1
 )
 
-// vflog virtual filter event logs
-type vflog struct {
+// VirtualFilterLog virtual filter event logs
+type VirtualFilterLog struct {
 	ID              uint64
 	BlockNumber     uint64 `gorm:"column:bn;not null;index:idx_bn"`
 	BlockHash       string `gorm:"column:bh;size:66;not null"`
@@ -37,34 +35,7 @@ type vflog struct {
 	fid string `gorm:"-"` // virtual filter ID
 }
 
-func newVflog(log *w3types.Log) (*vflog, error) {
-	jdata, err := json.Marshal(log)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to json marshal")
-	}
-	convertLogTopicFunc := func(log *w3types.Log, index int) string {
-		if index < 0 || index >= len(log.Topics) {
-			return ""
-		}
-
-		return log.Topics[index].String()
-	}
-
-	return &vflog{
-		BlockNumber:     log.BlockNumber,
-		BlockHash:       log.BlockHash.String(),
-		ContractAddress: log.Address.String(),
-		Topic0:          convertLogTopicFunc(log, 0),
-		Topic1:          convertLogTopicFunc(log, 1),
-		Topic2:          convertLogTopicFunc(log, 2),
-		Topic3:          convertLogTopicFunc(log, 3),
-		LogIndex:        uint64(log.Index),
-		JsonRepr:        jdata,
-	}, nil
-
-}
-
-func (l vflog) TableName() string {
+func (l VirtualFilterLog) TableName() string {
 	if len(l.fid) == 0 { // in case filter id not provided
 		return ""
 	}
@@ -92,7 +63,7 @@ func (filter *vfLogFilter) validateCount(db *gorm.DB) error {
 	return filter.LogFilter.validateCount(db)
 }
 
-func (filter *vfLogFilter) Find(db *gorm.DB) ([]*vflog, error) {
+func (filter *vfLogFilter) Find(db *gorm.DB) ([]VirtualFilterLog, error) {
 	if err := filter.validateCount(db); err != nil {
 		return nil, err
 	}
@@ -109,7 +80,7 @@ func (filter *vfLogFilter) Find(db *gorm.DB) ([]*vflog, error) {
 	db = applyTopicsFilter(db, filter.Topics)
 	db = applyContractFilter(db, filter.Contracts)
 
-	var result []*vflog
+	var result []VirtualFilterLog
 	if err := db.Find(&result).Error; err != nil {
 		return nil, err
 	}
@@ -154,12 +125,11 @@ func (vfls *VirtualFilterLogStore) DeletePartitions(fid string) error {
 // Append appends incoming filter changed event logs, if some old ones of same block hashes already
 // existed in the db, they will be soft deleted at first then the new ones will be inserted to
 // the specified partition table.
-func (vfls *VirtualFilterLogStore) Append(fid string, logs []w3types.Log, partition bnPartition) error {
+func (vfls *VirtualFilterLogStore) Append(fid string, logs []VirtualFilterLog, partition bnPartition) error {
 	if len(logs) == 0 {
 		return nil
 	}
 
-	vflogs := make([]*vflog, 0, len(logs))
 	bnMin, bnMax := uint64(math.MaxUint64), uint64(0)
 
 	var blockHashes []string
@@ -167,19 +137,13 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []w3types.Log, partit
 
 	for i := range logs {
 		bn := logs[i].BlockNumber
-		bh := logs[i].BlockHash.String()
+		bh := logs[i].BlockHash
 
 		if _, ok := bh2bnHashset[bh]; !ok {
 			bh2bnHashset[bh] = bn
 			blockHashes = append(blockHashes, bh)
 		}
 
-		vflog, err := newVflog(&logs[i])
-		if err != nil {
-			return err
-		}
-
-		vflogs = append(vflogs, vflog)
 		bnMin, bnMax = util.MinUint64(bn, bnMin), util.MaxUint64(bn, bnMax)
 	}
 
@@ -202,7 +166,7 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []w3types.Log, partit
 
 		// batch insert new event logs
 		tblName := vfls.getPartitionedTableName(ftabler, partition.Index)
-		err = tx.Table(tblName).CreateInBatches(vflogs, defaultBatchSizeLogInsert).Error
+		err = tx.Table(tblName).CreateInBatches(logs, defaultBatchSizeLogInsert).Error
 		if err != nil {
 			return err
 		}
@@ -214,7 +178,7 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []w3types.Log, partit
 		}
 
 		// update partition data count
-		err = vfls.deltaUpdateCount(tx, fentity, int(partition.Index), len(vflogs))
+		err = vfls.deltaUpdateCount(tx, fentity, int(partition.Index), len(logs))
 		if err != nil {
 			return errors.WithMessage(err, "failed to delta update partition size")
 		}
@@ -226,7 +190,7 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []w3types.Log, partit
 // GetLogs gets event logs for the specified virtual filter.
 func (vfls *VirtualFilterLogStore) GetLogs(
 	ctx context.Context, fid string, sfilter store.LogFilter, blockHashes ...string,
-) ([]w3types.Log, error) {
+) ([]VirtualFilterLog, error) {
 	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)
 
 	srange := types.RangeUint64{From: sfilter.BlockFrom, To: sfilter.BlockTo}
@@ -243,7 +207,7 @@ func (vfls *VirtualFilterLogStore) GetLogs(
 		BlockHashes: blockHashes,
 	}
 
-	var result []w3types.Log
+	var result []VirtualFilterLog
 	for _, partition := range partitions {
 		// check timeout before query
 		select {
@@ -258,15 +222,7 @@ func (vfls *VirtualFilterLogStore) GetLogs(
 			return nil, err
 		}
 
-		// convert to web3go log type
-		for _, v := range logs {
-			var w3log w3types.Log
-			if err := json.Unmarshal(v.JsonRepr, &w3log); err != nil {
-				return nil, errors.WithMessage(err, "invalid event log json")
-			}
-
-			result = append(result, w3log)
-		}
+		result = append(result, logs...)
 
 		// check log count
 		if len(result) > int(store.MaxLogLimit) {
@@ -287,7 +243,8 @@ func (vfls *VirtualFilterLogStore) GC(fid string) error {
 }
 
 // expandPartitioBnRange expands block number range of the specified entity partition.
-func (vfls *VirtualFilterLogStore) expandPartitioBnRange(dbTx *gorm.DB, entity string, partitionIndex uint32, from, to uint64) error {
+func (vfls *VirtualFilterLogStore) expandPartitioBnRange(
+	dbTx *gorm.DB, entity string, partitionIndex uint32, from, to uint64) error {
 	updates := map[string]interface{}{
 		"bn_min": gorm.Expr("LEAST(IFNULL(bn_min, ?), ?)", math.MaxInt64, from),
 		"bn_max": gorm.Expr("GREATEST(IFNULL(bn_max, ?), ?)", 0, to),
@@ -300,10 +257,10 @@ func (vfls *VirtualFilterLogStore) expandPartitioBnRange(dbTx *gorm.DB, entity s
 
 // filterEntity gets partition entity of specified virtual proxy filter
 func (vfls *VirtualFilterLogStore) filterEntity(fid string) string {
-	return vflog{fid: fid}.TableName()
+	return VirtualFilterLog{fid: fid}.TableName()
 }
 
 // filterTabler get partition tabler of specified virtual proxy filter
-func (vfls *VirtualFilterLogStore) filterTabler(fid string) *vflog {
-	return &vflog{fid: fid}
+func (vfls *VirtualFilterLogStore) filterTabler(fid string) *VirtualFilterLog {
+	return &VirtualFilterLog{fid: fid}
 }

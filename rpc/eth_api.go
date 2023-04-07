@@ -29,7 +29,7 @@ type EthAPIOption struct {
 	StoreHandler        *handler.EthStoreHandler
 	LogApiHandler       *handler.EthLogsApiHandler
 	TxnHandler          *handler.EthTxnHandler
-	VirtualFilterClient *vfclient.Client
+	VirtualFilterClient *vfclient.EthClient
 }
 
 // ethAPI provides Ethereum relative API within evm space according to:
