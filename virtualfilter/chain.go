@@ -1,19 +1,24 @@
 package virtualfilter
 
 import (
-	"fmt"
-
 	"github.com/pkg/errors"
 )
 
 var (
+	nilFilterCursor = filterCursor{}
+
 	errRewindNodeNotFound = errors.New("rewind node not found")
 	errBadFilterCursor    = errors.New("bad filter cursor")
 )
 
-type filterCursor interface {
-	number() uint64 // node number
-	hash() string   // node hash
+type filterNodable interface {
+	cursor() filterCursor // pointer cursor
+	reorged() bool        // node reorged or not?
+}
+
+type filterCursor struct {
+	height uint64 // block height
+	hash   string // block hash
 }
 
 type filterChainIterator func(node *filterNode, forkPoint bool) bool
@@ -51,10 +56,10 @@ func newFilterChainBase(derived filterChain) *filterChainBase {
 // snapshotLatestCursor snapshots the latest cursor
 func (fc *filterChainBase) snapshotLatestCursor() filterCursor {
 	if tail := fc.back(); tail != nil {
-		return tail.filterCursor
+		return tail.cursor()
 	}
 
-	return nil
+	return nilFilterCursor
 }
 
 // hasNode check if node on the filter chain
@@ -63,8 +68,62 @@ func (c *filterChainBase) hasNode(node *filterNode) bool {
 		return false
 	}
 
-	_, ok := c.hashToNodes[node.hash()]
+	_, ok := c.hashToNodes[node.cursor().hash]
 	return ok
+}
+
+// traverses the filter chain from some specified cursor
+func (c *filterChainBase) traverse(cursor filterCursor, iterator filterChainIterator) error {
+	if c.genesis == nil { // unexploited filter chain?
+		return nil
+	}
+
+	var startNode, node *filterNode
+
+	if cursor == nilFilterCursor {
+		// starting from genesis node if nil cursor specified
+		startNode = c.genesis
+	} else if startNode = c.hashToNodes[cursor.hash]; startNode == nil {
+		// no filter node found with the cursor
+		return errBadFilterCursor
+	}
+
+	// move backforward to the canonical chain if starting from fork chain
+	for node = startNode; node != nil; node = node.getPrev() {
+		if !node.reorged() {
+			break
+		}
+
+		if !iterator(node, false) {
+			return nil
+		}
+	}
+
+	// fork chain iterated over
+	if node != startNode {
+		// iterate fork point node on the canonical chain, note it might be nil
+		// which means no intersection.
+		if !iterator(node, true) {
+			return nil
+		}
+
+		if node != nil {
+			node = node.getNext()
+		} else {
+			// no intersection between the fork and canonical chain,
+			// let's start from head of the canonical chain.
+			node = c.front()
+		}
+	}
+
+	// move forward along the canonical chain until the end
+	for ; node != nil; node = node.getNext() {
+		if !iterator(node, false) {
+			return nil
+		}
+	}
+
+	return nil
 }
 
 // front returns the first node of the filter chain or nil if the chain is empty.
@@ -101,7 +160,9 @@ func (fc *filterChainBase) insert(n, at *filterNode) {
 		fc.genesis = n
 	}
 
-	fc.hashToNodes[n.hash()] = n
+	if bh := n.cursor().hash; len(bh) > 0 {
+		fc.hashToNodes[n.cursor().hash] = n
+	}
 
 	n.prev = at
 	n.next = at.next
@@ -136,45 +197,15 @@ func (fc *filterChainBase) rewind(node *filterNode) error {
 	return errRewindNodeNotFound
 }
 
-// traverses the filter chain from the starting cursor, and prints the node info
-// (eg., block number, block hash etc.), mainly used for debugging.
-func printFilterChain(fc filterChain, cursor filterCursor) {
-	err := fc.traverse(cursor, func(node *filterNode, forkPoint bool) bool {
-		var forktag string
-		if forkPoint {
-			forktag = "[fork]"
-		}
-
-		if node != nil {
-			fmt.Printf("-> #%d(%v)%v", node.number(), node.hash(), forktag)
-		} else {
-			fmt.Printf("-> nil%v", forktag)
-		}
-
-		return true
-	})
-
-	if err == nil {
-		fmt.Println("->root")
-	} else {
-		fmt.Println("traversal error: ", err)
-	}
-}
-
 type filterNode struct {
-	filterCursor
+	filterNodable
 
 	chain      filterChain // the chain this node belongs to
 	prev, next *filterNode // prev or next node
 }
 
-func newFilterNode(chain filterChain, cursor filterCursor) *filterNode {
-	return &filterNode{chain: chain, filterCursor: cursor}
-}
-
-// pointedAt check if the node pointed at the specified cursor
-func (n *filterNode) pointedAt(fc filterCursor) bool {
-	return n.number() == fc.number() && n.hash() == fc.hash()
+func newFilterNode(chain filterChain, body filterNodable) *filterNode {
+	return &filterNode{chain: chain, filterNodable: body}
 }
 
 // getNext returns the next chain node or nil.

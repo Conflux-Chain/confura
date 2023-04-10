@@ -90,7 +90,8 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	relayer := relay.MustNewTxnRelayerFromViper()
 
 	option := rpc.CfxAPIOption{
-		TxnHandler: handler.MustNewCfxTxnHandler(relayer),
+		TxnHandler:          handler.MustNewCfxTxnHandler(relayer),
+		VirtualFilterClient: vfclient.MustNewCfxClientFromViper(),
 	}
 
 	// initialize store handler

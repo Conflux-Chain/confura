@@ -11,8 +11,10 @@ import (
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/openweb3/go-rpc-provider"
-	"github.com/openweb3/web3go/types"
+	ethtypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -346,9 +348,9 @@ func (w *ethFilterWorker) fetchPollingChanges(fid rpc.ID) (*ethPollingChanges, e
 			return true
 		}
 
-		block := node.filterCursor.(*ethFilterBlock)
+		block := node.filterNodable.(*ethFilterBlock)
 
-		if cursor == nil { // full traversal for nil cursor
+		if cursor == nilFilterCursor { // full traversal for nil cursor
 			fblocks = append(fblocks, *block)
 			return true
 		}
@@ -360,7 +362,7 @@ func (w *ethFilterWorker) fetchPollingChanges(fid rpc.ID) (*ethPollingChanges, e
 		}
 
 		// skip node at the filter cursor, whose block is not re-organized
-		if node.pointedAt(cursor) && !block.reorged {
+		if node.cursor() == cursor && !block.reverted {
 			return true
 		}
 
@@ -384,7 +386,7 @@ func (w *ethFilterWorker) fetchPollingChanges(fid rpc.ID) (*ethPollingChanges, e
 // implements `pollingClient` interface
 
 func (w *ethFilterWorker) establish() (pollingSession, error) {
-	fid, err := w.client.Filter.NewLogFilter(&types.FilterQuery{})
+	fid, err := w.client.Filter.NewLogFilter(&ethtypes.FilterQuery{})
 	if err != nil {
 		return nilPollingSession, err
 	}
@@ -398,11 +400,123 @@ func (w *ethFilterWorker) fetch(fid rpc.ID) (filterChanges, error) {
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), maxPollingDelayDuration)
 	defer cancel()
 
-	var fchanges *types.FilterChanges
+	var fchanges *ethtypes.FilterChanges
 	err := w.client.Filter.CallContext(timeoutCtx, &fchanges, "eth_getFilterChanges", fid)
 	return fchanges, err
 }
 
 func (w *ethFilterWorker) uninstall(fid rpc.ID) (bool, error) {
 	return w.client.Filter.UninstallFilter(fid)
+}
+
+// core space filter worker
+type cfxFilterWorker struct {
+	*filterWorker
+
+	maxFullFilterEpochs int
+	client              *sdk.Client
+}
+
+func newCfxFilterWorker(
+	maxFullFilterEpochs int,
+	obs pollingObserver,
+	client *sdk.Client,
+	shutdownCtx cmdutil.GracefulShutdownContext,
+) *cfxFilterWorker {
+	w := &cfxFilterWorker{
+		client:              client,
+		maxFullFilterEpochs: maxFullFilterEpochs,
+	}
+
+	nodeName := rpcutil.Url2NodeName(client.GetNodeURL())
+	w.filterWorker = newFilterWorker(
+		"cfx", nodeName, w, obs, shutdownCtx,
+	)
+
+	return w
+}
+
+// implements `pollingClient` interface
+
+func (w *cfxFilterWorker) establish() (pollingSession, error) {
+	fid, err := w.client.Filter().NewFilter(cfxtypes.LogFilter{})
+	if err != nil {
+		return nilPollingSession, err
+	}
+
+	session := newPollingSession(*fid, newCfxFilterChain(w.maxFullFilterEpochs))
+	return *session, nil
+}
+
+func (w *cfxFilterWorker) fetch(fid rpc.ID) (filterChanges, error) {
+	// set as much timeout as possible for more fault tolerance
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), maxPollingDelayDuration)
+	defer cancel()
+
+	var fchanges *cfxtypes.CfxFilterChanges
+	err := w.client.CallContext(timeoutCtx, &fchanges, "cfx_getFilterChanges", fid)
+	return fchanges, err
+}
+
+func (w *cfxFilterWorker) uninstall(fid rpc.ID) (bool, error) {
+	return w.client.Filter().UninstallFilter(fid)
+}
+
+type cfxPollingChanges struct {
+	fid    rpc.ID           // proxy filter where changes are polled
+	epochs []cfxFilterEpoch // changed epochs since last polling
+}
+
+// fetchPollingChanges fetch filter changes since last polling
+func (w *cfxFilterWorker) fetchPollingChanges(fid rpc.ID) (*cfxPollingChanges, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	cursor, ok := w.session.fcursors[fid]
+	if !ok {
+		return nil, errFilterNotFound
+	}
+
+	metricTimer := metrics.Registry.VirtualFilter.QueryFilterChanges("cfx", w.nodeName, "memory")
+	defer metricTimer.Update()
+
+	var fepochs []cfxFilterEpoch
+	err := w.session.fchain.traverse(cursor, func(node *filterNode, forkPoint bool) bool {
+		if node == nil { // skip nil node
+			return true
+		}
+
+		epoch := node.filterNodable.(*cfxFilterEpoch)
+
+		if cursor == nilFilterCursor { // full traversal for nil cursor
+			fepochs = append(fepochs, *epoch)
+			return true
+		}
+
+		// otherwise for non-nil cursor
+
+		if forkPoint { // ignore fork point
+			return true
+		}
+
+		// skip node at the filter cursor, whose epoch is not re-organized
+		if node.cursor() == cursor && !epoch.reorged() {
+			return true
+		}
+
+		fepochs = append(fepochs, *epoch)
+		return true
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// update the filter cursor
+	w.session.fcursors[fid] = w.session.fchain.snapshotLatestCursor()
+
+	pchanges := &cfxPollingChanges{
+		fid: w.session.fid, epochs: fepochs,
+	}
+	return pchanges, nil
 }

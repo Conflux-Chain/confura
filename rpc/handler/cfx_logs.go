@@ -34,6 +34,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	ctx context.Context,
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
+	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
 	defer cancel()
@@ -45,7 +46,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	}
 
 	for {
-		logs, hitStore, err := handler.getLogsReorgGuard(timeoutCtx, cfx, filter)
+		logs, hitStore, err := handler.getLogsReorgGuard(timeoutCtx, cfx, filter, delegatedRpcMethod)
 		if err != nil {
 			return nil, false, err
 		}
@@ -74,6 +75,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	ctx context.Context,
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
+	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
 	// Try to query event logs from database and fullnode.
 	// Note, if multiple block hashes specified in log filter, then split the block hashes
@@ -83,9 +85,9 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		return nil, false, err
 	}
 
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/split/alldatabase").Mark(fnFilter == nil)
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/split/allfullnode").Mark(len(dbFilters) == 0)
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/split/partial").Mark(len(dbFilters) > 0 && fnFilter != nil)
+	metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/alldatabase").Mark(fnFilter == nil)
+	metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/allfullnode").Mark(len(dbFilters) == 0)
+	metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(len(dbFilters) > 0 && fnFilter != nil)
 
 	var logs []types.Log
 

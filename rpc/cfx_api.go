@@ -8,7 +8,7 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -19,12 +19,15 @@ import (
 var (
 	emptyEpochs = []*types.Epoch{}
 	emptyLogs   = []types.Log{}
+
+	rpcMethodCfxGetLogs = "cfx_getLogs"
 )
 
 type CfxAPIOption struct {
-	StoreHandler  *handler.CfxStoreHandler
-	LogApiHandler *handler.CfxLogsApiHandler
-	TxnHandler    *handler.CfxTxnHandler
+	StoreHandler        *handler.CfxStoreHandler
+	LogApiHandler       *handler.CfxLogsApiHandler
+	TxnHandler          *handler.CfxTxnHandler
+	VirtualFilterClient *vfclient.CfxClient
 }
 
 // cfxAPI provides main proxy API for core space.
@@ -246,7 +249,7 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 
 func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	api.metricLogFilter(cfx, &filter)
+	metrics.UpdateCfxRpcLogFilter(rpcMethodCfxGetLogs, cfx, &filter)
 
 	flag, ok := ParseLogFilterType(&filter)
 	if !ok {
@@ -265,8 +268,8 @@ func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types
 	}
 
 	if api.LogApiHandler != nil {
-		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, cfx, &filter)
-		api.collectHitStats("cfx_getLogs", hitStore)
+		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, cfx, &filter, rpcMethodCfxGetLogs)
+		api.collectHitStats(rpcMethodCfxGetLogs, hitStore)
 
 		if err != nil && !utils.IsRPCJSONError(err) {
 			logrus.WithFields(logrus.Fields{
@@ -446,25 +449,6 @@ func (api *cfxAPI) GetPoSRewardByEpoch(ctx context.Context, epoch types.Epoch) (
 
 func (api *cfxAPI) GetParamsFromVote(ctx context.Context, epoch ...*types.Epoch) (postypes.VoteParamsInfo, error) {
 	return GetCfxClientFromContext(ctx).GetParamsFromVote(epoch...)
-}
-
-func (api *cfxAPI) metricLogFilter(cfx sdk.ClientOperator, filter *types.LogFilter) {
-	isBlockRange := filter.FromBlock != nil || filter.ToBlock != nil
-	isBlockHashes := len(filter.BlockHashes) > 0
-	isEpochRange := !isBlockRange && !isBlockHashes
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/epochRange").Mark(isEpochRange)
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/blockRange").Mark(isBlockRange)
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/hashes").Mark(isBlockHashes)
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/address/null").Mark(len(filter.Address) == 0)
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/address/single").Mark(len(filter.Address) == 1)
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/address/multiple").Mark(len(filter.Address) > 1)
-	metrics.Registry.RPC.Percentage("cfx_getLogs", "filter/topics").Mark(len(filter.Topics) > 0)
-
-	// add metrics for the `epoch` filter only if block hash and block number range are not specified.
-	if len(filter.BlockHashes) == 0 && filter.FromBlock == nil && filter.ToBlock == nil {
-		api.inputEpochMetric.Update(filter.FromEpoch, "cfx_getLogs/from", cfx)
-		api.inputEpochMetric.Update(filter.ToEpoch, "cfx_getLogs/to", cfx)
-	}
 }
 
 func (h *cfxAPI) collectHitStats(method string, hit bool) {

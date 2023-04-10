@@ -22,3 +22,19 @@ func MustNewEvmSpaceServerFromViper(
 
 	return srv, conf.Endpoint
 }
+
+// MustNewCoreSpaceServerFromViper creates core space virtual filters RPC server from viper settings
+func MustNewCoreSpaceServerFromViper(
+	shutdownContext util.GracefulShutdownContext,
+	vfls *mysql.VirtualFilterLogStore,
+	handler *handler.CfxLogsApiHandler,
+) (*rpc.Server, string) {
+	conf := mustNewCfxConfigFromViper()
+	fs := newCfxFilterSystem(conf, vfls, shutdownContext)
+
+	srv := rpc.MustNewServer("cfx_vfilter", map[string]interface{}{
+		"cfx": newCfxFilterApi(fs, handler),
+	})
+
+	return srv, conf.Endpoint
+}
