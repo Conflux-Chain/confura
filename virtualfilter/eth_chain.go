@@ -2,6 +2,7 @@ package virtualfilter
 
 import (
 	"container/list"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	lru "github.com/hashicorp/golang-lru"
@@ -43,7 +44,7 @@ func (fc *ethFilterChain) merge(fchanges filterChanges) error {
 	// update the virtual filter blockchain
 	for i := range chainedBlocksList {
 		head := chainedBlocksList[i].Front()
-		if block := head.Value.(*ethFilterBlock); block.reorged {
+		if block := head.Value.(*ethFilterBlock); block.reverted {
 			// reorg the chain
 			if err := fc.reorg(chainedBlocksList[i]); err != nil {
 				return errors.WithMessage(err, "failed to reorg filter chain")
@@ -68,11 +69,11 @@ func (fc *ethFilterChain) reorg(reverted *list.List) error {
 			rnode = fc.pushFront(rblock)
 		}
 
-		if rnode == nil || !rnode.pointedAt(rblock) {
+		if rnode == nil || rnode.cursor() != rblock.cursor() {
 			return errReorgBlockNotMatched
 		}
 
-		rnode.filterCursor = rblock
+		rnode.filterNodable = rblock
 		rnode = rnode.getPrev()
 	}
 
@@ -85,7 +86,7 @@ func (fc *ethFilterChain) extend(extended *list.List) error {
 	for ele := extended.Front(); ele != nil; ele = ele.Next() {
 		nblock := ele.Value.(*ethFilterBlock)
 
-		oldN, existed := fc.hashToNodes[nblock.hash()]
+		oldN, existed := fc.hashToNodes[nblock.blockHash.String()]
 		if !existed { // block with hash not existed
 			fc.pushBack(nblock)
 			continue
@@ -95,7 +96,7 @@ func (fc *ethFilterChain) extend(extended *list.List) error {
 		// chain afterwards.
 
 		// make sure the old block is re-orged
-		if oldBlock := oldN.filterCursor.(*ethFilterBlock); !oldBlock.reorged {
+		if oldBlock := oldN.filterNodable.(*ethFilterBlock); !oldBlock.reverted {
 			return errors.Errorf("filter block with hash %v already exists", nblock.blockHash)
 		}
 
@@ -107,61 +108,11 @@ func (fc *ethFilterChain) extend(extended *list.List) error {
 			)
 		}
 
-		oldN.filterCursor = nblock
+		oldN.filterNodable = nblock
 		fc.filterChainBase.pushBack(oldN)
-	}
 
-	return nil
-}
-
-// traverses the filter chain from some specified cursor
-func (fc *ethFilterChain) traverse(cursor filterCursor, iterator filterChainIterator) error {
-	if fc.genesis == nil { // unexploited filter chain?
-		return nil
-	}
-
-	var startNode, node *filterNode
-
-	if cursor == nil {
-		// starting from genesis node if nil cursor specified
-		startNode = fc.genesis
-	} else if startNode = fc.hashToNodes[cursor.hash()]; startNode == nil {
-		// no filter node found with the cursor
-		return errBadFilterCursor
-	}
-
-	// move backforward to the canonical chain if starting from fork chain
-	for node = startNode; node != nil; node = node.getPrev() {
-		if block := node.filterCursor.(*ethFilterBlock); !block.reorged {
-			break
-		}
-
-		if !iterator(node, false) {
-			return nil
-		}
-	}
-
-	// fork chain iterated over
-	if node != startNode {
-		// iterate fork point node on the canonical chain, note it might be nil
-		// which means no intersection.
-		if !iterator(node, true) {
-			return nil
-		}
-
-		if node != nil {
-			node = node.getNext()
-		} else {
-			// no intersection between the fork and canonical chain,
-			// let's start from head of the canonical chain.
-			node = fc.front()
-		}
-	}
-
-	// move forward along the canonical chain until the end
-	for ; node != nil; node = node.getNext() {
-		if !iterator(node, false) {
-			return nil
+		if fc.fullBlockhashCache != nil {
+			fc.fullBlockhashCache.Add(nblock.blockHash, struct{}{})
 		}
 	}
 
@@ -180,7 +131,7 @@ func (fc *ethFilterChain) pushFront(block *ethFilterBlock) *filterNode {
 	fc.filterChainBase.pushFront(node)
 
 	if fc.fullBlockhashCache != nil {
-		fc.fullBlockhashCache.Add(block.hash(), struct{}{})
+		fc.fullBlockhashCache.Add(block.blockHash, struct{}{})
 	}
 
 	return node
@@ -192,7 +143,7 @@ func (fc *ethFilterChain) pushBack(block *ethFilterBlock) *filterNode {
 	fc.filterChainBase.pushBack(node)
 
 	if fc.fullBlockhashCache != nil {
-		fc.fullBlockhashCache.Add(block.hash(), struct{}{})
+		fc.fullBlockhashCache.Add(block.blockHash, struct{}{})
 	}
 
 	return node
@@ -200,35 +151,46 @@ func (fc *ethFilterChain) pushBack(block *ethFilterBlock) *filterNode {
 
 // onFilterBlockCacheEvict callbacks to clean event logs of evicted full filter block
 func (fc *ethFilterChain) onFilterBlockCacheEvict(key, value interface{}) {
-	bh := key.(string)
+	bh := key.(common.Hash)
 
-	if fn, ok := fc.hashToNodes[bh]; ok {
+	if fn, ok := fc.hashToNodes[bh.String()]; ok {
 		// clean event logs for the filter block
-		fn.filterCursor.(*ethFilterBlock).logs = nil
+		fn.filterNodable.(*ethFilterBlock).logs = nil
 	}
 }
 
-type ethFilterCursor struct {
-	blockNum  uint64
-	blockHash common.Hash
-}
+// traverses the filter chain from the starting cursor, and prints the node info
+// (eg., block number, block hash etc.), mainly used for debugging.
+func (fc *ethFilterChain) print(cursor filterCursor) {
+	err := fc.traverse(cursor, func(node *filterNode, forkPoint bool) bool {
+		var forktag string
+		if forkPoint {
+			forktag = "[fork]"
+		}
 
-// implements `filterCursor` interface
+		if node != nil {
+			fmt.Printf("-> #%d(%v)%v", node.cursor().height, node.cursor().hash, forktag)
+		} else {
+			fmt.Printf("-> nil%v", forktag)
+		}
 
-func (b ethFilterCursor) number() uint64 {
-	return b.blockNum
-}
+		return true
+	})
 
-func (b ethFilterCursor) hash() string {
-	return b.blockHash.String()
+	if err == nil {
+		fmt.Println("->root")
+	} else {
+		fmt.Println("traversal error: ", err)
+	}
 }
 
 // ethFilterBlock evm space virtual filter block with event logs inside.
 type ethFilterBlock struct {
-	ethFilterCursor
+	blockNum  uint64
+	blockHash common.Hash
 
-	reorged bool        // whether the block is re-organized
-	logs    []types.Log // logs contained within this block
+	reverted bool        // whether the block is reverted
+	logs     []types.Log // logs contained within this block
 }
 
 func newEthFilterBlockFromLogs(logs []types.Log) *ethFilterBlock {
@@ -237,16 +199,27 @@ func newEthFilterBlockFromLogs(logs []types.Log) *ethFilterBlock {
 	}
 
 	return &ethFilterBlock{
-		ethFilterCursor: ethFilterCursor{
-			blockNum:  logs[0].BlockNumber,
-			blockHash: logs[0].BlockHash,
-		},
-		reorged: logs[0].Removed,
-		logs:    logs,
+		blockNum:  logs[0].BlockNumber,
+		blockHash: logs[0].BlockHash,
+		reverted:  logs[0].Removed,
+		logs:      logs,
 	}
 }
 
-// parseEthFilterChanges parses evm space filter chagnes to return multiple linked lists
+// implements `filterNodable`
+
+func (b *ethFilterBlock) cursor() filterCursor {
+	return filterCursor{
+		height: b.blockNum,
+		hash:   b.blockHash.String(),
+	}
+}
+
+func (b *ethFilterBlock) reorged() bool {
+	return b.reverted
+}
+
+// parseEthFilterChanges parses evm space filter changes to return multiple linked lists
 // of filter block grouped by `Removed` property of event log.
 func parseEthFilterChanges(changes *types.FilterChanges) []*list.List {
 	if len(changes.Logs) == 0 {
@@ -257,7 +230,7 @@ func parseEthFilterChanges(changes *types.FilterChanges) []*list.List {
 	var splitLogs [][]types.Log
 	var tmplogs []types.Log
 
-	for i := 0; i < len(changes.Logs); i++ {
+	for i := range changes.Logs {
 		if len(tmplogs) == 0 || tmplogs[0].Removed == changes.Logs[i].Removed {
 			tmplogs = append(tmplogs, changes.Logs[i])
 			continue

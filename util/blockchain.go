@@ -7,6 +7,7 @@ import (
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/openweb3/web3go"
@@ -202,12 +203,12 @@ func MatchEthLogTopics(log *web3goTypes.Log, topics [][]common.Hash) bool {
 		return false
 	}
 
-	for i, topics := range topics {
-		if len(topics) == 0 {
+	for i := range topics {
+		if len(topics[i]) == 0 {
 			continue
 		}
 
-		if len(log.Topics) <= i || !find(log.Topics[i], topics) {
+		if len(log.Topics) <= i || !find(log.Topics[i], topics[i]) {
 			return false
 		}
 	}
@@ -224,4 +225,39 @@ func IncludeEthLogAddrs(log *web3goTypes.Log, addresses []common.Address) bool {
 	}
 
 	return len(addresses) == 0
+}
+
+// IncludeCfxLogAddrs checks if the core space event logs include any of the given addresses
+func IncludeCfxLogAddrs(log *types.Log, addresses []cfxaddress.Address) bool {
+	for i := range addresses {
+		if log.Address.Equals(&addresses[i]) {
+			return true
+		}
+	}
+
+	return len(addresses) == 0
+}
+
+// MatchCfxLogTopics checks if the core space event log matches with the given topics condition
+func MatchCfxLogTopics(log *types.Log, topics [][]types.Hash) bool {
+	find := func(t types.Hash, topics []types.Hash) bool {
+		for _, topic := range topics {
+			if t == topic {
+				return true
+			}
+		}
+		return false
+	}
+
+	for i := range topics {
+		if len(topics[i]) == 0 {
+			continue
+		}
+
+		if len(log.Topics) <= i || !find(log.Topics[i], topics[i]) {
+			return false
+		}
+	}
+
+	return true
 }

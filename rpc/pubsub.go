@@ -416,40 +416,7 @@ func matchPubSubLogFilter(log *types.SubscriptionLog, filter *types.LogFilter) b
 		return true
 	}
 
-	return matchLogFilterAddr(log, filter) && matchLogFilterTopic(log, filter)
-}
-
-func matchLogFilterTopic(log *types.SubscriptionLog, filter *types.LogFilter) bool {
-	find := func(t types.Hash, topics []types.Hash) bool {
-		for _, topic := range topics {
-			if t == topic {
-				return true
-			}
-		}
-		return false
-	}
-
-	for i, topics := range filter.Topics {
-		if len(topics) == 0 {
-			continue
-		}
-
-		if len(log.Topics) <= i || !find(log.Topics[i], topics) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func matchLogFilterAddr(log *types.SubscriptionLog, filter *types.LogFilter) bool {
-	for _, addr := range filter.Address {
-		if log.Address.Equals(&addr) {
-			return true
-		}
-	}
-
-	return len(filter.Address) == 0
+	return util.IncludeCfxLogAddrs(log.Log, filter.Address) && util.MatchCfxLogTopics(log.Log, filter.Topics)
 }
 
 func isEmptyLogFilter(filter types.LogFilter) bool {

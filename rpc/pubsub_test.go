@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/openweb3/go-rpc-provider"
@@ -80,7 +81,7 @@ func TestMatchLogFilterAddr(t *testing.T) {
 		err := json.Unmarshal([]byte(tc.logJsonStr), &log)
 		assert.Nil(t, err)
 
-		assert.Equal(t, tc.expectMatch, matchLogFilterAddr(&log, tc.logFilter))
+		assert.Equal(t, tc.expectMatch, util.IncludeCfxLogAddrs(log.Log, tc.logFilter.Address))
 	}
 }
 
@@ -202,8 +203,7 @@ func TestMatchLogFilterTopic(t *testing.T) {
 		log := types.SubscriptionLog{}
 		err := json.Unmarshal([]byte(tc.logJsonStr), &log)
 		assert.Nil(t, err)
-
-		assert.Equal(t, tc.expectMatch, matchLogFilterTopic(&log, tc.logFilter))
+		assert.Equal(t, tc.expectMatch, util.MatchCfxLogTopics(log.Log, tc.logFilter.Topics))
 	}
 }
 
