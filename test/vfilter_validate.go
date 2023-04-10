@@ -11,6 +11,8 @@ import (
 
 	"github.com/Conflux-Chain/confura/node"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 	ring "github.com/zealws/golang-ring"
@@ -27,127 +29,10 @@ type VFValidConfig struct {
 	InfuraRpcEndpoint   string // infura rpc endpoint used to be validated against
 }
 
-// VFValidator polls filter changes from fullnode and infura endpoints, and then compares
-// the filter change to validate if the poll results comply to fullnode.
-type VFValidator struct {
-	infura *node.Web3goClient // infura rpc service client instance
-	fn     *node.Web3goClient // fullnode client instance
-	conf   *VFValidConfig     // validation configuration
-}
-
-func MustNewVFValidator(conf *VFValidConfig) *VFValidator {
-	// Prepare fullnode client instance
-	fn := &node.Web3goClient{
-		URL:    conf.FullnodeRpcEndpoint,
-		Client: rpcutil.MustNewEthClient(conf.FullnodeRpcEndpoint),
-	}
-
-	// Prepare infura rpc service client instance
-	infura := &node.Web3goClient{
-		URL:    conf.InfuraRpcEndpoint,
-		Client: rpcutil.MustNewEthClient(conf.InfuraRpcEndpoint),
-	}
-
-	return &VFValidator{fn: fn, infura: infura, conf: conf}
-}
-
-func (validator *VFValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
-	validator.validateFilterChanges()
-}
-
-func (validator *VFValidator) Destroy() {
-	// Close client instance
-	validator.fn.Close()
-	validator.infura.Close()
-}
-
-func (validator *VFValidator) validateFilterChanges() {
-	var fnCh, infuraCh chan []types.Log
-	var fnCtx, infuraCtx *vfValidationContext
-
-	fnFilter := func() *vfValidationContext { // fullnode
-		fnCh = make(chan []types.Log, vfValidChBufferSize)
-		fnCtx = newVFValidationContext(validator.fn, fnCh)
-		go validator.pollFilterChangesWithContext(fnCtx)
-
-		return fnCtx
-	}
-
-	infuraFilter := func() *vfValidationContext { // infura
-		infuraCh = make(chan []types.Log, vfValidChBufferSize)
-		infuraCtx = newVFValidationContext(validator.infura, infuraCh)
-		go validator.pollFilterChangesWithContext(infuraCtx)
-
-		return infuraCtx
-	}
-
-	validator.doValidate(fnFilter, infuraFilter, func(calibrate, validate, reset func() error) {
-		for {
-			if err := calibrate(); err != nil {
-				logrus.WithError(err).Error("Virtual filter validator failed to calibrate filter changes")
-			}
-
-			var valErr error // validation error
-
-			select {
-			case fnlogs := <-fnCh:
-				for i := range fnlogs {
-					fnCtx.rBuf.Enqueue(&fnlogs[i])
-				}
-				valErr = validate()
-			case inflogs := <-infuraCh:
-				for i := range inflogs {
-					infuraCtx.rBuf.Enqueue(&inflogs[i])
-				}
-				valErr = validate()
-			case <-fnCtx.errCh:
-				reset()
-			case <-infuraCtx.errCh:
-				reset()
-			}
-
-			if valErr != nil {
-				logrus.WithError(valErr).Error("Virtual filter validation error")
-			}
-		}
-	})
-}
-
-func (validator *VFValidator) pollFilterChangesWithContext(vfCtx *vfValidationContext) {
-	logger := logrus.WithField("nodeUrl", vfCtx.w3c.URL)
-
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for {
-		fid, err := vfCtx.w3c.Filter.NewLogFilter(&types.FilterQuery{})
-		if err != nil {
-			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to new log filter")
-			time.Sleep(time.Second * 1)
-			continue
-		}
-
-		vfCtx.setStatus(true)
-
-		for range ticker.C {
-			if !vfCtx.getStatus() {
-				break
-			}
-
-			fc, err := vfCtx.w3c.Filter.GetFilterChanges(*fid)
-			if err == nil {
-				vfCtx.notify(fc.Logs)
-				continue
-			}
-
-			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to poll changes")
-
-			if vfCtx.setStatus(false) {
-				vfCtx.errCh <- err
-			}
-		}
-	}
-}
+// VFValidator virtual filter validator base to poll filter changes from fullnode and infura
+// endpoints, and then compares the filter change to validate if the poll results comply to
+// fullnode.
+type VFValidator struct{}
 
 type vfFunc func() *vfValidationContext
 
@@ -159,7 +44,8 @@ func (validator *VFValidator) doValidate(fnFilter, infuraFilter vfFunc, watch wa
 		calibTryTimes = 0
 		calibStatus = calibrationExpired
 
-		validator.resetWithContext(fnCtx, infuraCtx)
+		fnCtx.reset()
+		infuraCtx.reset()
 		return nil
 	}
 
@@ -201,14 +87,6 @@ func (validator *VFValidator) doValidate(fnFilter, infuraFilter vfFunc, watch wa
 	go watch(calibrate, validate, reset)
 }
 
-func (validator *VFValidator) resetWithContext(fnCtx, infuraCtx *vfValidationContext) {
-	fnCtx.drainRead()
-	fnCtx.resetBuf()
-
-	infuraCtx.drainRead()
-	infuraCtx.resetBuf()
-}
-
 func (validator *VFValidator) validateWithContext(fnCtx, infuraCtx *vfValidationContext) error {
 	fnBufSize, infuraBufSize := fnCtx.rBuf.ContentSize(), infuraCtx.rBuf.ContentSize()
 	logger := logrus.WithFields(logrus.Fields{
@@ -234,8 +112,8 @@ func (validator *VFValidator) validateWithContext(fnCtx, infuraCtx *vfValidation
 			infuraValStr, _ := json.Marshal(infuraVal)
 
 			logrus.WithFields(logrus.Fields{
-				"fnVal":     fnValStr,
-				"infuraVal": infuraValStr,
+				"fnVal":     string(fnValStr),
+				"infuraVal": string(infuraValStr),
 			}).Error("Virtual filter validation result not matched")
 
 			return errResultNotMatched
@@ -290,16 +168,250 @@ func (validator *VFValidator) doCalibrate(fnCtx, infuraCtx *vfValidationContext)
 	return false
 }
 
-type vfValidationContext struct {
-	status  int32              // validation status: 0 for normal, -1 for abnormal
-	w3c     *node.Web3goClient // node client
-	etype   reflect.Type       // channel type
-	channel reflect.Value      // channel to receive result(s)
-	errCh   chan error         // channel to notify validation error
-	rBuf    *ring.Ring         // ring buffer to hold data for comparision
+// EthVFValidator evm space virtual filter test validator
+type EthVFValidator struct {
+	VFValidator
+	infura *node.Web3goClient // infura rpc service client instance
+	fn     *node.Web3goClient // fullnode client instance
 }
 
-func newVFValidationContext(w3c *node.Web3goClient, channel interface{}) *vfValidationContext {
+func MustNewEthVFValidator(conf *VFValidConfig) *EthVFValidator {
+	// Prepare fullnode client instance
+	fn := &node.Web3goClient{
+		URL:    conf.FullnodeRpcEndpoint,
+		Client: rpcutil.MustNewEthClient(conf.FullnodeRpcEndpoint),
+	}
+
+	// Prepare infura rpc service client instance
+	infura := &node.Web3goClient{
+		URL:    conf.InfuraRpcEndpoint,
+		Client: rpcutil.MustNewEthClient(conf.InfuraRpcEndpoint),
+	}
+
+	return &EthVFValidator{fn: fn, infura: infura}
+}
+
+func (validator *EthVFValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
+	validator.validateFilterChanges()
+}
+
+func (validator *EthVFValidator) Destroy() {
+	// Close client instance
+	validator.fn.Close()
+	validator.infura.Close()
+}
+
+func (validator *EthVFValidator) validateFilterChanges() {
+	var fnCh, infuraCh chan []types.Log
+	var fnCtx, infuraCtx *vfValidationContext
+
+	fnFilter := func() *vfValidationContext { // fullnode
+		fnCh = make(chan []types.Log, vfValidChBufferSize)
+		fnCtx = newVFValidationContext(fnCh)
+		go validator.pollFilterChangesWithContext(validator.fn, fnCtx)
+
+		return fnCtx
+	}
+
+	infuraFilter := func() *vfValidationContext { // infura
+		infuraCh = make(chan []types.Log, vfValidChBufferSize)
+		infuraCtx = newVFValidationContext(infuraCh)
+		go validator.pollFilterChangesWithContext(validator.infura, infuraCtx)
+
+		return infuraCtx
+	}
+
+	validator.doValidate(fnFilter, infuraFilter, func(calibrate, validate, reset func() error) {
+		for {
+			if err := calibrate(); err != nil {
+				logrus.WithError(err).Error("Virtual filter validator failed to calibrate filter changes")
+			}
+
+			var valErr error // validation error
+
+			select {
+			case fnlogs := <-fnCh:
+				for i := range fnlogs {
+					fnCtx.rBuf.Enqueue(&fnlogs[i])
+				}
+				valErr = validate()
+			case inflogs := <-infuraCh:
+				for i := range inflogs {
+					infuraCtx.rBuf.Enqueue(&inflogs[i])
+				}
+				valErr = validate()
+			case <-fnCtx.errCh:
+				reset()
+			case <-infuraCtx.errCh:
+				reset()
+			}
+
+			if valErr != nil {
+				logrus.WithError(valErr).Error("Virtual filter validation error")
+			}
+		}
+	})
+}
+
+func (validator *EthVFValidator) pollFilterChangesWithContext(w3c *node.Web3goClient, vfCtx *vfValidationContext) {
+	logger := logrus.WithField("nodeUrl", w3c.URL)
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		fid, err := w3c.Filter.NewLogFilter(&types.FilterQuery{})
+		if err != nil {
+			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to new log filter")
+			time.Sleep(time.Second * 1)
+			continue
+		}
+
+		vfCtx.setStatus(true)
+
+		for range ticker.C {
+			if !vfCtx.getStatus() {
+				break
+			}
+
+			fc, err := w3c.Filter.GetFilterChanges(*fid)
+			if err == nil {
+				vfCtx.notify(fc.Logs)
+				continue
+			}
+
+			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to poll changes")
+
+			if vfCtx.setStatus(false) {
+				vfCtx.errCh <- err
+			}
+		}
+	}
+}
+
+type CfxVFValidator struct {
+	VFValidator
+	infura *sdk.Client // infura rpc service client instance
+	fn     *sdk.Client // fullnode client instance
+}
+
+func MustNewCfxVFValidator(conf *VFValidConfig) *CfxVFValidator {
+	// Prepare fullnode client instance
+	fn := rpcutil.MustNewCfxClient(conf.FullnodeRpcEndpoint)
+
+	// Prepare infura rpc service client instance
+	infura := rpcutil.MustNewCfxClient(conf.InfuraRpcEndpoint)
+
+	return &CfxVFValidator{fn: fn, infura: infura}
+}
+
+func (validator *CfxVFValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
+	validator.validateFilterChanges()
+}
+
+func (validator *CfxVFValidator) Destroy() {
+	// Close client instance
+	validator.fn.Close()
+	validator.infura.Close()
+}
+
+func (validator *CfxVFValidator) validateFilterChanges() {
+	var fnCh, infuraCh chan []cfxtypes.CfxFilterLog
+	var fnCtx, infuraCtx *vfValidationContext
+
+	fnFilter := func() *vfValidationContext { // fullnode
+		fnCh = make(chan []cfxtypes.CfxFilterLog, vfValidChBufferSize)
+		fnCtx = newVFValidationContext(fnCh)
+		go validator.pollFilterChangesWithContext(validator.fn, fnCtx)
+
+		return fnCtx
+	}
+
+	infuraFilter := func() *vfValidationContext { // infura
+		infuraCh = make(chan []cfxtypes.CfxFilterLog, vfValidChBufferSize)
+		infuraCtx = newVFValidationContext(infuraCh)
+		go validator.pollFilterChangesWithContext(validator.infura, infuraCtx)
+
+		return infuraCtx
+	}
+
+	validator.doValidate(fnFilter, infuraFilter, func(calibrate, validate, reset func() error) {
+		for {
+			if err := calibrate(); err != nil {
+				logrus.WithError(err).Error("Virtual filter validator failed to calibrate filter changes")
+			}
+
+			var valErr error // validation error
+
+			select {
+			case fnlogs := <-fnCh:
+				for i := range fnlogs {
+					fnCtx.rBuf.Enqueue(&fnlogs[i])
+				}
+				valErr = validate()
+			case inflogs := <-infuraCh:
+				for i := range inflogs {
+					infuraCtx.rBuf.Enqueue(&inflogs[i])
+				}
+				valErr = validate()
+			case <-fnCtx.errCh:
+				reset()
+			case <-infuraCtx.errCh:
+				reset()
+			}
+
+			if valErr != nil {
+				logrus.WithError(valErr).Error("Virtual filter validation error")
+			}
+		}
+	})
+}
+
+func (validator *CfxVFValidator) pollFilterChangesWithContext(client *sdk.Client, vfCtx *vfValidationContext) {
+	logger := logrus.WithField("nodeUrl", client.GetNodeURL())
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		fid, err := client.Filter().NewFilter(cfxtypes.LogFilter{})
+		if err != nil {
+			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to new log filter")
+			time.Sleep(time.Second * 1)
+			continue
+		}
+
+		vfCtx.setStatus(true)
+
+		for range ticker.C {
+			if !vfCtx.getStatus() {
+				break
+			}
+
+			fc, err := client.Filter().GetFilterChanges(*fid)
+			if err == nil {
+				vfCtx.notify(fc.Logs)
+				continue
+			}
+
+			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to poll changes")
+
+			if vfCtx.setStatus(false) {
+				vfCtx.errCh <- err
+			}
+		}
+	}
+}
+
+type vfValidationContext struct {
+	status  int32         // validation status: 0 for normal, -1 for abnormal
+	etype   reflect.Type  // channel type
+	channel reflect.Value // channel to receive result(s)
+	errCh   chan error    // channel to notify validation error
+	rBuf    *ring.Ring    // ring buffer to hold data for comparision
+}
+
+func newVFValidationContext(channel interface{}) *vfValidationContext {
 	// check type of channel first
 	chanVal := reflect.ValueOf(channel)
 	if chanVal.Kind() != reflect.Chan ||
@@ -313,12 +425,16 @@ func newVFValidationContext(w3c *node.Web3goClient, channel interface{}) *vfVali
 	rbuf.SetCapacity(ringBufferSize)
 
 	return &vfValidationContext{
-		w3c:     w3c,
 		etype:   chanVal.Type().Elem(),
 		channel: chanVal,
 		errCh:   make(chan error, 1),
 		rBuf:    rbuf,
 	}
+}
+
+func (ctx *vfValidationContext) reset() {
+	ctx.drainRead()
+	ctx.resetBuf()
 }
 
 func (ctx *vfValidationContext) resetBuf() {

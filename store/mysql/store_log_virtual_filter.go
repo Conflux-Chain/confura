@@ -53,11 +53,11 @@ type vfLogFilter struct {
 }
 
 func (filter *vfLogFilter) validateCount(db *gorm.DB) error {
-	db = db.Where("is_del <> ", true)
+	db = db.Where("is_del <> ?", true)
 	db = applyContractFilter(db, filter.Contracts)
 
 	if len(filter.BlockHashes) > 0 {
-		db = db.Where("block_hash IN (?)", filter.BlockHashes)
+		db = db.Where("bh IN (?)", filter.BlockHashes)
 	}
 
 	return filter.LogFilter.validateCount(db)
@@ -74,7 +74,7 @@ func (filter *vfLogFilter) Find(db *gorm.DB) ([]VirtualFilterLog, error) {
 		Limit(int(store.MaxLogLimit) + 1)
 
 	if len(filter.BlockHashes) > 0 {
-		db = db.Where("block_hash IN (?)", filter.BlockHashes)
+		db = db.Where("bh IN (?)", filter.BlockHashes)
 	}
 
 	db = applyTopicsFilter(db, filter.Topics)
