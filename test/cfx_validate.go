@@ -29,6 +29,11 @@ import (
 	"go.uber.org/multierr"
 )
 
+type TestValidator interface {
+	Run(ctx context.Context, wg *sync.WaitGroup)
+	Destroy()
+}
+
 type epochValidationCtxKey string
 
 const (

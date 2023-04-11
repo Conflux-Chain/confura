@@ -1,6 +1,8 @@
 package test
 
 import (
+	"strings"
+
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/test"
 	"github.com/sirupsen/logrus"
@@ -9,7 +11,8 @@ import (
 
 var (
 	// virtual filter validation configuration
-	vfValidConf test.VFValidConfig
+	vfConf    test.VFValidConfig
+	vfNetwork string
 
 	vfTestCmd = &cobra.Command{
 		Use:   "vf",
@@ -19,16 +22,22 @@ var (
 )
 
 func init() {
+	// network space
+	vfTestCmd.Flags().StringVarP(
+		&vfNetwork, "network", "n", "cfx", "network space ('cfx' or 'eth')",
+	)
+	vfTestCmd.MarkFlagRequired("network")
+
 	// fullnode endpoint
 	vfTestCmd.Flags().StringVarP(
-		&vfValidConf.FullnodeRpcEndpoint,
+		&vfConf.FullnodeRpcEndpoint,
 		"fn-endpoint", "f", "", "fullnode rpc endpoint used as benchmark",
 	)
 	vfTestCmd.MarkFlagRequired("fn-endpoint")
 
 	// confura RPC endpoint
 	vfTestCmd.Flags().StringVarP(
-		&vfValidConf.InfuraRpcEndpoint,
+		&vfConf.InfuraRpcEndpoint,
 		"infura-endpoint", "u", "", "infura rpc endpoint to be validated against",
 	)
 	vfTestCmd.MarkFlagRequired("infura-endpoint")
@@ -37,14 +46,25 @@ func init() {
 }
 
 func startVFTest(cmd *cobra.Command, args []string) {
-	if len(vfValidConf.FullnodeRpcEndpoint) == 0 || len(vfValidConf.InfuraRpcEndpoint) == 0 {
+	if len(vfConf.FullnodeRpcEndpoint) == 0 || len(vfConf.InfuraRpcEndpoint) == 0 {
 		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for virtual filter validation")
 	}
 
-	logrus.Info("Starting virtual filter validator...")
-
-	validator := test.MustNewVFValidator(&vfValidConf)
+	validator := mustNewVfTestValidator()
 	defer validator.Destroy()
 
+	logrus.Info("Starting virtual filter validator...")
 	util.StartAndGracefulShutdown(validator.Run)
+}
+
+func mustNewVfTestValidator() test.TestValidator {
+	switch {
+	case strings.EqualFold(vfNetwork, "eth"):
+		return test.MustNewEthVFValidator(&vfConf)
+	case strings.EqualFold(vfNetwork, "cfx"):
+		return test.MustNewCfxVFValidator(&vfConf)
+	default:
+		logrus.Fatal("invalid network space (only `cfx` and `eth` acceptable)")
+		return nil
+	}
 }
