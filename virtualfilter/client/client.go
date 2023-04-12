@@ -5,12 +5,12 @@ import (
 	"time"
 
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/go-rpc-provider/interfaces"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	ethtypes "github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -19,27 +19,38 @@ const (
 	defaultClientRequestTimeout = 3 * time.Second
 )
 
+type clientConfig struct {
+	Enabled       bool
+	ServiceRpcUrl string
+}
+
 type EthClient struct {
 	// underlying rpc client provider to request virtual filter service
 	p interfaces.Provider
 }
 
-func MustNewEthClientFromViper() *EthClient {
-	svcRpcUrl := viper.GetString("ethVirtualFilters.serviceRpcUrl")
+func MustNewEthClientFromViper() (*EthClient, bool) {
+	var conf clientConfig
+	viper.MustUnmarshalKey("ethVirtualFilters.client", &conf)
+
+	if !conf.Enabled {
+		return nil, false
+	}
+
 	option := providers.Option{
 		RetryCount:     defaultClientRetryCount,
 		RetryInterval:  defaultClientRetryInterval,
 		RequestTimeout: defaultClientRequestTimeout,
 	}
 
-	p, err := providers.NewProviderWithOption(svcRpcUrl, option)
+	p, err := providers.NewProviderWithOption(conf.ServiceRpcUrl, option)
 	if err != nil {
 		logrus.WithError(err).
-			WithField("serviceRpcUrl", svcRpcUrl).
+			WithField("serviceRpcUrl", conf.ServiceRpcUrl).
 			Fatal("Failed to create RPC provider for virtual filter client")
 	}
 
-	return &EthClient{p: p}
+	return &EthClient{p: p}, true
 }
 
 func (client *EthClient) NewFilter(delFnUrl string, fq *ethtypes.FilterQuery) (val *rpc.ID, err error) {
@@ -77,22 +88,28 @@ type CfxClient struct {
 	p interfaces.Provider
 }
 
-func MustNewCfxClientFromViper() *CfxClient {
-	svcRpcUrl := viper.GetString("virtualFilters.serviceRpcUrl")
+func MustNewCfxClientFromViper() (*CfxClient, bool) {
+	var conf clientConfig
+	viper.MustUnmarshalKey("virtualFilters.client", &conf)
+
+	if !conf.Enabled {
+		return nil, false
+	}
+
 	option := providers.Option{
 		RetryCount:     defaultClientRetryCount,
 		RetryInterval:  defaultClientRetryInterval,
 		RequestTimeout: defaultClientRequestTimeout,
 	}
 
-	p, err := providers.NewProviderWithOption(svcRpcUrl, option)
+	p, err := providers.NewProviderWithOption(conf.ServiceRpcUrl, option)
 	if err != nil {
 		logrus.WithError(err).
-			WithField("serviceRpcUrl", svcRpcUrl).
+			WithField("serviceRpcUrl", conf.ServiceRpcUrl).
 			Fatal("Failed to create RPC provider for virtual filter client")
 	}
 
-	return &CfxClient{p: p}
+	return &CfxClient{p: p}, true
 }
 
 func (client *CfxClient) NewFilter(delFnUrl string, filterCrit *cfxtypes.LogFilter) (val *rpc.ID, err error) {

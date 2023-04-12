@@ -328,8 +328,10 @@ node:
 #   TTL: 1m
 #   # Max number of filter blocks full of event logs to restrict memory usage
 #   maxFullFilterBlocks: 100
-#   # Exposed RPC endpoint of virtual filter service for client request
-#   serviceRpcUrl: http://127.0.0.1:48545
+#   client: # Request client configuration
+#     enabled: false
+#     # Exposed RPC endpoint of virtual filter service for client request
+#     serviceRpcUrl: http://127.0.0.1:48545
 
 # # core space virtual filters configurations
 # virtualFilters:
@@ -339,5 +341,7 @@ node:
 #   TTL: 1m
 #   # Max number of filter blocks full of event logs to restrict memory usage
 #   maxFullFilterEpochs: 100
-#   # Exposed RPC endpoint of virtual filter service for client request
-#   serviceRpcUrl: http://127.0.0.1:42537
+#   client: # Request client configuration
+#     enabled: false
+#     # Exposed RPC endpoint of virtual filter service for client request
+#     serviceRpcUrl: http://127.0.0.1:42537

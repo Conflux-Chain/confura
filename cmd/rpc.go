@@ -90,8 +90,12 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	relayer := relay.MustNewTxnRelayerFromViper()
 
 	option := rpc.CfxAPIOption{
-		TxnHandler:          handler.MustNewCfxTxnHandler(relayer),
-		VirtualFilterClient: vfclient.MustNewCfxClientFromViper(),
+		TxnHandler: handler.MustNewCfxTxnHandler(relayer),
+	}
+
+	if vfc, ok := vfclient.MustNewCfxClientFromViper(); ok {
+		option.VirtualFilterClient = vfc
+		logrus.Info("Virtual filter client enabled")
 	}
 
 	// initialize store handler
@@ -157,8 +161,12 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 	relayer := relay.MustNewEthTxnRelayerFromViper()
 
 	option := rpc.EthAPIOption{
-		TxnHandler:          handler.MustNewEthTxnHandler(relayer),
-		VirtualFilterClient: vfclient.MustNewEthClientFromViper(),
+		TxnHandler: handler.MustNewEthTxnHandler(relayer),
+	}
+
+	if vfc, ok := vfclient.MustNewEthClientFromViper(); ok {
+		option.VirtualFilterClient = vfc
+		logrus.Info("Virtual filter client enabled")
 	}
 
 	if storeCtx.EthDB != nil {

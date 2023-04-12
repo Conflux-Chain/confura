@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/openweb3/go-rpc-provider"
 )
@@ -19,8 +20,12 @@ func (api *cfxAPI) NewFilter(ctx context.Context, filterCrit types.LogFilter) (*
 	cfx := GetCfxClientFromContext(ctx)
 	metrics.UpdateCfxRpcLogFilter(rpcMethodCfxNewFilter, cfx, &filterCrit)
 
-	fid, err := api.VirtualFilterClient.NewFilter(cfx.GetNodeURL(), &filterCrit)
-	return fid, errVirtualFilterProxyErrorOrNil(err)
+	if api.VirtualFilterClient != nil {
+		fid, err := api.VirtualFilterClient.NewFilter(cfx.GetNodeURL(), &filterCrit)
+		return fid, errVirtualFilterProxyErrorOrNil(err)
+	}
+
+	return cfx.(*sdk.Client).Filter().NewFilter(filterCrit)
 }
 
 // NewBlockFilter creates a filter that fetches blocks that are imported into the chain.
@@ -28,8 +33,12 @@ func (api *cfxAPI) NewFilter(ctx context.Context, filterCrit types.LogFilter) (*
 func (api *cfxAPI) NewBlockFilter(ctx context.Context) (*rpc.ID, error) {
 	cfx := GetCfxClientFromContext(ctx)
 
-	fid, err := api.VirtualFilterClient.NewBlockFilter(cfx.GetNodeURL())
-	return fid, errVirtualFilterProxyErrorOrNil(err)
+	if api.VirtualFilterClient != nil {
+		fid, err := api.VirtualFilterClient.NewBlockFilter(cfx.GetNodeURL())
+		return fid, errVirtualFilterProxyErrorOrNil(err)
+	}
+
+	return cfx.(*sdk.Client).Filter().NewBlockFilter()
 }
 
 // NewPendingTransactionFilter creates a filter that fetches pending transaction hashes
@@ -40,14 +49,23 @@ func (api *cfxAPI) NewBlockFilter(ctx context.Context) (*rpc.ID, error) {
 func (api *cfxAPI) NewPendingTransactionFilter(ctx context.Context) (*rpc.ID, error) {
 	cfx := GetCfxClientFromContext(ctx)
 
-	fid, err := api.VirtualFilterClient.NewPendingTransactionFilter(cfx.GetNodeURL())
-	return fid, errVirtualFilterProxyErrorOrNil(err)
+	if api.VirtualFilterClient != nil {
+		fid, err := api.VirtualFilterClient.NewPendingTransactionFilter(cfx.GetNodeURL())
+		return fid, errVirtualFilterProxyErrorOrNil(err)
+	}
+
+	return cfx.(*sdk.Client).Filter().NewPendingTransactionFilter()
 }
 
 // UninstallFilter removes the filter with the given filter id.
 func (api *cfxAPI) UninstallFilter(ctx context.Context, fid rpc.ID) (bool, error) {
-	ok, err := api.VirtualFilterClient.UninstallFilter(fid)
-	return ok, errVirtualFilterProxyErrorOrNil(err)
+	if api.VirtualFilterClient != nil {
+		ok, err := api.VirtualFilterClient.UninstallFilter(fid)
+		return ok, errVirtualFilterProxyErrorOrNil(err)
+	}
+
+	cfx := GetCfxClientFromContext(ctx)
+	return cfx.(*sdk.Client).Filter().UninstallFilter(fid)
 }
 
 // GetFilterChanges returns the logs for the filter with the given id since
@@ -56,13 +74,32 @@ func (api *cfxAPI) UninstallFilter(ctx context.Context, fid rpc.ID) (bool, error
 // For pending transaction and block filters the result is []types.Hash.
 // (pending)Log filters return []types.CfxFilterLog.
 func (api *cfxAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{}, error) {
-	res, err := api.VirtualFilterClient.GetFilterChanges(fid)
-	return res, errVirtualFilterProxyErrorOrNil(err)
+	if api.VirtualFilterClient != nil {
+		res, err := api.VirtualFilterClient.GetFilterChanges(fid)
+		return res, errVirtualFilterProxyErrorOrNil(err)
+	}
+
+	cfx := GetCfxClientFromContext(ctx)
+	return cfx.(*sdk.Client).Filter().GetFilterChanges(fid)
 }
 
 // GetFilterLogs returns the logs for the filter with the given id.
 // If the filter could not be found an empty array of logs is returned.
 func (api *cfxAPI) GetFilterLogs(ctx context.Context, fid rpc.ID) ([]types.Log, error) {
-	logs, err := api.VirtualFilterClient.GetFilterLogs(fid)
-	return logs, errVirtualFilterProxyErrorOrNil(err)
+	if api.VirtualFilterClient != nil {
+		logs, err := api.VirtualFilterClient.GetFilterLogs(fid)
+		return uniformCfxLogs(logs), err
+	}
+
+	cfx := GetCfxClientFromContext(ctx)
+	logs, err := cfx.(*sdk.Client).Filter().GetFilterLogs(fid)
+	return uniformCfxLogs(logs), err
+}
+
+func uniformCfxLogs(logs []types.Log) []types.Log {
+	if logs == nil {
+		return emptyLogs
+	}
+
+	return logs
 }

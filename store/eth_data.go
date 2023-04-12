@@ -7,16 +7,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/types"
-	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 // EthData wraps the evm space blockchain data.
 type EthData struct {
-	Number   uint64                             // block number
-	Block    *web3Types.Block                   // block body
-	Receipts map[common.Hash]*web3Types.Receipt // receipts
+	Number   uint64                         // block number
+	Block    *types.Block                   // block body
+	Receipts map[common.Hash]*types.Receipt // receipts
 }
 
 // IsContinuousTo checks if this block is continuous to the previous block.
@@ -52,7 +51,7 @@ func QueryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthDa
 
 func queryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthData, error) {
 	// Get block by number
-	block, err := w3c.Eth.BlockByNumber(web3Types.BlockNumber(blockNumber), true)
+	block, err := w3c.Eth.BlockByNumber(types.BlockNumber(blockNumber), true)
 
 	if err == nil && block == nil {
 		err = errors.New("invalid block data (must not be nil)")
@@ -66,10 +65,10 @@ func queryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthDa
 		"blockHash": block.Hash, "blockNumber": blockNumber,
 	})
 
-	var blockReceipts []web3Types.Receipt
+	var blockReceipts []types.Receipt
 	if useBatch {
 		// Batch get block receipts.
-		blockNumOrHash := web3Types.BlockNumberOrHashWithNumber(types.BlockNumber(blockNumber))
+		blockNumOrHash := types.BlockNumberOrHashWithNumber(types.BlockNumber(blockNumber))
 		blockReceipts, err = w3c.Parity.BlockReceipts(&blockNumOrHash)
 		if err != nil {
 			logger.WithError(err).Info("Failed to batch query ETH block receipts")
@@ -77,14 +76,14 @@ func queryEthData(w3c *web3go.Client, blockNumber uint64, useBatch bool) (*EthDa
 		}
 	}
 
-	txReceipts := map[common.Hash]*web3Types.Receipt{}
+	txReceipts := map[common.Hash]*types.Receipt{}
 	blockTxs := block.Transactions.Transactions()
 
 	for i := 0; i < len(blockTxs); i++ {
 		txHash := blockTxs[i].Hash
 		blogger := logger.WithFields(logrus.Fields{"txHash": txHash, "i": i})
 
-		var receipt *web3Types.Receipt
+		var receipt *types.Receipt
 		if useBatch {
 			if blockReceipts == nil {
 				blogger.Info("Failed to match tx receipts due to block receipts nil (regarded as chain reorg)")
