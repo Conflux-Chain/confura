@@ -102,7 +102,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	if storeCtx.CfxDB != nil {
 		option.StoreHandler = handler.NewCfxCommonStoreHandler("db", storeCtx.CfxDB, option.StoreHandler)
 
-		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyset)
+		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyInfos)
 		rateReg = rate.NewRegistry(rateKeyLoader)
 
 		// periodically reload rate limit settings from db
@@ -175,7 +175,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 		// initialize logs api handler
 		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB)
 
-		rateKeyLoader := rate.NewKeyLoader(storeCtx.EthDB.LoadRateLimitKeyset)
+		rateKeyLoader := rate.NewKeyLoader(storeCtx.EthDB.LoadRateLimitKeyInfos)
 		rateReg = rate.NewRegistry(rateKeyLoader)
 
 		// periodically reload rate limit settings from db
