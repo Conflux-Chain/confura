@@ -17,6 +17,7 @@ type keysetCmdConfig struct {
 	LimitKey  string         // rate limit key
 	LimitType rate.LimitType // rate limit type (0 - by key, 1 - by IP)
 	SVip      int            // svip level (default 0 - no svip)
+	Memo      string         // rate limit memo
 }
 
 var (
@@ -58,6 +59,7 @@ func init() {
 	hookKeysetCmdFlags(addKeyCmd, true, true, false, true)
 	hookKeysetCmdLimitKeyFlag(addKeyCmd, false)
 	hookKeysetCmdSVipFlag(addKeyCmd, false)
+	hookKeysetCmdMemoFlag(addKeyCmd)
 
 	Cmd.AddCommand(delKeyCmd)
 	hookKeysetCmdFlags(delKeyCmd, true, false, true, false)
@@ -115,7 +117,9 @@ func addKey(cmd *cobra.Command, args []string) {
 	}).Info("Press the Enter Key to add new rate limit key")
 	fmt.Scanln() // wait for Enter Key
 
-	err = dbs.RateLimitStore.AddRateLimit(strategy.ID, keysetCfg.LimitType, limitKey, keysetCfg.SVip)
+	err = dbs.RateLimitStore.AddRateLimit(
+		strategy.ID, keysetCfg.LimitType, limitKey, keysetCfg.SVip, keysetCfg.Memo,
+	)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to add rate limit key")
 		return
@@ -189,7 +193,7 @@ func listKeys(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	keyinfos, err := dbs.LoadRateLimitKeyset(&rate.KeysetFilter{
+	keysets, err := dbs.LoadRateLimitKeyset(&rate.KeysetFilter{
 		SIDs:  []uint32{strategy.ID},
 		Limit: 50,
 	})
@@ -198,19 +202,20 @@ func listKeys(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	if len(keyinfos) == 0 {
+	if len(keysets) == 0 {
 		logrus.Info("No rate limit keys found")
 		return
 	}
 
-	logrus.WithField("total", len(keyinfos)).Info("Rate limit keys loaded:")
+	logrus.WithField("total", len(keysets)).Info("Rate limit keys loaded:")
 
-	for i, k := range keyinfos {
+	for i, k := range keysets {
 		logrus.WithFields(logrus.Fields{
 			"strategy":  strategy.Name,
-			"limitKey":  k.Key,
-			"limitType": limitTypeMap[k.Type],
+			"limitKey":  k.LimitKey,
+			"limitType": limitTypeMap[rate.LimitType(k.LimitType)],
 			"svip":      k.SVip,
+			"memo":      k.Memo,
 		}).Info("Key #", i)
 	}
 }
@@ -301,4 +306,10 @@ func hookKeysetCmdSVipFlag(keysetCmd *cobra.Command, required bool) {
 	if required {
 		keysetCmd.MarkFlagRequired("svip")
 	}
+}
+
+func hookKeysetCmdMemoFlag(keysetCmd *cobra.Command) {
+	keysetCmd.Flags().StringVarP(
+		&keysetCfg.Memo, "memo", "m", "", "rate limit memo",
+	)
 }

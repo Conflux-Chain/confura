@@ -14,6 +14,7 @@ type RateLimit struct {
 	LimitType int    `gorm:"default:0;not null"`       // limit type
 	LimitKey  string `gorm:"unique;size:128;not null"` // limit key
 	SVip      int    `gorm:"default:0;not null"`       // svip level - 0 means no SVIP
+	Memo      string `gorm:"size:128"`                 // memo
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -38,12 +39,14 @@ func (rls *RateLimitStore) AddRateLimit(
 	limitType rate.LimitType,
 	limitKey string,
 	svip int,
+	memo string,
 ) error {
 	ratelimit := &RateLimit{
 		SID:       sid,
 		LimitType: int(limitType),
 		LimitKey:  limitKey,
 		SVip:      svip,
+		Memo:      memo,
 	}
 
 	return rls.db.Create(ratelimit).Error
@@ -54,7 +57,7 @@ func (rls *RateLimitStore) DeleteRateLimit(limitKey string) (bool, error) {
 	return res.RowsAffected > 0, res.Error
 }
 
-func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res []*rate.KeyInfo, err error) {
+func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res []*RateLimit, err error) {
 	db := rls.db
 
 	if len(filter.KeySet) > 0 {
@@ -69,20 +72,30 @@ func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res [
 		db = db.Limit(filter.Limit)
 	}
 
-	var ratelimits []RateLimit
+	var ratelimits []*RateLimit
 
 	err = db.FindInBatches(&ratelimits, 200, func(tx *gorm.DB, batch int) error {
-		for i := range ratelimits {
-			res = append(res, &rate.KeyInfo{
-				Type: rate.LimitType(ratelimits[i].LimitType),
-				Key:  ratelimits[i].LimitKey,
-				SID:  ratelimits[i].SID,
-				SVip: ratelimits[i].SVip,
-			})
-		}
-
+		res = append(res, ratelimits...)
 		return nil
 	}).Error
 
 	return res, err
+}
+
+func (rls *RateLimitStore) LoadRateLimitKeyInfos(filter *rate.KeysetFilter) (res []*rate.KeyInfo, err error) {
+	ratelimits, err := rls.LoadRateLimitKeyset(filter)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range ratelimits {
+		res = append(res, &rate.KeyInfo{
+			Type: rate.LimitType(ratelimits[i].LimitType),
+			Key:  ratelimits[i].LimitKey,
+			SID:  ratelimits[i].SID,
+			SVip: ratelimits[i].SVip,
+		})
+	}
+
+	return res, nil
 }
