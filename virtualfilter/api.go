@@ -10,7 +10,6 @@ import (
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	gethmetrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/go-rpc-provider"
-	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 )
@@ -178,11 +177,6 @@ func (api *FilterApi) GetFilterLogs(id rpc.ID) (logs []types.Log, err error) {
 	if IsFilterNotFoundError(err) {
 		// uninstall deprecated proxy filter
 		api.UninstallFilter(id)
-	} else if err != nil && !utils.IsRPCJSONError(err) {
-		logrus.WithFields(logrus.Fields{
-			"delegateFn": f.del,
-			"filterID":   id,
-		}).WithError(err).Error("Virtual filter failed to get filter logs")
 	}
 
 	return logs, err
