@@ -197,11 +197,31 @@ func (fc *FilterChain) Extend(extended *list.List) error {
 	for ele := extended.Front(); ele != nil; ele = ele.Next() {
 		nblock := ele.Value.(*FilterBlock)
 
-		if fc.exists(nblock.blockHash) {
+		oldN, existed := fc.hashToNodes[nblock.blockHash]
+		if !existed { // block with hash not existed
+			fc.PushBack(nblock)
+			continue
+		}
+
+		// otherwise, this may be due to the block has been re-orged but re-mined to the canonical
+		// chain afterwards.
+
+		// make sure the old block is re-orged
+		if !oldN.reorg {
 			return errors.Errorf("filter block with hash %v already exists", nblock.blockHash)
 		}
 
-		fc.PushBack(nblock)
+		// also make sure the prev of old node is the tail of the canonical chain under such circumstance
+		if oldN.prev != fc.Back() {
+			return errors.Errorf(
+				"re-orged filter block with hash %v must be extended after the canonical tail",
+				nblock.blockHash,
+			)
+		}
+
+		// re-push back the old node the canonical chain tail
+		oldN.FilterBlock = nblock
+		fc.insert(oldN, fc.root.prev)
 	}
 
 	return nil
