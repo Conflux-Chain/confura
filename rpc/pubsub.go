@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
@@ -32,9 +31,6 @@ const (
 	lmEpochCtxName = "latest_mined_epochs" // for latest minted epoch subscription
 	lsEpochCtxName = "latest_state_epochs" // for latest state epoch subscription
 	logsCtxName    = "logs"                // for logs subscription
-
-	// max proxy delegate subscription failures to trigger error
-	maxProxyDelegateSubFailures = 3
 )
 
 var (
@@ -61,7 +57,9 @@ type delegateSubscription struct {
 	filters  []delegateSubFilter // blacklist filter chain
 }
 
-func newDelegateSubscription(dCtx *delegateContext, subId rpc.ID, channel interface{}, filters ...delegateSubFilter) *delegateSubscription {
+func newDelegateSubscription(
+	dCtx *delegateContext, subId rpc.ID, channel interface{}, filters ...delegateSubFilter) *delegateSubscription {
+
 	// check type of channel first
 	chanVal := reflect.ValueOf(channel)
 	if chanVal.Kind() != reflect.Chan || chanVal.Type().ChanDir()&reflect.SendDir == 0 || chanVal.IsNil() {
@@ -83,7 +81,8 @@ func (sub *delegateSubscription) deliver(result interface{}) bool {
 	// filter result before deliver
 	for _, blacklist := range sub.filters {
 		if blacklist(result) {
-			logrus.WithField("result", result).Debug("Blacklisted to deliver from delegate subscription")
+			logrus.WithField("result", result).
+				Debug("Blacklisted to deliver from delegate subscription")
 			return false
 		}
 	}
@@ -155,14 +154,29 @@ func (dctx *delegateContext) setStatus(status delegateStatus) {
 	atomic.StoreUint32((*uint32)(&dctx.status), uint32(status))
 }
 
-func (dctx *delegateContext) registerDelegateSub(subId rpc.ID, channel interface{}, filters ...delegateSubFilter) *delegateSubscription {
+func (dctx *delegateContext) registerDelegateSub(
+	pubsubRunLoop func(dctx *delegateContext) error,
+	subId rpc.ID, channel interface{}, filters ...delegateSubFilter,
+) (*delegateSubscription, error) {
 	dctx.lock.Lock()
 	defer dctx.lock.Unlock()
+
+	var err error
+	if pubsubRunLoop != nil { // start delegate pubsub run loop once
+		dctx.oncer.Do(func() {
+			err = pubsubRunLoop(dctx)
+		})
+	}
+
+	if err != nil {
+		dctx.oncer = sync.Once{}
+		return nil, err
+	}
 
 	delegateSub := newDelegateSubscription(dctx, subId, channel, filters...)
 	dctx.delegateSubs.Store(subId, delegateSub)
 
-	return delegateSub
+	return delegateSub, nil
 }
 
 func (dctx *delegateContext) deregisterDelegateSub(subId rpc.ID) *delegateSubscription {
@@ -174,13 +188,6 @@ func (dctx *delegateContext) deregisterDelegateSub(subId rpc.ID) *delegateSubscr
 	}
 
 	return nil
-}
-
-// run pubsub delegate subscription once
-func (dctx *delegateContext) run(delegateFunc func(dctx *delegateContext)) {
-	dctx.oncer.Do(func() {
-		go delegateFunc(dctx)
-	})
 }
 
 // cancel all delegated subscriptions
@@ -199,6 +206,8 @@ func (dctx *delegateContext) cancel(err error) {
 		dctx.delegateSubs.Delete(key)
 		return true
 	})
+
+	dctx.oncer = sync.Once{}
 }
 
 // notify all delegated subscriptions for new result
@@ -237,61 +246,55 @@ func (client *delegateClient) getDelegateCtxWithEpoch(ctxName string, epoch *typ
 	return dctx.(*delegateContext)
 }
 
-func (client *delegateClient) delegateSubscribeNewHeads(subId rpc.ID, channel chan *types.BlockHeader) (*delegateSubscription, error) {
+func (client *delegateClient) delegateSubscribeNewHeads(
+	subId rpc.ID, channel chan *types.BlockHeader) (*delegateSubscription, error) {
+
 	dCtx := client.getDelegateCtx(nhCtxName)
 	if dCtx.getStatus() == delegateStatusErr {
 		return nil, errDelegateNotReady
 	}
 
-	delegateSub := dCtx.registerDelegateSub(subId, channel)
-	dCtx.run(client.proxySubscribeNewHeads)
-
-	return delegateSub, nil
+	return dCtx.registerDelegateSub(client.proxySubscribeNewHeads, subId, channel)
 }
 
-func (client *delegateClient) proxySubscribeNewHeads(dctx *delegateContext) {
-	subFunc := func() (*rpc.ClientSubscription, chan types.BlockHeader, error) {
-		nhCh := make(chan types.BlockHeader, pubsubChannelBufferSize)
-		sub, err := client.SubscribeNewHeads(nhCh)
-		return sub, nhCh, err
+func (client *delegateClient) proxySubscribeNewHeads(dctx *delegateContext) error {
+	nhCh := make(chan types.BlockHeader, pubsubChannelBufferSize)
+	csub, err := client.SubscribeNewHeads(nhCh)
+	if err != nil {
+		logrus.WithField("nodeURL", client.GetNodeURL()).
+			WithError(err).
+			Info("CFX Pub/Sub NewHead proxy subscription conn error")
+		return err
 	}
 
-	logger := logrus.WithField("nodeURL", client.GetNodeURL())
-
-	for {
-		csub, nhCh, err := subFunc()
-		for failures := 0; err != nil; { // resub until suceess
-			logger.WithError(err).Info("NewHead proxy subscriptions error")
-
-			if failures++; failures%maxProxyDelegateSubFailures == 0 {
-				// trigger error for every few failures
-				logger.WithField("failures", failures).
-					WithError(err).Error("Failed to try too many newHeads proxy subscriptions")
-			}
-
-			time.Sleep(time.Second)
-			csub, nhCh, err = subFunc()
-		}
-
-		logger.Info("Started newHeads proxy subscription")
-
+	go func() { // run subscription loop
 		dctx.setStatus(delegateStatusOK)
+		defer dctx.setStatus(delegateStatusInit)
+
 		for dctx.getStatus() == delegateStatusOK {
 			select {
 			case err = <-csub.Err():
-				logger.WithError(err).Info("Cfx newHeads delegate subscription error")
-				csub.Unsubscribe()
+				logrus.WithField("nodeURL", client.GetNodeURL()).
+					WithError(err).
+					Info("CFX Pub/Sub NewHeads subscription delegate error")
 
 				dctx.setStatus(delegateStatusErr)
+				csub.Unsubscribe()
 				dctx.cancel(err)
 			case h := <-nhCh: // notify all delegated subscriptions
 				dctx.notify(&h)
 			}
 		}
-	}
+	}()
+
+	logrus.WithField("nodeURL", client.GetNodeURL()).
+		Info("CFX Pub/Sub NewHead proxy subscription run loop started")
+	return nil
 }
 
-func (client *delegateClient) delegateSubscribeEpochs(subId rpc.ID, channel chan *types.WebsocketEpochResponse, subscriptionEpochType ...types.Epoch) (*delegateSubscription, error) {
+func (client *delegateClient) delegateSubscribeEpochs(
+	subId rpc.ID, channel chan *types.WebsocketEpochResponse, subscriptionEpochType ...types.Epoch,
+) (*delegateSubscription, error) {
 	subEpochType, dctxName := types.EpochLatestMined, lmEpochCtxName
 	if len(subscriptionEpochType) > 0 && subscriptionEpochType[0].Equals(types.EpochLatestState) {
 		subEpochType, dctxName = types.EpochLatestState, lsEpochCtxName
@@ -302,113 +305,92 @@ func (client *delegateClient) delegateSubscribeEpochs(subId rpc.ID, channel chan
 		return nil, errDelegateNotReady
 	}
 
-	delegateSub := dCtx.registerDelegateSub(subId, channel)
-	dCtx.run(client.proxySubscribeEpochs)
-
-	return delegateSub, nil
+	return dCtx.registerDelegateSub(client.proxySubscribeEpochs, subId, channel)
 }
 
-func (client *delegateClient) proxySubscribeEpochs(dctx *delegateContext) {
-	subFunc := func() (*rpc.ClientSubscription, chan types.WebsocketEpochResponse, error) {
-		epochCh := make(chan types.WebsocketEpochResponse, pubsubChannelBufferSize)
-		sub, err := client.SubscribeEpochs(epochCh, *dctx.epoch)
-		return sub, epochCh, err
-	}
-
+func (client *delegateClient) proxySubscribeEpochs(dctx *delegateContext) error {
 	logger := logrus.WithFields(logrus.Fields{
 		"nodeURL":      client.GetNodeURL(),
 		"subEpochType": dctx.epoch,
 	})
 
-	for {
-		csub, epochCh, err := subFunc()
-		for failures := 0; err != nil; { // resub until suceess
-			logger.WithError(err).Info("Epochs proxy subscriptions error")
+	epochCh := make(chan types.WebsocketEpochResponse, pubsubChannelBufferSize)
+	csub, err := client.SubscribeEpochs(epochCh, *dctx.epoch)
+	if err != nil {
+		logger.WithError(err).Info("CFX Pub/Sub Epochs proxy subscription conn error")
+		return err
+	}
 
-			if failures++; failures%maxProxyDelegateSubFailures == 0 {
-				// trigger error for every few failures
-				logger.WithField("failures", failures).
-					WithError(err).
-					Error("Failed to try too many epochs proxy subscriptions")
-			}
-
-			time.Sleep(time.Second)
-			csub, epochCh, err = subFunc()
-		}
-
-		logger.Info("Started epochs proxy subscription")
-
+	go func() { // run subscription loop
 		dctx.setStatus(delegateStatusOK)
+		defer dctx.setStatus(delegateStatusInit)
+
 		for dctx.getStatus() == delegateStatusOK {
 			select {
 			case err = <-csub.Err():
-				logger.WithError(err).Info("Cfx epochs delegate subscription error")
-				csub.Unsubscribe()
+				logger.WithError(err).Info("CFX Pub/Sub Epochs proxy subscription delegate error")
 
 				dctx.setStatus(delegateStatusErr)
+				csub.Unsubscribe()
 				dctx.cancel(err)
 			case e := <-epochCh: // notify all delegated subscriptions
 				dctx.notify(&e)
 			}
 		}
-	}
+	}()
+
+	logrus.WithField("nodeURL", client.GetNodeURL()).
+		Info("CFX Pub/Sub Epochs proxy subscription run loop started")
+	return nil
 }
 
-func (client *delegateClient) delegateSubscribeLogs(subId rpc.ID, channel chan *types.SubscriptionLog, filter types.LogFilter) (*delegateSubscription, error) {
+func (client *delegateClient) delegateSubscribeLogs(
+	subId rpc.ID, channel chan *types.SubscriptionLog, filter types.LogFilter) (*delegateSubscription, error) {
+
 	dCtx := client.getDelegateCtx(logsCtxName)
 	if dCtx.getStatus() == delegateStatusErr {
 		return nil, errDelegateNotReady
 	}
 
-	delegateSub := dCtx.registerDelegateSub(subId, channel, func(item interface{}) bool {
+	return dCtx.registerDelegateSub(client.proxySubscribeLogs, subId, channel, func(item interface{}) bool {
 		log, ok := item.(*types.SubscriptionLog)
 		return !ok || !matchPubSubLogFilter(log, &filter)
 	})
-	dCtx.run(client.proxySubscribeLogs)
-
-	return delegateSub, nil
 }
 
-func (client *delegateClient) proxySubscribeLogs(dctx *delegateContext) {
-	subFunc := func() (*rpc.ClientSubscription, chan types.SubscriptionLog, error) {
-		logsCh := make(chan types.SubscriptionLog, pubsubChannelBufferSize)
-		sub, err := client.SubscribeLogs(logsCh, types.LogFilter{})
-		return sub, logsCh, err
+func (client *delegateClient) proxySubscribeLogs(dctx *delegateContext) error {
+	logsCh := make(chan types.SubscriptionLog, pubsubChannelBufferSize)
+	csub, err := client.SubscribeLogs(logsCh, types.LogFilter{})
+	if err != nil {
+		logrus.WithField("nodeURL", client.GetNodeURL()).
+			WithError(err).
+			Info("CFX Pub/Sub Logs subscription conn error")
+		return err
 	}
 
-	logger := logrus.WithField("nodeURL", client.GetNodeURL())
-
-	for {
-		csub, logsCh, err := subFunc()
-		for failures := 0; err != nil; { // resub until suceess
-			logger.WithError(err).Info("Logs proxy subscriptions error")
-
-			if failures++; failures%maxProxyDelegateSubFailures == 0 {
-				// trigger error for every few failures
-				logger.WithField("failures", failures).
-					WithError(err).Error("Failed to try too many logs proxy subscriptions")
-			}
-
-			time.Sleep(time.Second)
-			csub, logsCh, err = subFunc()
-		}
-
-		logger.Info("Started logs proxy subscription")
-
+	go func() { // run subscription loop
 		dctx.setStatus(delegateStatusOK)
+		defer dctx.setStatus(delegateStatusInit)
+
 		for dctx.getStatus() == delegateStatusOK {
 			select {
 			case err = <-csub.Err():
-				logger.WithError(err).Info("Cfx logs delegate subscription error")
-				csub.Unsubscribe()
+				logrus.WithField("nodeURL", client.GetNodeURL()).
+					WithError(err).
+					Info("CFX Pub/Sub Logs proxy subscription delegate error")
 
 				dctx.setStatus(delegateStatusErr)
+				csub.Unsubscribe()
 				dctx.cancel(err)
 			case l := <-logsCh: // notify all delegated subscriptions
 				dctx.notify(&l)
 			}
 		}
-	}
+	}()
+
+	logrus.WithField("nodeURL", client.GetNodeURL()).
+		Info("CFX Pub/Sub Logs proxy subscription run loop started")
+	return nil
 }
 
 func matchPubSubLogFilter(log *types.SubscriptionLog, filter *types.LogFilter) bool {
