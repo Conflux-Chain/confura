@@ -160,7 +160,7 @@ func (f *cfxLogFilter) fetch() (filterChanges, error) {
 		}
 	}
 
-	changeLogs := make([]types.CfxFilterLog, 0)
+	changeLogs := make([]*types.SubscriptionLog, 0)
 
 	// locate last re-orged index
 	var idx int
@@ -175,7 +175,7 @@ func (f *cfxLogFilter) fetch() (filterChanges, error) {
 		reorg := &types.ChainReorg{
 			RevertTo: (*hexutil.Big)(new(big.Int).SetUint64(revertTo)),
 		}
-		changeLogs = append(changeLogs, types.CfxFilterLog{ChainReorg: reorg})
+		changeLogs = append(changeLogs, &types.SubscriptionLog{ChainReorg: reorg})
 	}
 
 	for ; idx < len(pchanges.epochs); idx++ { // append normal event logs
@@ -187,7 +187,7 @@ func (f *cfxLogFilter) fetch() (filterChanges, error) {
 
 		logs = filterCfxLogs(logs, &f.crit)
 		for i := range logs {
-			changeLogs = append(changeLogs, types.CfxFilterLog{
+			changeLogs = append(changeLogs, &types.SubscriptionLog{
 				Log: &logs[i],
 			})
 		}

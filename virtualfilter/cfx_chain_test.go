@@ -11,11 +11,11 @@ import (
 
 func TestParseCfxFilterChanges(t *testing.T) {
 	testcase := struct {
-		logs              []types.CfxFilterLog
+		logs              []*types.SubscriptionLog
 		expectedNumLists  int
 		expectedListSizes []int
 	}{
-		logs: []types.CfxFilterLog{
+		logs: []*types.SubscriptionLog{
 			{ChainReorg: &types.ChainReorg{RevertTo: _newHexBigFromInt(1)}},
 			{Log: &types.Log{EpochNumber: _newHexBigFromInt(2), BlockHash: _newCfxHash("0x22")}},
 			{Log: &types.Log{EpochNumber: _newHexBigFromInt(3), BlockHash: _newCfxHash("0x23")}},
@@ -61,7 +61,7 @@ func TestCfxFilterChain(t *testing.T) {
 	assert.Equal(t, 0, fchain.len)
 
 	// test case #1 extend the chain
-	demolog := []types.CfxFilterLog{
+	demolog := []*types.SubscriptionLog{
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(1), BlockHash: _newCfxHash("0x11")}},
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(2), BlockHash: _newCfxHash("0x12")}},
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(3), BlockHash: _newCfxHash("0x13")}},
@@ -160,7 +160,7 @@ func TestCfxFilterChain(t *testing.T) {
 	}())
 
 	// test case #3 extend the chain to evict full filter blocks
-	demolog2 := []types.CfxFilterLog{
+	demolog2 := []*types.SubscriptionLog{
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(4), BlockHash: _newCfxHash("0x24")}},
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(5), BlockHash: _newCfxHash("0x25")}},
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(6), BlockHash: _newCfxHash("0x26")}},
@@ -189,7 +189,7 @@ func TestCfxFilterChain(t *testing.T) {
 	assert.Positive(t, len(tailEpoch.logs))
 
 	// test case #4 extend the chain with re-orged node
-	demolog3 := []types.CfxFilterLog{
+	demolog3 := []*types.SubscriptionLog{
 		{ChainReorg: &types.ChainReorg{RevertTo: _newHexBigFromInt(8)}},
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(9), BlockHash: _newCfxHash("0x39")}},
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(10), BlockHash: _newCfxHash("0x40")}},
@@ -223,7 +223,7 @@ func TestCfxFilterChainInitialReorg(t *testing.T) {
 	assert.Nil(t, fchain.back())
 	assert.Equal(t, 0, fchain.len)
 
-	demolog := []types.CfxFilterLog{
+	demolog := []*types.SubscriptionLog{
 		{ChainReorg: &types.ChainReorg{RevertTo: _newHexBigFromInt(3)}},
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(4), BlockHash: _newCfxHash("0x24")}},
 		{Log: &types.Log{EpochNumber: _newHexBigFromInt(5), BlockHash: _newCfxHash("0x25")}},
