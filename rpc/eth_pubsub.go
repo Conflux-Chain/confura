@@ -1,8 +1,6 @@
 package rpc
 
 import (
-	"time"
-
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
@@ -29,115 +27,98 @@ func (client *ethDelegateClient) getDelegateCtx(ctxName string) *delegateContext
 	return dctx.(*delegateContext)
 }
 
-func (client *ethDelegateClient) delegateSubscribeNewHeads(subId rpc.ID, channel chan *types.Header) (*delegateSubscription, error) {
-	dCtx := client.getDelegateCtx(nhCtxName)
-	if dCtx.getStatus() == delegateStatusErr {
+func (client *ethDelegateClient) delegateSubscribeNewHeads(
+	subId rpc.ID, channel chan *types.Header) (*delegateSubscription, error) {
+	dctx := client.getDelegateCtx(nhCtxName)
+	if dctx.getStatus() == delegateStatusErr {
 		return nil, errDelegateNotReady
 	}
 
-	delegateSub := dCtx.registerDelegateSub(subId, channel)
-	dCtx.run(client.proxySubscribeNewHeads)
-
-	return delegateSub, nil
+	return dctx.registerDelegateSub(client.proxySubscribeNewHeads, subId, channel)
 }
 
-func (client *ethDelegateClient) proxySubscribeNewHeads(dctx *delegateContext) {
-	subFunc := func() (types.Subscription, chan *types.Header, error) {
-		nhCh := make(chan *types.Header, pubsubChannelBufferSize)
-		sub, err := client.Eth.SubscribeNewHead(nhCh)
-		return sub, nhCh, err
+func (client *ethDelegateClient) proxySubscribeNewHeads(dctx *delegateContext) error {
+	nhCh := make(chan *types.Header, pubsubChannelBufferSize)
+	csub, err := client.Eth.SubscribeNewHead(nhCh)
+	if err != nil {
+		logrus.WithField("nodeURL", client.URL).
+			WithError(err).
+			Info("ETH Pub/Sub NewHead proxy subscription conn error")
+		return err
 	}
 
-	logger := logrus.WithField("nodeURL", client.URL)
-
-	for {
-		csub, nhCh, err := subFunc()
-		for failures := 0; err != nil; { // resub until suceess
-			logger.WithError(err).Info("NewHead proxy subscriptions error")
-
-			if failures++; failures%maxProxyDelegateSubFailures == 0 {
-				// trigger error for every few failures
-				logger.WithField("failures", failures).
-					WithError(err).Error("Failed to try too many newHeads proxy subscriptions")
-			}
-
-			time.Sleep(time.Second)
-			csub, nhCh, err = subFunc()
-		}
-
-		logger.Info("Started newHeads proxy subscription")
-
+	go func() { // run subscription loop
 		dctx.setStatus(delegateStatusOK)
+		defer dctx.setStatus(delegateStatusInit)
+
 		for dctx.getStatus() == delegateStatusOK {
 			select {
 			case err = <-csub.Err():
-				logger.WithError(err).Info("ETH newHeads delegate subscription error")
-				csub.Unsubscribe()
+				logrus.WithField("nodeURL", client.URL).
+					WithError(err).
+					Info("ETH Pub/Sub NewHeads proxy subscription delegate error")
 
 				dctx.setStatus(delegateStatusErr)
+				csub.Unsubscribe()
 				dctx.cancel(err)
 			case h := <-nhCh: // notify all delegated subscriptions
 				dctx.notify(h)
 			}
 		}
-	}
+	}()
+
+	logrus.WithField("nodeURL", client.URL).
+		Info("Eth Pub/Sub NewHeads proxy subscription run loop started")
+	return nil
 }
 
-func (client *ethDelegateClient) delegateSubscribeLogs(subId rpc.ID, channel chan *types.Log, filter types.FilterQuery) (*delegateSubscription, error) {
+func (client *ethDelegateClient) delegateSubscribeLogs(
+	subId rpc.ID, channel chan *types.Log, filter types.FilterQuery) (*delegateSubscription, error) {
+
 	dCtx := client.getDelegateCtx(logsCtxName)
 	if dCtx.getStatus() == delegateStatusErr {
 		return nil, errDelegateNotReady
 	}
 
-	delegateSub := dCtx.registerDelegateSub(subId, channel, func(item interface{}) bool {
+	return dCtx.registerDelegateSub(client.proxySubscribeLogs, subId, channel, func(item interface{}) bool {
 		log, ok := item.(*types.Log)
 		return !ok || !matchEthPubSubLogFilter(log, &filter)
 	})
-	dCtx.run(client.proxySubscribeLogs)
-
-	return delegateSub, nil
 }
 
-func (client *ethDelegateClient) proxySubscribeLogs(dctx *delegateContext) {
-	subFunc := func() (types.Subscription, chan types.Log, error) {
-		logsCh := make(chan types.Log, pubsubChannelBufferSize)
-		sub, err := client.Eth.SubscribeFilterLogs(types.FilterQuery{}, logsCh)
-		return sub, logsCh, err
+func (client *ethDelegateClient) proxySubscribeLogs(dctx *delegateContext) error {
+	logsCh := make(chan types.Log, pubsubChannelBufferSize)
+	csub, err := client.Eth.SubscribeFilterLogs(types.FilterQuery{}, logsCh)
+	if err != nil {
+		logrus.WithField("nodeURL", client.URL).
+			WithError(err).
+			Info("ETH Pub/Sub Logs proxy subscription conn error")
+		return err
 	}
 
-	logger := logrus.WithField("nodeURL", client.URL)
-
-	for {
-		csub, logsCh, err := subFunc()
-		for failures := 0; err != nil; { // resub until suceess
-			logger.WithError(err).Info("Logs proxy subscriptions error")
-
-			if failures++; failures%maxProxyDelegateSubFailures == 0 {
-				// trigger error for every few failures
-				logger.WithField("failures", failures).
-					WithError(err).Error("Failed to try too many logs proxy subscriptions")
-			}
-
-			time.Sleep(time.Second)
-			csub, logsCh, err = subFunc()
-		}
-
-		logger.Info("Started logs proxy subscription")
-
+	go func() { // run subscription loop
 		dctx.setStatus(delegateStatusOK)
+		defer dctx.setStatus(delegateStatusInit)
+
 		for dctx.getStatus() == delegateStatusOK {
 			select {
 			case err = <-csub.Err():
-				logger.WithError(err).Info("ETH logs delegate subscription error")
-				csub.Unsubscribe()
+				logrus.WithField("nodeURL", client.URL).
+					WithError(err).
+					Info("ETH Pub/Sub Logs delegate subscription delegate error")
 
 				dctx.setStatus(delegateStatusErr)
+				csub.Unsubscribe()
 				dctx.cancel(err)
 			case l := <-logsCh: // notify all delegated subscriptions
 				dctx.notify(&l)
 			}
 		}
-	}
+	}()
+
+	logrus.WithField("nodeURL", client.URL).
+		Info("Eth Pub/Sub Logs proxy subscription run loop started")
+	return nil
 }
 
 func matchEthPubSubLogFilter(log *types.Log, filter *types.FilterQuery) bool {

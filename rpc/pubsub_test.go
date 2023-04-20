@@ -16,7 +16,7 @@ func TestDelegateContextRegister(t *testing.T) {
 
 	// test register
 	rpcSubID := rpc.NewID()
-	dsub := dctx.registerDelegateSub(rpcSubID, make(chan interface{}))
+	dsub, _ := dctx.registerDelegateSub(nil, rpcSubID, make(chan interface{}))
 	assert.NotNil(t, dsub)
 
 	tsub, ok := dctx.delegateSubs.Load(rpcSubID)
