@@ -5,6 +5,7 @@ import (
 	"errors"
 	"runtime/debug"
 
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 )
@@ -17,14 +18,26 @@ func Recover(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) (resp *rpc.JsonRpcMessage) {
 		defer func() {
 			if err := recover(); err != nil {
-				resp = msg.ErrorResponse(errMiddlewareCrashed)
-
+				// print stack info
 				debug.PrintStack()
 
+				// output RPC request context for diagnostics
+				apiToken, _ := handlers.GetAccessTokenFromContext(ctx)
+				ipAddr, _ := handlers.GetIPAddressFromContext(ctx)
+
+				logrus.WithFields(logrus.Fields{
+					"ipAddress": ipAddr,
+					"apiToken":  apiToken,
+				}).Info("RPC middleware panic with request context")
+
+				// alert error message
 				logrus.WithFields(logrus.Fields{
 					"inputMsg": newHumanReadableRpcMessage(msg),
 					"panicErr": err,
 				}).Error("RPC middleware panic recovered")
+
+				// rewrite error responce
+				resp = msg.ErrorResponse(errMiddlewareCrashed)
 			}
 		}()
 
