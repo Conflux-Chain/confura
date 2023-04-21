@@ -316,11 +316,11 @@ func (validator *CfxVFValidator) Destroy() {
 }
 
 func (validator *CfxVFValidator) validateFilterChanges() {
-	var fnCh, infuraCh chan []cfxtypes.CfxFilterLog
+	var fnCh, infuraCh chan []*cfxtypes.SubscriptionLog
 	var fnCtx, infuraCtx *vfValidationContext
 
 	fnFilter := func() *vfValidationContext { // fullnode
-		fnCh = make(chan []cfxtypes.CfxFilterLog, vfValidChBufferSize)
+		fnCh = make(chan []*cfxtypes.SubscriptionLog, vfValidChBufferSize)
 		fnCtx = newVFValidationContext(fnCh)
 		go validator.pollFilterChangesWithContext(validator.fn, fnCtx)
 
@@ -328,7 +328,7 @@ func (validator *CfxVFValidator) validateFilterChanges() {
 	}
 
 	infuraFilter := func() *vfValidationContext { // infura
-		infuraCh = make(chan []cfxtypes.CfxFilterLog, vfValidChBufferSize)
+		infuraCh = make(chan []*cfxtypes.SubscriptionLog, vfValidChBufferSize)
 		infuraCtx = newVFValidationContext(infuraCh)
 		go validator.pollFilterChangesWithContext(validator.infura, infuraCtx)
 

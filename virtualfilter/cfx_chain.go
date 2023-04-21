@@ -231,8 +231,8 @@ func parseCfxFilterChanges(changes *types.CfxFilterChanges) []*list.List {
 	}
 
 	// split continuous event logs into groups by reverted or not
-	var splitLogs [][]types.CfxFilterLog
-	var tmplogs []types.CfxFilterLog
+	var splitLogs [][]*types.SubscriptionLog
+	var tmplogs []*types.SubscriptionLog
 
 	for i := range changes.Logs {
 		if len(tmplogs) == 0 || tmplogs[0].IsRevertLog() == changes.Logs[i].IsRevertLog() {
@@ -241,7 +241,7 @@ func parseCfxFilterChanges(changes *types.CfxFilterChanges) []*list.List {
 		}
 
 		splitLogs = append(splitLogs, tmplogs)
-		tmplogs = []types.CfxFilterLog{changes.Logs[i]}
+		tmplogs = []*types.SubscriptionLog{changes.Logs[i]}
 	}
 
 	splitLogs = append(splitLogs, tmplogs)
