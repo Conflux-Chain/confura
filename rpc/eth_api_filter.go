@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 
+	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/go-rpc-provider"
 	web3Types "github.com/openweb3/web3go/types"
@@ -10,7 +11,8 @@ import (
 )
 
 const (
-	rpcMethodEthNewFilter = "eth_newFilter"
+	rpcMethodEthNewFilter     = "eth_newFilter"
+	rpcMethodEthGetFilterLogs = "eth_getFilterLogs"
 )
 
 // uniform virtual filter proxy error
@@ -99,15 +101,23 @@ func (api *ethAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{
 // GetFilterLogs returns the logs for the filter with the given id.
 // If the filter could not be found an empty array of logs is returned.
 func (api *ethAPI) GetFilterLogs(ctx context.Context, fid rpc.ID) ([]web3Types.Log, error) {
-	if api.VirtualFilterClient != nil {
-		logs, err := api.VirtualFilterClient.GetFilterLogs(fid)
-		return uniformEthLogs(logs), errVirtualFilterProxyErrorOrNil(err)
+	if api.VirtualFilterClient == nil {
+		// delegate to full node if no virtual filter client provided
+		w3c := GetEthClientFromContext(ctx)
+		return w3c.Filter.GetFilterLogs(fid)
 	}
 
-	w3c := GetEthClientFromContext(ctx)
-	logs, err := w3c.Filter.GetFilterLogs(fid)
+	fq, err := api.VirtualFilterClient.GetLogFilter(fid)
+	if err != nil {
+		return ethEmptyLogs, errVirtualFilterProxyErrorOrNil(err)
+	}
 
-	return uniformEthLogs(logs), err
+	w3c, err := api.provider.GetClientByIP(ctx, node.GroupEthLogs)
+	if err != nil {
+		return ethEmptyLogs, errors.WithMessage(err, "failed to get client by ip")
+	}
+
+	return api.getLogs(ctx, w3c, fq, rpcMethodEthGetFilterLogs)
 }
 
 func uniformEthLogs(logs []web3Types.Log) []web3Types.Log {

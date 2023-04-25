@@ -2,7 +2,6 @@ package virtualfilter
 
 import (
 	"github.com/Conflux-Chain/confura/cmd/util"
-	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/rpc"
 )
@@ -11,13 +10,12 @@ import (
 func MustNewEvmSpaceServerFromViper(
 	shutdownContext util.GracefulShutdownContext,
 	vfls *mysql.VirtualFilterLogStore,
-	handler *handler.EthLogsApiHandler,
 ) (*rpc.Server, string) {
 	conf := mustNewEthConfigFromViper()
 	fs := newEthFilterSystem(conf, vfls, shutdownContext)
 
 	srv := rpc.MustNewServer("eth_vfilter", map[string]interface{}{
-		"eth": newEthFilterApi(fs, handler),
+		"eth": newEthFilterApi(fs),
 	})
 
 	return srv, conf.Endpoint
@@ -27,13 +25,12 @@ func MustNewEvmSpaceServerFromViper(
 func MustNewCoreSpaceServerFromViper(
 	shutdownContext util.GracefulShutdownContext,
 	vfls *mysql.VirtualFilterLogStore,
-	handler *handler.CfxLogsApiHandler,
 ) (*rpc.Server, string) {
 	conf := mustNewCfxConfigFromViper()
 	fs := newCfxFilterSystem(conf, vfls, shutdownContext)
 
 	srv := rpc.MustNewServer("cfx_vfilter", map[string]interface{}{
-		"cfx": newCfxFilterApi(fs, handler),
+		"cfx": newCfxFilterApi(fs),
 	})
 
 	return srv, conf.Endpoint

@@ -1,17 +1,11 @@
 package virtualfilter
 
 import (
-	"context"
-
 	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/rpc"
-	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	w3rpc "github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,13 +16,12 @@ var (
 // EVM space filter API
 
 type ethFilterApi struct {
-	fs         *ethFilterSystem           // filter system
-	logHandler *handler.EthLogsApiHandler // handler to get filter logs
-	fnClients  util.ConcurrentMap         // full node clients: node name => sdk client
+	fs        *ethFilterSystem   // filter system
+	fnClients util.ConcurrentMap // full node clients: node name => sdk client
 }
 
-func newEthFilterApi(sys *ethFilterSystem, handler *handler.EthLogsApiHandler) *ethFilterApi {
-	return &ethFilterApi{fs: sys, logHandler: handler}
+func newEthFilterApi(sys *ethFilterSystem) *ethFilterApi {
+	return &ethFilterApi{fs: sys}
 }
 
 func (api *ethFilterApi) NewBlockFilter(nodeUrl string) (w3rpc.ID, error) {
@@ -62,44 +55,14 @@ func (api *ethFilterApi) NewFilter(nodeUrl string, crit types.FilterQuery) (w3rp
 	return api.fs.newFilter(client, crit)
 }
 
-func (api *ethFilterApi) GetFilterLogs(id w3rpc.ID) ([]types.Log, error) {
-	vf, ok := api.fs.getFilter(id)
+func (api *ethFilterApi) GetLogFilter(fid w3rpc.ID) (*types.FilterQuery, error) {
+	vf, ok := api.fs.getFilter(fid)
 	if !ok || vf.ftype() != filterTypeLog {
 		return nil, errFilterNotFound
 	}
 
 	ethf := vf.(*ethLogFilter)
-	crit, w3c := ethf.crit, ethf.client
-
-	flag, ok := rpc.ParseEthLogFilterType(&crit)
-	if !ok {
-		return nil, rpc.ErrInvalidEthLogFilter
-	}
-
-	chainId, err := api.logHandler.GetNetworkId(w3c.Eth)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to get chain ID")
-	}
-
-	hardforkBlockNum := util.GetEthHardforkBlockNumber(uint64(chainId))
-
-	if err := rpc.NormalizeEthLogFilter(w3c.Client, flag, &crit, hardforkBlockNum); err != nil {
-		return nil, err
-	}
-
-	if err := rpc.ValidateEthLogFilter(flag, &crit); err != nil {
-		return nil, err
-	}
-
-	// return empty directly if filter block range before eSpace hardfork
-	if crit.ToBlock != nil && *crit.ToBlock <= hardforkBlockNum {
-		return nil, nil
-	}
-
-	logs, hitStore, err := api.logHandler.GetLogs(context.Background(), w3c.Eth, &crit, "eth_getFilterLogs")
-	metrics.Registry.RPC.StoreHit("eth_getFilterLogs", "store").Mark(hitStore)
-
-	return logs, err
+	return &ethf.crit, nil
 }
 
 func (api *ethFilterApi) GetFilterChanges(id w3rpc.ID) (*types.FilterChanges, error) {

@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
-	"github.com/Conflux-Chain/confura/rpc/handler"
-	"github.com/Conflux-Chain/confura/store/mysql"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/confura/virtualfilter"
 )
@@ -66,17 +64,10 @@ func startVirtualFilterService(*cobra.Command, []string) {
 
 // startEvmSpaceVirtualFilterServer starts evm space virtual filter RPC server
 func startEvmSpaceVirtualFilterServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
-	var vfls *mysql.VirtualFilterLogStore
-	var logApiHandler *handler.EthLogsApiHandler
-
-	vfls = storeCtx.EthDB.VirtualFilterLogStore
-	logApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB)
-
-	shutdownCtx := util.GracefulShutdownContext{Ctx: ctx, Wg: wg}
-
 	// serve HTTP endpoint
 	vfServer, httpEndpoint := virtualfilter.MustNewEvmSpaceServerFromViper(
-		shutdownCtx, vfls, logApiHandler,
+		util.GracefulShutdownContext{Ctx: ctx, Wg: wg},
+		storeCtx.EthDB.VirtualFilterLogStore,
 	)
 
 	go vfServer.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
@@ -84,17 +75,10 @@ func startEvmSpaceVirtualFilterServer(ctx context.Context, wg *sync.WaitGroup, s
 
 // startCoreSpaceVirtualFilterServer starts core space virtual filter RPC server
 func startCoreSpaceVirtualFilterServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
-	var vfls *mysql.VirtualFilterLogStore
-	var logApiHandler *handler.CfxLogsApiHandler
-
-	vfls = storeCtx.CfxDB.VirtualFilterLogStore
-	logApiHandler = handler.NewCfxLogsApiHandler(storeCtx.CfxDB, nil)
-
-	shutdownCtx := util.GracefulShutdownContext{Ctx: ctx, Wg: wg}
-
 	// serve HTTP endpoint
 	vfServer, httpEndpoint := virtualfilter.MustNewCoreSpaceServerFromViper(
-		shutdownCtx, vfls, logApiHandler,
+		util.GracefulShutdownContext{Ctx: ctx, Wg: wg},
+		storeCtx.CfxDB.VirtualFilterLogStore,
 	)
 
 	go vfServer.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
