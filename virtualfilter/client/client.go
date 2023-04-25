@@ -73,8 +73,8 @@ func (client *EthClient) GetFilterChanges(filterID rpc.ID) (val *ethtypes.Filter
 	return
 }
 
-func (client *EthClient) GetFilterLogs(filterID rpc.ID) (val []ethtypes.Log, err error) {
-	err = client.p.CallContext(context.Background(), &val, "eth_getFilterLogs", filterID)
+func (client *EthClient) GetLogFilter(filterID rpc.ID) (val *ethtypes.FilterQuery, err error) {
+	err = client.p.CallContext(context.Background(), &val, "eth_getLogFilter", filterID)
 	return
 }
 
@@ -132,8 +132,8 @@ func (client *CfxClient) GetFilterChanges(filterID rpc.ID) (val *cfxtypes.CfxFil
 	return
 }
 
-func (client *CfxClient) GetFilterLogs(filterID rpc.ID) (val []cfxtypes.Log, err error) {
-	err = client.p.CallContext(context.Background(), &val, "cfx_getFilterLogs", filterID)
+func (client *CfxClient) GetLogFilter(filterID rpc.ID) (val *cfxtypes.LogFilter, err error) {
+	err = client.p.CallContext(context.Background(), &val, "cfx_getLogFilter", filterID)
 	return
 }
 

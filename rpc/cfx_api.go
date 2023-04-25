@@ -9,10 +9,10 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -247,50 +247,41 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 	return cfx.Call(request, epoch)
 }
 
-func (api *cfxAPI) GetLogs(ctx context.Context, filter types.LogFilter) ([]types.Log, error) {
+func (api *cfxAPI) GetLogs(ctx context.Context, fq types.LogFilter) ([]types.Log, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	metrics.UpdateCfxRpcLogFilter(rpcMethodCfxGetLogs, cfx, &filter)
+	return api.getLogs(ctx, cfx, fq, rpcMethodCfxGetLogs)
+}
 
-	flag, ok := ParseLogFilterType(&filter)
+// getLogs helper method to get logs from store or fullnode.
+func (api *cfxAPI) getLogs(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	fq types.LogFilter,
+	rpcMethod string,
+) ([]types.Log, error) {
+	metrics.UpdateCfxRpcLogFilter(rpcMethod, cfx, &fq)
+
+	flag, ok := ParseLogFilterType(&fq)
 	if !ok {
-		logrus.WithField("filter", filter).Debug("Failed to parse log filter type for cfx_getLogs")
 		return emptyLogs, ErrInvalidLogFilter
 	}
 
-	if err := NormalizeLogFilter(cfx, flag, &filter); err != nil {
-		logrus.WithField("filter", filter).WithError(err).Debug("Failed to normalize log filter type for cfx_getLogs")
+	if err := NormalizeLogFilter(cfx, flag, &fq); err != nil {
 		return emptyLogs, err
 	}
 
-	if err := ValidateLogFilter(flag, &filter); err != nil {
-		logrus.WithField("filter", filter).WithError(err).Debug("Invalid log filter parameter for cfx_getLogs rpc request")
+	if err := ValidateLogFilter(flag, &fq); err != nil {
 		return emptyLogs, err
 	}
 
 	if api.LogApiHandler != nil {
-		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, cfx, &filter, rpcMethodCfxGetLogs)
-		api.collectHitStats(rpcMethodCfxGetLogs, hitStore)
-
-		if err != nil && !utils.IsRPCJSONError(err) {
-			logrus.WithFields(logrus.Fields{
-				"filter":   filter,
-				"hitStore": hitStore,
-			}).WithError(err).Debug("Failed to get logs from Log api handler")
-		}
-
-		if logs == nil { // uniform empty logs
-			logs = emptyLogs
-		}
-
-		return logs, err
+		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, cfx, &fq, rpcMethod)
+		api.collectHitStats(rpcMethod, hitStore)
+		return uniformCfxLogs(logs), err
 	}
 
 	// fail over to fullnode if no handler configured
-	logrus.WithFields(logrus.Fields{
-		"filter": filter, "nodeUrl": cfx.GetNodeURL(),
-	}).Debug("Fail over `cfx_getLogs` to fullnode due to no API handler configured")
-
-	return cfx.GetLogs(filter)
+	return cfx.GetLogs(fq)
 }
 
 func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {

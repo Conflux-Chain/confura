@@ -1,12 +1,8 @@
 package virtualfilter
 
 import (
-	"context"
-
-	"github.com/Conflux-Chain/confura/rpc"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -57,32 +53,14 @@ func (api *cfxFilterApi) NewFilter(nodeUrl string, crit types.LogFilter) (w3rpc.
 	return api.fs.newFilter(client, crit)
 }
 
-func (api *cfxFilterApi) GetFilterLogs(id w3rpc.ID) ([]types.Log, error) {
-	vf, ok := api.fs.getFilter(id)
+func (api *cfxFilterApi) GetLogFilter(fid w3rpc.ID) (*types.LogFilter, error) {
+	vf, ok := api.fs.getFilter(fid)
 	if !ok || vf.ftype() != filterTypeLog {
 		return nil, errFilterNotFound
 	}
 
-	lf := vf.(*cfxLogFilter)
-	cfx, crit := lf.client, lf.crit
-
-	flag, ok := rpc.ParseLogFilterType(&crit)
-	if !ok {
-		return nil, rpc.ErrInvalidLogFilter
-	}
-
-	if err := rpc.NormalizeLogFilter(cfx, flag, &crit); err != nil {
-		return nil, err
-	}
-
-	if err := rpc.ValidateLogFilter(flag, &crit); err != nil {
-		return nil, err
-	}
-
-	logs, hitStore, err := api.logHandler.GetLogs(context.Background(), cfx, &crit, "cfx_getFilterLogs")
-	metrics.Registry.RPC.StoreHit("cfx_getFilterLogs", "store").Mark(hitStore)
-
-	return logs, err
+	cfxf := vf.(*cfxLogFilter)
+	return &cfxf.crit, nil
 }
 
 func (api *cfxFilterApi) GetFilterChanges(id w3rpc.ID) (*types.CfxFilterChanges, error) {

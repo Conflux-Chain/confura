@@ -306,54 +306,45 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 
 // GetLogs returns an array of all logs matching a given filter object.
 func (api *ethAPI) GetLogs(ctx context.Context, fq web3Types.FilterQuery) ([]web3Types.Log, error) {
-	logs, delegated, err := api.getLogs(ctx, &fq)
-	logger := api.filterLogger(&fq).WithField("fnDelegated", delegated)
-
-	if err != nil {
-		logger.WithError(err).Debug("Failed to handle `eth_getLogs` RPC request")
-		return logs, err
-	}
-
-	logger.Debug("`eth_getLogs` RPC request handled")
-	return logs, nil
+	w3c := GetEthClientFromContext(ctx)
+	return api.getLogs(ctx, w3c, &fq, rpcMethodEthGetLogs)
 }
 
 // getLogs helper method to get logs from store or fullnode.
-func (api *ethAPI) getLogs(ctx context.Context, fq *web3Types.FilterQuery) ([]web3Types.Log, bool, error) {
-	w3c := GetEthClientFromContext(ctx)
-	metrics.UpdateEthRpcLogFilter(rpcMethodEthGetLogs, w3c.Eth, fq)
+func (api *ethAPI) getLogs(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	fq *web3Types.FilterQuery,
+	rpcMethod string,
+) ([]web3Types.Log, error) {
+	metrics.UpdateEthRpcLogFilter(rpcMethod, w3c.Eth, fq)
 
 	flag, ok := ParseEthLogFilterType(fq)
 	if !ok {
-		return ethEmptyLogs, false, ErrInvalidEthLogFilter
+		return ethEmptyLogs, ErrInvalidEthLogFilter
 	}
 
 	if err := NormalizeEthLogFilter(w3c.Client, flag, fq, api.hardforkBlockNumber); err != nil {
-		return ethEmptyLogs, false, err
+		return ethEmptyLogs, err
 	}
 
 	if err := ValidateEthLogFilter(flag, fq); err != nil {
-		return ethEmptyLogs, false, err
+		return ethEmptyLogs, err
 	}
 
 	// return empty directly if filter block range before eSpace hardfork
 	if fq.ToBlock != nil && *fq.ToBlock <= api.hardforkBlockNumber {
-		return ethEmptyLogs, false, nil
+		return ethEmptyLogs, nil
 	}
 
 	if api.LogApiHandler != nil {
-		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client.Eth, fq, rpcMethodEthGetLogs)
-		metrics.Registry.RPC.StoreHit(rpcMethodEthGetLogs, "store").Mark(hitStore)
-		if logs == nil { // uniform empty logs
-			logs = ethEmptyLogs
-		}
-
-		return logs, false, err
+		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client.Eth, fq, rpcMethod)
+		metrics.Registry.RPC.StoreHit(rpcMethod, "store").Mark(hitStore)
+		return uniformEthLogs(logs), err
 	}
 
 	// fail over to fullnode if no handler configured
-	logs, err := w3c.Eth.Logs(*fq)
-	return logs, true, err
+	return w3c.Eth.Logs(*fq)
 }
 
 // GetBlockTransactionCountByHash returns the total number of transactions in the given block.
@@ -468,9 +459,3 @@ func (api *ethAPI) filterLogger(filter *web3Types.FilterQuery) *logrus.Entry {
 
 // The following RPC methods are not supported yet by the fullnode:
 // `eth_feeHistory`
-// `eth_getFilterChanges`
-// `eth_getFilterLogs`
-// `eth_newBlockFilter`
-// `eth_newFilter`
-// `eth_newPendingTransactionFilter`
-// `eth_uninstallFilter`

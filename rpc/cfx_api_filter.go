@@ -3,14 +3,17 @@ package rpc
 import (
 	"context"
 
+	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/pkg/errors"
 )
 
 const (
-	rpcMethodCfxNewFilter = "eth_newFilter"
+	rpcMethodCfxNewFilter     = "cfx_newFilter"
+	rpcMethodCfxGetFilterLogs = "cfx_getFilterLogs"
 )
 
 // NewFilter creates a new filter and returns the filter id. It can be
@@ -86,14 +89,22 @@ func (api *cfxAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{
 // GetFilterLogs returns the logs for the filter with the given id.
 // If the filter could not be found an empty array of logs is returned.
 func (api *cfxAPI) GetFilterLogs(ctx context.Context, fid rpc.ID) ([]types.Log, error) {
-	if api.VirtualFilterClient != nil {
-		logs, err := api.VirtualFilterClient.GetFilterLogs(fid)
-		return uniformCfxLogs(logs), err
+	if api.VirtualFilterClient == nil {
+		cfx := GetCfxClientFromContext(ctx)
+		return cfx.(*sdk.Client).Filter().GetFilterLogs(fid)
 	}
 
-	cfx := GetCfxClientFromContext(ctx)
-	logs, err := cfx.(*sdk.Client).Filter().GetFilterLogs(fid)
-	return uniformCfxLogs(logs), err
+	fq, err := api.VirtualFilterClient.GetLogFilter(fid)
+	if err != nil {
+		return emptyLogs, errVirtualFilterProxyErrorOrNil(err)
+	}
+
+	cfx, err := api.provider.GetClientByIP(ctx, node.GroupCfxLogs)
+	if err != nil {
+		return emptyLogs, errors.WithMessage(err, "failed to get client by ip")
+	}
+
+	return api.getLogs(ctx, cfx, *fq, rpcMethodCfxGetFilterLogs)
 }
 
 func uniformCfxLogs(logs []types.Log) []types.Log {
