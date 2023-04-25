@@ -2,7 +2,6 @@ package virtualfilter
 
 import (
 	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	w3rpc "github.com/openweb3/go-rpc-provider"
@@ -17,13 +16,12 @@ var (
 // EVM space filter API
 
 type ethFilterApi struct {
-	fs         *ethFilterSystem           // filter system
-	logHandler *handler.EthLogsApiHandler // handler to get filter logs
-	fnClients  util.ConcurrentMap         // full node clients: node name => sdk client
+	fs        *ethFilterSystem   // filter system
+	fnClients util.ConcurrentMap // full node clients: node name => sdk client
 }
 
-func newEthFilterApi(sys *ethFilterSystem, handler *handler.EthLogsApiHandler) *ethFilterApi {
-	return &ethFilterApi{fs: sys, logHandler: handler}
+func newEthFilterApi(sys *ethFilterSystem) *ethFilterApi {
+	return &ethFilterApi{fs: sys}
 }
 
 func (api *ethFilterApi) NewBlockFilter(nodeUrl string) (w3rpc.ID, error) {

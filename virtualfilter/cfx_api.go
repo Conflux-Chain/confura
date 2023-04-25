@@ -1,7 +1,6 @@
 package virtualfilter
 
 import (
-	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -13,13 +12,12 @@ import (
 // core space filter API
 
 type cfxFilterApi struct {
-	fs         *cfxFilterSystem           // filter system
-	logHandler *handler.CfxLogsApiHandler // handler to get filter logs
-	fnClients  util.ConcurrentMap         // full node clients: node name => sdk client
+	fs        *cfxFilterSystem   // filter system
+	fnClients util.ConcurrentMap // full node clients: node name => sdk client
 }
 
-func newCfxFilterApi(sys *cfxFilterSystem, handler *handler.CfxLogsApiHandler) *cfxFilterApi {
-	return &cfxFilterApi{fs: sys, logHandler: handler}
+func newCfxFilterApi(sys *cfxFilterSystem) *cfxFilterApi {
+	return &cfxFilterApi{fs: sys}
 }
 
 func (api *cfxFilterApi) NewBlockFilter(nodeUrl string) (w3rpc.ID, error) {
