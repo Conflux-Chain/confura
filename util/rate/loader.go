@@ -14,10 +14,11 @@ const (
 )
 
 type KeyInfo struct {
-	SID  uint32    // bound strategy ID
-	Key  string    // limit key
-	Type LimitType // limit type
-	SVip int       // svip level
+	SID   uint32    // bound strategy ID
+	AclID uint32    // bound allowlist ID
+	Key   string    // limit key
+	Type  LimitType // limit type
+	SVip  int       // svip level
 }
 
 type KeysetFilter struct {

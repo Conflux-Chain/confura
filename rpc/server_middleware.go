@@ -10,7 +10,6 @@ import (
 	"github.com/Conflux-Chain/confura/util/rpc/middlewares"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/openweb3/go-rpc-provider"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -29,15 +28,11 @@ func init() {
 	// anti-injection
 	rpc.HookHandleCallMsg(middlewares.AntiInjection)
 
-	// web3pay
-	if mw, conf, ok := middlewares.MustNewWeb3PayMiddlewareFromViper(); ok {
-		logrus.WithField("mode", conf.Mode).Info("Web3Pay openweb3 RPC middleware enabled")
-		rpc.HookHandleCallMsg(mw)
-	}
+	// auth
+	rpc.HookHandleCallMsg(middlewares.Auth)
 
-	// VIP only access control
-	acmw := middlewares.MustNewVipOnlyAccessControlMiddlewareFromViper()
-	rpc.HookHandleCallMsg(acmw)
+	// allow lists
+	rpc.HookHandleCallMsg(middlewares.Allowlists)
 
 	// rate limit
 	rpc.HookHandleCallMsg(middlewares.DailyMaxReqRateLimit)
@@ -65,9 +60,11 @@ func httpMiddleware(registry *rate.Registry, clientProvider interface{}) handler
 			ctx := r.Context()
 
 			if token := handlers.GetAccessToken(r); len(token) > 0 { // optional
-				ctx = context.WithValue(ctx, handlers.CtxAccessToken, token)
+				ctx = context.WithValue(ctx, handlers.CtxKeyAccessToken, token)
 			}
 
+			ctx = context.WithValue(ctx, handlers.CtxKeyReqOrigin, r.Header.Get("Origin"))
+			ctx = context.WithValue(ctx, handlers.CtxKeyUserAgent, r.Header.Get("User-Agent"))
 			ctx = context.WithValue(ctx, handlers.CtxKeyRealIP, handlers.GetIPAddress(r))
 
 			if registry != nil {
@@ -128,10 +125,10 @@ func getEthClientFromProviderWithContext(
 	case rpcMethodEthGetLogs:
 		grp = node.GroupEthLogs
 	default:
-		if isVipAccessFromContext(ctx) {
-			grp, ok := p.GetGroupByToken(ctx)
+		if authId, ok := handlers.GetAuthIdFromContext(ctx); ok {
+			grp, ok := p.GetRouteGroup(authId)
 			if ok && len(grp) > 0 {
-				client, err := p.GetClientByToken(ctx, grp)
+				client, err := p.GetClient(authId, grp)
 				return client, grp, err
 			}
 		}
@@ -149,10 +146,10 @@ func getCfxClientFromProviderWithContext(
 	case rpcMethodCfxGetLogs:
 		grp = node.GroupCfxLogs
 	default:
-		if isVipAccessFromContext(ctx) {
-			grp, ok := p.GetGroupByToken(ctx)
+		if authId, ok := handlers.GetAuthIdFromContext(ctx); ok {
+			grp, ok := p.GetRouteGroup(authId)
 			if ok && len(grp) > 0 {
-				client, err := p.GetClientByToken(ctx, grp)
+				client, err := p.GetClient(authId, grp)
 				return client, grp, err
 			}
 		}
@@ -160,16 +157,4 @@ func getCfxClientFromProviderWithContext(
 
 	client, err := p.GetClientByIP(ctx, grp)
 	return client, grp, err
-}
-
-func isVipAccessFromContext(ctx context.Context) bool {
-	if _, ok := handlers.VipStatusFromContext(ctx); ok {
-		return true
-	}
-
-	if _, ok := rate.SVipStatusFromContext(ctx); ok {
-		return true
-	}
-
-	return false
 }

@@ -32,11 +32,12 @@ func SVipStatusFromContext(ctx context.Context) (*SVipStatus, bool) {
 	}
 
 	ki, ok := reg.kloader.Load(limitKey)
-	return ki, ok && ki != nil && ki.SVip > 0
+	return ki, ok && ki != nil
 }
 
 type Registry struct {
 	*http.Registry
+	*aclRegistry
 
 	mu      sync.Mutex
 	kloader *KeyLoader
@@ -49,6 +50,7 @@ type Registry struct {
 func NewRegistry(kloader *KeyLoader) *Registry {
 	m := &Registry{
 		kloader:       kloader,
+		aclRegistry:   newAclRegistry(kloader),
 		strategies:    make(map[string]*Strategy),
 		id2Strategies: make(map[uint32]*Strategy),
 	}
@@ -65,21 +67,20 @@ func (r *Registry) GetGroupAndKey(
 	ctx context.Context,
 	resource string,
 ) (group, key string, err error) {
-	limitKey, ok := handlers.GetAccessTokenFromContext(ctx)
-	if !ok || len(limitKey) == 0 {
-		// use default strategy if no limit key provided
+	authId, ok := handlers.GetAuthIdFromContext(ctx)
+	if !ok {
+		// use default strategy if not authenticated
 		return r.genDefaultGroupAndKey(ctx, resource)
 	}
 
-	vip, ok := handlers.VipStatusFromContext(ctx)
-	if ok && vip != nil && vip.Tier != handlers.VipTierNone {
+	if vip, ok := handlers.VipStatusFromContext(ctx); ok {
 		// use vip strategy with corresponding tier
-		return r.genVipGroupAndKey(ctx, resource, limitKey, vip)
+		return r.genVipGroupAndKey(ctx, resource, authId, vip)
 	}
 
-	if ki, ok := r.kloader.Load(limitKey); ok && ki != nil {
+	if ki, ok := r.kloader.Load(authId); ok && ki != nil {
 		// use strategy with corresponding key info
-		return r.genKeyInfoGroupAndKey(ctx, resource, limitKey, ki)
+		return r.genKeyInfoGroupAndKey(ctx, resource, authId, ki)
 	}
 
 	// use default strategy as fallback

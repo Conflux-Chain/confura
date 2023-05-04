@@ -14,7 +14,7 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/montanaflynn/stats v0.6.6
-	github.com/openweb3/go-rpc-provider v0.3.1
+	github.com/openweb3/go-rpc-provider v0.3.2-0.20230427073643-a9b973086662
 	github.com/openweb3/web3go v0.2.5
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
@@ -33,3 +33,4 @@ require (
 // replace github.com/Conflux-Chain/go-conflux-sdk => ../go-conflux-sdk
 // replace github.com/Conflux-Chain/web3pay-service => ../web3pay-service
 // replace github.com/Conflux-Chain/go-conflux-util => ../go-conflux-util
+// replace github.com/openweb3/go-rpc-provider => ../go-rpc-provider

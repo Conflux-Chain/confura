@@ -119,6 +119,21 @@ func GetAccessToken(r *http.Request) string {
 }
 
 func GetAccessTokenFromContext(ctx context.Context) (string, bool) {
-	val, ok := ctx.Value(CtxAccessToken).(string)
+	val, ok := ctx.Value(CtxKeyAccessToken).(string)
 	return val, ok
+}
+
+func GetRequestOriginFromContext(ctx context.Context) (string, bool) {
+	val, ok := ctx.Value(CtxKeyReqOrigin).(string)
+	return val, ok
+}
+
+func GetUserAgentFromContext(ctx context.Context) (string, bool) {
+	val, ok := ctx.Value(CtxKeyUserAgent).(string)
+	return val, ok
+}
+
+func GetAuthIdFromContext(ctx context.Context) (string, bool) {
+	authId, ok := ctx.Value(CtxKeyAuthId).(string)
+	return authId, ok
 }

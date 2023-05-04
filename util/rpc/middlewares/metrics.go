@@ -43,8 +43,8 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 }
 
 func getTrafficSourceFromContext(ctx context.Context) (source string) {
-	if isVipAccessFromContext(ctx) {
-		source, _ = handlers.GetAccessTokenFromContext(ctx)
+	if authId, ok := handlers.GetAuthIdFromContext(ctx); ok {
+		source = authId
 	} else {
 		source, _ = handlers.GetIPAddressFromContext(ctx)
 	}

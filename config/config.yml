@@ -296,30 +296,6 @@ node:
 #     # VIP subscription App contract address
 #     AppContract:
 
-# # Access control middleware configurations
-# accessControl:
-#   # RPC methods allowed for VIP only
-#   vipOnlyACL:
-#     # debug RPC
-#     - cfx_getEpochReceipts
-#     # trace RPC
-#     - trace_block
-#     - trace_filter
-#     - trace_transaction
-#     # parity RPC
-#     - parity_getBlockReceipts
-#     # pubsub RPC
-#     - cfx_subscribe
-#     - cfx_unsubscribe
-#     - eth_subscribe
-#     - eth_unsubscribe
-#     # filter API
-#     - eth_newFilter
-#     - eth_newBlockFilter
-#     - eth_newPendingTransactionFilter
-#     - eth_uninstallFilter
-#     - eth_getFilterChanges
-
 # # EVM space virtual filters configurations
 # ethVirtualFilters:
 #   # Served HTTP endpoint
