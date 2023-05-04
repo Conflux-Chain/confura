@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3Types "github.com/openweb3/web3go/types"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -180,11 +179,8 @@ func (api *ethAPI) ProtocolVersion(ctx context.Context) (string, error) {
 
 // GasPrice returns the current gas price in wei.
 func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
-	/*
-		w3c := GetEthClientFromContext(ctx)
-		return cache.EthDefault.GetGasPrice(w3c.Client)
-	*/
-	return (*hexutil.Big)(big.NewInt(20_000_000_000)), nil // (20G)
+	w3c := GetEthClientFromContext(ctx)
+	return cache.EthDefault.GetGasPrice(w3c.Client)
 }
 
 // GetStorageAt returns the value from a storage position at a given address.
@@ -222,19 +218,6 @@ func (api *ethAPI) GetTransactionCount(
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
 func (api *ethAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
-	var tx web3Types.Transaction
-
-	if err := tx.UnmarshalBinary(signedTx); err != nil {
-		return common.Hash{}, errors.WithMessage(err, "invalid raw txn data")
-	}
-
-	if tx.GasPrice().Cmp(big.NewInt(20_000_000_000)) < 0 { // gas price must be at least 20G drip
-		return common.Hash{}, errors.Errorf(
-			"transaction gas price %v less than the minimum value %v",
-			tx.GasPrice().Int64(), 20_000_000_000,
-		)
-	}
-
 	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.SendRawTransaction(signedTx)
 }
