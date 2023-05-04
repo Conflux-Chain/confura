@@ -23,10 +23,9 @@ func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvide
 	}
 }
 
-// GetClientByToken gets client of specific group (or use normal HTTP group as default) by access token.
-func (p *CfxClientProvider) GetClientByToken(ctx context.Context, groups ...Group) (sdk.ClientOperator, error) {
-	accessToken := accessTokenFromContext(ctx)
-	client, err := p.getClient(accessToken, cfxNodeGroup(groups...))
+// GetClient gets client of specific group (or use normal HTTP group as default.
+func (p *CfxClientProvider) GetClient(key string, groups ...Group) (sdk.ClientOperator, error) {
+	client, err := p.getClient(key, cfxNodeGroup(groups...))
 	if err != nil {
 		return nil, err
 	}
@@ -43,11 +42,6 @@ func (p *CfxClientProvider) GetClientByIP(ctx context.Context, groups ...Group) 
 	}
 
 	return client.(sdk.ClientOperator), nil
-}
-
-func (p *CfxClientProvider) GetGroupByToken(ctx context.Context) (Group, bool) {
-	token := accessTokenFromContext(ctx)
-	return p.getRouteGroup(token)
 }
 
 func cfxNodeGroup(groups ...Group) Group {
