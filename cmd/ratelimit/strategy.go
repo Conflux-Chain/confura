@@ -177,20 +177,20 @@ func listStrategies(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	config, err := dbs.LoadRateLimitConfigs()
+	strategies, _, err := dbs.LoadRateLimitStrategyConfigs()
 	if err != nil {
-		logrus.WithError(err).Info("Failed to load rate limit configs")
+		logrus.WithError(err).Info("Failed to load rate limit strategies")
 		return
 	}
 
-	if len(config.Strategies) == 0 {
+	if len(strategies) == 0 {
 		logrus.Info("No rate limit strategies found")
 		return
 	}
 
-	logrus.WithField("total", len(config.Strategies)).Info("Rate limit strategies loaded:")
+	logrus.WithField("total", len(strategies)).Info("Rate limit strategies loaded:")
 
-	for i, s := range config.Strategies {
+	for i, s := range strategies {
 		logrus.WithFields(logrus.Fields{
 			"name":  s.Name,
 			"ID":    s.ID,
