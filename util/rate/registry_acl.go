@@ -2,10 +2,12 @@ package rate
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
+	"github.com/sirupsen/logrus"
 )
 
 type aclRegistry struct {
@@ -59,4 +61,56 @@ func (r *aclRegistry) getValidator(aclID uint32) (*acl.Validator, bool) {
 
 	v, ok := r.validators[aclID]
 	return v, ok
+}
+
+// allowlists reloading
+func (r *aclRegistry) reloadAclAllowLists(rc *Config, lastCs *ConfigCheckSums) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// remove allowlists
+	for alid, al := range r.allowlists {
+		if _, ok := rc.AllowLists[alid]; !ok {
+			r.removeAllowList(al)
+			logrus.WithField("allowList", al).Info("Allow list removed")
+		}
+	}
+
+	// add or update allowlists
+	for alid, al := range rc.AllowLists {
+		oldal, ok := r.allowlists[alid]
+		if !ok { // add
+			r.addAllowList(al)
+			logrus.WithField("allowList", al).Info("Allow list added")
+			continue
+		}
+
+		if lastCs.AllowLists[alid] != rc.CheckSums.AllowLists[alid] { // update
+			r.updateAllowList(oldal, al)
+			logrus.WithField("allowList", al).Info("Allow list updated")
+		}
+	}
+}
+
+func (r *aclRegistry) addAllowList(al *acl.AllowList) {
+	r.allowlists[al.ID] = al
+	r.validators[al.ID] = acl.NewValidator(al)
+
+	if strings.EqualFold(al.Name, acl.DefaultAllowList) {
+		r.validators[0] = r.validators[al.ID]
+	}
+}
+
+func (r *aclRegistry) removeAllowList(al *acl.AllowList) {
+	delete(r.allowlists, al.ID)
+	delete(r.validators, al.ID)
+
+	if strings.EqualFold(al.Name, acl.DefaultAllowList) {
+		delete(r.validators, 0)
+	}
+}
+
+func (r *aclRegistry) updateAllowList(old, new *acl.AllowList) {
+	r.removeAllowList(old)
+	r.addAllowList(new)
 }

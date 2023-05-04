@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -16,9 +17,13 @@ import (
 const (
 	MysqlConfKeyReorgVersion = "reorg.version"
 
-	// pre-defined strategy config key prefix
+	// pre-defined ratelimit strategy config key prefix
 	RateLimitStrategyConfKeyPrefix   = "ratelimit.strategy."
 	rateLimitStrategySqlMatchPattern = RateLimitStrategyConfKeyPrefix + "%"
+
+	// pre-defined access control config key prefix
+	AclAllowListConfKeyPrefix   = "acl.allowlist."
+	aclAllowListSqlMatchPattern = AclAllowListConfKeyPrefix + "%"
 
 	// pre-defined node route group config key prefix
 	NodeRouteGroupConfKeyPrefix   = "noderoute.group."
@@ -106,7 +111,92 @@ func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
 	return cs.StoreConfig(MysqlConfKeyReorgVersion, newVersion)
 }
 
+// access control config
+func (cs *confStore) LoadAclAllowList(name string) (*acl.AllowList, error) {
+	var cfg conf
+	if err := cs.db.Where("name = ?", AclAllowListConfKeyPrefix+name).First(&cfg).Error; err != nil {
+		return nil, err
+	}
+
+	return cs.decodeAclAllowLists(cfg)
+}
+
+func (cs *confStore) LoadAclAllowListById(aclID uint32) (*acl.AllowList, error) {
+	cfg := conf{ID: aclID}
+	if err := cs.db.First(&cfg).Error; err != nil {
+		return nil, err
+	}
+
+	return cs.decodeAclAllowLists(cfg)
+}
+
+func (cs *confStore) LoadAclAllowListConfigs() (map[uint32]*acl.AllowList, map[uint32][md5.Size]byte, error) {
+	var cfgs []conf
+	if err := cs.db.Where("name LIKE ?", aclAllowListSqlMatchPattern).Find(&cfgs).Error; err != nil {
+		return nil, nil, err
+	}
+
+	if len(cfgs) == 0 {
+		return nil, nil, nil
+	}
+
+	allowLists := make(map[uint32]*acl.AllowList)
+	checksums := make(map[uint32][md5.Size]byte)
+
+	// decode allow lists from access control configs
+	for _, v := range cfgs {
+		al, err := cs.decodeAclAllowLists(v)
+		if err != nil {
+			logrus.WithField("cfg", v).WithError(err).Warn("Invalid access control allowlist config")
+			continue
+		}
+
+		allowLists[v.ID] = al
+		checksums[v.ID] = md5.Sum([]byte(v.Value))
+	}
+
+	return allowLists, checksums, nil
+}
+
+func (cs *confStore) decodeAclAllowLists(cfg conf) (*acl.AllowList, error) {
+	// eg., acl.allowlists.fluent
+	name := cfg.Name[len(AclAllowListConfKeyPrefix):]
+	if len(name) == 0 {
+		return nil, errors.New("allowlist name is too short")
+	}
+
+	data := []byte(cfg.Value)
+	al := acl.NewAllowList(cfg.ID, name)
+
+	if err := json.Unmarshal(data, al); err != nil {
+		return nil, err
+	}
+
+	return al, nil
+}
+
 // ratelimit config
+
+func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
+	rlStrategies, csStrategies, err := cs.LoadRateLimitStrategyConfigs()
+	if err != nil {
+		return nil, err
+	}
+
+	aclAllowLists, csAllowLists, err := cs.LoadAclAllowListConfigs()
+	if err != nil {
+		return nil, err
+	}
+
+	return &rate.Config{
+		CheckSums: rate.ConfigCheckSums{
+			Strategies: csStrategies,
+			AllowLists: csAllowLists,
+		},
+		Strategies: rlStrategies,
+		AllowLists: aclAllowLists,
+	}, nil
+}
 
 func (cs *confStore) LoadRateLimitStrategy(name string) (*rate.Strategy, error) {
 	var cfg conf
@@ -117,17 +207,18 @@ func (cs *confStore) LoadRateLimitStrategy(name string) (*rate.Strategy, error) 
 	return cs.decodeRateLimitStrategy(cfg)
 }
 
-func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
+func (cs *confStore) LoadRateLimitStrategyConfigs() (map[uint32]*rate.Strategy, map[uint32][md5.Size]byte, error) {
 	var cfgs []conf
 	if err := cs.db.Where("name LIKE ?", rateLimitStrategySqlMatchPattern).Find(&cfgs).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if len(cfgs) == 0 {
-		return &rate.Config{}, nil
+		return nil, nil, nil
 	}
 
 	strategies := make(map[uint32]*rate.Strategy)
+	checksums := make(map[uint32][md5.Size]byte)
 
 	// decode ratelimit strategy from config item
 	for _, v := range cfgs {
@@ -138,9 +229,10 @@ func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
 		}
 
 		strategies[v.ID] = strategy
+		checksums[v.ID] = md5.Sum([]byte(v.Value))
 	}
 
-	return &rate.Config{Strategies: strategies}, nil
+	return strategies, checksums, nil
 }
 
 func (cs *confStore) decodeRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
@@ -157,7 +249,6 @@ func (cs *confStore) decodeRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
 		return nil, err
 	}
 
-	stg.MD5 = md5.Sum(data) // calculate fingerprint
 	return stg, nil
 }
 

@@ -18,7 +18,6 @@ type KeyInfo struct {
 	AclID uint32    // bound allowlist ID
 	Key   string    // limit key
 	Type  LimitType // limit type
-	SVip  int       // svip level
 }
 
 type KeysetFilter struct {
