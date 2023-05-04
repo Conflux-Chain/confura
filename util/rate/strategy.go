@@ -1,7 +1,6 @@
 package rate
 
 import (
-	"crypto/md5"
 	"encoding/json"
 	"time"
 
@@ -36,8 +35,6 @@ type Strategy struct {
 	Name string // strategy name
 
 	LimitOptions map[string]interface{} // resource => limit option
-
-	MD5 [md5.Size]byte `json:"-"` // config data fingerprint
 }
 
 func NewStrategy(id uint32, name string) *Strategy {

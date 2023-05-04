@@ -1,26 +1,42 @@
 package rate
 
 import (
+	"crypto/md5"
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
 
+	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/sirupsen/logrus"
 )
 
 type Config struct {
-	Strategies map[uint32]*Strategy // limit strategies
+	// checksums for modification detection
+	CheckSums ConfigCheckSums
+
+	Strategies map[uint32]*Strategy      // limit strategies
+	AllowLists map[uint32]*acl.AllowList // allow lists
+}
+
+// ConfigCheckSums config md5 checksum
+type ConfigCheckSums struct {
+	Strategies map[uint32][md5.Size]byte
+	AllowLists map[uint32][md5.Size]byte
 }
 
 func (m *Registry) AutoReload(interval time.Duration, reloader func() (*Config, error)) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	// last config finger prints
+	var cs ConfigCheckSums
+
 	// load immediately at first
 	if rconf, err := reloader(); err == nil {
-		m.reloadOnce(rconf)
+		m.reloadOnce(rconf, &cs)
+		cs = rconf.CheckSums
 	}
 
 	// load periodically
@@ -31,15 +47,19 @@ func (m *Registry) AutoReload(interval time.Duration, reloader func() (*Config, 
 			continue
 		}
 
-		m.reloadOnce(rconf)
+		m.reloadOnce(rconf, &cs)
+		cs = rconf.CheckSums
 	}
 }
 
-func (m *Registry) reloadOnce(rc *Config) {
-	if rc == nil {
-		return
+func (m *Registry) reloadOnce(rc *Config, lastCs *ConfigCheckSums) {
+	if rc != nil {
+		m.reloadRateLimitStrategies(rc, lastCs)
+		m.reloadAclAllowLists(rc, lastCs)
 	}
+}
 
+func (m *Registry) reloadRateLimitStrategies(rc *Config, lastCs *ConfigCheckSums) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -60,7 +80,7 @@ func (m *Registry) reloadOnce(rc *Config) {
 			continue
 		}
 
-		if s.MD5 != strategy.MD5 { // update
+		if lastCs.Strategies[sid] != rc.CheckSums.Strategies[sid] { // update
 			m.updateStrategy(s, strategy)
 			logrus.WithField("strategy", strategy).Info("RateLimit strategy updated")
 		}
