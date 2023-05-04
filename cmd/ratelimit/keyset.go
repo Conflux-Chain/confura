@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
+	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -14,9 +15,9 @@ import (
 type keysetCmdConfig struct {
 	Network   string         // RPC network space ("cfx" or "eth")
 	Strategy  string         // rate limit strategy
+	AllowList string         // acl allow list
 	LimitKey  string         // rate limit key
 	LimitType rate.LimitType // rate limit type (0 - by key, 1 - by IP)
-	SVip      int            // svip level (default 0 - no svip)
 	Memo      string         // rate limit memo
 }
 
@@ -58,8 +59,8 @@ func init() {
 	Cmd.AddCommand(addKeyCmd)
 	hookKeysetCmdFlags(addKeyCmd, true, true, false, true)
 	hookKeysetCmdLimitKeyFlag(addKeyCmd, false)
-	hookKeysetCmdSVipFlag(addKeyCmd, false)
 	hookKeysetCmdMemoFlag(addKeyCmd)
+	hookKeysetCmdAllowListFlag(addKeyCmd)
 
 	Cmd.AddCommand(delKeyCmd)
 	hookKeysetCmdFlags(delKeyCmd, true, false, true, false)
@@ -94,8 +95,25 @@ func addKey(cmd *cobra.Command, args []string) {
 
 	strategy, err := dbs.LoadRateLimitStrategy(keysetCfg.Strategy)
 	if err != nil {
-		logrus.Info("Invalid rate limit strategy")
+		logrus.WithError(err).Info("Failed to load rate limit strategy")
 		return
+	}
+
+	logger := logrus.WithFields(logrus.Fields{
+		"strategyID":    strategy.ID,
+		"strategyName":  strategy.Name,
+		"strategyRules": strategy.LimitOptions,
+	})
+
+	var acl acl.AllowList
+	if len(keysetCfg.AllowList) > 0 {
+		allowList, err := dbs.LoadAclAllowList(keysetCfg.AllowList)
+		if err != nil {
+			logrus.WithError(err).Info("Failed to load access control allowlist")
+			return
+		}
+
+		acl = *allowList
 	}
 
 	limitKey := strings.TrimSpace(keysetCfg.LimitKey)
@@ -107,18 +125,15 @@ func addKey(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"strategyID":    strategy.ID,
-		"strategyName":  strategy.Name,
-		"strategyRules": strategy.LimitOptions,
-		"limitKey":      limitKey,
-		"limitType":     limitTypeMap[keysetCfg.LimitType],
-		"svip":          keysetCfg.SVip,
+	logger.WithFields(logrus.Fields{
+		"allowlist": acl,
+		"limitKey":  limitKey,
+		"limitType": limitTypeMap[keysetCfg.LimitType],
 	}).Info("Press the Enter Key to add new rate limit key")
 	fmt.Scanln() // wait for Enter Key
 
 	err = dbs.RateLimitStore.AddRateLimit(
-		strategy.ID, keysetCfg.LimitType, limitKey, keysetCfg.SVip, keysetCfg.Memo,
+		strategy.ID, acl.ID, keysetCfg.LimitType, limitKey, keysetCfg.Memo,
 	)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to add rate limit key")
@@ -209,12 +224,22 @@ func listKeys(cmd *cobra.Command, args []string) {
 
 	logrus.WithField("total", len(keysets)).Info("Rate limit keys loaded:")
 
+	allowLists := make(map[uint32]*acl.AllowList)
 	for i, k := range keysets {
+		if k.AclID > 0 && allowLists[k.AclID] == nil {
+			acl, err := dbs.LoadAclAllowListById(k.AclID)
+			if err != nil {
+				logrus.WithField("aclID", k.AclID).WithError(err).Info("Failed to load allowlist")
+			} else {
+				allowLists[k.AclID] = acl
+			}
+		}
+
 		logrus.WithFields(logrus.Fields{
 			"strategy":  strategy.Name,
 			"limitKey":  k.LimitKey,
 			"limitType": limitTypeMap[rate.LimitType(k.LimitType)],
-			"svip":      k.SVip,
+			"allowList": allowLists[k.AclID],
 			"memo":      k.Memo,
 		}).Info("Key #", i)
 	}
@@ -298,18 +323,14 @@ func hookKeysetCmdLimitKeyFlag(keysetCmd *cobra.Command, required bool) {
 	}
 }
 
-func hookKeysetCmdSVipFlag(keysetCmd *cobra.Command, required bool) {
-	keysetCmd.Flags().IntVarP(
-		&keysetCfg.SVip, "svip", "v", 0, "svip level (default 0 - no SVIP)",
-	)
-
-	if required {
-		keysetCmd.MarkFlagRequired("svip")
-	}
-}
-
 func hookKeysetCmdMemoFlag(keysetCmd *cobra.Command) {
 	keysetCmd.Flags().StringVarP(
 		&keysetCfg.Memo, "memo", "m", "", "rate limit memo",
+	)
+}
+
+func hookKeysetCmdAllowListFlag(keysetCmd *cobra.Command) {
+	keysetCmd.Flags().StringVarP(
+		&keysetCfg.AllowList, "acl", "l", "", "allowlist used",
 	)
 }
