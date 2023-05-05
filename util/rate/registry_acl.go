@@ -90,6 +90,10 @@ func (r *aclRegistry) getDefaultValidator() (acl.Validator, bool) {
 }
 
 func (r *aclRegistry) getKeyInfoValidator(ki *KeyInfo) (acl.Validator, bool) {
+	if ki == nil || ki.AclID == 0 {
+		return nil, false
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
