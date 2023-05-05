@@ -14,6 +14,7 @@ import (
 	"github.com/Conflux-Chain/confura/rpc"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/store/redis"
+	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/relay"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
@@ -103,7 +104,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 		option.StoreHandler = handler.NewCfxCommonStoreHandler("db", storeCtx.CfxDB, option.StoreHandler)
 
 		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyInfos)
-		rateReg = rate.NewRegistry(rateKeyLoader)
+		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewCfxValidator)
 
 		// periodically reload rate limit settings from db
 		go rateReg.AutoReload(15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs)
@@ -176,7 +177,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB)
 
 		rateKeyLoader := rate.NewKeyLoader(storeCtx.EthDB.LoadRateLimitKeyInfos)
-		rateReg = rate.NewRegistry(rateKeyLoader)
+		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewEthValidator)
 
 		// periodically reload rate limit settings from db
 		go rateReg.AutoReload(15*time.Second, storeCtx.EthDB.LoadRateLimitConfigs)

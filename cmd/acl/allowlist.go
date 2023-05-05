@@ -3,10 +3,13 @@ package acl
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/acl"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -206,5 +209,34 @@ func validateAllowListCmdConfig(validateName, validateRules bool) (*acl.AllowLis
 		return nil, errors.WithMessage(err, "invalid allowlist rules config json")
 	}
 
+	if len(al.AllowMethods) > 0 && len(al.DisallowMethods) > 0 {
+		return nil, errors.New("The allow and disallow method sets can not be set at the same time")
+	}
+
+	if err := validateAllowListContractAddresses(al); err != nil {
+		return nil, errors.WithMessage(err, "invalid allowlist contract addresses")
+	}
+
 	return al, nil
+}
+
+func validateAllowListContractAddresses(al *acl.AllowList) error {
+	if strings.EqualFold(alCfg.Network, "eth") {
+		for _, caddr := range al.ContractAddresses {
+			if !common.IsHexAddress(caddr) {
+				return errors.Errorf("%v is not a hex address", caddr)
+			}
+		}
+		return nil
+	}
+
+	if strings.EqualFold(alCfg.Network, "cfx") {
+		for _, ctAddr := range al.ContractAddresses {
+			if _, err := cfxaddress.NewFromBase32(ctAddr); err != nil {
+				return errors.WithMessagef(err, "%v is not a valid base32 string", ctAddr)
+			}
+		}
+	}
+
+	return nil
 }
