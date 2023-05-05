@@ -2,6 +2,7 @@ package rate
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -13,8 +14,10 @@ import (
 type aclRegistry struct {
 	mu sync.Mutex
 
-	kloader    *KeyLoader
-	valFactory acl.ValidatorFactory
+	kloader *KeyLoader
+
+	defaultValidator acl.Validator
+	valFactory       acl.ValidatorFactory
 
 	// all available allowlists
 	allowlists map[uint32]*acl.AllowList // allowlist id => *acl.AllowList
@@ -41,32 +44,65 @@ func (r *aclRegistry) Allow(ctx acl.Context) error {
 func (r *aclRegistry) assignValidator(ctx context.Context) (acl.Validator, bool) {
 	authId, ok := handlers.GetAuthIdFromContext(ctx)
 	if !ok { // use default allowlist if not authenticated
-		return r.getValidator(0)
+		return r.getDefaultValidator()
 	}
 
-	if _, ok := handlers.VipStatusFromContext(ctx); ok {
-		// use default allowlsit for web3pay user
-		return r.getValidator(0)
+	if vs, ok := handlers.VipStatusFromContext(ctx); ok {
+		// use VIP allowlsit with corresponding tier
+		return r.getVipValidator(vs)
 	}
 
 	if ki, ok := r.kloader.Load(authId); ok && ki != nil {
 		// use allowlist with corresponding key info
-		return r.getValidator(ki.AclID)
+		return r.getKeyInfoValidator(ki)
 	}
 
 	// use default allowlist as fallback
-	return r.getValidator(0)
+	return r.getDefaultValidator()
 }
 
-func (r *aclRegistry) getValidator(aclID uint32) (acl.Validator, bool) {
+func (r *aclRegistry) getVipValidator(vip *handlers.VipStatus) (acl.Validator, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	v, ok := r.validators[aclID]
+	// assemble vip allowlist name by tier
+	vipAllowList := fmt.Sprintf("vip%d", vip.Tier)
+
+	for _, al := range r.allowlists {
+		if strings.EqualFold(al.Name, vipAllowList) {
+			v, ok := r.validators[al.ID]
+			return v, ok
+		}
+	}
+
+	return nil, false
+}
+
+func (r *aclRegistry) getDefaultValidator() (acl.Validator, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if v := r.defaultValidator; v != nil {
+		return v, true
+	}
+
+	return nil, false
+}
+
+func (r *aclRegistry) getKeyInfoValidator(ki *KeyInfo) (acl.Validator, bool) {
+	if ki == nil || ki.AclID == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	v, ok := r.validators[ki.AclID]
 	return v, ok
 }
 
 // allowlists reloading
+
 func (r *aclRegistry) reloadAclAllowLists(rc *Config, lastCs *ConfigCheckSums) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -100,7 +136,7 @@ func (r *aclRegistry) addAllowList(al *acl.AllowList) {
 	r.validators[al.ID] = r.valFactory(al)
 
 	if strings.EqualFold(al.Name, acl.DefaultAllowList) {
-		r.validators[0] = r.validators[al.ID]
+		r.defaultValidator = r.validators[al.ID]
 	}
 }
 
@@ -109,7 +145,7 @@ func (r *aclRegistry) removeAllowList(al *acl.AllowList) {
 	delete(r.validators, al.ID)
 
 	if strings.EqualFold(al.Name, acl.DefaultAllowList) {
-		delete(r.validators, 0)
+		r.defaultValidator = nil
 	}
 }
 
