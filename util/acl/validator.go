@@ -360,7 +360,7 @@ func (v *CfxValidator) parseAddr(params []interface{}) (res []string, ok bool) {
 
 	ca, ok := params[0].(cfxTypes.Address)
 	if ok {
-		res = append(res, ca.String())
+		res = append(res, ca.MustGetVerboseBase32Address())
 	}
 
 	return
