@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	cfxTypes "github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
@@ -20,38 +21,28 @@ var (
 	errInvalidContractAddr = errors.New("invalid contract address")
 	errBadRpcMethod        = errors.New("bad request method")
 	errBadRpcParams        = errors.New("bad RPC parameters")
-
-	// The RPC mothods bonded to be validated against contract address allowlist
-	ctAddrAclRpcMethods = map[string]bool{
-		// evm space RPC methods
-		`eth_call`:                true,
-		`eth_estimateGas`:         true,
-		`eth_getLogs`:             true,
-		`eth_getBalance`:          true,
-		`eth_getCode`:             true,
-		`eth_getStorageAt`:        true,
-		`eth_getTransactionCount`: true,
-		// core space RPC methods
-		`cfx_call`:                     true,
-		`cfx_estimateGasAndCollateral`: true,
-		`cfx_getLogs`:                  true,
-		`cfx_getBalance`:               true,
-		`cfx_getCode`:                  true,
-		`cfx_getStorageAt`:             true,
-		`cfx_getNextNonce`:             true,
-	}
 )
 
 // validation context
 type Context struct {
 	context.Context
+
 	RpcMethod        string
 	ExtractRpcParams func() ([]interface{}, error)
 }
 
+type ValidatorFactory func(al *AllowList) Validator
+
+type Validator interface {
+	Validate(ctx Context) error
+}
+
+// parse contract addresses from RPC method params
+type cntAddrParser func(params []interface{}) ([]string, bool)
+
 // allowlist validator. Each allowlist type is "AND"ed together,
 // while multiple entries of the same type are "OR"ed.
-type Validator struct {
+type validatorBase struct {
 	*AllowList
 
 	// wildchar pattern matching
@@ -60,10 +51,14 @@ type Validator struct {
 	originRules         []string // request origins
 
 	// contract addresses mapset
-	contractAddrRules map[string]bool
+	cntAddrRules map[string]bool
+
+	// contract address parsers by RPC method params:
+	// RPC method => cntAddrParser
+	cntAddrParsers map[string]cntAddrParser
 }
 
-func NewValidator(al *AllowList) *Validator {
+func newValidatorBase(al *AllowList) *validatorBase {
 	var originRules []string
 	for _, r := range al.Origins {
 		regp := util.WildCardToRegexp(strings.ToLower(r))
@@ -87,16 +82,16 @@ func NewValidator(al *AllowList) *Validator {
 		contractAddrRules[strings.ToLower(r)] = true
 	}
 
-	return &Validator{
+	return &validatorBase{
 		AllowList:           al,
 		originRules:         originRules,
 		allowMethodRules:    allowMethodRules,
 		disallowMethodRules: disallowMethodRules,
-		contractAddrRules:   contractAddrRules,
+		cntAddrRules:        contractAddrRules,
 	}
 }
 
-func (v *Validator) Validate(ctx Context) error {
+func (v *validatorBase) Validate(ctx Context) error {
 	if err := v.validateOrigin(ctx); err != nil {
 		return err
 	}
@@ -118,7 +113,7 @@ func (v *Validator) Validate(ctx Context) error {
 
 // The allowlist of originating domain, which supports wildcard subdomain patterns,
 // and the scheme is optional.
-func (v *Validator) validateOrigin(ctx Context) error {
+func (v *validatorBase) validateOrigin(ctx Context) error {
 	if len(v.Origins) == 0 {
 		return nil
 	}
@@ -141,7 +136,7 @@ func (v *Validator) validateOrigin(ctx Context) error {
 
 // The allowlist of user agent utilizes partial string matching. If the allowlisted
 // string is present in the request's full `User-Agent`, it is registered as a match.
-func (v *Validator) validateUserAgents(ctx Context) error {
+func (v *validatorBase) validateUserAgents(ctx Context) error {
 	if len(v.UserAgents) == 0 {
 		return nil
 	}
@@ -162,7 +157,7 @@ func (v *Validator) validateUserAgents(ctx Context) error {
 }
 
 // If the allow list is empty, any method calls specified in the disallow list are rejected.
-func (v *Validator) validateAllowMethods(ctx Context) error {
+func (v *validatorBase) validateAllowMethods(ctx Context) error {
 	if len(v.AllowMethods) == 0 && len(v.DisallowMethods) == 0 {
 		return nil
 	}
@@ -188,31 +183,10 @@ func (v *Validator) validateAllowMethods(ctx Context) error {
 	return nil
 }
 
-// For EVM space, the following RPC methods take contract address parameter and
-// are compatible with this type of allowlisting:
-// `eth_call`
-// `eth_estimateGas`
-// `eth_getLogs`
-// `eth_getBalance`
-// `eth_getCode`
-// `eth_getStorageAt`
-// `eth_getTransactionCount`
-//
-// For core space, with the following RPC methods:
-// `cfx_call`
-// `cfx_estimateGasAndCollateral`
-// `cfx_getLogs`
-// `cfx_getBalance`
-// `cfx_getCode`
-// `cfx_getStorageAt`
-// `cfx_getNextNonce`
-func (v *Validator) validateContractAddresses(ctx Context) error {
+// Validate the RPC methods which take contract address parameter and
+// check if they are compatible with this type of allowlisting.
+func (v *validatorBase) validateContractAddresses(ctx Context) error {
 	if len(v.ContractAddresses) == 0 {
-		return nil
-	}
-
-	if !ctAddrAclRpcMethods[ctx.RpcMethod] {
-		// not in the restricted RPC method list
 		return nil
 	}
 
@@ -221,44 +195,22 @@ func (v *Validator) validateContractAddresses(ctx Context) error {
 	}
 
 	inputParams, err := ctx.ExtractRpcParams()
-	if err != nil || len(inputParams) == 0 {
+	if err != nil {
 		return errBadRpcParams
 	}
 
-	// extract contract addresses from input params
-	var reqContractAddrs []string
-	var exctOk bool
-
-	switch ctx.RpcMethod {
-	case "eth_call", "eth_estimateGas":
-		reqContractAddrs, exctOk = v.extractByEthCallRequest(inputParams[0])
-	case "eth_getLogs":
-		reqContractAddrs, exctOk = v.extractByEthFilterQuery(inputParams[0])
-	case "eth_getBalance", "eth_getTransactionCount":
-		reqContractAddrs, exctOk = v.extractByEthAddr(inputParams[0])
-	case "eth_getCode", "eth_getStorageAt":
-		reqContractAddrs, exctOk = v.extractByEthAddr(inputParams[0])
-	case "cfx_call", "cfx_estimateGasAndCollateral":
-		reqContractAddrs, exctOk = v.extractByCfxCallRequest(inputParams[0])
-	case "cfx_getLogs":
-		reqContractAddrs, exctOk = v.extractByCfxLogFilter(inputParams[0])
-	case "cfx_getBalance", "cfx_getNextNonce":
-		reqContractAddrs, exctOk = v.extractByCfxAddr(inputParams[0])
-	case "cfx_getCode", "cfx_getStorageAt":
-		reqContractAddrs, exctOk = v.extractByCfxAddr(inputParams[0])
-	default:
-		logrus.WithFields(logrus.Fields{
-			"reqRpcMethod": ctx.RpcMethod,
-			"inputParams":  inputParams,
-		}).Warn("No method provided to extract contract addresses from input params")
+	cntAddrParser, ok := v.cntAddrParsers[ctx.RpcMethod]
+	if !ok {
+		return nil
 	}
 
-	if !exctOk {
+	cntAddrs, ok := cntAddrParser(inputParams)
+	if !ok {
 		return errBadRpcParams
 	}
 
-	for _, caddr := range reqContractAddrs {
-		if !v.contractAddrRules[strings.ToLower(caddr)] {
+	for _, caddr := range cntAddrs {
+		if !v.cntAddrRules[strings.ToLower(caddr)] {
 			return errInvalidContractAddr
 		}
 	}
@@ -266,8 +218,41 @@ func (v *Validator) validateContractAddresses(ctx Context) error {
 	return nil
 }
 
-func (v *Validator) extractByCfxCallRequest(param interface{}) (res []string, ok bool) {
-	cr, ok := param.(cfxTypes.CallRequest)
+type EthValidator struct {
+	*validatorBase
+}
+
+func NewEthValidator(al *AllowList) Validator {
+	v := &EthValidator{
+		validatorBase: newValidatorBase(al),
+	}
+
+	v.cntAddrParsers = map[string]cntAddrParser{
+		"eth_call":                v.parseCallRequest,
+		"eth_estimateGas":         v.parseCallRequest,
+		"eth_getLogs":             v.parseFilterQuery,
+		"eth_getBalance":          v.parseAddr,
+		"eth_getTransactionCount": v.parseAddr,
+		"eth_getCode":             v.parseAddr,
+		"eth_getStorageAt":        v.parseAddr,
+	}
+
+	for _, cntAddr := range v.ContractAddresses {
+		if !common.IsHexAddress(cntAddr) {
+			logrus.WithField("contractAddr", cntAddr).Warn("Invalid contract address for allowlist")
+			delete(v.cntAddrRules, strings.ToLower(cntAddr))
+		}
+	}
+
+	return v
+}
+
+func (v *EthValidator) parseCallRequest(params []interface{}) (res []string, ok bool) {
+	if len(params) == 0 {
+		return
+	}
+
+	cr, ok := params[0].(web3Types.CallRequest)
 	if ok {
 		res = append(res, cr.To.String())
 	}
@@ -275,21 +260,27 @@ func (v *Validator) extractByCfxCallRequest(param interface{}) (res []string, ok
 	return
 }
 
-func (v *Validator) extractByCfxLogFilter(param interface{}) (res []string, ok bool) {
-	fq, ok := param.(cfxTypes.LogFilter)
-	if !ok {
+func (v *EthValidator) parseFilterQuery(params []interface{}) (res []string, ok bool) {
+	if len(params) == 0 {
 		return
 	}
 
-	for i := range fq.Address {
-		res = append(res, fq.Address[i].String())
+	fq, ok := params[0].(web3Types.FilterQuery)
+	if ok {
+		for i := range fq.Addresses {
+			res = append(res, fq.Addresses[i].String())
+		}
 	}
 
 	return
 }
 
-func (v *Validator) extractByCfxAddr(param interface{}) (res []string, ok bool) {
-	ca, ok := param.(cfxTypes.Address)
+func (v *EthValidator) parseAddr(params []interface{}) (res []string, ok bool) {
+	if len(params) == 0 {
+		return
+	}
+
+	ca, ok := params[0].(common.Address)
 	if ok {
 		res = append(res, ca.String())
 	}
@@ -297,30 +288,77 @@ func (v *Validator) extractByCfxAddr(param interface{}) (res []string, ok bool) 
 	return
 }
 
-func (v *Validator) extractByEthCallRequest(param interface{}) (res []string, ok bool) {
-	cr, ok := param.(web3Types.CallRequest)
-	if ok {
-		res = append(res, cr.To.String())
-	}
-
-	return
+type CfxValidator struct {
+	*validatorBase
 }
 
-func (v *Validator) extractByEthFilterQuery(param interface{}) (res []string, ok bool) {
-	fq, ok := param.(web3Types.FilterQuery)
-	if !ok {
+func NewCfxValidator(al *AllowList) Validator {
+	v := &CfxValidator{
+		validatorBase: newValidatorBase(al),
+	}
+
+	v.cntAddrParsers = map[string]cntAddrParser{
+		"cfx_call":                     v.parseCallRequest,
+		"cfx_estimateGasAndCollateral": v.parseCallRequest,
+		"cfx_getLogs":                  v.parseLogFilter,
+		"cfx_getBalance":               v.parseAddr,
+		"cfx_getNextNonce":             v.parseAddr,
+		"cfx_getCode":                  v.parseAddr,
+		"cfx_getStorageAt":             v.parseAddr,
+	}
+
+	v.uniformContractAddrRulesets()
+	return v
+}
+
+func (v *CfxValidator) uniformContractAddrRulesets() {
+	v.cntAddrRules = make(map[string]bool)
+
+	for _, cntAddr := range v.ContractAddresses {
+		addr, err := cfxaddress.NewFromBase32(cntAddr)
+		if err != nil {
+			logrus.WithField("contractAddr", cntAddr).Warn("Invalid contract address for allowlist")
+			continue
+		}
+
+		v.cntAddrRules[addr.MustGetBase32Address()] = true
+	}
+}
+
+func (v *CfxValidator) parseCallRequest(params []interface{}) (res []string, ok bool) {
+	if len(params) == 0 {
 		return
 	}
 
-	for i := range fq.Addresses {
-		res = append(res, fq.Addresses[i].String())
+	cr, ok := params[0].(cfxTypes.CallRequest)
+	if ok { // only non-verbose base32 address format is accepted
+		res = append(res, cr.To.MustGetBase32Address())
 	}
 
 	return
 }
 
-func (v *Validator) extractByEthAddr(param interface{}) (res []string, ok bool) {
-	ca, ok := param.(common.Address)
+func (v *CfxValidator) parseLogFilter(params []interface{}) (res []string, ok bool) {
+	if len(params) == 0 {
+		return
+	}
+
+	fq, ok := params[0].(cfxTypes.LogFilter)
+	if ok {
+		for i := range fq.Address {
+			res = append(res, fq.Address[i].MustGetBase32Address())
+		}
+	}
+
+	return
+}
+
+func (v *CfxValidator) parseAddr(params []interface{}) (res []string, ok bool) {
+	if len(params) == 0 {
+		return
+	}
+
+	ca, ok := params[0].(cfxTypes.Address)
 	if ok {
 		res = append(res, ca.String())
 	}

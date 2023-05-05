@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/go-conflux-util/rate"
 	"github.com/Conflux-Chain/go-conflux-util/rate/http"
@@ -47,10 +48,10 @@ type Registry struct {
 	id2Strategies map[uint32]*Strategy // strategy id => *Strategy
 }
 
-func NewRegistry(kloader *KeyLoader) *Registry {
+func NewRegistry(kloader *KeyLoader, valFactory acl.ValidatorFactory) *Registry {
 	m := &Registry{
 		kloader:       kloader,
-		aclRegistry:   newAclRegistry(kloader),
+		aclRegistry:   newAclRegistry(kloader, valFactory),
 		strategies:    make(map[string]*Strategy),
 		id2Strategies: make(map[uint32]*Strategy),
 	}

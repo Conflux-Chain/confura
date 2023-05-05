@@ -11,19 +11,22 @@ import (
 )
 
 type aclRegistry struct {
-	mu      sync.Mutex
-	kloader *KeyLoader
+	mu sync.Mutex
+
+	kloader    *KeyLoader
+	valFactory acl.ValidatorFactory
 
 	// all available allowlists
 	allowlists map[uint32]*acl.AllowList // allowlist id => *acl.AllowList
-	validators map[uint32]*acl.Validator // allowlist id => *acl.Validator
+	validators map[uint32]acl.Validator  // allowlist id => *acl.Validator
 }
 
-func newAclRegistry(kloader *KeyLoader) *aclRegistry {
+func newAclRegistry(kloader *KeyLoader, valFactory acl.ValidatorFactory) *aclRegistry {
 	return &aclRegistry{
 		kloader:    kloader,
+		valFactory: valFactory,
 		allowlists: make(map[uint32]*acl.AllowList),
-		validators: make(map[uint32]*acl.Validator),
+		validators: make(map[uint32]acl.Validator),
 	}
 }
 
@@ -35,7 +38,7 @@ func (r *aclRegistry) Allow(ctx acl.Context) error {
 	return nil
 }
 
-func (r *aclRegistry) assignValidator(ctx context.Context) (*acl.Validator, bool) {
+func (r *aclRegistry) assignValidator(ctx context.Context) (acl.Validator, bool) {
 	authId, ok := handlers.GetAuthIdFromContext(ctx)
 	if !ok { // use default allowlist if not authenticated
 		return r.getValidator(0)
@@ -55,7 +58,7 @@ func (r *aclRegistry) assignValidator(ctx context.Context) (*acl.Validator, bool
 	return r.getValidator(0)
 }
 
-func (r *aclRegistry) getValidator(aclID uint32) (*acl.Validator, bool) {
+func (r *aclRegistry) getValidator(aclID uint32) (acl.Validator, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -94,7 +97,7 @@ func (r *aclRegistry) reloadAclAllowLists(rc *Config, lastCs *ConfigCheckSums) {
 
 func (r *aclRegistry) addAllowList(al *acl.AllowList) {
 	r.allowlists[al.ID] = al
-	r.validators[al.ID] = acl.NewValidator(al)
+	r.validators[al.ID] = r.valFactory(al)
 
 	if strings.EqualFold(al.Name, acl.DefaultAllowList) {
 		r.validators[0] = r.validators[al.ID]
