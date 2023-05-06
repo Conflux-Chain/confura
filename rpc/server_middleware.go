@@ -29,7 +29,7 @@ func init() {
 	rpc.HookHandleCallMsg(middlewares.AntiInjection)
 
 	// auth
-	rpc.HookHandleCallMsg(middlewares.Auth)
+	rpc.HookHandleCallMsg(middlewares.Auth())
 
 	// allow lists
 	rpc.HookHandleCallMsg(middlewares.Allowlists)
