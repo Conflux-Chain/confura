@@ -25,13 +25,15 @@ const (
 	// core space fullnode groups
 	GroupCfxHttp     Group = "cfxhttp"
 	GroupCfxWs       Group = "cfxws"
+	GroupCfxFilter   Group = "cfxfilter"
 	GroupCfxLogs     Group = "cfxlog"
 	GroupCfxArchives Group = "cfxarchives"
 
 	// evm space fullnode groups
-	GroupEthHttp Group = "ethhttp"
-	GroupEthWs   Group = "ethws"
-	GroupEthLogs Group = "ethlogs"
+	GroupEthHttp   Group = "ethhttp"
+	GroupEthWs     Group = "ethws"
+	GroupEthFilter Group = "ethfilter"
+	GroupEthLogs   Group = "ethlogs"
 )
 
 // Space parses space from group name

@@ -208,13 +208,17 @@ node:
   # Group `cfxws` fullnodes
   # wsUrls: [ws://test.confluxrpc.com/ws]
   # Group `cfxlog` fullnodes
-  logNodes: [http://test.confluxrpc.com]
+  # logNodes: [http://test.confluxrpc.com]
+  # Group `cfxfilter` fullnodes
+  # filterNodes: [http://test.confluxrpc.com]
   # Group `cfxarchives` fullnodes
   # archiveNodes: []
   # Group `ethhttp` fullnodes
   ethurls: [http://evmtestnet.confluxrpc.com]
   # Group `ethlogs` fullnodes
-  ethLogNodes: [http://evmtestnet.confluxrpc.com]
+  # ethLogNodes: [http://evmtestnet.confluxrpc.com]
+  # Group `ethfilter` fullnodes
+  # ethFilterNodes: [http://evmtestnet.confluxrpc.com]
   # Group `ethws` fullnodes
   # ethWsUrls: [wss://evmtestnet.confluxrpc.com/ws]
   # # Consistent hash ring configurations

@@ -16,6 +16,17 @@ const (
 	rpcMethodCfxGetFilterLogs = "cfx_getFilterLogs"
 )
 
+func isCfxFilterRpcMethod(method string) bool {
+	switch method {
+	case "cfx_newFilter", "cfx_newBlockFilter", "cfx_newPendingTransactionFilter":
+		return true
+	case "cfx_getFilterChanges", "cfx_getFilterLogs", "cfx_uninstallFilter":
+		return true
+	default:
+		return false
+	}
+}
+
 // NewFilter creates a new filter and returns the filter id. It can be
 // used to retrieve logs when the state changes. This method cannot be
 // used to fetch logs that are already stored in the state.
