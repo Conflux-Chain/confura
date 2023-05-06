@@ -9,17 +9,20 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func Auth(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
+func Auth() rpc.HandleCallMsgMiddleware {
 	// web3pay
 	if mw, conf, ok := MustNewWeb3PayMiddlewareFromViper(); ok {
 		logrus.WithField("mode", conf.Mode).Info("Web3Pay openweb3 RPC middleware enabled")
-		return mw(authenticate(next))
+
+		return func(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
+			return mw(Authenticate(next))
+		}
 	}
 
-	return authenticate(next)
+	return Authenticate
 }
 
-func authenticate(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
+func Authenticate(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
 		if vs, ok := handlers.VipStatusFromContext(ctx); ok { // access from web3pay VIP user
 			ctx = context.WithValue(ctx, handlers.CtxKeyAuthId, vs.ID)
