@@ -97,7 +97,7 @@ func (h *EthTxnHandler) replicateRawTxnSendingToNodes(nodeUrls []string, signedT
 		if err != nil && !utils.IsRPCJSONError(err) {
 			logrus.WithField("url", url).
 				WithError(err).
-				Error("Txn handler failed to replicate sending evm raw transaction")
+				Info("Txn handler failed to replicate sending evm raw transaction")
 		}
 	}
 }

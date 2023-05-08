@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"regexp"
-
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/relay"
@@ -14,14 +12,6 @@ import (
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/sirupsen/logrus"
 )
-
-var (
-	errPatternTxnAlreadyExists = regexp.MustCompile(`(.*)tx already exist(.*)`)
-)
-
-func isTxnAlreadyExistError(err error) bool {
-	return errPatternTxnAlreadyExists.MatchString(err.Error())
-}
 
 // CfxTxnHandler RPC handler to optimize sending transaction by relaying txn broadcasting asynchronously
 // and replicating txn sending synchronously to all full nodes of some node group to improve consistency
@@ -109,7 +99,7 @@ func (h *CfxTxnHandler) replicateRawTxnSendingToNodes(nodeUrls []string, signedT
 		if err != nil && !utils.IsRPCJSONError(err) {
 			logrus.WithField("url", url).
 				WithError(err).
-				Error("Txn handler failed to replicate sending cfx raw transaction")
+				Info("Txn handler failed to replicate sending cfx raw transaction")
 		}
 	}
 }
