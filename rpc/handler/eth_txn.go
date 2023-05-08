@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go"
 	"github.com/sirupsen/logrus"
 )
@@ -93,7 +94,7 @@ func (h *EthTxnHandler) replicateRawTxnSendingToNodes(nodeUrls []string, signedT
 		}
 
 		_, err = c.(*web3go.Client).Eth.SendRawTransaction(signedTx)
-		if err != nil && !isTxnAlreadyExistError(err) {
+		if err != nil && !utils.IsRPCJSONError(err) {
 			logrus.WithField("url", url).
 				WithError(err).
 				Error("Txn handler failed to replicate sending evm raw transaction")
