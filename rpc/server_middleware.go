@@ -121,9 +121,11 @@ func getEthClientFromProviderWithContext(
 	ctx context.Context, rpcMethod string, p *node.EthClientProvider) (*node.Web3goClient, node.Group, error) {
 	grp := node.GroupEthHttp
 
-	switch rpcMethod {
-	case rpcMethodEthGetLogs:
+	switch {
+	case rpcMethod == rpcMethodEthGetLogs:
 		grp = node.GroupEthLogs
+	case isEthFilterRpcMethod(rpcMethod):
+		grp = node.GroupEthFilter
 	default:
 		if authId, ok := handlers.GetAuthIdFromContext(ctx); ok {
 			grp, ok := p.GetRouteGroup(authId)
@@ -142,9 +144,11 @@ func getCfxClientFromProviderWithContext(
 	ctx context.Context, rpcMethod string, p *node.CfxClientProvider) (sdk.ClientOperator, node.Group, error) {
 	grp := node.GroupCfxHttp
 
-	switch rpcMethod {
-	case rpcMethodCfxGetLogs:
+	switch {
+	case rpcMethod == rpcMethodCfxGetLogs:
 		grp = node.GroupCfxLogs
+	case isCfxFilterRpcMethod(rpcMethod):
+		grp = node.GroupCfxFilter
 	default:
 		if authId, ok := handlers.GetAuthIdFromContext(ctx); ok {
 			grp, ok := p.GetRouteGroup(authId)

@@ -33,6 +33,9 @@ func init() {
 		GroupCfxLogs: {
 			Nodes: cfg.LogNodes,
 		},
+		GroupCfxFilter: {
+			Nodes: cfg.FilterNodes,
+		},
 	}
 
 	ethUrlCfg = map[Group]UrlConfig{
@@ -47,20 +50,25 @@ func init() {
 		GroupEthLogs: {
 			Nodes: cfg.EthLogNodes,
 		},
+		GroupEthFilter: {
+			Nodes: cfg.EthFilterNodes,
+		},
 	}
 }
 
 type config struct {
-	Endpoint     string `default:":22530"`
-	EthEndpoint  string `default:":28530"`
-	URLs         []string
-	EthURLs      []string
-	WSURLs       []string
-	EthWSURLs    []string
-	LogNodes     []string
-	EthLogNodes  []string
-	ArchiveNodes []string
-	HashRing     struct {
+	Endpoint       string `default:":22530"`
+	EthEndpoint    string `default:":28530"`
+	URLs           []string
+	EthURLs        []string
+	WSURLs         []string
+	EthWSURLs      []string
+	LogNodes       []string
+	EthLogNodes    []string
+	FilterNodes    []string
+	EthFilterNodes []string
+	ArchiveNodes   []string
+	HashRing       struct {
 		PartitionCount    int     `default:"15739"`
 		ReplicationFactor int     `default:"51"`
 		Load              float64 `default:"1.25"`

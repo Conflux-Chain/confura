@@ -15,6 +15,17 @@ const (
 	rpcMethodEthGetFilterLogs = "eth_getFilterLogs"
 )
 
+func isEthFilterRpcMethod(method string) bool {
+	switch method {
+	case "eth_newFilter", "eth_newBlockFilter", "eth_newPendingTransactionFilter":
+		return true
+	case "eth_getFilterChanges", "eth_getFilterLogs", "eth_uninstallFilter":
+		return true
+	default:
+		return false
+	}
+}
+
 // uniform virtual filter proxy error
 func errVirtualFilterProxyErrorOrNil(err error) error {
 	return errors.WithMessage(err, "virtual filter proxy error")
