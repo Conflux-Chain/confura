@@ -11,6 +11,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -105,7 +106,7 @@ func (h *CfxTxnHandler) replicateRawTxnSendingToNodes(nodeUrls []string, signedT
 		}
 
 		_, err = c.(sdk.ClientOperator).SendRawTransaction(signedTx)
-		if err != nil && !isTxnAlreadyExistError(err) {
+		if err != nil && !utils.IsRPCJSONError(err) {
 			logrus.WithField("url", url).
 				WithError(err).
 				Error("Txn handler failed to replicate sending cfx raw transaction")

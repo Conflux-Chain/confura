@@ -194,14 +194,14 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 		return nil
 	}
 
-	inputParams, err := ctx.ExtractRpcParams()
-	if err != nil {
-		return errBadRpcParams
-	}
-
 	cntAddrParser, ok := v.cntAddrParsers[ctx.RpcMethod]
 	if !ok {
 		return nil
+	}
+
+	inputParams, err := ctx.ExtractRpcParams()
+	if err != nil {
+		return errBadRpcParams
 	}
 
 	cntAddrs, ok := cntAddrParser(inputParams)
