@@ -12,9 +12,7 @@ import (
 
 type VipTier uint
 
-const (
-	VipSubPropTierKey = "tier"
-
+const ( // !!! order is important
 	// none VIP tier
 	VipTierNone VipTier = iota
 	// VIP subscription tier
@@ -22,9 +20,12 @@ const (
 	VipTierSubscription2
 	VipTierSubscription3
 	VipTierSubscriptionEnd
+
 	// VIP Billing tier
 	VipTierBilling = 100
 )
+
+const VipSubPropTierKey = "tier"
 
 type VipStatus struct {
 	ID   string  // VIP ID
