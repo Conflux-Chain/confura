@@ -165,6 +165,7 @@ func (w *filterWorker) poll() {
 				PollOnceQps(w.space, w.nodeName, err).UpdateSince(start)
 
 			if err != nil {
+				logrus.WithError(err).Info("Virtual filter session closed due to error")
 				w.close()
 				return
 			}
@@ -191,12 +192,9 @@ func (w *filterWorker) pollOnce() error {
 
 		duration := time.Since(w.session.lastPollingTime)
 		if duration < maxPollingDelayDuration { // retry for fault tolerance
+			logger.WithError(err).Info("Filter worker client failed to poll filter changes")
 			return nil
 		}
-
-		logger.WithField("delays", duration).
-			WithError(err).
-			Error("Filter worker failed to poll filter changes with too many delays")
 
 		return err
 	}

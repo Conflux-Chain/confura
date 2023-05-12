@@ -113,6 +113,10 @@ func (bnps *bnPartitionedStore) growPartition(entity string, tabler schema.Table
 	}
 
 	err = bnps.db.Create(&newPart).Error
+	if err == nil {
+		logrus.WithField("bnPartition", newPart).Info("New bn partition created")
+	}
+
 	return &newPart, err
 }
 
@@ -137,11 +141,12 @@ func (bnps *bnPartitionedStore) shrinkPartition(entity string, tabler schema.Tab
 		return nil, err
 	}
 
+	logrus.WithField("bnPartition", oldPart).Info("Bn partition deleted")
+
 	// No db transaction is needed here even if the old partition table failed to be dropped,
 	// since it will never be used afterwards and we can drop the partition table manually.
 	// Besides, drop old partition table within db transaction will not rollback neither if failed.
-	_, err = bnps.deletePartitionedTable(bnps.db, tabler, oldPart.Index)
-	if err != nil {
+	if _, err = bnps.deletePartitionedTable(bnps.db, tabler, oldPart.Index); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"entity": entity, "partition": oldPart,
 			"table": bnps.getPartitionedTableName(tabler, oldPart.Index),
@@ -171,9 +176,11 @@ func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange type
 		return nil, &searchRange, nil
 	}
 
+	bnPartRange := types.RangeUint64{From: bnStart, To: bnEnd}
+
 	if searchRange.To < bnStart {
 		// search range is before the first partition
-		return nil, nil, store.ErrAlreadyPruned
+		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
 	}
 
 	if searchRange.From > bnEnd {
@@ -183,7 +190,7 @@ func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange type
 
 	if searchRange.From < bnStart && searchRange.To > bnStart {
 		// search range intersects with the first partition
-		return nil, nil, store.ErrAlreadyPruned
+		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
 	}
 
 	db := bnps.db.Where("entity = ?", entity).
@@ -201,6 +208,13 @@ func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange type
 	}
 
 	return
+}
+
+func errBnPartitionsPruned(srange, bnPartRange types.RangeUint64) error {
+	return errors.WithMessagef(store.ErrAlreadyPruned,
+		"range %v not contained in the inclusion range %v formed by all bnPartitions",
+		srange, bnPartRange,
+	)
 }
 
 // deltaUpdateCount delta updates the accumulated data size for the latest entity partition.
