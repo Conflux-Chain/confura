@@ -114,7 +114,7 @@ func (bnps *bnPartitionedStore) growPartition(entity string, tabler schema.Table
 
 	err = bnps.db.Create(&newPart).Error
 	if err == nil {
-		logrus.WithField("newBnPartition", newPart).Info("New bn partition created")
+		logrus.WithField("bnPartition", newPart).Info("New bn partition created")
 	}
 
 	return &newPart, err
@@ -141,7 +141,7 @@ func (bnps *bnPartitionedStore) shrinkPartition(entity string, tabler schema.Tab
 		return nil, err
 	}
 
-	logrus.WithField("oldBnPartition", oldPart).Info("Old bn partition deleted")
+	logrus.WithField("bnPartition", oldPart).Info("Bn partition deleted")
 
 	// No db transaction is needed here even if the old partition table failed to be dropped,
 	// since it will never be used afterwards and we can drop the partition table manually.
