@@ -53,5 +53,5 @@ func DailyMaxReqRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 }
 
 func errDailyMaxReqRateLimited(err error) error {
-	return errors.WithMessage(err, "daily request count exceeded")
+	return errors.WithMessage(err, "daily request limit exceeded")
 }
