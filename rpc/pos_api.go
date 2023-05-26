@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -17,6 +18,12 @@ func (api *posAPI) GetStatus(ctx context.Context) (postypes.Status, error) {
 
 func (api *posAPI) GetAccount(ctx context.Context, address postypes.Address, view ...hexutil.Uint64) (postypes.Account, error) {
 	return GetCfxClientFromContext(ctx).Pos().GetAccount(address, view...)
+}
+
+// GetAccount returns pos account of pow address info at block
+func (api *posAPI) GetAccountByPowAddress(
+	ctx context.Context, address cfxaddress.Address, blockNumber ...hexutil.Uint64) (account postypes.Account, err error) {
+	return GetCfxClientFromContext(ctx).Pos().GetAccountByPowAddress(address, blockNumber...)
 }
 
 func (api *posAPI) GetCommittee(ctx context.Context, view ...hexutil.Uint64) (postypes.CommitteeState, error) {
@@ -37,4 +44,28 @@ func (api *posAPI) GetTransactionByNumber(ctx context.Context, txNumber hexutil.
 
 func (api *posAPI) GetRewardsByEpoch(ctx context.Context, epochNumber hexutil.Uint64) (postypes.EpochReward, error) {
 	return GetCfxClientFromContext(ctx).Pos().GetRewardsByEpoch(epochNumber)
+}
+
+func (api *posAPI) GetConsensusBlocks(ctx context.Context) (blocks []*postypes.Block, err error) {
+	return GetCfxClientFromContext(ctx).Pos().GetConsensusBlocks()
+}
+
+func (api *posAPI) GetEpochState(ctx context.Context, epochNumber ...hexutil.Uint64) (epochState *postypes.EpochState, err error) {
+	return GetCfxClientFromContext(ctx).Pos().GetEpochState(epochNumber...)
+}
+
+func (api *posAPI) GetLedgerInfoByEpoch(
+	ctx context.Context, epochNumber ...hexutil.Uint64) (ledgerInfoWithSigs *postypes.LedgerInfoWithSignatures, err error) {
+	return GetCfxClientFromContext(ctx).Pos().GetLedgerInfoByEpoch(epochNumber...)
+}
+
+func (api *posAPI) GetLedgerInfosByEpoch(
+	ctx context.Context, startEpoch hexutil.Uint64, endEpoch hexutil.Uint64,
+) (ledgerInfoWithSigs []*postypes.LedgerInfoWithSignatures, err error) {
+	return GetCfxClientFromContext(ctx).Pos().GetLedgerInfosByEpoch(startEpoch, endEpoch)
+}
+
+func (api *posAPI) GetLedgerInfoByBlockNumber(
+	ctx context.Context, blockNumber postypes.BlockNumber) (ledgerInfoWithSigs *postypes.LedgerInfoWithSignatures, err error) {
+	return GetCfxClientFromContext(ctx).Pos().GetLedgerInfoByBlockNumber(blockNumber)
 }

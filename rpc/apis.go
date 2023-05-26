@@ -88,7 +88,12 @@ func nativeSpaceApis(
 			Namespace: "gasstation",
 			Version:   "1.0",
 			Service:   newGasStationAPI(gashandler),
-			Public:    true,
+			Public:    false,
+		}, {
+			Namespace: "debug",
+			Version:   "1.0",
+			Service:   &cfxDebugAPI{},
+			Public:    false,
 		},
 	}
 }

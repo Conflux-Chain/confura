@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	emptyEpochs = []*types.Epoch{}
-	emptyLogs   = []types.Log{}
+	emptyEpochs             = []*types.Epoch{}
+	emptyEpochOrBlockHashes = []*types.EpochOrBlockHash{}
+	emptyLogs               = []types.Log{}
 
 	rpcMethodCfxGetLogs = "cfx_getLogs"
 )
@@ -49,12 +50,20 @@ func newCfxAPI(provider *node.CfxClientProvider, option ...CfxAPIOption) *cfxAPI
 	}
 }
 
-func toSlice(epoch *types.Epoch) []*types.Epoch {
+func toEpochSlice(epoch *types.Epoch) []*types.Epoch {
 	if epoch == nil {
 		return emptyEpochs
 	}
 
 	return []*types.Epoch{epoch}
+}
+
+func toEpochOrBlockHashSlice(epoch *types.EpochOrBlockHash) []*types.EpochOrBlockHash {
+	if epoch == nil {
+		return emptyEpochOrBlockHashes
+	}
+
+	return []*types.EpochOrBlockHash{epoch}
 }
 
 func (api *cfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
@@ -68,64 +77,64 @@ func (api *cfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexuti
 	return cache.CfxDefault.GetEpochNumber(cfx, epoch)
 }
 
-func (api *cfxAPI) GetBalance(ctx context.Context, address types.Address, epoch *types.Epoch) (*hexutil.Big, error) {
+func (api *cfxAPI) GetBalance(ctx context.Context, address types.Address, epoch *types.EpochOrBlockHash) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	api.inputEpochMetric.Update(epoch, "cfx_getBalance", cfx)
-	return cfx.GetBalance(address, toSlice(epoch)...)
+	api.inputEpochMetric.Update2(epoch, "cfx_getBalance", cfx)
+	return cfx.GetBalance(address, toEpochOrBlockHashSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetAdmin(ctx context.Context, contract types.Address, epoch *types.Epoch) (*types.Address, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getAdmin", cfx)
-	return cfx.GetAdmin(contract, toSlice(epoch)...)
+	return cfx.GetAdmin(contract, toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetSponsorInfo(ctx context.Context, contract types.Address, epoch *types.Epoch) (types.SponsorInfo, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getSponsorInfo", cfx)
-	return cfx.GetSponsorInfo(contract, toSlice(epoch)...)
+	return cfx.GetSponsorInfo(contract, toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetStakingBalance(ctx context.Context, address types.Address, epoch *types.Epoch) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getStakingBalance", cfx)
-	return cfx.GetStakingBalance(address, toSlice(epoch)...)
+	return cfx.GetStakingBalance(address, toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetDepositList(ctx context.Context, address types.Address, epoch *types.Epoch) ([]types.DepositInfo, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getDepositList", cfx)
-	return cfx.GetDepositList(address, toSlice(epoch)...)
+	return cfx.GetDepositList(address, toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetVoteList(ctx context.Context, address types.Address, epoch *types.Epoch) ([]types.VoteStakeInfo, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getVoteList", cfx)
-	return cfx.GetVoteList(address, toSlice(epoch)...)
+	return cfx.GetVoteList(address, toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetCollateralForStorage(ctx context.Context, address types.Address, epoch *types.Epoch) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getCollateralForStorage", cfx)
-	return cfx.GetCollateralForStorage(address, toSlice(epoch)...)
+	return cfx.GetCollateralForStorage(address, toEpochSlice(epoch)...)
 }
 
-func (api *cfxAPI) GetCode(ctx context.Context, contract types.Address, epoch *types.Epoch) (hexutil.Bytes, error) {
+func (api *cfxAPI) GetCode(ctx context.Context, contract types.Address, epoch *types.EpochOrBlockHash) (hexutil.Bytes, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	api.inputEpochMetric.Update(epoch, "cfx_getCode", cfx)
-	return cfx.GetCode(contract, toSlice(epoch)...)
+	api.inputEpochMetric.Update2(epoch, "cfx_getCode", cfx)
+	return cfx.GetCode(contract, toEpochOrBlockHashSlice(epoch)...)
 }
 
-func (api *cfxAPI) GetStorageAt(ctx context.Context, address types.Address, position *hexutil.Big, epoch *types.Epoch) (hexutil.Bytes, error) {
+func (api *cfxAPI) GetStorageAt(ctx context.Context, address types.Address, position *hexutil.Big, epoch *types.EpochOrBlockHash) (hexutil.Bytes, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	api.inputEpochMetric.Update(epoch, "cfx_getStorageAt", cfx)
-	return cfx.GetStorageAt(address, position, toSlice(epoch)...)
+	api.inputEpochMetric.Update2(epoch, "cfx_getStorageAt", cfx)
+	return cfx.GetStorageAt(address, position, toEpochOrBlockHashSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, epoch *types.Epoch) (*types.StorageRoot, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getStorageRoot", cfx)
-	return cfx.GetStorageRoot(address, toSlice(epoch)...)
+	return cfx.GetStorageRoot(address, toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (interface{}, error) {
@@ -224,10 +233,10 @@ func (api *cfxAPI) GetBestBlockHash(ctx context.Context) (types.Hash, error) {
 	return cache.CfxDefault.GetBestBlockHash(cfx)
 }
 
-func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoch *types.Epoch) (*hexutil.Big, error) {
+func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoch *types.EpochOrBlockHash) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	api.inputEpochMetric.Update(epoch, "cfx_getNextNonce", cfx)
-	return cfx.GetNextNonce(address, toSlice(epoch)...)
+	api.inputEpochMetric.Update2(epoch, "cfx_getNextNonce", cfx)
+	return cfx.GetNextNonce(address, toEpochOrBlockHashSlice(epoch)...)
 }
 
 func (api *cfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (types.Hash, error) {
@@ -241,9 +250,9 @@ func (api *cfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Byte
 	return cfx.SendRawTransaction(signedTx)
 }
 
-func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *types.Epoch) (hexutil.Bytes, error) {
+func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *types.EpochOrBlockHash) (hexutil.Bytes, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	api.inputEpochMetric.Update(epoch, "cfx_call", cfx)
+	api.inputEpochMetric.Update2(epoch, "cfx_call", cfx)
 	return cfx.Call(request, epoch)
 }
 
@@ -307,7 +316,7 @@ func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) 
 func (api *cfxAPI) EstimateGasAndCollateral(ctx context.Context, request types.CallRequest, epoch *types.Epoch) (types.Estimate, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_estimateGasAndCollateral", cfx)
-	return cfx.EstimateGasAndCollateral(request, toSlice(epoch)...)
+	return cfx.EstimateGasAndCollateral(request, toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) CheckBalanceAgainstTransaction(
@@ -315,7 +324,7 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(
 ) (types.CheckBalanceAgainstTransactionResponse, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_checkBalanceAgainstTransaction", cfx)
-	return cfx.CheckBalanceAgainstTransaction(account, contract, gas, price, storage, toSlice(epoch)...)
+	return cfx.CheckBalanceAgainstTransaction(account, contract, gas, price, storage, toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {
@@ -373,7 +382,7 @@ func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash)
 func (api *cfxAPI) GetAccount(ctx context.Context, address types.Address, epoch *types.Epoch) (types.AccountInfo, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getAccount", cfx)
-	return cfx.GetAccountInfo(address, toSlice(epoch)...)
+	return cfx.GetAccountInfo(address, toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetInterestRate(ctx context.Context, epoch *types.Epoch) (*hexutil.Big, error) {
@@ -385,7 +394,7 @@ func (api *cfxAPI) GetInterestRate(ctx context.Context, epoch *types.Epoch) (*he
 func (api *cfxAPI) GetAccumulateInterestRate(ctx context.Context, epoch *types.Epoch) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getAccumulateInterestRate", cfx)
-	return cfx.GetAccumulateInterestRate(toSlice(epoch)...)
+	return cfx.GetAccumulateInterestRate(toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetConfirmationRiskByHash(ctx context.Context, blockHash types.Hash) (*hexutil.Big, error) {
@@ -411,7 +420,7 @@ func (api *cfxAPI) ClientVersion(ctx context.Context) (string, error) {
 func (api *cfxAPI) GetSupplyInfo(ctx context.Context, epoch *types.Epoch) (types.TokenSupplyInfo, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getSupplyInfo", cfx)
-	return cfx.GetSupplyInfo(toSlice(epoch)...)
+	return cfx.GetSupplyInfo(toEpochSlice(epoch)...)
 }
 
 func (api *cfxAPI) GetAccountPendingInfo(ctx context.Context, address types.Address) (*types.AccountPendingInfo, error) {
