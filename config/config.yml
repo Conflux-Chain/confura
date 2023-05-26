@@ -1,6 +1,6 @@
 # Core space RPC proxy server configurations
 rpc:
-  # Available exposed modules are `cfx`, `txpool`, `pos`, `trace`, `gasstation`,
+  # Available exposed modules are `cfx`, `txpool`, `pos`, `trace`, `gasstation`, `debug`.
   # if left empty all public APIs will be exposed.
   exposedModules: []
   # Served HTTP endpoint

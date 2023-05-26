@@ -67,6 +67,10 @@ func (*RpcMetrics) InputEpoch(method, epoch string) Percentage {
 	return GetOrRegisterTimeWindowPercentageDefault("infura/rpc/input/epoch/%v/%v", method, epoch)
 }
 
+func (*RpcMetrics) InputBlockHash(method string) Percentage {
+	return GetOrRegisterTimeWindowPercentageDefault("infura/rpc/input/blockHash/%v", method)
+}
+
 func (*RpcMetrics) InputEpochGap(method string) metrics.Histogram {
 	return GetOrRegisterHistogram("infura/rpc/input/epoch/gap/%v", method)
 }

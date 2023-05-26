@@ -40,3 +40,12 @@ func (metric *InputEpochMetric) Update(epoch *types.Epoch, method string, cfx sd
 		}
 	}
 }
+
+func (metric *InputEpochMetric) Update2(ebh *types.EpochOrBlockHash, method string, cfx sdk.ClientOperator) {
+	_, _, ok := ebh.IsBlockHash()
+	Registry.RPC.InputBlockHash(method).Mark(ok)
+
+	if epoch, ok := ebh.IsEpoch(); ok {
+		metric.Update(epoch, method, cfx)
+	}
+}
