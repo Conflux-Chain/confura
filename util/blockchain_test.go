@@ -33,11 +33,7 @@ func TestNormalizeEthBlockNumber(t *testing.T) {
 
 	pendingBlockNum := w3types.PendingBlockNumber
 	blockNum, err = NormalizeEthBlockNumber(w3c, &pendingBlockNum, w3types.BlockNumber(0))
-	if blockNum != nil {
-		assert.NoError(t, err)
-	} else {
-		assert.NoError(t, err)
-	}
+	assert.NoError(t, err)
 
 	earlistBlockNum := w3types.EarliestBlockNumber
 	blockNum, err = NormalizeEthBlockNumber(w3c, &earlistBlockNum, w3types.BlockNumber(0))

@@ -48,11 +48,11 @@ func mustMarshalJSON(t require.TestingT, v interface{}) string {
 func TestGetBalance(t *testing.T) {
 	epoch := mustGetTestEpoch(t, types.EpochLatestConfirmed, 0)
 
-	b1, err := fullnode.GetBalance(wcfx, epoch)
+	b1, err := fullnode.GetBalance(wcfx, types.NewEpochOrBlockHashWithEpoch(epoch))
 	require.NoError(t, err)
 	require.NotNil(t, b1)
 
-	b2, err := infura.GetBalance(wcfx, epoch)
+	b2, err := infura.GetBalance(wcfx, types.NewEpochOrBlockHashWithEpoch(epoch))
 	require.NoError(t, err)
 	require.NotNil(t, b2)
 
