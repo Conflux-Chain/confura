@@ -32,7 +32,7 @@ func TestNormalizeEthBlockNumber(t *testing.T) {
 	assert.NotNil(t, blockNum)
 
 	pendingBlockNum := w3types.PendingBlockNumber
-	blockNum, err = NormalizeEthBlockNumber(w3c, &pendingBlockNum, w3types.BlockNumber(0))
+	_, err = NormalizeEthBlockNumber(w3c, &pendingBlockNum, w3types.BlockNumber(0))
 	assert.NoError(t, err)
 
 	earlistBlockNum := w3types.EarliestBlockNumber
