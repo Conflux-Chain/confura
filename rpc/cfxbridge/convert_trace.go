@@ -39,7 +39,7 @@ func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.Trace
 		Valid:               valid,
 		Type:                cfxTraceType,
 		EpochHash:           ConvertHashNullable(&ethTrace.BlockHash),
-		EpochNumber:         types.NewBigInt(ethTrace.BlockNumber),
+		EpochNumber:         types.NewBigInt(uint64(ethTrace.BlockNumber)),
 		BlockHash:           ConvertHashNullable(&ethTrace.BlockHash),
 		TransactionPosition: txPos,
 		TransactionHash:     ConvertHashNullable(ethTrace.TransactionHash),

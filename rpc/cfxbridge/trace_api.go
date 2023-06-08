@@ -6,6 +6,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/openweb3/web3go"
 	ethTypes "github.com/openweb3/web3go/types"
+	"github.com/sirupsen/logrus"
 )
 
 type TraceAPI struct {
@@ -24,6 +25,7 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 	ethBlockHash := *blockHash.ToCommonHash()
 	ethBlock, err := api.ethClient.Eth.BlockByHash(ethBlockHash, false)
 	if err != nil {
+		logrus.WithField("ethBlockHash", ethBlockHash).WithError(err).Info("api.ethClient.Eth.BlockByHash")
 		return nil, err
 	}
 
@@ -34,6 +36,7 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 	bnh := ethTypes.BlockNumberOrHashWithHash(ethBlockHash, true)
 	traces, err := api.ethClient.Trace.Blocks(bnh)
 	if err != nil {
+		logrus.WithField("bnh", bnh).WithError(err).Info("api.ethClient.Trace.Blocks")
 		return nil, err
 	}
 

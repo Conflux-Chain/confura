@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/sirupsen/logrus"
 )
 
@@ -14,7 +15,7 @@ var (
 
 type stackedTraceResult struct {
 	traceResult *types.LocalizedTrace
-	subTraces   uint
+	subTraces   hexutil.Uint64
 }
 
 // TraceBuilder builds traces in stack way and thread unsafe.
@@ -40,7 +41,7 @@ func (tb *TraceBuilder) Build() ([]types.LocalizedTrace, error) {
 	return tb.traces, nil
 }
 
-func (tb *TraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) error {
+func (tb *TraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces hexutil.Uint64) error {
 	// E.g. reward & suicide trace not supported in Conflux.
 	if trace == nil {
 		return nil
@@ -66,7 +67,7 @@ func (tb *TraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTrac
 	return tb.pop()
 }
 
-func (tb *TraceBuilder) push(traceResult *types.LocalizedTrace, subTraces uint) {
+func (tb *TraceBuilder) push(traceResult *types.LocalizedTrace, subTraces hexutil.Uint64) {
 	// Lazy initialize the stack, but thread unsafe.
 	if tb.stackedResults == nil {
 		tb.stackedResults = list.New()
@@ -135,7 +136,7 @@ func (ttb *TransactionTraceBuilder) Build() (*types.LocalizedTransactionTrace, b
 	return &ttb.txTrace, true, nil
 }
 
-func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) (bool, error) {
+func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces hexutil.Uint64) (bool, error) {
 	if trace == nil {
 		// ignore nil trace and continue to append other traces
 		return true, nil
@@ -175,7 +176,7 @@ func (btb *BlockTraceBuilder) Build() ([]types.LocalizedTransactionTrace, error)
 	return btb.txTraces, nil
 }
 
-func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) error {
+func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces hexutil.Uint64) error {
 	if trace == nil {
 		return nil
 	}
