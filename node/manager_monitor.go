@@ -38,7 +38,10 @@ func (m *Manager) ReportEpoch(nodeName string, epoch uint64) {
 
 // ReportUnhealthy reports unhealthy status of managed node to manager.
 func (m *Manager) ReportUnhealthy(nodeName string, remind bool, reason error) {
-	logger := logrus.WithError(reason).WithField("node", nodeName)
+	logger := logrus.WithFields(logrus.Fields{
+		"node":  nodeName,
+		"group": m.group,
+	}).WithError(reason)
 
 	// alert
 	if remind {
