@@ -8,7 +8,7 @@ import (
 
 type cfxDebugAPI struct{}
 
-func (api *cfxDebugAPI) GetEpochReceiptProofByTransaction(ctx context.Context, hash types.Hash) (proof *string, err error) {
+func (api *cfxDebugAPI) GetEpochReceiptProofByTransaction(ctx context.Context, hash types.Hash) (proof *types.EpochReceiptProof, err error) {
 	return GetCfxClientFromContext(ctx).Debug().GetEpochReceiptProofByTransaction(hash)
 }
 
