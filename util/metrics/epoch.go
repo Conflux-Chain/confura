@@ -42,9 +42,18 @@ func (metric *InputEpochMetric) Update(epoch *types.Epoch, method string, cfx sd
 }
 
 func (metric *InputEpochMetric) Update2(ebh *types.EpochOrBlockHash, method string, cfx sdk.ClientOperator) {
-	_, _, ok := ebh.IsBlockHash()
-	Registry.RPC.InputBlockHash(method).Mark(ok)
+	if ebh == nil { // default epoch
+		Registry.RPC.InputBlockHash(method).Mark(false)
+		metric.Update(nil, method, cfx)
+		return
+	}
 
+	if _, _, ok := ebh.IsBlockHash(); ok { // block hash
+		Registry.RPC.InputBlockHash(method).Mark(true)
+		return
+	}
+
+	Registry.RPC.InputBlockHash(method).Mark(false)
 	if epoch, ok := ebh.IsEpoch(); ok {
 		metric.Update(epoch, method, cfx)
 	}
