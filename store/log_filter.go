@@ -5,24 +5,21 @@ import (
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	web3Types "github.com/openweb3/web3go/types"
 
 	"github.com/pkg/errors"
 )
 
 const (
-	// Log filter constants
-	MaxLogBlockHashesSize  int    = 32
-	MaxLogFilterAddrCount         = 32
-	MaxLogFilterTopicCount        = 32
-	MaxLogEpochRange       uint64 = 1000
-	MaxLogBlockRange       uint64 = 1000
-	MaxLogLimit            uint64 = 10000 // adjust max log limit accordingly
+	// max number of event logs to return
+	MaxLogLimit = uint64(10000)
+
+	// max timeout to get event logs from store
+	TimeoutGetLogs = 3 * time.Second
 )
 
-var (
-	TimeoutGetLogs = 3 * time.Second
-
+var ( // common errors
 	ErrGetLogsQuerySetTooLarge = errors.New(
 		"query set is too large, please narrow down your filter condition",
 	)
@@ -36,6 +33,35 @@ var (
 		"query timeout with duration exceeds %v(s)", TimeoutGetLogs,
 	)
 )
+
+var ( // Log filter constants
+	MaxLogBlockHashesSize  int
+	MaxLogFilterAddrCount  int
+	MaxLogFilterTopicCount int
+
+	MaxLogEpochRange uint64
+	MaxLogBlockRange uint64
+)
+
+func init() {
+	var lfc struct {
+		MaxBlockHashCount int `default:"48"`
+		MaxAddressCount   int `default:"48"`
+		MaxTopicCount     int `default:"48"`
+
+		MaxSplitEpochRange uint64 `default:"1000"`
+		MaxSplitBlockRange uint64 `default:"1000"`
+	}
+
+	viper.MustUnmarshalKey("constraints.logfilter", &lfc)
+
+	MaxLogBlockHashesSize = lfc.MaxBlockHashCount
+	MaxLogFilterAddrCount = lfc.MaxAddressCount
+	MaxLogFilterTopicCount = lfc.MaxTopicCount
+
+	MaxLogEpochRange = lfc.MaxSplitEpochRange
+	MaxLogBlockRange = lfc.MaxSplitBlockRange
+}
 
 type LogFilter struct {
 	BlockFrom uint64

@@ -313,7 +313,7 @@ node:
 #     # Exposed RPC endpoint of virtual filter service for client request
 #     serviceRpcUrl: http://127.0.0.1:48545
 
-# # core space virtual filters configurations
+# # Core space virtual filters configurations
 # virtualFilters:
 #   # Served HTTP endpoint
 #   endpoint: ":42537"
@@ -325,3 +325,18 @@ node:
 #     enabled: false
 #     # Exposed RPC endpoint of virtual filter service for client request
 #     serviceRpcUrl: http://127.0.0.1:42537
+
+# # Global constraints
+# constraints:
+#   # Log filter constraint
+#   logfilter:
+#     # Maximum count of block hashes
+#     maxBlockHashCount: 48
+#     # Maximum count of address
+#     maxAddressCount: 48
+#     # Maximum count of topics
+#     maxTopicCount: 48
+#     # Maximum epoch range for the log filter split to the full node
+#     maxSplitEpochRange: 1000
+#     # Maximum block range for the log filter split to the full node
+#     maxSplitBlockRange: 1000
