@@ -73,8 +73,8 @@ github.com/Conflux-Chain/go-conflux-sdk v1.5.7-0.20230531063350-d91d6e50c19d/go.
 github.com/Conflux-Chain/go-conflux-util v0.0.0-20220907035343-2d1233bccd70/go.mod h1:dcfcQp/A6V0nu9LLqdcg8yv+lSg378JktLtuPUVcm4k=
 github.com/Conflux-Chain/go-conflux-util v0.1.1-0.20230518032210-314b940bbd35 h1:spIgym3k4UpSZctTe18ykgwEK9PE3cG7ZTsdoPXHrUk=
 github.com/Conflux-Chain/go-conflux-util v0.1.1-0.20230518032210-314b940bbd35/go.mod h1:w2Ns80q8u9GfEvzrd18QvZUtlP3EmzVq9w8lZuY8uwk=
-github.com/Conflux-Chain/web3pay-service v0.0.0-20230515055300-d90f034de8a0 h1:qOnAc0mdXCTlyNzhRtHuXB15szEeKnmFxhX1b4enK98=
-github.com/Conflux-Chain/web3pay-service v0.0.0-20230515055300-d90f034de8a0/go.mod h1:YCr1LGh6g2mgceQ5K+YBLxWK1Ahq2IgdTDoeZkXbgBY=
+github.com/Conflux-Chain/web3pay-service v0.0.0-20230609030113-dc3c4d42820a h1:3Rr/2Z/dCXx1PVh+VQns/R8f8niJ2jvWMViSGHPupJg=
+github.com/Conflux-Chain/web3pay-service v0.0.0-20230609030113-dc3c4d42820a/go.mod h1:YCr1LGh6g2mgceQ5K+YBLxWK1Ahq2IgdTDoeZkXbgBY=
 github.com/DATA-DOG/go-sqlmock v1.3.3/go.mod h1:f/Ixk793poVmq4qj/V1dPUg2JEAKC73Q5eFN3EC/SaM=
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/MoeYang/go-queue v0.0.0-20210407055646-c5a229ee466c h1:DNIBiioAJABM2cbYCKisRaAe7gU/q+ZY7krjU1bxorg=
