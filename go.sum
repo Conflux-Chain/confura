@@ -68,8 +68,8 @@ github.com/Azure/go-autorest/tracing v0.5.0/go.mod h1:r/s2XiOKccPW3HrqB+W0TQzfbt
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/Conflux-Chain/go-conflux-sdk v1.0.29/go.mod h1:eUYR736AUkH29rjeiPCLR2XXpH9stG2+NbztAXz1rJw=
-github.com/Conflux-Chain/go-conflux-sdk v1.5.7-0.20230531063350-d91d6e50c19d h1:Shne4O4931cfGtLk4KoFDjUX9Kv8MUQbgFu/T8rz89s=
-github.com/Conflux-Chain/go-conflux-sdk v1.5.7-0.20230531063350-d91d6e50c19d/go.mod h1:GUz2jHG1zFc8SmVlD6fKH8MU0IOKa+wN4wMzTnghuYg=
+github.com/Conflux-Chain/go-conflux-sdk v1.5.4-0.20230419065002-a39554e9a137 h1:vGYTsCEi2+hiMSagBLlxvkxkltU49X39e2PlVSi8J0E=
+github.com/Conflux-Chain/go-conflux-sdk v1.5.4-0.20230419065002-a39554e9a137/go.mod h1:AT2yegWF8WGQTUlM++6rGoLUnAY6P2MWvft9AgDoYb0=
 github.com/Conflux-Chain/go-conflux-util v0.0.0-20220907035343-2d1233bccd70/go.mod h1:dcfcQp/A6V0nu9LLqdcg8yv+lSg378JktLtuPUVcm4k=
 github.com/Conflux-Chain/go-conflux-util v0.1.1-0.20230518032210-314b940bbd35 h1:spIgym3k4UpSZctTe18ykgwEK9PE3cG7ZTsdoPXHrUk=
 github.com/Conflux-Chain/go-conflux-util v0.1.1-0.20230518032210-314b940bbd35/go.mod h1:w2Ns80q8u9GfEvzrd18QvZUtlP3EmzVq9w8lZuY8uwk=
@@ -594,6 +594,7 @@ github.com/onsi/gomega v1.10.5/go.mod h1:gza4q3jKQJijlu05nKWRCW/GavJumGt8aNRxWg7
 github.com/opentracing/opentracing-go v1.0.2/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/opentracing/opentracing-go v1.0.3-0.20180606204148-bd9c31933947/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
+github.com/openweb3/go-rpc-provider v0.3.0/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uFot6ZKh4QarD//eZ0=
 github.com/openweb3/go-rpc-provider v0.3.1/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uFot6ZKh4QarD//eZ0=
 github.com/openweb3/go-rpc-provider v0.3.2-0.20230427073643-a9b973086662 h1:cZ/ELKe6NDOxqNQW9SPIG4whLCCV/NZ4TPRRQcENVzc=
 github.com/openweb3/go-rpc-provider v0.3.2-0.20230427073643-a9b973086662/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uFot6ZKh4QarD//eZ0=
