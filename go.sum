@@ -624,8 +624,8 @@ github.com/russross/blackfriday/v2 v2.0.1/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQD
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/ryanuber/columnize v0.0.0-20160712163229-9b3edd62028f/go.mod h1:sm1tb6uqfes/u+d4ooFouqFdy9/2g9QGwK3SQygK0Ts=
 github.com/sagikazarmark/crypt v0.3.0/go.mod h1:uD/D+6UF4SrIR1uGEv7bBNkNqLGqUr43MRiaGWX1Nig=
-github.com/scroll-tech/web3go v0.0.0-20230331074055-99cbd5f26c3b h1:HXCyhPRLlmvh5GQ5+pXzjQZJgde2BJJAoJeTt+559eg=
-github.com/scroll-tech/web3go v0.0.0-20230331074055-99cbd5f26c3b/go.mod h1:nzov9bieJKvQFqJ1gIfvNn3LFO63pdp1C8dP4qv0TmA=
+github.com/scroll-tech/web3go v0.0.0-20230607200109-31182049a33b h1:7bkp4+6SFswmPYda+V/FZSivOD9eSrOcx4FFj0djyYo=
+github.com/scroll-tech/web3go v0.0.0-20230607200109-31182049a33b/go.mod h1:nzov9bieJKvQFqJ1gIfvNn3LFO63pdp1C8dP4qv0TmA=
 github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529/go.mod h1:DxrIzT+xaE7yg65j358z/aeFdxmN0P9QXhEzd20vsDc=
 github.com/segmentio/kafka-go v0.1.0/go.mod h1:X6itGqS9L4jDletMsxZ7Dz+JFWxM6JHfPOCvTvk+EJo=
 github.com/segmentio/kafka-go v0.2.0/go.mod h1:X6itGqS9L4jDletMsxZ7Dz+JFWxM6JHfPOCvTvk+EJo=
