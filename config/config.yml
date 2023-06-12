@@ -331,11 +331,11 @@ node:
 #   # Log filter constraint
 #   logfilter:
 #     # Maximum count of block hashes
-#     maxBlockHashCount: 48
+#     maxBlockHashCount: 32
 #     # Maximum count of address
-#     maxAddressCount: 48
+#     maxAddressCount: 32
 #     # Maximum count of topics
-#     maxTopicCount: 48
+#     maxTopicCount: 32
 #     # Maximum epoch range for the log filter split to the full node
 #     maxSplitEpochRange: 1000
 #     # Maximum block range for the log filter split to the full node
