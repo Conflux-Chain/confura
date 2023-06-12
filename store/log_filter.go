@@ -45,9 +45,9 @@ var ( // Log filter constants
 
 func init() {
 	var lfc struct {
-		MaxBlockHashCount int `default:"48"`
-		MaxAddressCount   int `default:"48"`
-		MaxTopicCount     int `default:"48"`
+		MaxBlockHashCount int `default:"32"`
+		MaxAddressCount   int `default:"32"`
+		MaxTopicCount     int `default:"32"`
 
 		MaxSplitEpochRange uint64 `default:"1000"`
 		MaxSplitBlockRange uint64 `default:"1000"`
