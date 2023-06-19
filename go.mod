@@ -35,4 +35,4 @@ require (
 
 replace github.com/openweb3/web3go => github.com/scroll-tech/web3go v0.0.0-20230607200109-31182049a33b
 
-replace github.com/openweb3/go-rpc-provider => github.com/scroll-tech/go-rpc-provider v0.0.0-20230619084629-1c1088e218fc
+replace github.com/openweb3/go-rpc-provider => github.com/scroll-tech/go-rpc-provider v0.0.0-20230619123848-99cc70301fd1
