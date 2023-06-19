@@ -568,10 +568,6 @@ github.com/onsi/gomega v1.10.5/go.mod h1:gza4q3jKQJijlu05nKWRCW/GavJumGt8aNRxWg7
 github.com/opentracing/opentracing-go v1.0.2/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/opentracing/opentracing-go v1.0.3-0.20180606204148-bd9c31933947/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
-github.com/openweb3/go-rpc-provider v0.2.2/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uFot6ZKh4QarD//eZ0=
-github.com/openweb3/go-rpc-provider v0.2.8/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uFot6ZKh4QarD//eZ0=
-github.com/openweb3/go-rpc-provider v0.2.9 h1:6IGACyqQ0CB0lodHPJTbgpLBivjyz7kdxk84o9bELMY=
-github.com/openweb3/go-rpc-provider v0.2.9/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uFot6ZKh4QarD//eZ0=
 github.com/openweb3/go-sdk-common v0.0.0-20220720074746-a7134e1d372c h1:BrPXZpkTdmZe5bNjSSnxWqL44X9FcZ3xftLcYNkIJ68=
 github.com/openweb3/go-sdk-common v0.0.0-20220720074746-a7134e1d372c/go.mod h1:0WCVKMiLiYEaHhpQWQ3rgLti/Fv/+JPRiB0sEoovwk8=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
@@ -624,6 +620,8 @@ github.com/russross/blackfriday/v2 v2.0.1/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQD
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/ryanuber/columnize v0.0.0-20160712163229-9b3edd62028f/go.mod h1:sm1tb6uqfes/u+d4ooFouqFdy9/2g9QGwK3SQygK0Ts=
 github.com/sagikazarmark/crypt v0.3.0/go.mod h1:uD/D+6UF4SrIR1uGEv7bBNkNqLGqUr43MRiaGWX1Nig=
+github.com/scroll-tech/go-rpc-provider v0.0.0-20230619084629-1c1088e218fc h1:M0q3AHLrDeSbfpjT1g6N5u8ySbMw0rVH6+pcwXyUJAc=
+github.com/scroll-tech/go-rpc-provider v0.0.0-20230619084629-1c1088e218fc/go.mod h1:DYz40TbzhzyTA06UFqGIKSXp0uFot6ZKh4QarD//eZ0=
 github.com/scroll-tech/web3go v0.0.0-20230607200109-31182049a33b h1:7bkp4+6SFswmPYda+V/FZSivOD9eSrOcx4FFj0djyYo=
 github.com/scroll-tech/web3go v0.0.0-20230607200109-31182049a33b/go.mod h1:nzov9bieJKvQFqJ1gIfvNn3LFO63pdp1C8dP4qv0TmA=
 github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529/go.mod h1:DxrIzT+xaE7yg65j358z/aeFdxmN0P9QXhEzd20vsDc=
