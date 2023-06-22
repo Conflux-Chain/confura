@@ -539,6 +539,14 @@ func (api *ethAPI) FeeHistory(
 	return w3c.Eth.FeeHistory(blockCount, lastBlock, rewardPercentiles)
 }
 
+// GetBalance returns the amount of wei for the given address in the state of the
+// given block number.
+func (api *ethAPI) GetProof(ctx context.Context, addr common.Address, storageKeys []string, blockNrOrHash web3Types.BlockNumberOrHash) (*web3Types.AccountResult, error) {
+	w3c := GetEthClientFromContext(ctx)
+	api.inputBlockMetric.Update2(&blockNrOrHash, "eth_getProof", w3c.Eth)
+	return w3c.Eth.GetProof(addr, storageKeys, &blockNrOrHash)
+}
+
 // The following RPC methods are not supported yet by the fullnode:
 // `eth_getFilterChanges`
 // `eth_getFilterLogs`
