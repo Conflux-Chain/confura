@@ -69,3 +69,8 @@ func (api *posAPI) GetLedgerInfoByBlockNumber(
 	ctx context.Context, blockNumber postypes.BlockNumber) (ledgerInfoWithSigs *postypes.LedgerInfoWithSignatures, err error) {
 	return GetCfxClientFromContext(ctx).Pos().GetLedgerInfoByBlockNumber(blockNumber)
 }
+
+func (api *posAPI) GetLedgerInfoByEpochAndRound(
+	ctx context.Context, epochNumber hexutil.Uint64, round hexutil.Uint64) (ledgerInfoWithSigs *postypes.LedgerInfoWithSignatures, err error) {
+	return GetCfxClientFromContext(ctx).Pos().GetLedgerInfoByEpochAndRound(epochNumber, round)
+}

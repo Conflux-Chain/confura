@@ -113,6 +113,12 @@ func (api *cfxAPI) GetVoteList(ctx context.Context, address types.Address, epoch
 	return cfx.GetVoteList(address, toEpochSlice(epoch)...)
 }
 
+func (api *cfxAPI) GetCollateralInfo(ctx context.Context, epoch *types.Epoch) (info types.StorageCollateralInfo, err error) {
+	cfx := GetCfxClientFromContext(ctx)
+	api.inputEpochMetric.Update(epoch, "cfx_getCollateralInfo", cfx)
+	return cfx.GetCollateralInfo(epoch)
+}
+
 func (api *cfxAPI) GetCollateralForStorage(ctx context.Context, address types.Address, epoch *types.Epoch) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_getCollateralForStorage", cfx)
@@ -447,8 +453,10 @@ func (api *cfxAPI) GetPoSRewardByEpoch(ctx context.Context, epoch types.Epoch) (
 	return cfx.GetPoSRewardByEpoch(epoch)
 }
 
-func (api *cfxAPI) GetParamsFromVote(ctx context.Context, epoch ...*types.Epoch) (postypes.VoteParamsInfo, error) {
-	return GetCfxClientFromContext(ctx).GetParamsFromVote(epoch...)
+func (api *cfxAPI) GetParamsFromVote(ctx context.Context, epoch *types.Epoch) (postypes.VoteParamsInfo, error) {
+	cfx := GetCfxClientFromContext(ctx)
+	api.inputEpochMetric.Update(epoch, "cfx_getParamsFromVote", cfx)
+	return GetCfxClientFromContext(ctx).GetParamsFromVote(epoch)
 }
 
 func (h *cfxAPI) collectHitStats(method string, hit bool) {
