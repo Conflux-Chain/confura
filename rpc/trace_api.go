@@ -21,6 +21,6 @@ func (api *traceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]type
 	return GetCfxClientFromContext(ctx).Trace().GetTransactionTraces(txHash)
 }
 
-func (api *traceAPI) Epoch(ctx context.Context, epoch types.Epoch) ([]types.LocalizedTrace, error) {
+func (api *traceAPI) Epoch(ctx context.Context, epoch types.Epoch) (types.EpochTrace, error) {
 	return GetCfxClientFromContext(ctx).Trace().GetEpochTraces(epoch)
 }
