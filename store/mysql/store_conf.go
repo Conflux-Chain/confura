@@ -70,8 +70,11 @@ func (cs *confStore) LoadConfig(confNames ...string) (map[string]interface{}, er
 
 func (cs *confStore) StoreConfig(confName string, confVal interface{}) error {
 	return cs.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "name"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{"value": confVal}),
+		Columns: []clause.Column{{Name: "name"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"value":      confVal,
+			"updated_at": gorm.Expr("CURRENT_TIMESTAMP"),
+		}),
 	}).Create(&conf{
 		Name:  confName,
 		Value: confVal.(string),
