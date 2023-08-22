@@ -5,6 +5,13 @@ import (
 	"io"
 	"strings"
 
+	// Due to some unknown reason, Go compiler tends to init this pkg
+	// before `config` pkg, which makes loading from viper in vain as
+	// viper is not intialized yet.
+	//
+	// ensure loading `config` pkg first
+	_ "github.com/Conflux-Chain/confura/config"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/sirupsen/logrus"
