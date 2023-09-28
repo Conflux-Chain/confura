@@ -10,7 +10,7 @@ services:
       - 22530:22530
     restart: unless-stopped
     environment:
-      - INFURA_LOG_LEVEL=debug
+      - INFURA_LOG_LEVEL=info
     container_name: confura-node-management
 
   ethnode-management:
@@ -20,7 +20,7 @@ services:
       - 28530:28530
     restart: unless-stopped
     environment:
-      - INFURA_LOG_LEVEL=debug
+      - INFURA_LOG_LEVEL=info
     container_name: confura-ethnode-management
 
   # blockchain sync
@@ -139,7 +139,7 @@ services:
       - "3306"
     restart: unless-stopped
     environment:
-      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_ROOT_PASSWORD=&&*&&&(*&*(Y*^*(
     volumes:
       - db-data:/var/lib/mysql
     container_name: confura-database
@@ -147,7 +147,7 @@ services:
   redis:
     image: redis:6.2
     ports:
-      - "6379"
+      - "8090"
     restart: unless-stopped
     volumes:
       - redis-data:/data
