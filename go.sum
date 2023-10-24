@@ -68,8 +68,8 @@ github.com/Azure/go-autorest/tracing v0.5.0/go.mod h1:r/s2XiOKccPW3HrqB+W0TQzfbt
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/Conflux-Chain/go-conflux-sdk v1.0.29/go.mod h1:eUYR736AUkH29rjeiPCLR2XXpH9stG2+NbztAXz1rJw=
-github.com/Conflux-Chain/go-conflux-sdk v1.5.8 h1:AJLSnevYBONzy7SwX3Nyqb1BUoZVahc7o73t8k5vUpg=
-github.com/Conflux-Chain/go-conflux-sdk v1.5.8/go.mod h1:Gwqy5/enBtw7hS7zSuOsa+F4OMonSqgHSN9N/oFDzos=
+github.com/Conflux-Chain/go-conflux-sdk v1.5.9-0.20231024084505-89fba6d1d768 h1:9fwtSvXJ1u/xsD/PNNBmIdA2frLxmGMSouf7Z426pSo=
+github.com/Conflux-Chain/go-conflux-sdk v1.5.9-0.20231024084505-89fba6d1d768/go.mod h1:Gwqy5/enBtw7hS7zSuOsa+F4OMonSqgHSN9N/oFDzos=
 github.com/Conflux-Chain/go-conflux-util v0.0.0-20220907035343-2d1233bccd70/go.mod h1:dcfcQp/A6V0nu9LLqdcg8yv+lSg378JktLtuPUVcm4k=
 github.com/Conflux-Chain/go-conflux-util v0.1.1-0.20230518032210-314b940bbd35 h1:spIgym3k4UpSZctTe18ykgwEK9PE3cG7ZTsdoPXHrUk=
 github.com/Conflux-Chain/go-conflux-util v0.1.1-0.20230518032210-314b940bbd35/go.mod h1:w2Ns80q8u9GfEvzrd18QvZUtlP3EmzVq9w8lZuY8uwk=
