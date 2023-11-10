@@ -198,11 +198,11 @@ func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 
 // GetStorageAt returns the value from a storage position at a given address.
 func (api *ethAPI) GetStorageAt(
-	ctx context.Context, address common.Address, location *hexutil.Big, blockNumOrHash *web3Types.BlockNumberOrHash,
+	ctx context.Context, address common.Address, key string, blockNumOrHash *web3Types.BlockNumberOrHash,
 ) (common.Hash, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getStorageAt", w3c.Eth)
-	return w3c.Eth.StorageAt(address, (*big.Int)(location), blockNumOrHash)
+	return w3c.Eth.StorageAt(address, common.HexToHash(key).Big(), blockNumOrHash)
 }
 
 // GetCode returns the contract code of the given account.
