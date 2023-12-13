@@ -53,7 +53,7 @@ func (h *EthTxnHandler) SendRawTxn(w3c *node.Web3goClient, group node.Group, sig
 	}
 
 	// replicate raw txn sending synchronously
-	h.replicateRawTxnSendingByGroup(group, signedTx)
+	// h.replicateRawTxnSendingByGroup(group, signedTx)
 	return txHash, err
 }
 
