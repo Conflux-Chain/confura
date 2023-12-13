@@ -55,7 +55,7 @@ func (h *CfxTxnHandler) SendRawTxn(cfx sdk.ClientOperator, group node.Group, sig
 	}
 
 	// replicate raw txn sending synchronously
-	h.replicateRawTxnSendingByGroup(group, signedTx)
+	// h.replicateRawTxnSendingByGroup(group, signedTx)
 	return txHash, err
 }
 
