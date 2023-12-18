@@ -14,6 +14,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -139,9 +140,10 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 				checkpoint()
 			case <-ticker.C:
 				if err := syncer.doTicker(ticker); err != nil {
-					logrus.WithError(err).
-						WithField("epochFrom", syncer.epochFrom).
-						Error("Db syncer failed to sync epoch data")
+					logutil.DefaultETLogger.Log(
+						logrus.WithField("epochFrom", syncer.epochFrom),
+						err, "Db syncer failed to sync epoch data",
+					)
 				}
 			}
 		}
