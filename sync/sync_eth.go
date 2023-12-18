@@ -11,6 +11,7 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
+	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
@@ -94,9 +95,10 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 			return
 		case <-ticker.C:
 			if err := syncer.doTicker(ticker); err != nil {
-				logrus.WithError(err).
-					WithField("fromBlock", syncer.fromBlock).
-					Error("ETH syncer failed to sync block data")
+				logutil.DefaultETLogger.Log(
+					logrus.WithField("fromBlock", syncer.fromBlock),
+					err, "ETH syncer failed to sync epoch data",
+				)
 			}
 		}
 	}

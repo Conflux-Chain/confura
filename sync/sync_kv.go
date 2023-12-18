@@ -11,6 +11,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -139,7 +140,9 @@ func (syncer *KVCacheSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 				metrics.Registry.Sync.SyncOnceQps("cfx", "cache", err).UpdateSince(start)
 
 				if err != nil {
-					logger.WithError(err).Error("Cache syncer failed to sync epoch data")
+					logutil.DefaultETLogger.Log(
+						logger, err, "Cache syncer failed to sync epoch data",
+					)
 				}
 
 				if syncer.syncWindow.isEmpty() {

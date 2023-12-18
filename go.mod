@@ -4,7 +4,7 @@ go 1.15
 
 require (
 	github.com/Conflux-Chain/go-conflux-sdk v1.5.9-0.20231024084505-89fba6d1d768
-	github.com/Conflux-Chain/go-conflux-util v0.1.1-0.20230518032210-314b940bbd35
+	github.com/Conflux-Chain/go-conflux-util v0.1.1-0.20231218085444-cfb159984662
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20230609030113-dc3c4d42820a
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
