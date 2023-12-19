@@ -5,6 +5,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/util/alert"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/pprof"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
@@ -25,6 +26,8 @@ func init() {
 	viper.MustInit(viperEnvPrefix)
 	// init logger
 	initLogger()
+	// init pprof
+	pprof.MustInit()
 	// init metrics
 	metrics.Init()
 	// init alert

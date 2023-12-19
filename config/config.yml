@@ -340,3 +340,10 @@ node:
 #     maxSplitEpochRange: 1000
 #     # Maximum block range for the log filter split to the full node
 #     maxSplitBlockRange: 1000
+
+# # Go performance profiling
+# pprof:
+#   # Switch to turn on/off pprof
+#   enabled: false
+#   # The endpoint to start a http server for pprof
+#   httpEndpoint: ":6060"
