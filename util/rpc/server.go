@@ -52,11 +52,7 @@ func MustNewServer(name string, rpcs map[string]interface{}, middlewares ...hand
 	}).Info("RPC server APIs registered")
 
 	httpServer := http.Server{
-		Handler: NewHTTPHandlerStack(
-			handler,
-			WithCorsHandler([]string{"*"}),
-			WithVHostHandler([]string{"*"}),
-		),
+		Handler: newHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
 	}
 
 	viper.SetDefault("rpc.wsPingInterval", defaultWsPingInterval)

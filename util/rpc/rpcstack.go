@@ -11,33 +11,17 @@ import (
 	"github.com/rs/cors"
 )
 
-type httpHandlerMiddleware func(next http.Handler) http.Handler
+// newHTTPHandlerStack returns wrapped http-related handlers
+func newHTTPHandlerStack(srv http.Handler, cors []string, vhosts []string) http.Handler {
+	// Wrap the CORS-handler within a host-handler
+	handler := newCorsHandler(srv, cors)
+	handler = newVHostHandler(vhosts, handler)
 
-// NewHTTPHandlerStack returns wrapped http-related handlers
-func NewHTTPHandlerStack(srv http.Handler, chains ...httpHandlerMiddleware) http.Handler {
-	for i := 0; i < len(chains); i++ {
-		srv = chains[i](srv)
-	}
+	// Due to potential memory leak (https://github.com/gin-contrib/gzip/issues/26) under
+	// high throughtout requests, we disable Gzip compressing for more memory efficiency.
+	// handler = newGzipHandler(handler)
 
-	return srv
-}
-
-func WithCorsHandler(allowedOrigins []string) httpHandlerMiddleware {
-	return func(next http.Handler) http.Handler {
-		return newCorsHandler(next, allowedOrigins)
-	}
-}
-
-func WithVHostHandler(vhosts []string) httpHandlerMiddleware {
-	return func(next http.Handler) http.Handler {
-		return newVHostHandler(vhosts, next)
-	}
-}
-
-func WithGzipHandler() httpHandlerMiddleware {
-	return func(next http.Handler) http.Handler {
-		return newGzipHandler(next)
-	}
+	return handler
 }
 
 func newCorsHandler(srv http.Handler, allowedOrigins []string) http.Handler {
