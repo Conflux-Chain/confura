@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -53,7 +52,7 @@ func MustNewServer(name string, rpcs map[string]interface{}, middlewares ...hand
 	}).Info("RPC server APIs registered")
 
 	httpServer := http.Server{
-		Handler: node.NewHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
+		Handler: newHTTPHandlerStack(handler, []string{"*"}, []string{"*"}),
 	}
 
 	viper.SetDefault("rpc.wsPingInterval", defaultWsPingInterval)
