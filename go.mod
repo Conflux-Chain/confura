@@ -18,6 +18,7 @@ require (
 	github.com/openweb3/web3go v0.2.5
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
+	github.com/rs/cors v1.7.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/viper v1.10.0
