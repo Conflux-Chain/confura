@@ -11,6 +11,7 @@ import (
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/client"
 	ethTypes "github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 )
 
 type CfxAPI struct {
@@ -171,17 +172,20 @@ func (api *CfxAPI) Call(ctx context.Context, request EthCallRequest, bn *EthBloc
 }
 
 func (api *CfxAPI) GetLogs(ctx context.Context, filter EthLogFilter) ([]types.Log, error) {
-	logs, err := api.eth.Logs(filter.ToFilterQuery())
-	if err != nil {
-		return nil, err
-	}
+	return nil, errors.New("not supported yet")
+	/*
+		logs, err := api.eth.Logs(filter.ToFilterQuery())
+		if err != nil {
+			return nil, err
+		}
 
-	result := make([]types.Log, len(logs))
-	for i := range logs {
-		result[i] = *ConvertLog(&logs[i], api.ethNetworkId)
-	}
+		result := make([]types.Log, len(logs))
+		for i := range logs {
+			result[i] = *ConvertLog(&logs[i], api.ethNetworkId)
+		}
 
-	return result, nil
+		return result, nil
+	*/
 }
 
 func (api *CfxAPI) GetTransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, error) {
