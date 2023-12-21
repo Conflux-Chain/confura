@@ -76,7 +76,7 @@ func startRpcService(*cobra.Command, []string) {
 	}
 
 	if rpcOpt.cfxBridgeEnabled { // start core space bridge RPC
-		startNativeSpaceBridgeRpcServer(ctx, &wg)
+		startNativeSpaceBridgeRpcServer(ctx, &wg, storeCtx)
 	}
 
 	util.GracefulShutdown(&wg, cancel)
@@ -204,12 +204,22 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 }
 
 // startNativeSpaceBridgeRpcServer starts core space bridge RPC server
-func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup) {
+func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+	// Initialize ratelimit registry
+	var rateReg *rate.Registry
+	if storeCtx.CfxDB != nil {
+		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyInfos)
+		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewCfxValidator)
+
+		// periodically reload rate limit settings from db
+		go rateReg.AutoReload(15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs)
+	}
+
 	var config rpc.CfxBridgeServerConfig
 
 	viperutil.MustUnmarshalKey("rpc.cfxBridge", &config)
 	logrus.WithField("config", config).Info("Start to run cfx bridge rpc server")
 
-	server := rpc.MustNewNativeSpaceBridgeServer(&config)
+	server := rpc.MustNewNativeSpaceBridgeServer(rateReg, &config)
 	go server.MustServeGraceful(ctx, wg, config.Endpoint, rpcutil.ProtocolHttp)
 }
