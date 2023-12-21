@@ -77,7 +77,7 @@ type CfxBridgeServerConfig struct {
 	Endpoint       string `default:":32537"`
 }
 
-func MustNewNativeSpaceBridgeServer(config *CfxBridgeServerConfig) *rpc.Server {
+func MustNewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeServerConfig) *rpc.Server {
 	allApis, err := nativeSpaceBridgeApis(config.EthNode, config.CfxNode)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server")
@@ -88,7 +88,8 @@ func MustNewNativeSpaceBridgeServer(config *CfxBridgeServerConfig) *rpc.Server {
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server with bad exposed modules")
 	}
 
-	return rpc.MustNewServer(nativeSpaceBridgeRpcServerName, exposedApis)
+	middleware := httpMiddleware(registry, nil)
+	return rpc.MustNewServer(nativeSpaceBridgeRpcServerName, exposedApis, middleware)
 }
 
 // MustNewDebugServer new debug RPC server for internal debugging use.
