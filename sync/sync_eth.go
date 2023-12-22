@@ -49,6 +49,8 @@ type EthSyncer struct {
 	syncIntervalCatchUp time.Duration
 	// window to cache block info
 	epochPivotWin *epochPivotWindow
+	// error tolerant logger
+	etLogger *logutil.ErrorTolerantLogger
 }
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
@@ -70,6 +72,7 @@ func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
+		etLogger:            logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 	}
 
 	// Load last sync block information
@@ -94,12 +97,11 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 			logrus.Info("ETH syncer shutdown ok")
 			return
 		case <-ticker.C:
-			if err := syncer.doTicker(ticker); err != nil {
-				logutil.DefaultETLogger.Log(
-					logrus.WithField("fromBlock", syncer.fromBlock),
-					err, "ETH syncer failed to sync epoch data",
-				)
-			}
+			err := syncer.doTicker(ticker)
+			syncer.etLogger.Log(
+				logrus.WithField("fromBlock", syncer.fromBlock),
+				err, "ETH syncer failed to sync epoch data",
+			)
 		}
 	}
 }
