@@ -51,6 +51,8 @@ type KVCacheSyncer struct {
 	syncTimerCh <-chan time.Time
 	// window to cache epoch pivot info
 	epochPivotWin *epochPivotWindow
+	// error tolerant logger
+	etLogger *logutil.ErrorTolerantLogger
 }
 
 // MustNewKVCacheSyncer creates an instance of KVCacheSyncer to sync
@@ -71,6 +73,7 @@ func MustNewKVCacheSyncer(cfx sdk.ClientOperator, cache store.CacheStore) *KVCac
 		subEpochCh:          make(chan uint64, conf.Sub.Buffer),
 		checkPointCh:        make(chan bool, 2),
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
+		etLogger:            logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 	}
 
 	// Ensure epoch data validity in cache
@@ -139,11 +142,7 @@ func (syncer *KVCacheSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 				err := syncer.syncOnce()
 				metrics.Registry.Sync.SyncOnceQps("cfx", "cache", err).UpdateSince(start)
 
-				if err != nil {
-					logutil.DefaultETLogger.Log(
-						logger, err, "Cache syncer failed to sync epoch data",
-					)
-				}
+				syncer.etLogger.Log(logger, err, "Cache syncer failed to sync epoch data")
 
 				if syncer.syncWindow.isEmpty() {
 					syncer.syncTimerCh = nil

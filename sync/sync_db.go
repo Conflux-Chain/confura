@@ -68,6 +68,8 @@ type DatabaseSyncer struct {
 	epochPivotWin *epochPivotWindow
 	// sync is ready only after fast catch-up is completed
 	catchupCompleted uint32
+	// error tolerant logger
+	etLogger *logutil.ErrorTolerantLogger
 }
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
@@ -87,6 +89,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 		pivotSwitchEventCh:  make(chan *pivotSwitchEvent, conf.Sub.Buffer),
 		checkPointCh:        make(chan bool, 2),
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
+		etLogger:            logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 	}
 
 	// Ensure epoch data validity in database
@@ -139,12 +142,11 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 			case <-syncer.checkPointCh:
 				checkpoint()
 			case <-ticker.C:
-				if err := syncer.doTicker(ticker); err != nil {
-					logutil.DefaultETLogger.Log(
-						logrus.WithField("epochFrom", syncer.epochFrom),
-						err, "Db syncer failed to sync epoch data",
-					)
-				}
+				err := syncer.doTicker(ticker)
+				syncer.etLogger.Log(
+					logrus.WithField("epochFrom", syncer.epochFrom),
+					err, "Db syncer failed to sync epoch data",
+				)
 			}
 		}
 	}
