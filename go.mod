@@ -10,7 +10,8 @@ require (
 	github.com/buraksezer/consistent v0.9.0
 	github.com/cespare/xxhash v1.1.0
 	github.com/ethereum/go-ethereum v1.10.15
-	github.com/go-redis/redis/v8 v8.8.2
+	github.com/go-redis/redis/v8 v8.11.4
+	github.com/go-redsync/redsync/v4 v4.11.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/montanaflynn/stats v0.6.6
@@ -22,7 +23,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/viper v1.10.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.8.3
 	github.com/zealws/golang-ring v0.0.0-20210116075443-7c86fdb43134
 	go.uber.org/multierr v1.6.0
 	golang.org/x/time v0.0.0-20220411224347-583f2d630306

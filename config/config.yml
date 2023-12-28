@@ -347,3 +347,10 @@ node:
 #   enabled: false
 #   # The endpoint to start a http server for pprof
 #   httpEndpoint: ":6060"
+
+# # Redis distributed locking
+# redlock:
+#   # Switch to turn on/off redlock
+#   enabled: false
+#   # Redis cluster
+#   redisUrls: [redis://<user>:<pass>@localhost:6379/<db>]
