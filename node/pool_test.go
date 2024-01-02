@@ -1,7 +1,6 @@
 package node
 
 import (
-	"context"
 	"math/rand"
 	"strconv"
 	"testing"
@@ -34,11 +33,7 @@ type dummyNode struct {
 }
 
 func newDummyNode(group Group, name, url string, hm HealthMonitor) (*dummyNode, error) {
-	_, cancel := context.WithCancel(context.Background())
-	n := &dummyNode{newBaseNode(name, url, cancel)}
-
-	n.atomicStatus.Store(NewStatus(group, name))
-	return n, nil
+	return &dummyNode{newBaseNode(name, url, nil)}, nil
 }
 
 func (n *dummyNode) LatestEpochNumber() (uint64, error) {
