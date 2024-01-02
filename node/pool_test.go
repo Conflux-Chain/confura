@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	groupNodeUrls = map[Group][]string{
+	testGroupNodeUrls = map[Group][]string{
 		"cfxfilter": {
 			"http://127.0.0.1:25372",
 		},
@@ -46,7 +46,7 @@ func BenchmarkNodePoolRoute(b *testing.B) {
 	})
 
 	var groups []Group
-	for grp, urls := range groupNodeUrls {
+	for grp, urls := range testGroupNodeUrls {
 		pool.add(grp, urls...)
 		groups = append(groups, grp)
 	}
