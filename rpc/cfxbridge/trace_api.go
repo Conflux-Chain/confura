@@ -9,20 +9,22 @@ import (
 )
 
 type TraceAPI struct {
-	ethClient    *web3go.Client
+	w3c          *web3go.Client
 	ethNetworkId uint32
 }
 
-func NewTraceAPI(ethClient *web3go.Client, ethNetworkId uint32) *TraceAPI {
+func NewTraceAPI(w3Client *web3go.Client, ethNetworkId uint32) *TraceAPI {
 	return &TraceAPI{
-		ethClient:    ethClient,
+		w3c:          w3Client,
 		ethNetworkId: ethNetworkId,
 	}
 }
 
 func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.LocalizedBlockTrace, error) {
+	w3c := api.w3c.WithContext(ctx)
+
 	ethBlockHash := *blockHash.ToCommonHash()
-	ethBlock, err := api.ethClient.Eth.BlockByHash(ethBlockHash, false)
+	ethBlock, err := w3c.Eth.BlockByHash(ethBlockHash, false)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +34,7 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 	}
 
 	bnh := ethTypes.BlockNumberOrHashWithHash(ethBlockHash, true)
-	traces, err := api.ethClient.Trace.Blocks(bnh)
+	traces, err := w3c.Trace.Blocks(bnh)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +70,7 @@ func (api *TraceAPI) Filter(ctx context.Context, filter types.TraceFilter) ([]ty
 }
 
 func (api *TraceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]types.LocalizedTrace, error) {
-	traces, err := api.ethClient.Trace.Transactions(*txHash.ToCommonHash())
+	traces, err := api.w3c.WithContext(ctx).Trace.Transactions(*txHash.ToCommonHash())
 	if err != nil {
 		return nil, err
 	}

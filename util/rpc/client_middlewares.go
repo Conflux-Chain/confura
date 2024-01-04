@@ -6,10 +6,34 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
+	"github.com/openweb3/go-rpc-provider"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/sirupsen/logrus"
+	"github.com/valyala/fasthttp"
 )
+
+var ctxKeyToHeaderKeys = map[handlers.CtxKey]string{
+	handlers.CtxKeyAccessToken: "Access-Token",
+	handlers.CtxKeyReqOrigin:   "Origin",
+	handlers.CtxKeyUserAgent:   "User-Agent",
+	handlers.CtxKeyRealIP:      "X-Real-Ip",
+}
+
+// HookRedirectHttpHeader registers an event handler before sending client HTTP request,
+// which will forward HTTP headers to the requested RPC service.
+func HookRedirectHttpHeader() {
+	rpc.RegisterBeforeSendHttp(func(ctx context.Context, req *fasthttp.Request) error {
+		for ctxKey, header := range ctxKeyToHeaderKeys {
+			if val, ok := ctx.Value(ctxKey).(string); ok {
+				req.Header.Set(header, val)
+			}
+		}
+
+		return nil
+	})
+}
 
 func Url2NodeName(url string) string {
 	nodeName := strings.ToLower(url)
