@@ -15,7 +15,7 @@ import (
 )
 
 // HookRedirectHttpHeader registers an event handler before sending client HTTP request,
-// which will forward the HTTP header to the requested RPC service.
+// which will forward HTTP headers to the requested RPC service.
 func HookRedirectHttpHeader() {
 	ctxKeyToHeaderKeys := map[handlers.CtxKey]string{
 		handlers.CtxKeyAccessToken: "Access-Token",

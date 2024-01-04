@@ -105,7 +105,7 @@ func GetAccessToken(r *http.Request) string {
 	}
 
 	// Access token can be passed in with the following two ways:
-	// Appended after the root path with the pattern: http://example.com/${accessToken}.
+	// Appended after the root path with pattern: http://example.com/${accessToken}.
 	key := strings.TrimLeft(r.URL.EscapedPath(), "/")
 	if idx := strings.Index(key, "/"); idx > 0 {
 		key = key[:idx]
