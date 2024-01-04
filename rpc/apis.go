@@ -150,6 +150,10 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 	}
 	rpc.HookMiddlewares(cfx.Provider(), cfxNodeURL, "cfx")
 
+	// Hook an event handler to reidrect HTTP headers for the sdk client request
+	// because we could use `Confura` RPC service as our client endpoint for `cfxBridge`.
+	rpc.HookRedirectHttpHeader()
+
 	return []API{
 		{
 			Namespace: "cfx",

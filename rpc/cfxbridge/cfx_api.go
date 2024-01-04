@@ -9,28 +9,25 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/openweb3/web3go"
-	"github.com/openweb3/web3go/client"
 	ethTypes "github.com/openweb3/web3go/types"
 )
 
 type CfxAPI struct {
-	ethClient    *web3go.Client
-	eth          *client.RpcEthClient
+	w3c          *web3go.Client
 	cfx          *sdk.Client
 	ethNetworkId uint32
 }
 
-func NewCfxAPI(ethClient *web3go.Client, ethNetId uint32, cfxClient *sdk.Client) *CfxAPI {
+func NewCfxAPI(w3client *web3go.Client, ethNetId uint32, cfxClient *sdk.Client) *CfxAPI {
 	return &CfxAPI{
-		ethClient:    ethClient,
-		eth:          ethClient.Eth,
+		w3c:          w3client,
 		cfx:          cfxClient,
 		ethNetworkId: ethNetId,
 	}
 }
 
 func (api *CfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
-	return NormalizeBig(api.eth.GasPrice())
+	return NormalizeBig(api.w3c.WithContext(ctx).Eth.GasPrice())
 }
 
 func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexutil.Big, error) {
@@ -39,11 +36,11 @@ func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexuti
 		epoch = types.EpochLatestState
 	}
 
-	return api.cfx.GetEpochNumber(epoch)
+	return api.cfx.WithContext(ctx).GetEpochNumber(epoch)
 }
 
 func (api *CfxAPI) GetBalance(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
-	return NormalizeBig(api.eth.Balance(address.value, bn.ToArg()))
+	return NormalizeBig(api.w3c.WithContext(ctx).Eth.Balance(address.value, bn.ToArg()))
 }
 
 func (api *CfxAPI) GetAdmin(ctx context.Context, contract EthAddress, bn *EthBlockNumber) (*string, error) {
@@ -77,11 +74,11 @@ func (api *CfxAPI) GetCollateralForStorage(ctx context.Context, address EthAddre
 }
 
 func (api *CfxAPI) GetCode(ctx context.Context, contract EthAddress, bn *EthBlockNumber) (hexutil.Bytes, error) {
-	return api.eth.CodeAt(contract.value, bn.ToArg())
+	return api.w3c.WithContext(ctx).Eth.CodeAt(contract.value, bn.ToArg())
 }
 
 func (api *CfxAPI) GetStorageAt(ctx context.Context, address EthAddress, position *hexutil.Big, bn *EthBlockNumber) (common.Hash, error) {
-	return api.eth.StorageAt(address.value, position.ToInt(), bn.ToArg())
+	return api.w3c.WithContext(ctx).Eth.StorageAt(address.value, position.ToInt(), bn.ToArg())
 }
 
 func (api *CfxAPI) GetStorageRoot(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*types.StorageRoot, error) {
@@ -89,7 +86,7 @@ func (api *CfxAPI) GetStorageRoot(ctx context.Context, address EthAddress, bn *E
 }
 
 func (api *CfxAPI) GetBlockByHash(ctx context.Context, blockHash common.Hash, includeTxs bool) (interface{}, error) {
-	block, err := api.eth.BlockByHash(blockHash, includeTxs)
+	block, err := api.w3c.WithContext(ctx).Eth.BlockByHash(blockHash, includeTxs)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +105,7 @@ func (api *CfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockH
 		return nil, ErrInvalidBlockAssumption
 	}
 
-	block, err := api.eth.BlockByHash(blockHash, true)
+	block, err := api.w3c.WithContext(ctx).Eth.BlockByHash(blockHash, true)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +122,7 @@ func (api *CfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockH
 }
 
 func (api *CfxAPI) GetBlockByEpochNumber(ctx context.Context, bn EthBlockNumber, includeTxs bool) (interface{}, error) {
-	block, err := api.eth.BlockByNumber(bn.Value(), includeTxs)
+	block, err := api.w3c.WithContext(ctx).Eth.BlockByNumber(bn.Value(), includeTxs)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +143,7 @@ func (api *CfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil
 }
 
 func (api *CfxAPI) GetBestBlockHash(ctx context.Context) (common.Hash, error) {
-	block, err := api.eth.BlockByNumber(ethTypes.LatestBlockNumber, false)
+	block, err := api.w3c.WithContext(ctx).Eth.BlockByNumber(ethTypes.LatestBlockNumber, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -159,19 +156,19 @@ func (api *CfxAPI) GetBestBlockHash(ctx context.Context) (common.Hash, error) {
 }
 
 func (api *CfxAPI) GetNextNonce(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
-	return NormalizeBig(api.eth.TransactionCount(address.value, bn.ToArg()))
+	return NormalizeBig(api.w3c.WithContext(ctx).Eth.TransactionCount(address.value, bn.ToArg()))
 }
 
 func (api *CfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Bytes) (common.Hash, error) {
-	return api.eth.SendRawTransaction(signedTx)
+	return api.w3c.WithContext(ctx).Eth.SendRawTransaction(signedTx)
 }
 
 func (api *CfxAPI) Call(ctx context.Context, request EthCallRequest, bn *EthBlockNumber) (hexutil.Bytes, error) {
-	return api.eth.Call(request.ToCallMsg(), bn.ToArg())
+	return api.w3c.WithContext(ctx).Eth.Call(request.ToCallMsg(), bn.ToArg())
 }
 
 func (api *CfxAPI) GetLogs(ctx context.Context, filter EthLogFilter) ([]types.Log, error) {
-	logs, err := api.eth.Logs(filter.ToFilterQuery())
+	logs, err := api.w3c.WithContext(ctx).Eth.Logs(filter.ToFilterQuery())
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +182,7 @@ func (api *CfxAPI) GetLogs(ctx context.Context, filter EthLogFilter) ([]types.Lo
 }
 
 func (api *CfxAPI) GetTransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, error) {
-	tx, err := api.eth.TransactionByHash(txHash)
+	tx, err := api.w3c.WithContext(ctx).Eth.TransactionByHash(txHash)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +191,7 @@ func (api *CfxAPI) GetTransactionByHash(ctx context.Context, txHash common.Hash)
 }
 
 func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCallRequest, bn *EthBlockNumber) (types.Estimate, error) {
-	gasLimit, err := api.eth.EstimateGas(request.ToCallMsg(), bn.ToArg())
+	gasLimit, err := api.w3c.WithContext(ctx).Eth.EstimateGas(request.ToCallMsg(), bn.ToArg())
 	if err != nil {
 		return types.Estimate{}, err
 	}
@@ -209,7 +206,7 @@ func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCall
 }
 
 func (api *CfxAPI) GetBlocksByEpoch(ctx context.Context, bn EthBlockNumber) ([]common.Hash, error) {
-	block, err := api.eth.BlockByNumber(bn.Value(), false)
+	block, err := api.w3c.WithContext(ctx).Eth.BlockByNumber(bn.Value(), false)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +219,7 @@ func (api *CfxAPI) GetBlocksByEpoch(ctx context.Context, bn EthBlockNumber) ([]c
 }
 
 func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*types.TransactionReceipt, error) {
-	receipt, err := api.eth.TransactionReceipt(txHash)
+	receipt, err := api.w3c.WithContext(ctx).Eth.TransactionReceipt(txHash)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +228,7 @@ func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 }
 
 func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) ([][]*types.TransactionReceipt, error) {
-	receipts, err := api.ethClient.Parity.BlockReceipts(bnh.ToArg())
+	receipts, err := api.w3c.WithContext(ctx).Parity.BlockReceipts(bnh.ToArg())
 	if err != nil {
 		return nil, err
 	}
@@ -245,17 +242,17 @@ func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHas
 }
 
 func (api *CfxAPI) GetAccount(ctx context.Context, address EthAddress, bn *EthBlockNumber) (types.AccountInfo, error) {
-	balance, err := api.eth.Balance(address.value, bn.ToArg())
+	balance, err := api.w3c.WithContext(ctx).Eth.Balance(address.value, bn.ToArg())
 	if err != nil {
 		return types.AccountInfo{}, err
 	}
 
-	nonce, err := api.eth.TransactionCount(address.value, bn.ToArg())
+	nonce, err := api.w3c.WithContext(ctx).Eth.TransactionCount(address.value, bn.ToArg())
 	if err != nil {
 		return types.AccountInfo{}, err
 	}
 
-	code, err := api.eth.CodeAt(address.value, bn.ToArg())
+	code, err := api.w3c.WithContext(ctx).Eth.CodeAt(address.value, bn.ToArg())
 	if err != nil {
 		return types.AccountInfo{}, err
 	}
@@ -280,16 +277,16 @@ func (api *CfxAPI) GetAccumulateInterestRate(ctx context.Context, bn *EthBlockNu
 }
 
 func (api *CfxAPI) GetConfirmationRiskByHash(ctx context.Context, blockHash types.Hash) (*hexutil.Big, error) {
-	return api.cfx.GetRawBlockConfirmationRisk(blockHash)
+	return api.cfx.WithContext(ctx).GetRawBlockConfirmationRisk(blockHash)
 }
 
 func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
-	status, err := api.cfx.GetStatus()
+	status, err := api.cfx.WithContext(ctx).GetStatus()
 	if err != nil {
 		return types.Status{}, err
 	}
 
-	block, err := api.eth.BlockByNumber(ethTypes.LatestBlockNumber, false)
+	block, err := api.w3c.WithContext(ctx).Eth.BlockByNumber(ethTypes.LatestBlockNumber, false)
 	if err != nil {
 		return types.Status{}, err
 	}
@@ -308,11 +305,11 @@ func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
 }
 
 func (api *CfxAPI) GetBlockRewardInfo(ctx context.Context, epoch types.Epoch) ([]types.RewardInfo, error) {
-	return api.cfx.GetBlockRewardInfo(epoch)
+	return api.cfx.WithContext(ctx).GetBlockRewardInfo(epoch)
 }
 
 func (api *CfxAPI) ClientVersion(ctx context.Context) (string, error) {
-	return api.eth.ClientVersion()
+	return api.w3c.WithContext(ctx).Eth.ClientVersion()
 }
 
 func (api *CfxAPI) GetSupplyInfo(ctx context.Context, epoch *types.Epoch) (types.TokenSupplyInfo, error) {
@@ -320,7 +317,7 @@ func (api *CfxAPI) GetSupplyInfo(ctx context.Context, epoch *types.Epoch) (types
 		epoch = types.EpochLatestState
 	}
 
-	result, err := api.cfx.GetSupplyInfo(epoch)
+	result, err := api.cfx.WithContext(ctx).GetSupplyInfo(epoch)
 	if err != nil {
 		return types.TokenSupplyInfo{}, err
 	}

@@ -10,17 +10,17 @@ import (
 )
 
 type TxpoolAPI struct {
-	ethClient *web3go.Client
+	w3c *web3go.Client
 }
 
-func NewTxpoolAPI(ethClient *web3go.Client) *TxpoolAPI {
-	return &TxpoolAPI{ethClient}
+func NewTxpoolAPI(w3client *web3go.Client) *TxpoolAPI {
+	return &TxpoolAPI{w3client}
 }
 
 func (api *TxpoolAPI) NextNonce(ctx context.Context, address EthAddress) (val *hexutil.Big, err error) {
 	pendingBlock := types.BlockNumberOrHashWithNumber(w3rpc.PendingBlockNumber)
 
-	nonce, err := api.ethClient.Eth.TransactionCount(address.value, &pendingBlock)
+	nonce, err := api.w3c.WithContext(ctx).Eth.TransactionCount(address.value, &pendingBlock)
 	if err != nil {
 		return nil, err
 	}

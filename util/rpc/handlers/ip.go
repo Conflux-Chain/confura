@@ -12,7 +12,7 @@ import (
 // Remote IP Address with Go:
 // https://husobee.github.io/golang/ip-address/2015/12/17/remote-ip-go.html
 
-//ipRange - a structure that holds the start and end of a range of ip addresses
+// ipRange - a structure that holds the start and end of a range of ip addresses
 type ipRange struct {
 	start net.IP
 	end   net.IP
@@ -104,18 +104,22 @@ func GetAccessToken(r *http.Request) string {
 		return ""
 	}
 
-	// access token path pattern:
-	// http://example.com/${accessToken}...
+	// Access token can be passed in with the following two ways:
+	// Appended after the root path with the pattern: http://example.com/${accessToken}.
 	key := strings.TrimLeft(r.URL.EscapedPath(), "/")
 	if idx := strings.Index(key, "/"); idx > 0 {
 		key = key[:idx]
 	}
 
-	if key, err := url.PathUnescape(key); err == nil {
-		return key
+	if len(key) > 0 {
+		ekey, err := url.PathUnescape(key)
+		if err == nil {
+			return ekey
+		}
 	}
 
-	return ""
+	// Or attached in the HTTP header with the key of "Access-Token".
+	return r.Header.Get("Access-Token")
 }
 
 func GetAccessTokenFromContext(ctx context.Context) (string, bool) {
