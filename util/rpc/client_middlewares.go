@@ -14,16 +14,16 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+var ctxKeyToHeaderKeys = map[handlers.CtxKey]string{
+	handlers.CtxKeyAccessToken: "Access-Token",
+	handlers.CtxKeyReqOrigin:   "Origin",
+	handlers.CtxKeyUserAgent:   "User-Agent",
+	handlers.CtxKeyRealIP:      "X-Real-Ip",
+}
+
 // HookRedirectHttpHeader registers an event handler before sending client HTTP request,
 // which will forward HTTP headers to the requested RPC service.
 func HookRedirectHttpHeader() {
-	ctxKeyToHeaderKeys := map[handlers.CtxKey]string{
-		handlers.CtxKeyAccessToken: "Access-Token",
-		handlers.CtxKeyReqOrigin:   "Origin",
-		handlers.CtxKeyUserAgent:   "User-Agent",
-		handlers.CtxKeyRealIP:      "X-Real-Ip",
-	}
-
 	rpc.RegisterBeforeSendHttp(func(ctx context.Context, req *fasthttp.Request) error {
 		for ctxKey, header := range ctxKeyToHeaderKeys {
 			if val, ok := ctx.Value(ctxKey).(string); ok {
