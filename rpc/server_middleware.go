@@ -10,6 +10,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/rpc/middlewares"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/openweb3/go-rpc-provider"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -59,13 +60,22 @@ func httpMiddleware(registry *rate.Registry, clientProvider interface{}) handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
+			logger := logrus.FieldLogger(logrus.StandardLogger())
 			if token := handlers.GetAccessToken(r); len(token) > 0 { // optional
 				ctx = context.WithValue(ctx, handlers.CtxKeyAccessToken, token)
+				logger = logger.WithField("accessToken", token)
 			}
 
 			ctx = context.WithValue(ctx, handlers.CtxKeyReqOrigin, r.Header.Get("Origin"))
 			ctx = context.WithValue(ctx, handlers.CtxKeyUserAgent, r.Header.Get("User-Agent"))
-			ctx = context.WithValue(ctx, handlers.CtxKeyRealIP, handlers.GetIPAddress(r))
+			ipAddr := handlers.GetIPAddress(r)
+			ctx = context.WithValue(ctx, handlers.CtxKeyRealIP, ipAddr)
+
+			logger.WithFields(logrus.Fields{
+				"origin":    r.Header.Get("Origin"),
+				"userAgent": r.Header.Get("User-Agent"),
+				"ipAddr":    ipAddr,
+			}).Debug("Inject headers into HTTP middleware")
 
 			if registry != nil {
 				ctx = context.WithValue(ctx, handlers.CtxKeyRateRegistry, registry)
