@@ -25,12 +25,21 @@ var ctxKeyToHeaderKeys = map[handlers.CtxKey]string{
 // which will forward HTTP headers to the requested RPC service.
 func HookRedirectHttpHeader() {
 	rpc.RegisterBeforeSendHttp(func(ctx context.Context, req *fasthttp.Request) error {
+		var logger logrus.FieldLogger
 		for ctxKey, header := range ctxKeyToHeaderKeys {
 			if val, ok := ctx.Value(ctxKey).(string); ok {
 				req.Header.Set(header, val)
+
+				if logger == nil {
+					logger = logrus.StandardLogger()
+				}
+				logger = logger.WithField(header, val)
 			}
 		}
 
+		if logger != nil {
+			logger.Debug("Redirect HTTP headers before sending requests")
+		}
 		return nil
 	})
 }
