@@ -23,7 +23,7 @@ type CfxTxnHandler struct {
 	relayer         relay.TxnRelayer    // transaction relayer
 	nclient         *rpc.Client         // node RPC client
 	clients         *util.ConcurrentMap // sdk clients: node name => RPC client
-	replicateRawTxn bool                // whether to replicate to the same group nodes
+	replicateRawTxn bool                // whether to replicate to other group nodes
 }
 
 func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
@@ -96,7 +96,8 @@ func (h *CfxTxnHandler) replicateRawTxnSendingToNodes(cfx sdk.ClientOperator, no
 
 	for _, url := range nodeUrls {
 		nodeName := rpcutil.Url2NodeName(url)
-		if strings.EqualFold(nodeName, initialNodeName) { // skip replicating to the initial node
+		if strings.EqualFold(nodeName, initialNodeName) {
+			// skip replicating to the initial node
 			continue
 		}
 

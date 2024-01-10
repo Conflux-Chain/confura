@@ -21,7 +21,7 @@ type EthTxnHandler struct {
 	relayer         relay.TxnRelayer    // transaction relayer
 	nclient         *rpc.Client         // node RPC client
 	clients         *util.ConcurrentMap // sdk clients: node name => RPC client
-	replicateRawTxn bool                // whether to replicate to the same group nodes
+	replicateRawTxn bool                // whether to replicate to other group nodes
 }
 
 func MustNewEthTxnHandler(relayer relay.TxnRelayer) *EthTxnHandler {
@@ -94,7 +94,8 @@ func (h *EthTxnHandler) replicateRawTxnSendingToNodes(w3c *node.Web3goClient, no
 
 	for _, url := range nodeUrls {
 		nodeName := rpcutil.Url2NodeName(url)
-		if strings.EqualFold(nodeName, initialNodeName) { // skip replicating to the initial node
+		if strings.EqualFold(nodeName, initialNodeName) {
+			// skip replicating to the initial node
 			continue
 		}
 
