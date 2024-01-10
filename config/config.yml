@@ -276,6 +276,8 @@ node:
 #   nodeUrls: []
 #   # List of evm space fullnodes to be broadcasted.
 #   ethNodeUrls: []
+#   # Whether to replicate raw transaction to other group nodes.
+#   replicateRawTxn: false
 
 # # Web3Pay client middleware configurations
 # web3pay:
