@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/relay"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -15,14 +18,17 @@ import (
 
 // EthTxnHandler evm space RPC handler to optimize sending transaction by relay and replication.
 type EthTxnHandler struct {
-	relayer relay.TxnRelayer    // transaction relayer
-	nclient *rpc.Client         // node RPC client
-	clients *util.ConcurrentMap // sdk clients: node name => RPC client
+	relayer  relay.TxnRelayer    // transaction relayer
+	nclient  *rpc.Client         // node RPC client
+	clients  *util.ConcurrentMap // sdk clients: node name => RPC client
+	relayTxn bool                // whether to relay to other group nodes while sending txn
 }
 
 func MustNewEthTxnHandler(relayer relay.TxnRelayer) *EthTxnHandler {
-	var nodeRpcClient *rpc.Client
+	cfg := struct{ RelayTxn bool }{}
+	viper.MustUnmarshalKey("relay", &cfg)
 
+	var nodeRpcClient *rpc.Client
 	if nodeRpcUrl := node.Config().Router.EthNodeRPCURL; len(nodeRpcUrl) > 0 {
 		var err error
 
@@ -35,9 +41,10 @@ func MustNewEthTxnHandler(relayer relay.TxnRelayer) *EthTxnHandler {
 	}
 
 	return &EthTxnHandler{
-		relayer: relayer,
-		nclient: nodeRpcClient,
-		clients: &util.ConcurrentMap{},
+		relayer:  relayer,
+		nclient:  nodeRpcClient,
+		clients:  &util.ConcurrentMap{},
+		relayTxn: cfg.RelayTxn,
 	}
 }
 
@@ -52,13 +59,16 @@ func (h *EthTxnHandler) SendRawTxn(w3c *node.Web3goClient, group node.Group, sig
 		logrus.Info("Txn relay pool is full, dropping transaction")
 	}
 
-	// replicate raw txn sending synchronously
-	h.replicateRawTxnSendingByGroup(group, signedTx)
+	// relay transaction to other group nodes synchronously
+	if h.relayTxn {
+		h.replicateRawTxnSendingByGroup(w3c, group, signedTx)
+	}
+
 	return txHash, err
 }
 
 // replicateRawTxnSendingByGroup synchronously replicate raw txn sending to all full nodes of some specific group
-func (h *EthTxnHandler) replicateRawTxnSendingByGroup(group node.Group, signedTx hexutil.Bytes) {
+func (h *EthTxnHandler) replicateRawTxnSendingByGroup(w3c *node.Web3goClient, group node.Group, signedTx hexutil.Bytes) {
 	if h.nclient != nil { // fetch group nodes from node RPC
 		var nodeUrls []string
 
@@ -69,19 +79,26 @@ func (h *EthTxnHandler) replicateRawTxnSendingByGroup(group node.Group, signedTx
 			return
 		}
 
-		h.replicateRawTxnSendingToNodes(nodeUrls, signedTx)
+		h.replicateRawTxnSendingToNodes(w3c, nodeUrls, signedTx)
 		return
 	}
 
 	// otherwise get group nodes from local config
 	if conf, ok := node.EthUrlConfig()[group]; ok {
-		h.replicateRawTxnSendingToNodes(conf.Nodes, signedTx)
+		h.replicateRawTxnSendingToNodes(w3c, conf.Nodes, signedTx)
 	}
 }
 
-func (h *EthTxnHandler) replicateRawTxnSendingToNodes(nodeUrls []string, signedTx hexutil.Bytes) {
+func (h *EthTxnHandler) replicateRawTxnSendingToNodes(w3c *node.Web3goClient, nodeUrls []string, signedTx hexutil.Bytes) {
+	initialNodeName := w3c.NodeName()
+
 	for _, url := range nodeUrls {
 		nodeName := rpcutil.Url2NodeName(url)
+		if strings.EqualFold(nodeName, initialNodeName) {
+			// skip replicating to the initial node
+			continue
+		}
+
 		c, _, err := h.clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
 			return rpcutil.NewEthClient(url)
 		})

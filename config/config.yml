@@ -276,6 +276,9 @@ node:
 #   nodeUrls: []
 #   # List of evm space fullnodes to be broadcasted.
 #   ethNodeUrls: []
+#   # Whether to relay the transaction to other group nodes synchronously
+#   # while sending raw transaction.
+#   relayTxn: false
 
 # # Web3Pay client middleware configurations
 # web3pay:

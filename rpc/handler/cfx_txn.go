@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/relay"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/go-rpc-provider/utils"
@@ -17,14 +20,17 @@ import (
 // and replicating txn sending synchronously to all full nodes of some node group to improve consistency
 // and availability once consistent hashing LB repartitioned.
 type CfxTxnHandler struct {
-	relayer relay.TxnRelayer    // transaction relayer
-	nclient *rpc.Client         // node RPC client
-	clients *util.ConcurrentMap // sdk clients: node name => RPC client
+	relayer  relay.TxnRelayer    // transaction relayer
+	nclient  *rpc.Client         // node RPC client
+	clients  *util.ConcurrentMap // sdk clients: node name => RPC client
+	relayTxn bool                // whether to relay to other group nodes while sending txn
 }
 
 func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
-	var nodeRpcClient *rpc.Client
+	cfg := struct{ RelayTxn bool }{}
+	viper.MustUnmarshalKey("relay", &cfg)
 
+	var nodeRpcClient *rpc.Client
 	if nodeRpcUrl := node.Config().Router.NodeRPCURL; len(nodeRpcUrl) > 0 {
 		var err error
 
@@ -37,9 +43,10 @@ func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
 	}
 
 	return &CfxTxnHandler{
-		relayer: relayer,
-		nclient: nodeRpcClient,
-		clients: &util.ConcurrentMap{},
+		relayer:  relayer,
+		nclient:  nodeRpcClient,
+		clients:  &util.ConcurrentMap{},
+		relayTxn: cfg.RelayTxn,
 	}
 }
 
@@ -54,13 +61,16 @@ func (h *CfxTxnHandler) SendRawTxn(cfx sdk.ClientOperator, group node.Group, sig
 		logrus.Info("Txn relay pool is full, dropping transaction")
 	}
 
-	// replicate raw txn sending synchronously
-	h.replicateRawTxnSendingByGroup(group, signedTx)
+	// relay transaction to other group nodes synchronously
+	if h.relayTxn {
+		h.replicateRawTxnSendingByGroup(cfx, group, signedTx)
+	}
+
 	return txHash, err
 }
 
 // replicateRawTxnSendingByGroup synchronously replicate raw txn sending to all full nodes of some specific group
-func (h *CfxTxnHandler) replicateRawTxnSendingByGroup(group node.Group, signedTx hexutil.Bytes) {
+func (h *CfxTxnHandler) replicateRawTxnSendingByGroup(cfx sdk.ClientOperator, group node.Group, signedTx hexutil.Bytes) {
 	if h.nclient != nil { // fetch group nodes from node RPC
 		var nodeUrls []string
 
@@ -71,19 +81,26 @@ func (h *CfxTxnHandler) replicateRawTxnSendingByGroup(group node.Group, signedTx
 			return
 		}
 
-		h.replicateRawTxnSendingToNodes(nodeUrls, signedTx)
+		h.replicateRawTxnSendingToNodes(cfx, nodeUrls, signedTx)
 		return
 	}
 
 	// otherwise get group nodes from local config
 	if conf, ok := node.CfxUrlConfig()[group]; ok {
-		h.replicateRawTxnSendingToNodes(conf.Nodes, signedTx)
+		h.replicateRawTxnSendingToNodes(cfx, conf.Nodes, signedTx)
 	}
 }
 
-func (h *CfxTxnHandler) replicateRawTxnSendingToNodes(nodeUrls []string, signedTx hexutil.Bytes) {
+func (h *CfxTxnHandler) replicateRawTxnSendingToNodes(cfx sdk.ClientOperator, nodeUrls []string, signedTx hexutil.Bytes) {
+	initialNodeName := rpcutil.Url2NodeName(cfx.GetNodeURL())
+
 	for _, url := range nodeUrls {
 		nodeName := rpcutil.Url2NodeName(url)
+		if strings.EqualFold(nodeName, initialNodeName) {
+			// skip replicating to the initial node
+			continue
+		}
+
 		c, _, err := h.clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
 			return rpcutil.NewCfxClient(url)
 		})
