@@ -20,14 +20,14 @@ import (
 // and replicating txn sending synchronously to all full nodes of some node group to improve consistency
 // and availability once consistent hashing LB repartitioned.
 type CfxTxnHandler struct {
-	relayer         relay.TxnRelayer    // transaction relayer
-	nclient         *rpc.Client         // node RPC client
-	clients         *util.ConcurrentMap // sdk clients: node name => RPC client
-	replicateRawTxn bool                // whether to replicate to other group nodes
+	relayer  relay.TxnRelayer    // transaction relayer
+	nclient  *rpc.Client         // node RPC client
+	clients  *util.ConcurrentMap // sdk clients: node name => RPC client
+	relayTxn bool                // whether to relay to other group nodes while sending txn
 }
 
 func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
-	cfg := struct{ ReplicateRawTxn bool }{}
+	cfg := struct{ RelayTxn bool }{}
 	viper.MustUnmarshalKey("relay", &cfg)
 
 	var nodeRpcClient *rpc.Client
@@ -43,10 +43,10 @@ func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
 	}
 
 	return &CfxTxnHandler{
-		relayer:         relayer,
-		nclient:         nodeRpcClient,
-		clients:         &util.ConcurrentMap{},
-		replicateRawTxn: cfg.ReplicateRawTxn,
+		relayer:  relayer,
+		nclient:  nodeRpcClient,
+		clients:  &util.ConcurrentMap{},
+		relayTxn: cfg.RelayTxn,
 	}
 }
 
@@ -61,8 +61,8 @@ func (h *CfxTxnHandler) SendRawTxn(cfx sdk.ClientOperator, group node.Group, sig
 		logrus.Info("Txn relay pool is full, dropping transaction")
 	}
 
-	// replicate raw txn sending synchronously
-	if h.replicateRawTxn {
+	// relay transaction to other group nodes synchronously
+	if h.relayTxn {
 		h.replicateRawTxnSendingByGroup(cfx, group, signedTx)
 	}
 
