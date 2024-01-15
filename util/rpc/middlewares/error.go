@@ -17,7 +17,7 @@ var (
 		"502 bad gateway", "503 service unavailable", "504 gateway timeout",
 	}
 
-	ErrServerTooBusyError = errors.New("server is too busy, please try again later")
+	ErrorServerTooBusy = errors.New("server is too busy, please try again later")
 )
 
 func matchNginxUnavailableError(err error) bool {
@@ -35,7 +35,7 @@ func UniformError(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
 		resp := next(ctx, msg)
 		if resp.Error != nil && matchNginxUnavailableError(resp.Error) {
-			return resp.ErrorResponse(ErrServerTooBusyError)
+			return resp.ErrorResponse(ErrorServerTooBusy)
 		}
 
 		return resp
