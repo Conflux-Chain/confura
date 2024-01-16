@@ -51,6 +51,9 @@ func init() {
 
 	// invalid json rpc request without `ID`
 	rpc.HookHandleCallMsg(rpc.PreventMessagesWithouID)
+
+	// uniform human-readable error message
+	rpc.HookHandleCallMsg(middlewares.UniformError)
 }
 
 // Inject values into context for static RPC call middlewares, e.g. rate limit
