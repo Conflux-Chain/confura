@@ -34,7 +34,7 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		}
 
 		// collect rpc QPS/latency etc.
-		metrics.Registry.RPC.UpdateDuration(metricMethod, underlyingJsonError(resp.Error), start)
+		metrics.Registry.RPC.UpdateDuration(metricMethod, unwrapJsonError(resp.Error), start)
 		// collect traffic hits
 		metrics.DefaultTrafficCollector().MarkHit(getTrafficSourceFromContext(ctx))
 
@@ -61,7 +61,7 @@ func isMethodNotFoundByError(method string, err error) bool {
 	return strings.Contains(err.Error(), subPattern)
 }
 
-func underlyingJsonError(jsErr *rpc.JsonError) error {
+func unwrapJsonError(jsErr *rpc.JsonError) error {
 	if jsErr == nil {
 		return nil
 	}
