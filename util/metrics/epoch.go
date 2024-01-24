@@ -13,8 +13,12 @@ type InputEpochMetric struct{}
 func (metric *InputEpochMetric) Update(epoch *types.Epoch, method string, cfx sdk.ClientOperator) {
 	// mark percentage for most popular values
 	Registry.RPC.InputEpoch(method, "default").Mark(epoch == nil)
-	Registry.RPC.InputEpoch(method, types.EpochLatestMined.String()).Mark(types.EpochLatestMined.Equals(epoch))
-	Registry.RPC.InputEpoch(method, types.EpochLatestState.String()).Mark(types.EpochLatestState.Equals(epoch))
+
+	isLatestMined := types.EpochLatestMined.Equals(epoch)
+	Registry.RPC.InputEpoch(method, types.EpochLatestMined.String()).Mark(isLatestMined)
+
+	isLatestState := types.EpochLatestState.Equals(epoch)
+	Registry.RPC.InputEpoch(method, types.EpochLatestState.String()).Mark(isLatestState)
 
 	// epoch number
 	var isNum bool
@@ -24,9 +28,7 @@ func (metric *InputEpochMetric) Update(epoch *types.Epoch, method string, cfx sd
 	Registry.RPC.InputEpoch(method, "number").Mark(isNum)
 
 	// other cases
-	Registry.RPC.InputEpoch(method, "others").Mark(epoch != nil && !isNum &&
-		!types.EpochLatestMined.Equals(epoch) &&
-		!types.EpochLatestState.Equals(epoch))
+	Registry.RPC.InputEpoch(method, "others").Mark(epoch != nil && !isNum && !isLatestMined && !isLatestState)
 
 	if epoch == nil {
 		return

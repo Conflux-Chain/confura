@@ -10,13 +10,18 @@ type InputBlockMetric struct{}
 
 func (metric *InputBlockMetric) updateBlockNumberIgnoreDefault(blockNum *types.BlockNumber, method string, eth *client.RpcEthClient) {
 	// mark percentage for most popular values
-	Registry.RPC.InputBlock(method, "latest").Mark(blockNum != nil && *blockNum == types.LatestBlockNumber)
-	Registry.RPC.InputBlock(method, "pending").Mark(blockNum != nil && *blockNum == types.PendingBlockNumber)
-	// metric.updatePercentage(method, "earliest", blockNum != nil && *blockNum == rpc.EarliestBlockNumber)
+	isLatest := (blockNum != nil && *blockNum == types.LatestBlockNumber)
+	Registry.RPC.InputBlock(method, "latest").Mark(isLatest)
+
+	isPending := (blockNum != nil && *blockNum == types.PendingBlockNumber)
+	Registry.RPC.InputBlock(method, "pending").Mark(isPending)
 
 	// block number
 	isNum := blockNum != nil && *blockNum > 0
 	Registry.RPC.InputBlock(method, "number").Mark(isNum)
+
+	// other cases
+	Registry.RPC.InputBlock(method, "others").Mark(blockNum != nil && !isNum && !isLatest && !isPending)
 
 	if !isNum {
 		return
@@ -42,5 +47,6 @@ func (metric *InputBlockMetric) Update2(blockNumOrHash *types.BlockNumberOrHash,
 	if blockNumOrHash != nil {
 		blockNum = blockNumOrHash.BlockNumber
 	}
+
 	metric.updateBlockNumberIgnoreDefault(blockNum, method, eth)
 }
