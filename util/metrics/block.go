@@ -16,15 +16,12 @@ func (metric *InputBlockMetric) updateBlockNumberIgnoreDefault(blockNum *types.B
 	isPending := (blockNum != nil && *blockNum == types.PendingBlockNumber)
 	Registry.RPC.InputBlock(method, "pending").Mark(isPending)
 
-	isEarliest := (blockNum != nil && *blockNum == types.EarliestBlockNumber)
-	Registry.RPC.InputBlock(method, "earliest").Mark(isEarliest)
-
 	// block number
 	isNum := blockNum != nil && *blockNum > 0
 	Registry.RPC.InputBlock(method, "number").Mark(isNum)
 
 	// other cases
-	Registry.RPC.InputBlock(method, "others").Mark(blockNum != nil && !isNum && !isLatest && !isPending && !isEarliest)
+	Registry.RPC.InputBlock(method, "others").Mark(blockNum != nil && !isNum && !isLatest && !isPending)
 
 	if !isNum {
 		return
