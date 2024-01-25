@@ -39,6 +39,7 @@ type ethAPI struct {
 
 	provider         *node.EthClientProvider
 	inputBlockMetric metrics.InputBlockMetric
+	stateHandler     *handler.EthStateHandler
 
 	// return empty data before eSpace hardfork block number
 	hardforkBlockNumber web3Types.BlockNumber
@@ -67,6 +68,7 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 	return &ethAPI{
 		EthAPIOption:        opt,
 		provider:            provider,
+		stateHandler:        handler.NewEthStateHandler(provider),
 		hardforkBlockNumber: util.GetEthHardforkBlockNumber(*chainId),
 	}
 }
@@ -117,15 +119,15 @@ func (api *ethAPI) GetBalance(
 ) (*hexutil.Big, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getBalance", w3c.Eth)
-	balance, err := w3c.Eth.Balance(address, blockNumOrHash)
+	balance, err := api.stateHandler.Balance(ctx, w3c, address, blockNumOrHash)
 	return (*hexutil.Big)(balance), err
 }
 
 // GetBlockByNumber returns the requested canonical block.
-// * When blockNr is -1 the chain head is returned.
-// * When blockNr is -2 the pending chain head is returned.
-// * When fullTx is true all transactions in the block are returned, otherwise
-//   only the transaction hash is returned.
+//   - When blockNr is -1 the chain head is returned.
+//   - When blockNr is -2 the pending chain head is returned.
+//   - When fullTx is true all transactions in the block are returned, otherwise
+//     only the transaction hash is returned.
 func (api *ethAPI) GetBlockByNumber(
 	ctx context.Context, blockNum web3Types.BlockNumber, fullTx bool,
 ) (*web3Types.Block, error) {
@@ -190,7 +192,7 @@ func (api *ethAPI) GetStorageAt(
 ) (common.Hash, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getStorageAt", w3c.Eth)
-	return w3c.Eth.StorageAt(address, (*big.Int)(location), blockNumOrHash)
+	return api.stateHandler.StorageAt(ctx, w3c, address, (*big.Int)(location), blockNumOrHash)
 }
 
 // GetCode returns the contract code of the given account.
@@ -200,7 +202,7 @@ func (api *ethAPI) GetCode(
 ) (hexutil.Bytes, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getCode", w3c.Eth)
-	return w3c.Eth.CodeAt(account, blockNumOrHash)
+	return api.stateHandler.CodeAt(ctx, w3c, account, blockNumOrHash)
 }
 
 // GetTransactionCount returns the number of transactions (nonce) sent from the given account.
@@ -210,7 +212,7 @@ func (api *ethAPI) GetTransactionCount(
 ) (*hexutil.Big, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_getTransactionCount", w3c.Eth)
-	count, err := w3c.Eth.TransactionCount(account, blockNumOrHash)
+	count, err := api.stateHandler.TransactionCount(ctx, w3c, account, blockNumOrHash)
 	return (*hexutil.Big)(count), err
 }
 
@@ -240,7 +242,7 @@ func (api *ethAPI) Call(
 ) (hexutil.Bytes, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_call", w3c.Eth)
-	return w3c.Eth.Call(request, blockNumOrHash)
+	return api.stateHandler.Call(ctx, w3c, request, blockNumOrHash)
 }
 
 // EstimateGas generates and returns an estimate of how much gas is necessary to allow the transaction
@@ -252,7 +254,7 @@ func (api *ethAPI) EstimateGas(
 ) (*hexutil.Big, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_estimateGas", w3c.Eth)
-	gas, err := w3c.Eth.EstimateGas(request, blockNumOrHash)
+	gas, err := api.stateHandler.EstimateGas(ctx, w3c, request, blockNumOrHash)
 	return (*hexutil.Big)(gas), err
 }
 
