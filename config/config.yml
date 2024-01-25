@@ -205,6 +205,8 @@ sync:
 node:
   # Group `cfxhttp` fullnodes
   urls: [http://test.confluxrpc.com]
+  # Group `cfxfullstate` fullnodes
+  # fullStateURLs: [http://test.confluxrpc.com]
   # Group `cfxws` fullnodes
   # wsUrls: [ws://test.confluxrpc.com/ws]
   # Group `cfxlog` fullnodes
@@ -215,6 +217,8 @@ node:
   # archiveNodes: []
   # Group `ethhttp` fullnodes
   ethurls: [http://evmtestnet.confluxrpc.com]
+  # Group `ethfullstate` fullnodes
+  # ethFullStateURLs: [http://evmtestnet.confluxrpc.com]
   # Group `ethlogs` fullnodes
   # ethLogNodes: [http://evmtestnet.confluxrpc.com]
   # Group `ethfilter` fullnodes

@@ -23,6 +23,9 @@ func init() {
 			Nodes:    cfg.URLs,
 			Failover: cfg.Router.ChainedFailover.URL,
 		},
+		GroupCfxFullState: {
+			Nodes: cfg.FullStateURLs,
+		},
 		GroupCfxWs: {
 			Nodes:    cfg.WSURLs,
 			Failover: cfg.Router.ChainedFailover.WSURL,
@@ -43,6 +46,9 @@ func init() {
 			Nodes:    cfg.EthURLs,
 			Failover: cfg.Router.ChainedFailover.EthURL,
 		},
+		GroupCfxFullState: {
+			Nodes: cfg.EthFullStateURLs,
+		},
 		GroupEthWs: {
 			Nodes:    cfg.EthWSURLs,
 			Failover: cfg.Router.ChainedFailover.EthWSURL,
@@ -57,18 +63,20 @@ func init() {
 }
 
 type config struct {
-	Endpoint       string `default:":22530"`
-	EthEndpoint    string `default:":28530"`
-	URLs           []string
-	EthURLs        []string
-	WSURLs         []string
-	EthWSURLs      []string
-	LogNodes       []string
-	EthLogNodes    []string
-	FilterNodes    []string
-	EthFilterNodes []string
-	ArchiveNodes   []string
-	HashRing       struct {
+	Endpoint         string `default:":22530"`
+	EthEndpoint      string `default:":28530"`
+	URLs             []string
+	EthURLs          []string
+	FullStateURLs    []string
+	EthFullStateURLs []string
+	WSURLs           []string
+	EthWSURLs        []string
+	LogNodes         []string
+	EthLogNodes      []string
+	FilterNodes      []string
+	EthFilterNodes   []string
+	ArchiveNodes     []string
+	HashRing         struct {
 		PartitionCount    int     `default:"15739"`
 		ReplicationFactor int     `default:"51"`
 		Load              float64 `default:"1.25"`
