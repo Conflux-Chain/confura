@@ -5,6 +5,7 @@ import (
 	"math/big"
 
 	"github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go/types"
 )
@@ -25,9 +26,11 @@ func (h *EthStateHandler) Balance(
 	addr common.Address,
 	block *types.BlockNumberOrHash,
 ) (*big.Int, error) {
-	bal, err := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+	bal, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
 		return w3c.Eth.Balance(addr, block)
 	})
+
+	metrics.Registry.RPC.Percentage("eth_getBalance", "fullState").Mark(usefs)
 
 	if err != nil {
 		return nil, err
@@ -42,9 +45,11 @@ func (h *EthStateHandler) TransactionCount(
 	addr common.Address,
 	blockNum *types.BlockNumberOrHash,
 ) (*big.Int, error) {
-	txnCnt, err := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+	txnCnt, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
 		return w3c.Eth.TransactionCount(addr, blockNum)
 	})
+
+	metrics.Registry.RPC.Percentage("eth_getTransactionCount", "fullState").Mark(usefs)
 
 	if err != nil {
 		return nil, err
@@ -60,9 +65,11 @@ func (h *EthStateHandler) StorageAt(
 	location *big.Int,
 	block *types.BlockNumberOrHash,
 ) (common.Hash, error) {
-	storage, err := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+	storage, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
 		return w3c.Eth.StorageAt(addr, location, block)
 	})
+
+	metrics.Registry.RPC.Percentage("eth_getStorageAt", "fullState").Mark(usefs)
 
 	if err != nil {
 		return common.Hash{}, err
@@ -77,9 +84,11 @@ func (h *EthStateHandler) CodeAt(
 	addr common.Address,
 	blockNum *types.BlockNumberOrHash,
 ) ([]byte, error) {
-	code, err := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+	code, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
 		return w3c.Eth.CodeAt(addr, blockNum)
 	})
+
+	metrics.Registry.RPC.Percentage("eth_getCode", "fullState").Mark(usefs)
 
 	if err != nil {
 		return []byte{}, err
@@ -94,9 +103,11 @@ func (h *EthStateHandler) Call(
 	callRequest types.CallRequest,
 	blockNum *types.BlockNumberOrHash,
 ) ([]byte, error) {
-	result, err := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
 		return w3c.Eth.Call(callRequest, blockNum)
 	})
+
+	metrics.Registry.RPC.Percentage("eth_call", "fullState").Mark(usefs)
 
 	if err != nil {
 		return []byte{}, err
@@ -111,9 +122,11 @@ func (h *EthStateHandler) EstimateGas(
 	callRequest types.CallRequest,
 	blockNum *types.BlockNumberOrHash,
 ) (*big.Int, error) {
-	est, err := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+	est, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
 		return w3c.Eth.EstimateGas(callRequest, blockNum)
 	})
+
+	metrics.Registry.RPC.Percentage("eth_estimateGas", "fullState").Mark(usefs)
 
 	if err != nil {
 		return nil, err
@@ -126,16 +139,16 @@ func (h *EthStateHandler) doRequest(
 	ctx context.Context,
 	initW3c *node.Web3goClient,
 	clientFunc func(w3c *node.Web3goClient) (interface{}, error),
-) (interface{}, error) {
+) (interface{}, error, bool) {
 	result, err := clientFunc(initW3c)
 	if err == nil || !isStateNotAvailable(err) {
-		return result, err
+		return result, err, false
 	}
 
 	fsW3c, cperr := h.cp.GetClientByIP(ctx, node.GroupEthFullState)
-	if cperr != nil {
-		return result, err
+	if cperr == nil {
+		result, err = clientFunc(fsW3c)
 	}
 
-	return clientFunc(fsW3c)
+	return result, err, true
 }
