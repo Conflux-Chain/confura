@@ -4,6 +4,7 @@ import (
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	"github.com/sirupsen/logrus"
 )
 
@@ -26,6 +27,14 @@ func (o *cfxClientOption) SetRequestTimeout(reqTimeout time.Duration) {
 
 func (o *cfxClientOption) SetMaxConnsPerHost(maxConns int) {
 	o.MaxConnectionPerHost = maxConns
+}
+
+func (o *cfxClientOption) SetCircuitBreaker(maxFail int, failTimeWindow, openColdTime time.Duration) {
+	o.CircuitBreakerOption = &providers.DefaultCircuitBreakerOption{
+		MaxFail:        maxFail,
+		FailTimeWindow: failTimeWindow,
+		OpenColdTime:   openColdTime,
+	}
 }
 
 func MustNewCfxClientFromViper(options ...ClientOption) *sdk.Client {
@@ -53,6 +62,10 @@ func NewCfxClient(url string, options ...ClientOption) (*sdk.Client, error) {
 			RequestTimeout:       cfxClientCfg.RequestTimeout,
 			MaxConnectionPerHost: cfxClientCfg.MaxConnsPerHost,
 		},
+	}
+
+	if cbConf := cfxClientCfg.CircuitBreaker; cbConf.Enabled {
+		opt.SetCircuitBreaker(cbConf.MaxFail, cbConf.FailTimeWindow, cbConf.OpenColdTime)
 	}
 
 	for _, o := range options {

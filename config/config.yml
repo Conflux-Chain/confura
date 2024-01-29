@@ -52,6 +52,17 @@ cfx:
   requestTimeout: 3s
   # Max connections allowed per fullnode
   maxConnsPerHost: 1024
+  # Circuit breaker configurations
+  circuitBreaker:
+    # Turn on/off switch.
+    enabled: false
+    # Threshold of continuous failure times.
+    maxFail: 10
+    # The time window within which the threshold of continuous failure times is achieved to
+    # open the circuit breaker.
+    failTimeWindow: 1s
+    # The cold interval before the circuit breaker turns to be half-open since being turned open.
+    openColdTime: 15s
 
 # EVM space SDK client configurations
 eth:
@@ -65,6 +76,17 @@ eth:
   requestTimeout: 3s
   # Max connections allowed per fullnode
   maxConnsPerHost: 1024
+  # Circuit breaker configurations
+  circuitBreaker:
+    # Turn on/off switch.
+    enabled: false
+    # Threshold of continuous failure times.
+    maxFail: 10
+    # The time window within which the threshold of continuous failure times is achieved to
+    # open the circuit breaker.
+    failTimeWindow: 1s
+    # The cold interval before the circuit breaker turns to be half-open since being turned open.
+    openColdTime: 15s
 
 # Blockchain sync configurations
 sync:
