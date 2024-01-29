@@ -29,6 +29,14 @@ func (o *ethClientOption) SetMaxConnsPerHost(maxConns int) {
 	o.MaxConnectionPerHost = maxConns
 }
 
+func (o *ethClientOption) SetCircuitBreaker(maxFail int, failTimeWindow, openColdTime time.Duration) {
+	o.WithCircuitBreaker(providers.DefaultCircuitBreakerOption{
+		MaxFail:        maxFail,
+		FailTimeWindow: failTimeWindow,
+		OpenColdTime:   openColdTime,
+	})
+}
+
 func MustNewEthClientFromViper(options ...ClientOption) *web3go.Client {
 	return MustNewEthClient(ethClientCfg.Http, options...)
 }
@@ -52,6 +60,10 @@ func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 				MaxConnectionPerHost: ethClientCfg.MaxConnsPerHost,
 			},
 		},
+	}
+
+	if cbConfig := ethClientCfg.CircuitBreaker; cbConfig.Enabled {
+		opt.SetCircuitBreaker(cbConfig.MaxFail, cbConfig.FailTimeWindow, cbConfig.OpenColdTime)
 	}
 
 	for _, o := range options {

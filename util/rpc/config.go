@@ -11,6 +11,13 @@ var (
 	ethClientCfg clientConfig
 )
 
+type circuitBreakerConfig struct {
+	Enabled        bool
+	MaxFail        int           `default:"10"`
+	FailTimeWindow time.Duration `default:"1s"`
+	OpenColdTime   time.Duration `default:"15s"`
+}
+
 type clientConfig struct {
 	WS              string
 	Http            string
@@ -18,6 +25,7 @@ type clientConfig struct {
 	RetryInterval   time.Duration `default:"1s"`
 	RequestTimeout  time.Duration `default:"3s"`
 	MaxConnsPerHost int           `default:"1024"`
+	CircuitBreaker  circuitBreakerConfig
 }
 
 type ClientOptioner interface {
@@ -26,6 +34,7 @@ type ClientOptioner interface {
 	SetRequestTimeout(reqTimeout time.Duration)
 	SetMaxConnsPerHost(maxConns int)
 	SetHookMetrics(hook bool)
+	SetCircuitBreaker(maxFail int, failTimeWindow, openColdTime time.Duration)
 }
 
 type baseClientOption struct {
@@ -65,6 +74,12 @@ func WithClientMaxConnsPerHost(maxConns int) ClientOption {
 func WithClientHookMetrics(hook bool) ClientOption {
 	return func(opt ClientOptioner) {
 		opt.SetHookMetrics(hook)
+	}
+}
+
+func WithCircuitBreaker(maxFail int, failTimeWindow, openColdTime time.Duration) ClientOption {
+	return func(opt ClientOptioner) {
+		opt.SetCircuitBreaker(maxFail, failTimeWindow, openColdTime)
 	}
 }
 

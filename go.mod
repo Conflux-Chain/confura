@@ -3,7 +3,7 @@ module github.com/Conflux-Chain/confura
 go 1.15
 
 require (
-	github.com/Conflux-Chain/go-conflux-sdk v1.5.9-0.20240103030943-19564d273cc0
+	github.com/Conflux-Chain/go-conflux-sdk v1.5.9
 	github.com/Conflux-Chain/go-conflux-util v0.1.1-0.20231220063312-4844964b9b11
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20230609030113-dc3c4d42820a
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
@@ -14,8 +14,8 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/montanaflynn/stats v0.6.6
-	github.com/openweb3/go-rpc-provider v0.3.2-0.20240122070151-6b1da63b1cfc
-	github.com/openweb3/web3go v0.2.6-0.20240103031139-a2412eb598cc
+	github.com/openweb3/go-rpc-provider v0.3.2
+	github.com/openweb3/web3go v0.2.6
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
 	github.com/rs/cors v1.7.0
