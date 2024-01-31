@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 
+	// ensure viper based configuration initialized at the very beginning
+	_ "github.com/Conflux-Chain/confura/config"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
