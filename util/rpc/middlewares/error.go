@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/openweb3/go-rpc-provider"
+	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 )
 
 var (
@@ -31,10 +32,14 @@ func matchNginxUnavailableError(err error) bool {
 	return false
 }
 
+func isServerTooBusy(err error) bool {
+	return matchNginxUnavailableError(err) || errors.Is(err, providers.ErrCircuitOpen)
+}
+
 func UniformError(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
 		resp := next(ctx, msg)
-		if resp.Error != nil && matchNginxUnavailableError(resp.Error) {
+		if resp.Error != nil && isServerTooBusy(resp.Error) {
 			return resp.ErrorResponse(ErrorServerTooBusy)
 		}
 
