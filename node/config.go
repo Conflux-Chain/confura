@@ -49,7 +49,7 @@ func init() {
 			Nodes:    cfg.EthURLs,
 			Failover: cfg.Router.ChainedFailover.EthURL,
 		},
-		GroupCfxFullState: {
+		GroupEthFullState: {
 			Nodes: cfg.EthFullStateURLs,
 		},
 		GroupEthWs: {
