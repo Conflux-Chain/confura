@@ -6,8 +6,6 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util/metrics/service"
 	"github.com/Conflux-Chain/confura/util/rpc"
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 )
 
@@ -132,8 +130,7 @@ func evmSpaceApis(clientProvider *node.EthClientProvider, option ...EthAPIOption
 
 // nativeSpaceBridgeApis adapts evm space RPCs to core space RPCs.
 func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
-	// TODO configure cluster for CFX bridge?
-	eth, err := web3go.NewClient(ethNodeURL)
+	eth, err := rpc.NewEthClient(ethNodeURL)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to connect to eth space")
 	}
@@ -144,7 +141,7 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 	}
 	rpc.HookMiddlewares(eth.Provider(), ethNodeURL, "eth")
 
-	cfx, err := sdk.NewClient(cfxNodeURL)
+	cfx, err := rpc.NewCfxClient(cfxNodeURL)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to connect to cfx space")
 	}
