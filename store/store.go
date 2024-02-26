@@ -5,9 +5,6 @@ import (
 	"io"
 	"strings"
 
-	// ensure viper based configuration initialized at the very beginning
-	_ "github.com/Conflux-Chain/confura/config"
-
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/sirupsen/logrus"
@@ -167,7 +164,9 @@ func (conf *storeConfig) IsDisabledForType(edt EpochDataType) bool {
 	return false
 }
 
-func init() {
+func MustInit() {
 	cfxStoreConfig.mustInit("store")
 	ethStoreConfig.mustInit("ethstore")
+
+	initLogFilter()
 }

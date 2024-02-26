@@ -18,9 +18,12 @@ const (
 	ctxKeyClientGroup    = handlers.CtxKey("Infura-RPC-Client-Group")
 )
 
-// go-rpc-provider only supports static middlewares for RPC server.
-func init() {
-	// middlewares executed in order
+func MustInit() {
+	// init metrics
+	initMetrics()
+
+	// Register middlewares for go-rpc-provider, which only supports static middlewares for RPC server.
+	// The following middlewares are executed in order.
 
 	// panic recovery
 	rpc.HookHandleCallMsg(middlewares.Recover)

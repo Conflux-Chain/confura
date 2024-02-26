@@ -3,9 +3,6 @@ package node
 import (
 	"time"
 
-	// ensure viper based configuration initialized at the very beginning
-	_ "github.com/Conflux-Chain/confura/config"
-
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/buraksezer/consistent"
 	"github.com/sirupsen/logrus"
@@ -17,7 +14,7 @@ var cfg config
 var urlCfg map[Group]UrlConfig
 var ethUrlCfg map[Group]UrlConfig
 
-func init() {
+func MustInit() {
 	viper.MustUnmarshalKey("node", &cfg)
 	logrus.WithField("config", cfg).Debug("Node manager configurations loaded.")
 
