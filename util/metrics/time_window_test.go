@@ -1,6 +1,3 @@
-//go:build !ci
-// +build !ci
-
 package metrics
 
 import (
