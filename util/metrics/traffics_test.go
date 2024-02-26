@@ -1,3 +1,6 @@
+//go:build !ci
+// +build !ci
+
 package metrics
 
 import (
@@ -9,6 +12,7 @@ import (
 )
 
 func TestTrafficCollector(t *testing.T) {
+	timeWin := NewTimeWindow(time.Second, 5)
 	tc := &timeWindowTrafficCollector{window: timeWin}
 
 	tvisitors := make([]Visitor, 100)

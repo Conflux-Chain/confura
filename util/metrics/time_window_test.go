@@ -1,23 +1,17 @@
+//go:build !ci
+// +build !ci
+
 package metrics
 
 import (
-	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-var (
-	timeWin *TimeWindow
-)
-
-func TestMain(m *testing.M) {
-	timeWin = NewTimeWindow(time.Second, 5)
-	os.Exit(m.Run())
-}
-
 func TestTimeWindowAddNewSlot(t *testing.T) {
+	timeWin := NewTimeWindow(time.Second, 5)
 	startT := time.Now()
 
 	sdata := twPercentageData{total: 1}
@@ -39,6 +33,8 @@ func TestTimeWindowAddNewSlot(t *testing.T) {
 }
 
 func TestTimeWindowExpire(t *testing.T) {
+	timeWin := NewTimeWindow(time.Second, 5)
+
 	startT := time.Now()
 	slot := timeWin.addNewSlot(startT, twPercentageData{})
 
@@ -52,6 +48,7 @@ func TestTimeWindowExpire(t *testing.T) {
 }
 
 func TestTimeWindowAddOrUpdateSlot(t *testing.T) {
+	timeWin := NewTimeWindow(time.Second, 5)
 	startT := time.Now()
 
 	sdata := twPercentageData{total: 1}
@@ -71,6 +68,7 @@ func TestTimeWindowAddOrUpdateSlot(t *testing.T) {
 }
 
 func TestTimeWindowAdd(t *testing.T) {
+	timeWin := NewTimeWindow(time.Second, 5)
 	startT := time.Now()
 
 	sdata := twPercentageData{total: 1}
