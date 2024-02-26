@@ -4,9 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	// ensure viper based configuration initialized at the very beginning
-	_ "github.com/Conflux-Chain/confura/config"
-
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -24,7 +21,7 @@ type BlacklistedAddrInfo struct {
 	Epoch uint64
 }
 
-func init() {
+func MustInit() {
 	// Load blacklisted contract address.
 	var blackListAddrStrs string
 	if err := viper.UnmarshalKey("sync.blackListAddrs", &blackListAddrStrs); err != nil {

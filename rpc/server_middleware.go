@@ -19,7 +19,7 @@ const (
 )
 
 // go-rpc-provider only supports static middlewares for RPC server.
-func init() {
+func MustInit() {
 	// middlewares executed in order
 
 	// panic recovery

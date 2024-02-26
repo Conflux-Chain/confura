@@ -3,9 +3,6 @@ package store
 import (
 	"time"
 
-	// ensure viper based configuration initialized at the very beginning
-	_ "github.com/Conflux-Chain/confura/config"
-
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
@@ -46,7 +43,7 @@ var ( // Log filter constants
 	MaxLogBlockRange uint64
 )
 
-func init() {
+func initLogFilter() {
 	var lfc struct {
 		MaxBlockHashCount int `default:"32"`
 		MaxAddressCount   int `default:"32"`

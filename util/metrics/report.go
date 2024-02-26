@@ -14,7 +14,7 @@ import (
 // metric created for static variables in any package.
 //
 // In addition, this package should be imported after the initialization of viper and logrus.
-func Init() {
+func MustInit() {
 	var config struct {
 		Enabled  bool `default:"true"`
 		Influxdb struct {

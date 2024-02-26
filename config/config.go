@@ -3,9 +3,14 @@ package config
 import (
 	"strings"
 
+	"github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/rpc"
+	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util/alert"
+	"github.com/Conflux-Chain/confura/util/blacklist"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/confura/util/pprof"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
@@ -29,9 +34,18 @@ func init() {
 	// init pprof
 	pprof.MustInit()
 	// init metrics
-	metrics.Init()
+	metrics.MustInit()
 	// init alert
 	alert.InitDingRobot()
+	// init misc util
+	rpcutil.MustInit()
+	blacklist.MustInit()
+	// init store
+	store.MustInit()
+	// init node
+	node.MustInit()
+	// init rpc
+	rpc.MustInit()
 }
 
 func initLogger() {
