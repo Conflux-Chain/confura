@@ -85,7 +85,7 @@ func TestConvertBlockHeader(t *testing.T) {
 }
 
 func TestConvertReceipt(t *testing.T) {
-	txHash := "0xff2438365f72360a0eb60faf217b4d2ea2cc3599d59f5141113b68a58802452c"
+	txHash := "0x4a55b1def27caf6c262f2359d78a33eee4e05e390d55f8845486cd5d1e7d3a20"
 	ethTxHash := common.HexToHash(txHash)
 
 	ethReceipt, err := ethClient.Eth.TransactionReceipt(ethTxHash)
