@@ -11,14 +11,9 @@ var (
 	GitCommit string
 
 	BuildDate string
-	BuildOS   string
-	BuildArch string
-)
-
-func init() {
-	BuildOS = runtime.GOOS
+	BuildOS   = runtime.GOOS
 	BuildArch = runtime.GOARCH
-}
+)
 
 func DumpVersionInfo() {
 	strFormat := "%-12v%v\n"

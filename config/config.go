@@ -26,7 +26,7 @@ import (
 // eg., `INFURA_LOG_LEVEL` will override "log.level" config item from the config file.
 const viperEnvPrefix = "infura"
 
-func init() {
+func Init() {
 	// init viper
 	viper.MustInit(viperEnvPrefix)
 	// init logger

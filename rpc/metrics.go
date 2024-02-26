@@ -11,7 +11,7 @@ const (
 	metricPrefixInfura = "infura/"
 )
 
-func init() {
+func initMetrics() {
 	// Remove unused metrics imported from ethereum rpc package
 	var names []string
 	for k := range metrics.DefaultRegistry.GetAll() {
