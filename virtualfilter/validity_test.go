@@ -1,3 +1,6 @@
+//go:build !ci
+// +build !ci
+
 package virtualfilter
 
 import (
@@ -11,6 +14,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/Conflux-Chain/confura/util/test"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
@@ -123,6 +127,10 @@ func TestMain(m *testing.M) {
 		github.com/Conflux-Chain/confura/virtualfilter -args -network=eth|cfx
 */
 func TestFilterDataValidity(t *testing.T) {
+	if test.CITestOnly() {
+		t.Skip("Skipping CI-only test")
+	}
+
 	switch *network {
 	case "eth":
 		testEthFilterDataValidity(t)

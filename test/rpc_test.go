@@ -1,3 +1,6 @@
+//go:build !ci
+// +build !ci
+
 package test
 
 import (
@@ -7,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/Conflux-Chain/confura/util/test"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/stretchr/testify/assert"
@@ -46,6 +50,10 @@ func mustMarshalJSON(t require.TestingT, v interface{}) string {
 }
 
 func TestGetBalance(t *testing.T) {
+	if test.CITestOnly() {
+		t.Skip("Skipping CI-only test")
+	}
+
 	epoch := mustGetTestEpoch(t, types.EpochLatestConfirmed, 0)
 
 	b1, err := fullnode.GetBalance(wcfx, types.NewEpochOrBlockHashWithEpoch(epoch))
@@ -60,6 +68,10 @@ func TestGetBalance(t *testing.T) {
 }
 
 func TestGetAdmin(t *testing.T) {
+	if test.CITestOnly() {
+		t.Skip("Skipping CI-only test")
+	}
+
 	admin1, err := fullnode.GetAdmin(wcfx)
 	require.NoError(t, err)
 	require.NotNil(t, admin1)
@@ -86,6 +98,10 @@ func testGetLogs(t *testing.T, expectedCount int, filter types.LogFilter) {
 }
 
 func TestGetLogs(t *testing.T) {
+	if test.CITestOnly() {
+		t.Skip("Skipping CI-only test")
+	}
+
 	// filter: epoch range
 	testGetLogs(t, 55, types.LogFilter{
 		FromEpoch: types.NewEpochNumberUint64(10477303),
@@ -144,6 +160,10 @@ func TestGetLogs(t *testing.T) {
 }
 
 func TestErrorWithData(t *testing.T) {
+	if test.CITestOnly() {
+		t.Skip("Skipping CI-only test")
+	}
+
 	_, err1 := fullnode.GetBalance(wcfxTest)
 	_, err2 := infura.GetBalance(wcfxTest)
 	assert.Equal(t, mustMarshalJSON(t, err1), mustMarshalJSON(t, err2))
