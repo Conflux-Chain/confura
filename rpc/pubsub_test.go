@@ -73,9 +73,7 @@ func TestMatchLogFilterAddr(t *testing.T) {
 		{logFilter2, logJson3, true},
 	}
 
-	for i, tc := range testCases {
-		t.Logf("index: %v, tc: %v", i, tc)
-
+	for _, tc := range testCases {
 		log := types.SubscriptionLog{}
 		err := json.Unmarshal([]byte(tc.logJsonStr), &log)
 		assert.Nil(t, err)

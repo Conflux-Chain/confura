@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/test"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,10 +21,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestTimeWindowAddNewSlot(t *testing.T) {
-	if test.CITestOnly() {
-		t.Skip("Skipping CI-only test")
-	}
-
 	startT := time.Now()
 
 	sdata := twPercentageData{total: 1}
@@ -47,10 +42,6 @@ func TestTimeWindowAddNewSlot(t *testing.T) {
 }
 
 func TestTimeWindowExpire(t *testing.T) {
-	if test.CITestOnly() {
-		t.Skip("Skipping CI-only test")
-	}
-
 	startT := time.Now()
 	slot := timeWin.addNewSlot(startT, twPercentageData{})
 
@@ -64,10 +55,6 @@ func TestTimeWindowExpire(t *testing.T) {
 }
 
 func TestTimeWindowAddOrUpdateSlot(t *testing.T) {
-	if test.CITestOnly() {
-		t.Skip("Skipping CI-only test")
-	}
-
 	startT := time.Now()
 
 	sdata := twPercentageData{total: 1}
@@ -87,10 +74,6 @@ func TestTimeWindowAddOrUpdateSlot(t *testing.T) {
 }
 
 func TestTimeWindowAdd(t *testing.T) {
-	if test.CITestOnly() {
-		t.Skip("Skipping CI-only test")
-	}
-
 	startT := time.Now()
 
 	sdata := twPercentageData{total: 1}

@@ -8,15 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/test"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestTrafficCollector(t *testing.T) {
-	if test.CITestOnly() {
-		t.Skip("Skipping CI-only test")
-	}
-
 	tc := &timeWindowTrafficCollector{window: timeWin}
 
 	tvisitors := make([]Visitor, 100)
