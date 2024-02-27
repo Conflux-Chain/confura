@@ -7,10 +7,6 @@ import (
 )
 
 func TestLogrusAddHooks(t *testing.T) {
-	if alerter == nil {
-		t.SkipNow()
-	}
-
 	// Add alert hook for logrus fatal/warn/error level
 	hookLevels := []logrus.Level{logrus.FatalLevel, logrus.WarnLevel, logrus.ErrorLevel}
 	logrus.AddHook(NewLogrusAlertHook(alerter, hookLevels))

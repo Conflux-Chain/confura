@@ -21,7 +21,10 @@ func TestMain(m *testing.M) {
 		panic(errors.WithMessage(err, "failed to setup"))
 	}
 
-	code := m.Run()
+	code := 0
+	if alerter != nil {
+		code = m.Run()
+	}
 
 	if err := teardown(); err != nil {
 		panic(errors.WithMessage(err, "failed to tear down"))
@@ -55,10 +58,6 @@ func teardown() (err error) {
 }
 
 func TestDingTalkAlert(t *testing.T) {
-	if alerter == nil {
-		t.SkipNow()
-	}
-
 	err := alerter.Send("info", "hi", "this is a test")
 	assert.NoError(t, err)
 }
