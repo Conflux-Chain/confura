@@ -7,11 +7,12 @@ import (
 )
 
 type LogrusAlertHook struct {
-	levels []logrus.Level
+	alerter *DingTalkAlerter
+	levels  []logrus.Level
 }
 
-func NewLogrusAlertHook(lvls []logrus.Level) *LogrusAlertHook {
-	return &LogrusAlertHook{levels: lvls}
+func NewLogrusAlertHook(alerter *DingTalkAlerter, lvls []logrus.Level) *LogrusAlertHook {
+	return &LogrusAlertHook{alerter: alerter, levels: lvls}
 }
 
 func (hook *LogrusAlertHook) Levels() []logrus.Level {
@@ -27,5 +28,5 @@ func (hook *LogrusAlertHook) Fire(logEntry *logrus.Entry) error {
 	// Trim last newline char to uniform message format
 	detail := strings.TrimSuffix(string(detailBytes), "\n")
 
-	return SendDingTalkTextMessage(level, brief, detail)
+	return hook.alerter.Send(level, brief, detail)
 }

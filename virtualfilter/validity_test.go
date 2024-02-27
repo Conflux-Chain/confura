@@ -2,7 +2,6 @@ package virtualfilter
 
 import (
 	"encoding/json"
-	"flag"
 	"math"
 	"os"
 	"reflect"
@@ -23,13 +22,8 @@ import (
 )
 
 var (
-	// network space of data validity test
-	network = flag.String("network", "eth", "network space (`eth` or `cfx`)")
-
-	// evm space
-	ethClient   *web3go.Client
-	ethHttpNode = "http://evmtestnet.confluxrpc.com"
-
+	// EVM space
+	ethClient     *web3go.Client
 	ethFilterCrit = &types.FilterQuery{Addresses: []common.Address{
 		common.HexToAddress("0xfee2359f47617058ce4138cde54bf55fbca0be4b"),
 		common.HexToAddress("0x73d95c9b1b3d4acc22847aa2985521f2adde5988"),
@@ -37,12 +31,8 @@ var (
 		common.HexToAddress("0x2ed3dddae5b2f321af0806181fbfa6d049be47d8"),
 	}}
 
-	ethVfChain = newEthFilterChain(500)
-
-	// core space
-	cfxClient   *sdk.Client
-	cfxHttpNode = "http://test.confluxrpc.com"
-
+	// Core space
+	cfxClient     *sdk.Client
 	cfxFilterCrit = cfxtypes.LogFilter{
 		Address: []cfxtypes.Address{
 			cfxaddress.MustNewFromBase32("cfxtest:achs3nehae0j6ksvy1bhrffsh1rtfrw1f6w1kzv46t"),
@@ -51,38 +41,42 @@ var (
 			cfxaddress.MustNewFromBase32("cfxtest:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaa2eaeg85p5"),
 		},
 	}
-
-	cfxVfChain = newCfxFilterChain(500)
 )
 
+// Please set the following enviroments before running the validity test:
+// `TEST_CFX_CLIENT_ENDPOINT`: Core space JSON-RPC endpoint to construct sdk client.
+// `TEST_ETH_CLIENT_ENDPOINT`: EVM space JSON-RPC endpoint to construct sdk client.
+//
+// Also run the test case with timeout disabled as follows if long running validation is tended:
+// go test -test.timeout 0 -v -run ^Test[Cfx|Eth]FilterDataValidity$ github.com/Conflux-Chain/confura/virtualfilter
+
+func TestMain(m *testing.M) {
+	if err := setup(); err != nil {
+		panic(errors.WithMessage(err, "failed to setup"))
+	}
+
+	code := m.Run()
+
+	if err := teardown(); err != nil {
+		panic(errors.WithMessage(err, "failed to tear down"))
+	}
+
+	os.Exit(code)
+}
+
 func setup() error {
-	switch *network {
-	case "eth":
-		return setupEth()
-	case "cfx":
-		return setupCfx()
-	default:
-		return errors.New("unknown network space")
-	}
-}
-
-func setupEth() error {
-	var err error
-
-	ethClient, err = rpcutil.NewEthClient(ethHttpNode, rpcutil.WithClientRequestTimeout(15*time.Second))
-	if err != nil {
-		return errors.WithMessage(err, "failed to new web3go client")
+	endpoint := os.Getenv("TEST_ETH_CLIENT_ENDPOINT")
+	if len(endpoint) > 0 {
+		ethClient = rpcutil.MustNewEthClient(
+			endpoint, rpcutil.WithClientRequestTimeout(15*time.Second),
+		)
 	}
 
-	return nil
-}
-
-func setupCfx() error {
-	var err error
-
-	cfxClient, err = rpcutil.NewCfxClient(cfxHttpNode, rpcutil.WithClientRequestTimeout(15*time.Second))
-	if err != nil {
-		return errors.WithMessage(err, "failed to new conflux sdk client")
+	endpoint = os.Getenv("TEST_CFX_CLIENT_ENDPOINT")
+	if len(endpoint) > 0 {
+		cfxClient = rpcutil.MustNewCfxClient(
+			endpoint, rpcutil.WithClientRequestTimeout(15*time.Second),
+		)
 	}
 
 	return nil
@@ -100,41 +94,16 @@ func teardown() (err error) {
 	return nil
 }
 
-func TestMain(m *testing.M) {
-	flag.Parse()
-
-	if err := setup(); err != nil {
-		panic(errors.WithMessage(err, "failed to setup"))
-	}
-
-	code := m.Run()
-
-	if err := teardown(); err != nil {
-		panic(errors.WithMessage(err, "failed to tear down"))
-	}
-
-	os.Exit(code)
-}
-
-// Please run this test case with timeout disabled if long running validation
-// is tended as follows:
-/*
-	go test -test.timeout 0 -v -run ^TestFilterDataValidity$ \
-		github.com/Conflux-Chain/confura/virtualfilter -args -network=eth|cfx
-*/
-func TestFilterDataValidity(t *testing.T) {
-	switch *network {
-	case "eth":
-		testEthFilterDataValidity(t)
-	case "cfx":
-		testCfxFilterDataValidity(t)
-	}
-}
-
 // Consistantly polls changed logs from filter API to accumulate event logs from a `finalized` perspective,
 // then fetches corresponding event logs  with `cfx_getLogs` to validate the correctness of polled and
 // fetched result data.
-func testCfxFilterDataValidity(t *testing.T) {
+func TestCfxFilterDataValidity(t *testing.T) {
+	if cfxClient == nil {
+		t.SkipNow()
+	}
+
+	cfxVfChain := newCfxFilterChain(500)
+
 	fid, err := cfxClient.Filter().NewFilter(cfxFilterCrit)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new cfx log filter")
@@ -273,7 +242,13 @@ func testCfxFilterDataValidity(t *testing.T) {
 // Consistantly polls changed logs from filter API to accumulate event logs from a `finalized` perspective,
 // then fetches corresponding event logs  with `eth_getLogs` to validate the correctness of polled and
 // fetched result data.
-func testEthFilterDataValidity(t *testing.T) {
+func TestEthFilterDataValidity(t *testing.T) {
+	if ethClient == nil {
+		t.SkipNow()
+	}
+
+	ethVfChain := newEthFilterChain(500)
+
 	fid, err := ethClient.Filter.NewLogFilter(ethFilterCrit)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new eth log filter")
