@@ -44,7 +44,6 @@ var (
 )
 
 // Please set the following enviroments before running the validity test:
-// `TEST_NETWORK`: Network space (`eth` or `cfx`) to be tested.
 // `TEST_CFX_CLIENT_ENDPOINT`: Core space JSON-RPC endpoint to construct sdk client.
 // `TEST_ETH_CLIENT_ENDPOINT`: EVM space JSON-RPC endpoint to construct sdk client.
 //
@@ -249,6 +248,7 @@ func TestEthFilterDataValidity(t *testing.T) {
 	}
 
 	ethVfChain := newEthFilterChain(500)
+
 	fid, err := ethClient.Filter.NewLogFilter(ethFilterCrit)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new eth log filter")

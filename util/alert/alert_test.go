@@ -55,6 +55,10 @@ func teardown() (err error) {
 }
 
 func TestDingTalkAlert(t *testing.T) {
+	if alerter == nil {
+		t.SkipNow()
+	}
+
 	err := alerter.Send("info", "hi", "this is a test")
 	assert.NoError(t, err)
 }
