@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go"
 	ethTypes "github.com/openweb3/web3go/types"
@@ -14,30 +13,43 @@ import (
 )
 
 var (
-	ethHttpNode = "http://evmtestnet.confluxrpc.com"
-	cfxHttpNode = "http://test.confluxrpc.com"
-
-	ethClient *web3go.Client
-	cfxClient sdk.ClientOperator
-
+	ethClient    *web3go.Client
 	ethNetworkId *uint64
 )
 
-func setup() error {
-	var err error
+// Please set the following enviroment before start:
+// `TEST_ETH_CLIENT_ENDPOINT`: EVM space JSON-RPC endpoint to construct sdk client.
 
-	if ethClient, err = web3go.NewClient(ethHttpNode); err != nil {
-		return errors.WithMessage(err, "failed to new web3go client")
+func TestMain(m *testing.M) {
+	if err := setup(); err != nil {
+		panic(errors.WithMessage(err, "failed to setup"))
 	}
 
-	if ethNetworkId, err = ethClient.Eth.ChainId(); err != nil {
+	code := 0
+	if ethClient != nil {
+		code = m.Run()
+	}
+
+	if err := teardown(); err != nil {
+		panic(errors.WithMessage(err, "failed to tear down"))
+	}
+
+	os.Exit(code)
+}
+
+func setup() error {
+	ethHttpNode := os.Getenv("TEST_ETH_CLIENT_ENDPOINT")
+	if len(ethHttpNode) == 0 {
+		return nil
+	}
+
+	ethClient = web3go.MustNewClient(ethHttpNode)
+	chainId, err := ethClient.Eth.ChainId()
+	if err != nil {
 		return errors.WithMessage(err, "failed to get eth chainid")
 	}
 
-	if cfxClient, err = sdk.NewClient(cfxHttpNode); err != nil {
-		return errors.WithMessage(err, "failed to new cfx client")
-	}
-
+	ethNetworkId = chainId
 	return nil
 }
 
@@ -46,25 +58,7 @@ func teardown() (err error) {
 		ethClient.Provider().Close()
 	}
 
-	if cfxClient != nil {
-		cfxClient.Close()
-	}
-
 	return nil
-}
-
-func TestMain(m *testing.M) {
-	if err := setup(); err != nil {
-		panic(errors.WithMessage(err, "failed to setup"))
-	}
-
-	code := m.Run()
-
-	if err := teardown(); err != nil {
-		panic(errors.WithMessage(err, "failed to tear down"))
-	}
-
-	os.Exit(code)
 }
 
 func TestConvertBlockHeader(t *testing.T) {

@@ -26,20 +26,25 @@ import (
 // eg., `INFURA_LOG_LEVEL` will override "log.level" config item from the config file.
 const viperEnvPrefix = "infura"
 
+// Logrus logging levels for alert hooking.
+var alertHookLevels = []logrus.Level{
+	logrus.FatalLevel, logrus.WarnLevel, logrus.ErrorLevel,
+}
+
 func Init() {
 	// init viper
 	viper.MustInit(viperEnvPrefix)
 	// init logger
 	initLogger()
+
 	// init pprof
 	pprof.MustInit()
 	// init metrics
 	metrics.MustInit()
-	// init alert
-	alert.InitDingRobot()
 	// init misc util
 	rpcutil.MustInit()
 	blacklist.MustInit()
+
 	// init store
 	store.MustInit()
 	// init node
@@ -70,8 +75,10 @@ func initLogger() {
 	}
 
 	// add alert hook for logrus fatal/warn/error level
-	hookLevels := []logrus.Level{logrus.FatalLevel, logrus.WarnLevel, logrus.ErrorLevel}
-	logrus.AddHook(alert.NewLogrusAlertHook(hookLevels))
+	alerter := alert.MustNewDingTalkAlerterFromViper()
+	if alerter != nil {
+		logrus.AddHook(alert.NewLogrusAlertHook(alerter, alertHookLevels))
+	}
 
 	// customize logger here...
 	adaptGethLogger()
