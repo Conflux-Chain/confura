@@ -102,7 +102,7 @@ func startSyncService(*cobra.Command, []string) {
 
 // startSyncServiceAdaptively adaptively starts kinds of sync server per to store instances.
 func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
-	if syncCtx.CfxDB == nil && syncCtx.CfxCache == nil && syncCtx.EthDB == nil {
+	if syncCtx.CfxDB == nil && syncCtx.EthDB == nil {
 		logrus.Fatal("No data sync configured")
 	}
 
