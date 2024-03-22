@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
-	"github.com/Conflux-Chain/confura/store"
 	cisync "github.com/Conflux-Chain/confura/sync"
 	"github.com/Conflux-Chain/confura/sync/catchup"
 	"github.com/sirupsen/logrus"
@@ -16,7 +15,6 @@ var (
 	// sync boot options
 	syncOpt struct {
 		dbSyncEnabled  bool
-		kvSyncEnabled  bool
 		ethSyncEnabled bool
 		catchupEnabled bool
 	}
@@ -30,7 +28,7 @@ var (
 
 	syncCmd = &cobra.Command{
 		Use:   "sync",
-		Short: "Start sync service, including DB/KV/ETH sync, as well as fast catchup",
+		Short: "Start sync service, including DB/ETH sync, as well as fast catchup",
 		Run:   startSyncService,
 	}
 )
@@ -39,11 +37,6 @@ func init() {
 	// boot flag for core space DB sync
 	syncCmd.Flags().BoolVar(
 		&syncOpt.dbSyncEnabled, "db", false, "start core space DB sync server",
-	)
-
-	// boot flag for core space DB sync
-	syncCmd.Flags().BoolVar(
-		&syncOpt.kvSyncEnabled, "kv", false, "start core space KV sync server",
 	)
 
 	// boot flag for evm space sync
@@ -78,7 +71,7 @@ func init() {
 }
 
 func startSyncService(*cobra.Command, []string) {
-	if !syncOpt.dbSyncEnabled && !syncOpt.kvSyncEnabled &&
+	if !syncOpt.dbSyncEnabled &&
 		!syncOpt.ethSyncEnabled && !syncOpt.catchupEnabled {
 		logrus.Fatal("No Sync server specified")
 	}
@@ -92,22 +85,8 @@ func startSyncService(*cobra.Command, []string) {
 	syncCtx := util.MustInitSyncContext(storeCtx)
 	defer syncCtx.Close()
 
-	var subs []cisync.EpochSubscriber
-
 	if syncOpt.dbSyncEnabled { // start DB sync
-		syncer := startSyncCfxDatabase(ctx, &wg, syncCtx)
-		subs = append(subs, syncer)
-	}
-
-	if syncOpt.kvSyncEnabled { // start KV sync
-		if syncer := startSyncCfxCache(ctx, &wg, syncCtx); syncer != nil {
-			subs = append(subs, syncer)
-		}
-	}
-
-	if len(subs) > 0 { // monitor pivot chain switch via pub/sub
-		logrus.Info("Start to pub/sub epoch to monitor pivot chain switch")
-		go cisync.MustSubEpoch(ctx, &wg, syncCtx.SubCfx, subs...)
+		startSyncCfxDatabase(ctx, &wg, syncCtx)
 	}
 
 	if syncOpt.catchupEnabled { // start fast catchup
@@ -127,22 +106,8 @@ func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, syncCtx
 		logrus.Fatal("No data sync configured")
 	}
 
-	var subs []cisync.EpochSubscriber
-
 	if syncCtx.CfxDB != nil { // start DB sync
-		syncer := startSyncCfxDatabase(ctx, wg, syncCtx)
-		subs = append(subs, syncer)
-	}
-
-	if syncCtx.CfxCache != nil { // start KV sync
-		if syncer := startSyncCfxCache(ctx, wg, syncCtx); syncer != nil {
-			subs = append(subs, syncer)
-		}
-	}
-
-	if len(subs) > 0 { // monitor pivot chain switch via pub/sub
-		logrus.Info("Start to pub/sub epoch to monitor pivot chain switch")
-		go cisync.MustSubEpoch(ctx, wg, syncCtx.SubCfx, subs...)
+		startSyncCfxDatabase(ctx, wg, syncCtx)
 	}
 
 	if syncCtx.EthDB != nil { // start ETH sync
@@ -160,27 +125,6 @@ func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.
 	go syncCtx.CfxDB.Prune()
 
 	return syncer
-}
-
-func startSyncCfxCache(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) *cisync.KVCacheSyncer {
-	if store.StoreConfig().IsChainBlockDisabled() &&
-		store.StoreConfig().IsChainTxnDisabled() &&
-		store.StoreConfig().IsChainReceiptDisabled() {
-		// KV sync only syncs block, transaction and receipt data. If all of them are disabled,
-		// nothing needs to sync, just stop right here.
-		return nil
-	}
-
-	logrus.Info("Start to sync core space blockchain data into cache")
-
-	csyncer := cisync.MustNewKVCacheSyncer(syncCtx.SyncCfx, syncCtx.CfxCache)
-	go csyncer.Sync(ctx, wg)
-
-	// start core space cache prune
-	cpruner := cisync.MustNewKVCachePruner(syncCtx.CfxCache)
-	go cpruner.Prune(ctx, wg)
-
-	return csyncer
 }
 
 func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {

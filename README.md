@@ -105,7 +105,7 @@ Confura is comprised of serveral components as below:
 
 ### Blockchain Sync
 
-You can use the `sync` subcommand to start sync service, including DB/KV/ETH sync as well as fast catchup.
+You can use the `sync` subcommand to start sync service, including DB/ETH sync as well as fast catchup.
 
 > Usage:
 >   confura sync [flags]
@@ -114,7 +114,6 @@ You can use the `sync` subcommand to start sync service, including DB/KV/ETH syn
 >
 >       --db           start core space DB sync server
 >       --eth          start ETH sync server
->       --kv           start core space KV sync server
 >       --catchup      start core space fast catchup server
 >       --adaptive     automatically adjust target epoch number to the latest stable epoch
 >       --benchmark    benchmarking the performance during fast catch-up sync (default true)
@@ -246,7 +245,7 @@ confura-ethsync              ./confura sync --eth             Up
 confura-node-management      ./confura nm --cfx               Up      0.0.0.0:22530->22530/tcp,:::22530->22530/tcp
 confura-redis                docker-entrypoint.sh redis ...   Up      0.0.0.0:53779->6379/tcp                     
 confura-rpc                  ./confura rpc --cfx              Up      0.0.0.0:22537->22537/tcp,:::22537->22537/tcp
-confura-sync                 ./confura sync --db --kv         Up                                                  
+confura-sync                 ./confura sync --db              Up
 confura-virtual-filter       ./confura vf                     Up      0.0.0.0:48545->48545/tcp,:::48545->48545/tcp
 ```
 

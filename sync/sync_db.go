@@ -3,7 +3,6 @@ package sync
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -24,11 +23,6 @@ const (
 	// default capacity setting for pivot info window
 	syncPivotInfoWinCapacity = 50
 )
-
-type pivotSwitchEvent struct {
-	revertFrom uint64
-	revertTo   uint64
-}
 
 // db sync configuration
 type syncConfig struct {
@@ -58,16 +52,8 @@ type DatabaseSyncer struct {
 	syncIntervalNormal time.Duration
 	// interval to sync data in catching up mode
 	syncIntervalCatchUp time.Duration
-	// last received epoch number from pubsub for pivot chain switch detection
-	lastSubEpochNo uint64
-	// channel to receive pivot chain switch events
-	pivotSwitchEventCh chan *pivotSwitchEvent
-	// checkpoint channel received to check sync data
-	checkPointCh chan bool
 	// window to cache epoch pivot info
 	epochPivotWin *epochPivotWindow
-	// sync is ready only after fast catch-up is completed
-	catchupCompleted uint32
 	// error tolerant logger
 	etLogger *logutil.ErrorTolerantLogger
 }
@@ -85,9 +71,6 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 		maxSyncEpochs:       conf.MaxEpochs,
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
-		lastSubEpochNo:      citypes.EpochNumberNil,
-		pivotSwitchEventCh:  make(chan *pivotSwitchEvent, conf.Sub.Buffer),
-		checkPointCh:        make(chan bool, 2),
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 		etLogger:            logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 	}
@@ -110,44 +93,22 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
-	checkpoint := func() {
-		if err := syncer.doCheckPoint(); err != nil {
-			logrus.WithError(err).Error("Db syncer failed to do checkpoint")
-			syncer.triggerCheckpoint() // re-trigger checkpoint
-		}
-	}
-
-	breakLoop := false
-	quit := func() {
-		breakLoop = true
-		logrus.Info("DB syncer shutdown ok")
-	}
-
 	syncer.fastCatchup(ctx)
-	atomic.StoreUint32(&syncer.catchupCompleted, 1)
 
 	ticker := time.NewTicker(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
 
-	for !breakLoop {
-		select { // first class priority
+	for {
+		select {
 		case <-ctx.Done():
-			quit()
-		case <-syncer.checkPointCh:
-			checkpoint()
-		default:
-			select { // second class priority
-			case <-ctx.Done():
-				quit()
-			case <-syncer.checkPointCh:
-				checkpoint()
-			case <-ticker.C:
-				err := syncer.doTicker(ticker)
-				syncer.etLogger.Log(
-					logrus.WithField("epochFrom", syncer.epochFrom),
-					err, "Db syncer failed to sync epoch data",
-				)
-			}
+			logrus.Info("DB syncer shutdown ok")
+			return
+		case <-ticker.C:
+			err := syncer.doTicker(ticker)
+			syncer.etLogger.Log(
+				logrus.WithField("epochFrom", syncer.epochFrom),
+				err, "Db syncer failed to sync epoch data",
+			)
 		}
 	}
 }
@@ -194,11 +155,6 @@ func (syncer *DatabaseSyncer) loadLastSyncEpoch() (loaded bool, err error) {
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
 func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
-	// Drain pivot switch reorg event channel to handle pivot chain reorg
-	if err := syncer.drainPivotReorgEvents(); err != nil {
-		return false, err
-	}
-
 	// Fetch latest confirmed epoch from blockchain
 	epoch, err := syncer.cfx.GetEpochNumber(types.EpochLatestConfirmed)
 	if err != nil {
@@ -209,8 +165,9 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 
 	maxEpochTo := epoch.ToInt().Uint64()
 	if syncer.epochFrom > maxEpochTo { // cached up to the latest confirmed epoch?
-		logrus.WithFields(logrus.Fields{
-			"epochRange": citypes.RangeUint64{From: syncer.epochFrom, To: maxEpochTo},
+		logrus.WithField("epochRange", citypes.RangeUint64{
+			From: syncer.epochFrom,
+			To:   maxEpochTo,
 		}).Debug("Db syncer skipped due to already catch-up")
 		return true, nil
 	}
@@ -321,35 +278,6 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 	return false, nil
 }
 
-func (syncer *DatabaseSyncer) doCheckPoint() error {
-	logger := logrus.WithFields(logrus.Fields{
-		"epochFrom":      syncer.epochFrom,
-		"lastSubEpochNo": atomic.LoadUint64(&syncer.lastSubEpochNo),
-	})
-
-	logger.Info("Db syncer ensuring epoch data validity on pubsub checkpoint")
-
-	if err := ensureStoreEpochDataOk(syncer.cfx, syncer.db); err != nil {
-		logger.WithError(err).Info(
-			"Db syncer failed to ensure epoch data validity on checkpoint",
-		)
-
-		return errors.WithMessage(err, "failed to ensure data validity")
-	}
-
-	if _, err := syncer.loadLastSyncEpoch(); err != nil {
-		logger.WithError(err).Info(
-			"Db syncer failed to reload last sync point on checkpoint",
-		)
-
-		return errors.WithMessage(err, "failed to reload last sync point")
-	}
-
-	syncer.epochPivotWin.popn(syncer.epochFrom)
-
-	return nil
-}
-
 func (syncer *DatabaseSyncer) doTicker(ticker *time.Ticker) error {
 	logrus.Debug("DB sync ticking")
 
@@ -369,37 +297,6 @@ func (syncer *DatabaseSyncer) doTicker(ticker *time.Ticker) error {
 	return nil
 }
 
-// implement the EpochSubscriber interface.
-func (syncer *DatabaseSyncer) onEpochReceived(epoch types.WebsocketEpochResponse) {
-	if atomic.LoadUint32(&syncer.catchupCompleted) != 1 { // not ready for sync yet
-		return
-	}
-
-	epochNo := epoch.EpochNumber.ToInt().Uint64()
-
-	logger := logrus.WithField("epoch", epochNo)
-	logger.Debug("Db syncer onEpochReceived new epoch received")
-
-	if err := syncer.detectPivotSwitchFromPubsub(&epoch); err != nil {
-		logger.WithError(err).Error(
-			"Db syncer failed to detect pivot chain switch from pubsub",
-		)
-	}
-}
-
-func (syncer *DatabaseSyncer) onEpochSubStart() {
-	if atomic.LoadUint32(&syncer.catchupCompleted) != 1 {
-		// not ready for sync yet
-		return
-	}
-
-	logrus.Debug("DB sync onEpochSubStart event received")
-
-	// reset lastSubEpochNo
-	atomic.StoreUint64(&(syncer.lastSubEpochNo), citypes.EpochNumberNil)
-	syncer.triggerCheckpoint()
-}
-
 func (syncer *DatabaseSyncer) nextEpochTo(maxEpochTo uint64) (uint64, uint64) {
 	epochTo := util.MinUint64(syncer.epochFrom+syncer.maxSyncEpochs-1, maxEpochTo)
 
@@ -409,30 +306,6 @@ func (syncer *DatabaseSyncer) nextEpochTo(maxEpochTo uint64) (uint64, uint64) {
 
 	syncSize := epochTo - syncer.epochFrom + 1
 	return epochTo, syncSize
-}
-
-func (syncer *DatabaseSyncer) drainPivotReorgEvents() error {
-	for {
-		select {
-		case psevent := <-syncer.pivotSwitchEventCh:
-			if psevent.revertTo >= syncer.epochFrom {
-				break
-			}
-
-			logrus.WithFields(logrus.Fields{
-				"revertFromEpoch": psevent.revertFrom,
-				"revertToEpoch":   psevent.revertTo,
-				"syncFromEpoch":   syncer.epochFrom,
-			}).Warn("Db syncer detected pivot chain reorg for the latest confirmed epoch from pubsub")
-
-			// pivot switch reorg for the latest confirmed epoch
-			if err := syncer.pivotSwitchRevert(psevent.revertTo); err != nil {
-				return errors.WithMessage(err, "failed to revert epoch(s) from pivot switch reorg channel")
-			}
-		default:
-			return nil
-		}
-	}
 }
 
 func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
@@ -467,52 +340,6 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
 	syncer.epochPivotWin.popn(revertTo)
 	// update syncer start epoch
 	syncer.epochFrom = revertTo
-
-	return nil
-}
-
-func (syncer *DatabaseSyncer) triggerCheckpoint() {
-	if len(syncer.checkPointCh) == 0 {
-		syncer.checkPointCh <- true
-	}
-}
-
-// Detect pivot chain switch by new received epoch from pubsub. Besides, it also validates if
-// the new received epoch is continuous to the last received subscription epoch number.
-func (syncer *DatabaseSyncer) detectPivotSwitchFromPubsub(epoch *types.WebsocketEpochResponse) error {
-	newEpoch := epoch.EpochNumber.ToInt().Uint64()
-
-	addrPtr := &(syncer.lastSubEpochNo)
-	lastSubEpochNo := atomic.LoadUint64(addrPtr)
-
-	var pivotHash types.Hash
-	if len(epoch.EpochHashesOrdered) > 0 {
-		pivotHash = epoch.EpochHashesOrdered[len(epoch.EpochHashesOrdered)-1]
-	}
-
-	logger := logrus.WithFields(logrus.Fields{
-		"newEpoch": newEpoch, "lastSubEpochNo": lastSubEpochNo, "pivotHash": pivotHash,
-	})
-
-	switch {
-	case lastSubEpochNo == citypes.EpochNumberNil: // initial state
-		logger.Debug("Db syncer initially set last sub epoch number for pivot switch detection")
-
-		atomic.StoreUint64(addrPtr, newEpoch)
-	case lastSubEpochNo >= newEpoch: // pivot switch
-		logger.Info("Db syncer detected pubsub new epoch pivot switched")
-
-		atomic.StoreUint64(addrPtr, newEpoch)
-		syncer.pivotSwitchEventCh <- &pivotSwitchEvent{
-			revertFrom: lastSubEpochNo, revertTo: newEpoch,
-		}
-	case lastSubEpochNo+1 == newEpoch: // continuous
-		logger.Debug("Db syncer validated continuous new epoch from pubsub")
-
-		atomic.StoreUint64(addrPtr, newEpoch)
-	default: // bad incontinuous epoch
-		return errors.Errorf("bad incontinuous epoch, expect %v got %v", lastSubEpochNo+1, newEpoch)
-	}
 
 	return nil
 }
