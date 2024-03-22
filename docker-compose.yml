@@ -26,7 +26,7 @@ services:
   # blockchain sync
   chain-sync:
     image: conflux/confura:latest
-    command: sync --db --kv
+    command: sync --db
     restart: unless-stopped
     depends_on:
       - db

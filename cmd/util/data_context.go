@@ -97,6 +97,7 @@ func MustInitSyncContext(storeCtx StoreContext) SyncContext {
 func (ctx *SyncContext) Close() {
 	// Usually, storeContext will be defer closed by itself
 	// ctx.storeContext.Close()
+
 	if ctx.SyncCfx != nil {
 		ctx.SyncCfx.Close()
 	}
@@ -105,6 +106,7 @@ func (ctx *SyncContext) Close() {
 		ctx.SubCfx.Close()
 	}
 
-	// not provided yet!
-	// ctx.syncEth.Close()
+	if ctx.SyncEth != nil {
+		ctx.SyncEth.Close()
+	}
 }
