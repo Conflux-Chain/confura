@@ -205,6 +205,8 @@ func (w *filterWorker) pollOnce() error {
 		fcJsonStr, _ := json.Marshal(fchanges)
 		logger.WithField("filterChangesJson", string(fcJsonStr)).Info("Invalid filter changes to merge")
 
+		w.dumpFilterChain()
+
 		logger.WithError(err).Error("Filter worker failed to merge filter chain")
 		return err
 	}
@@ -219,6 +221,15 @@ func (w *filterWorker) pollOnce() error {
 	// update last polling time
 	w.session.lastPollingTime = time.Now()
 	return nil
+}
+
+func (w *filterWorker) dumpFilterChain() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if c := w.session.fchain; c != nil {
+		c.print(nilFilterCursor)
+	}
 }
 
 func (w *filterWorker) merge(fchanges filterChanges) error {

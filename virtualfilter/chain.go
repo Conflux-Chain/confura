@@ -32,6 +32,8 @@ type filterChain interface {
 	merge(fchanges filterChanges) error
 	// traverse the filter chain from specific cursor
 	traverse(cursor filterCursor, iterator filterChainIterator) error
+	// dump chain nodes from specific cursor point
+	print(cursor filterCursor)
 }
 
 type filterChainBase struct {
