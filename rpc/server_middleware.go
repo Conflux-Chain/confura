@@ -56,6 +56,8 @@ func MustInit() {
 	rpc.HookHandleCallMsg(middlewares.UniformError)
 
 	// invalid json rpc request without `ID`
+	// !!! This should always be checked at first as we might suffer nil pointer panic due to
+	// missing jsonrpc `ID` for following middleware executions.
 	rpc.HookHandleCallMsg(rpc.PreventMessagesWithouID)
 }
 
