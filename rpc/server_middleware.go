@@ -52,11 +52,13 @@ func MustInit() {
 	// cfx/eth client
 	rpc.HookHandleCallMsg(clientMiddleware)
 
-	// invalid json rpc request without `ID`
-	rpc.HookHandleCallMsg(rpc.PreventMessagesWithouID)
-
 	// uniform human-readable error message
 	rpc.HookHandleCallMsg(middlewares.UniformError)
+
+	// invalid json rpc request without `ID`
+	// !!! This should always be checked at first as we might suffer nil pointer panic due to
+	// missing jsonrpc `ID` for following middleware executions.
+	rpc.HookHandleCallMsg(rpc.PreventMessagesWithouID)
 }
 
 // Inject values into context for static RPC call middlewares, e.g. rate limit
