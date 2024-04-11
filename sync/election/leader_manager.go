@@ -43,7 +43,7 @@ type LeaderManager interface {
 	Await(ctx context.Context) bool
 	// Extend extends the leadership lease
 	Extend(ctx context.Context) bool
-	// Starts the leader election process
+	// Campaign starts the leader election process
 	Campaign(ctx context.Context)
 	// Stop stops the leader election process
 	Stop(ctx context.Context) error
@@ -56,13 +56,12 @@ type LeaderManager interface {
 }
 
 // MustNewLeaderManagerFromViper creates a new LeaderManager with the given LockManager and election key.
-// It panics if the configuration cannot be unmarshaled from Viper.
 func MustNewLeaderManagerFromViper(dlm *dlock.LockManager, elecKey string) LeaderManager {
 	var conf struct {
 		Config
 		Enabled bool // leader election enabled or not?
 	}
-	viper.MustUnmarshalKey("sync.election", &conf) // panic on unmarshal failure
+	viper.MustUnmarshalKey("sync.election", &conf)
 
 	if conf.Enabled {
 		logrus.WithField("config", conf.Config).Info("HA leader election enabled")
@@ -81,7 +80,7 @@ type Config struct {
 	// The time interval between retries of becoming the leader
 	Retry time.Duration `default:"5s"`
 	// The time interval trying to renew the leader term
-	Renew time.Duration `default:"20s"`
+	Renew time.Duration `default:"15s"`
 }
 
 // DlockLeaderManager manages the leader election process using distributed lock.
@@ -94,13 +93,11 @@ type DlockLeaderManager struct {
 	lockMan        *dlock.LockManager // provides lock operations
 	lockExpiryTime int64              // expiry timestamp for the dlock
 
-	cancel   context.CancelFunc           // function to cancel the leader election
-	etLogger *logutil.ErrorTolerantLogger // error tolerant logger
-
-	mu               sync.Mutex        // mutex lock
-	electedCallbacks []ElectedCallback // functions called on leader elected
-	oustedCallbacks  []OustedCallback  // functions called on leader ousted
-	errorCallbacks   []ErrorCallback   // functions called on leader election error
+	mu               sync.Mutex         // mutex lock
+	cancel           context.CancelFunc // function to cancel the campaign process.
+	electedCallbacks []ElectedCallback  // leader elected callback functions
+	oustedCallbacks  []OustedCallback   // leader ousted callback functions
+	errorCallbacks   []ErrorCallback    // leader election error callback functions
 }
 
 // NewDlockLeaderManager creates a new `LeaderManager` with the provided configuration and election key.
@@ -110,7 +107,6 @@ func NewDlockLeaderManager(dlm *dlock.LockManager, conf Config, elecKey string) 
 		Config:      conf,
 		lockMan:     dlm,
 		electionKey: elecKey,
-		etLogger:    logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 	}
 }
 
@@ -138,7 +134,7 @@ func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 	}
 }
 
-// Extend extends leadership lease
+// Extend extends leadership lease.
 func (l *DlockLeaderManager) Extend(ctx context.Context) bool {
 	if atomic.LoadInt32(&l.electionStatus) == StatusElected {
 		// acquire the lock to extend the lease
@@ -148,15 +144,25 @@ func (l *DlockLeaderManager) Extend(ctx context.Context) bool {
 	return false
 }
 
-// Campaign starts the leader election process, which will run in a goroutine until the contex is canceled
+// Campaign starts the election process, which will run in a goroutine until contex canceled.
 func (l *DlockLeaderManager) Campaign(ctx context.Context) {
 	newCtx, cancel := context.WithCancel(ctx)
 	l.cancel = cancel
 
+	logger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
+	etlog := func(err error) {
+		logger.Log(
+			logrus.WithFields(logrus.Fields{
+				"electionKey": l.electionKey,
+				"leaderID":    l.ID,
+			}), err, "Leader election campaign error",
+		)
+	}
+
 	for {
 		// retry to acquire lock at first
 		err := l.retryLock(newCtx)
-		l.logErrorTolerantly(err)
+		etlog(err)
 
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -173,9 +179,9 @@ func (l *DlockLeaderManager) Campaign(ctx context.Context) {
 
 		// renew the lock lease
 		err = l.renewLock(newCtx)
-		l.logErrorTolerantly(err)
+		etlog(err)
 
-		// if we get here we are not the leader anymore
+		// if we got here we are not the leader anymore
 		l.onOusted(newCtx)
 
 		if err != nil {
@@ -226,7 +232,7 @@ func (l *DlockLeaderManager) renewLock(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return context.Canceled
+			return ctx.Err()
 		case <-renewTimer.C:
 			err := l.acquireLock(ctx)
 			if err == nil {
@@ -243,10 +249,9 @@ func (l *DlockLeaderManager) renewLock(ctx context.Context) error {
 	}
 }
 
-// acquireLock helper function to acquire a lock
+// acquireLock helper function to acquire a distrubted lock.
 func (l *DlockLeaderManager) acquireLock(ctx context.Context) error {
 	start := time.Now()
-
 	err := l.lockMan.Acquire(ctx, l.lockIntent())
 	if err == nil {
 		atomic.StoreInt64(&l.lockExpiryTime, start.Add(l.Lease).Unix())
@@ -287,7 +292,7 @@ func (l *DlockLeaderManager) onElected(ctx context.Context) {
 		cb(ctx, l)
 	}
 
-	atomic.StoreInt32(&l.electionStatus, int32(StatusElected))
+	atomic.StoreInt32(&l.electionStatus, StatusElected)
 }
 
 // OnOusted registers a callback function to be invoked on leader ousted.
@@ -299,7 +304,7 @@ func (l *DlockLeaderManager) OnOusted(cb OustedCallback) {
 }
 
 // onOusted is called after the current process is not the leader anymore,
-// either because of an error or failure of extending lease.
+// either because of an error or failure of renewing lease.
 func (l *DlockLeaderManager) onOusted(ctx context.Context) {
 	logrus.WithFields(logrus.Fields{
 		"electionKey": l.electionKey,
@@ -324,7 +329,8 @@ func (l *DlockLeaderManager) OnError(cb ErrorCallback) {
 	l.errorCallbacks = append(l.errorCallbacks, cb)
 }
 
-// OnError is called when an error occurs during the election process ethier on retry or renew stage
+// OnError is called when an error occurs during the election process
+// ethier on retry or renew stage.
 func (l *DlockLeaderManager) onError(ctx context.Context, err error) {
 	logrus.WithFields(logrus.Fields{
 		"electionKey": l.electionKey,
@@ -337,15 +343,6 @@ func (l *DlockLeaderManager) onError(ctx context.Context, err error) {
 	for _, cb := range l.errorCallbacks {
 		cb(ctx, l, err)
 	}
-}
-
-func (l *DlockLeaderManager) logErrorTolerantly(err error) {
-	l.etLogger.Log(
-		logrus.WithFields(logrus.Fields{
-			"electionKey": l.electionKey,
-			"leaderID":    l.ID,
-		}), err, "Leader election campaign error",
-	)
 }
 
 // noopLeaderManager dummy leader manager that does nothing at all.
