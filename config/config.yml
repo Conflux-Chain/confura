@@ -130,6 +130,19 @@ sync:
   #   # Maximum number of blocks to batch sync ETH data once
   #   maxBlocks: 10
 
+  # # HA leader/follower election.
+  # election:
+  #   # Enable/disable leader election
+  #   enabled: false
+  #   # The leader identity
+  #   id: "leader"
+  #   # The duration of the leader term
+  #   lease: 1m
+  #   # the amount of time to wait between retries of becoming the leader
+  #   retry: 5s
+  #   # the time interval at which the leader will try to renew its term
+  #   renew: 15s
+
 # # Metrics configurations
 # metrics:
 #   # Whether to collect metrics

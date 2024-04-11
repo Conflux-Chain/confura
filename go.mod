@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/Conflux-Chain/go-conflux-sdk v1.5.9
-	github.com/Conflux-Chain/go-conflux-util v0.2.0
+	github.com/Conflux-Chain/go-conflux-util v0.2.1-0.20240401035823-007ed13c1155
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20230609030113-dc3c4d42820a
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
@@ -12,6 +12,7 @@ require (
 	github.com/ethereum/go-ethereum v1.10.15
 	github.com/go-redis/redis/v8 v8.8.2
 	github.com/go-sql-driver/mysql v1.6.0
+	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/montanaflynn/stats v0.6.6
 	github.com/openweb3/go-rpc-provider v0.3.3-0.20240314082803-8ee6dd0c7e4f
@@ -58,7 +59,6 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-cmp v0.5.7 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/go-bexpr v0.1.10 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
