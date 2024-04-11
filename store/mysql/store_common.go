@@ -16,6 +16,10 @@ func newBaseStore(db *gorm.DB) *baseStore {
 	return &baseStore{db}
 }
 
+func (bs *baseStore) DB() *gorm.DB {
+	return bs.db
+}
+
 func (baseStore) IsRecordNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, store.ErrNotFound)
 }

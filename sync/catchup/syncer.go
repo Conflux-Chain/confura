@@ -7,12 +7,15 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/store/mysql"
+	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 // Syncer accelerates core space epoch data catch-up using concurrently workers.
@@ -23,40 +26,19 @@ type Syncer struct {
 	// conflux sdk client delegated to get network status
 	cfx sdk.ClientOperator
 	// db store to persist epoch data
-	db store.StackOperable
-	// specifying the epoch range to sync
-	syncRange types.RangeUint64
-	// whether to automatically adjust target sync epoch number to the latest stable epoch,
-	// which is maximum between the latest finalized and the checkpoint epoch number.
-	adaptive bool
+	db *mysql.MysqlStore
 	// min num of db rows per batch persistence
 	minBatchDbRows int
 	// max num of db rows collected before persistence
 	maxDbRows int
 	// benchmark catch-up sync performance
-	bmarker *benchmarker
+	benchmark bool
+	// HA leader/follower election
+	elm election.LeaderManager
 }
 
 // functional options for syncer
 type SyncOption func(*Syncer)
-
-func WithAdaptive(adaptive bool) SyncOption {
-	return func(s *Syncer) {
-		s.adaptive = adaptive
-	}
-}
-
-func WithEpochFrom(epochFrom uint64) SyncOption {
-	return func(s *Syncer) {
-		s.syncRange.From = epochFrom
-	}
-}
-
-func WithEpochTo(epochTo uint64) SyncOption {
-	return func(s *Syncer) {
-		s.syncRange.To = epochTo
-	}
-}
 
 func WithMinBatchDbRows(dbRows int) SyncOption {
 	return func(s *Syncer) {
@@ -78,15 +60,13 @@ func WithWorkers(workers []*worker) SyncOption {
 
 func WithBenchmark(benchmark bool) SyncOption {
 	return func(s *Syncer) {
-		if benchmark {
-			s.bmarker = newBenchmarker()
-		} else {
-			s.bmarker = nil
-		}
+		s.benchmark = benchmark
 	}
 }
 
-func MustNewSyncer(cfx sdk.ClientOperator, db store.StackOperable, opts ...SyncOption) *Syncer {
+func MustNewSyncer(
+	cfx sdk.ClientOperator, db *mysql.MysqlStore,
+	elm election.LeaderManager, opts ...SyncOption) *Syncer {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
@@ -104,14 +84,13 @@ func MustNewSyncer(cfx sdk.ClientOperator, db store.StackOperable, opts ...SyncO
 		WithWorkers(workers),
 	)
 
-	return newSyncer(cfx, db, append(newOpts, opts...)...)
+	return newSyncer(cfx, db, elm, append(newOpts, opts...)...)
 }
 
-func newSyncer(cfx sdk.ClientOperator, db store.StackOperable, opts ...SyncOption) *Syncer {
-	syncer := &Syncer{
-		db: db, cfx: cfx, adaptive: true, minBatchDbRows: 1500,
-	}
-
+func newSyncer(
+	cfx sdk.ClientOperator, db *mysql.MysqlStore,
+	elm election.LeaderManager, opts ...SyncOption) *Syncer {
+	syncer := &Syncer{elm: elm, db: db, cfx: cfx, minBatchDbRows: 1500}
 	for _, opt := range opts {
 		opt(syncer)
 	}
@@ -126,72 +105,83 @@ func (s *Syncer) Close() {
 }
 
 func (s *Syncer) Sync(ctx context.Context) {
-	s.logger().WithField("numWorkers", len(s.workers)).Debug(
-		"Catch-up syncer starting to catch up latest epoch",
-	)
-
 	if len(s.workers) == 0 { // no workers configured?
-		logrus.Debug("Catch-up syncer skipped due to not workers configured")
+		logrus.Debug("Catch-up syncer skipped due to no workers configured")
 		return
 	}
 
-	if s.adaptive && !s.updateEpochTo(ctx) {
-		logrus.Debug("Catch-up syncer skipped due to context canceled")
-		return
-	}
+	logrus.WithField("numWorkers", len(s.workers)).
+		Debug("Catch-up syncer starting to catch up latest epoch")
 
-	if s.bmarker != nil {
-		start := s.syncRange.From
+	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
+	for s.elm.Await(ctx) {
+		start, end, err := s.nextSyncRange()
+		if err != nil {
+			etLogger.Log(
+				logrus.StandardLogger(), err, "Catch-up syncer failed to get next sync range",
+			)
+			time.Sleep(1 * time.Second)
+			continue
+		}
 
-		s.bmarker.markStart()
-		defer func() {
-			s.bmarker.report(start, s.syncRange.From)
-		}()
-	}
-
-	for {
-		start, end := s.syncRange.From, s.syncRange.To
-		if start > end || s.interrupted(ctx) {
-			return
+		if start > end {
+			break
 		}
 
 		s.syncOnce(ctx, start, end)
-
-		if s.adaptive && !s.updateEpochTo(ctx) {
-			return
-		}
 	}
 }
 
-func (s *Syncer) Range() types.RangeUint64 {
-	return s.syncRange
-}
-
 func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
+	var bmarker *benchmarker
+	if s.benchmark {
+		bmarker = newBenchmarker()
+
+		bmarker.markStart()
+		defer func() {
+			bmarker.report(start, end)
+		}()
+	}
+
 	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(ctx)
 
 	wg.Add(1)
-	go s.fetchResult(ctx, &wg, start, end)
+	go func() {
+		defer wg.Done()
+		defer cancel()
+
+		err := s.fetchResult(ctx, start, end, bmarker)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			if errors.Is(err, store.ErrLeaderRenewal) {
+				logrus.WithFields(logrus.Fields{
+					"start":          start,
+					"end":            end,
+					"leaderIdentity": s.elm.Identity(),
+				}).Info("Catch-up syncer failed to renew leadership on persisting epoch data")
+			} else {
+				logrus.WithFields(logrus.Fields{
+					"start": start,
+					"end":   end,
+				}).WithError(err).Error("Catch-up syncer failed to fetch result")
+			}
+		}
+	}()
 
 	for i, w := range s.workers {
-		wg.Add(1)
-
 		wstart := start + uint64(i)
 		stepN := uint64(len(s.workers))
 
+		wg.Add(1)
 		go w.Sync(ctx, &wg, wstart, end, stepN)
 	}
 
 	wg.Wait()
 }
 
-func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end uint64) {
+func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *benchmarker) error {
 	var epochData *store.EpochData
 	var state persistState
-
-	defer wg.Done()
-	// do last db write anyway since there may be some epochs not persisted yet.
-	defer s.persist(&state)
 
 	for eno := start; eno <= end; {
 		for i := 0; i < len(s.workers) && eno <= end; i++ {
@@ -199,10 +189,10 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 
 			select {
 			case <-ctx.Done():
-				return
+				return ctx.Err()
 			case epochData = <-w.Data():
-				if s.bmarker != nil {
-					s.bmarker.metricFetchPerEpochDuration(startTime)
+				if bmarker != nil {
+					bmarker.metricFetchPerEpochDuration(startTime)
 				}
 
 				// collect epoch data
@@ -223,10 +213,18 @@ func (s *Syncer) fetchResult(ctx context.Context, wg *sync.WaitGroup, start, end
 			// Batch insert into db if enough db rows collected, also use total db rows here to
 			// restrict memory usage.
 			if state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
-				s.persist(&state)
+				err := s.persist(ctx, &state, bmarker)
+				if err != nil {
+					return err
+				}
+
+				state.reset()
 			}
 		}
 	}
+
+	// do last db write anyway since there may be some epochs not persisted yet.
+	return s.persist(ctx, &state, bmarker)
 }
 
 type persistState struct {
@@ -255,89 +253,50 @@ func (s *persistState) update(epochData *store.EpochData) (int, int) {
 	return totalDbRows, storeDbRows
 }
 
-func (s *Syncer) persist(state *persistState) {
+func (s *Syncer) persist(ctx context.Context, state *persistState, bmarker *benchmarker) error {
 	numEpochs := state.numEpochs()
 	if numEpochs == 0 {
-		return
+		return nil
 	}
 
 	start := time.Now()
-	defer func() {
-		if s.bmarker != nil {
-			s.bmarker.metricPersistDb(start, state)
+	err := s.db.PushnWithFinalizer(state.epochs, func(d *gorm.DB) error {
+		if !s.elm.Extend(ctx) {
+			return store.ErrLeaderRenewal
 		}
-
-		state.reset()
-	}()
-
-	for {
-		err := s.db.Pushn(state.epochs)
-		if err == nil {
-			break
-		}
-
-		logrus.WithError(err).Error("Catch-up syncer failed to persist epoch data")
-		time.Sleep(time.Second)
-	}
-
-	s.syncRange.From += uint64(numEpochs)
-	s.logger().WithField("numEpochs", numEpochs).Debug("Catch-up syncer persisted epoch data")
-}
-
-func (s *Syncer) logger() *logrus.Entry {
-	return logrus.WithFields(logrus.Fields{
-		"epochFrom": s.syncRange.From, "epochTo": s.syncRange.To,
+		return nil
 	})
-}
 
-// updateEpochTo repeatedly try to update the target epoch number
-func (s *Syncer) updateEpochTo(ctx context.Context) bool {
-	for try := 1; ; try++ {
-		if s.interrupted(ctx) {
-			return false
-		}
-
-		err := s.doUpdateEpochTo()
-		if err == nil {
-			s.logger().Debug("Catch-up syncer updated epoch to number")
-			return true
-		}
-
-		logger := s.logger().WithError(err)
-		logf := logger.Debug
-
-		if try%50 == 0 {
-			logf = logger.Error
-		}
-
-		logf("Catch-up worker failed to update epoch to number")
-		time.Sleep(time.Second)
-	}
-}
-
-// doUpdateEpochTo updates the target epoch number with the maximum epoch of the
-// latest finalized or the latest checkpoint epoch for catch-up.
-func (s *Syncer) doUpdateEpochTo() error {
-	status, err := s.cfx.GetStatus()
 	if err != nil {
-		return errors.WithMessage(err, "failed to get network status")
+		return errors.WithMessage(err, "failed to push db store")
 	}
 
-	s.syncRange.To = util.MaxUint64(
-		uint64(status.LatestFinalized), uint64(status.LatestCheckpoint),
-	)
+	if bmarker != nil {
+		bmarker.metricPersistDb(start, state)
+	}
 
 	return nil
 }
 
-func (s *Syncer) interrupted(ctx context.Context) bool {
-	select {
-	case <-ctx.Done():
-		return true
-	default:
+// nextSyncRange gets the sync range by loading max epoch number from the database as the start
+// and fetching the maximum epoch of the latest finalized or the latest checkpoint epoch as the end
+func (s *Syncer) nextSyncRange() (uint64, uint64, error) {
+	start, ok, err := s.db.MaxEpoch()
+	if err != nil {
+		return 0, 0, errors.WithMessage(err, "failed to get max epoch from epoch to block mapping")
 	}
 
-	return false
+	if ok {
+		start++
+	}
+
+	status, err := s.cfx.GetStatus()
+	if err != nil {
+		return 0, 0, errors.WithMessage(err, "failed to get network status")
+	}
+
+	end := util.MaxUint64(uint64(status.LatestFinalized), uint64(status.LatestCheckpoint))
+	return start, end, nil
 }
 
 // countDbRows count total db rows and to be stored db row from epoch data.

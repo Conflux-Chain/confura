@@ -8,15 +8,18 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/catchup"
+	"github.com/Conflux-Chain/confura/sync/election"
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 const (
@@ -54,8 +57,8 @@ type DatabaseSyncer struct {
 	syncIntervalCatchUp time.Duration
 	// window to cache epoch pivot info
 	epochPivotWin *epochPivotWindow
-	// error tolerant logger
-	etLogger *logutil.ErrorTolerantLogger
+	// HA leader/follower election manager
+	elm election.LeaderManager
 }
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
@@ -72,8 +75,13 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
-		etLogger:            logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 	}
+
+	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
+	elm := election.MustNewLeaderManagerFromViper(dlm, "sync.cfx")
+	elm.OnElected(syncer.onLeadershipChanged)
+	elm.OnOusted(syncer.onLeadershipChanged)
+	syncer.elm = elm
 
 	// Ensure epoch data validity in database
 	if err := ensureStoreEpochDataOk(cfx, db); err != nil {
@@ -93,19 +101,24 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
+	go syncer.elm.Campaign(ctx)
+	defer syncer.elm.Stop(ctx)
+
 	syncer.fastCatchup(ctx)
 
-	ticker := time.NewTicker(syncer.syncIntervalCatchUp)
+	ticker := time.NewTimer(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
 
-	for {
+	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
+	defer logrus.Info("DB syncer shutdown ok")
+
+	for syncer.elm.Await(ctx) {
 		select {
 		case <-ctx.Done():
-			logrus.Info("DB syncer shutdown ok")
 			return
 		case <-ticker.C:
-			err := syncer.doTicker(ticker)
-			syncer.etLogger.Log(
+			err := syncer.doTicker(ctx, ticker)
+			etLogger.Log(
 				logrus.WithField("epochFrom", syncer.epochFrom),
 				err, "Db syncer failed to sync epoch data",
 			)
@@ -116,15 +129,10 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 // fast catch-up until the latest stable epoch
 // (maximum between the latest finalized and checkpoint epoch)
 func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
-	catchUpSyncer := catchup.MustNewSyncer(
-		syncer.cfx, syncer.db, catchup.WithEpochFrom(syncer.epochFrom),
-	)
+	catchUpSyncer := catchup.MustNewSyncer(syncer.cfx, syncer.db, syncer.elm)
 	defer catchUpSyncer.Close()
 
 	catchUpSyncer.Sync(ctx)
-
-	// start to sync from new start epoch after fast catch-up
-	syncer.epochFrom = catchUpSyncer.Range().From
 }
 
 // Load last sync epoch from databse to continue synchronization.
@@ -154,13 +162,18 @@ func (syncer *DatabaseSyncer) loadLastSyncEpoch() (loaded bool, err error) {
 }
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
-func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
+func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 	// Fetch latest confirmed epoch from blockchain
 	epoch, err := syncer.cfx.GetEpochNumber(types.EpochLatestConfirmed)
 	if err != nil {
 		return false, errors.WithMessage(
 			err, "failed to query the latest confirmed epoch number",
 		)
+	}
+
+	// Load latest sync epoch from database
+	if _, err := syncer.loadLastSyncEpoch(); err != nil {
+		return false, errors.WithMessage(err, "failed to load last sync epoch")
 	}
 
 	maxEpochTo := epoch.ToInt().Uint64()
@@ -214,7 +227,7 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 					"latestPivotHash":  latestPivotHash,
 				}).Warn("Db syncer popping latest epoch from db store due to parent hash mismatched")
 
-				if err := syncer.pivotSwitchRevert(latestStoreEpochNo); err != nil {
+				if err := syncer.pivotSwitchRevert(ctx, latestStoreEpochNo); err != nil {
 					eplogger.WithError(err).Error(
 						"Db syncer failed to pop latest epoch from db store due to parent hash mismatched",
 					)
@@ -251,7 +264,22 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 		return false, nil
 	}
 
-	if err = syncer.db.Pushn(epochDataSlice); err != nil {
+	err = syncer.db.PushnWithFinalizer(epochDataSlice, func(d *gorm.DB) error {
+		if !syncer.elm.Extend(ctx) {
+			return store.ErrLeaderRenewal
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		if errors.Is(err, store.ErrLeaderRenewal) {
+			logger.
+				WithField("leaderIdentity", syncer.elm.Identity()).
+				Info("Db syncer failed to renew leadership on pushing epoch data to db")
+			return false, nil
+		}
+
 		logger.WithError(err).Error("Db syncer failed to save epoch data to db")
 		return false, errors.WithMessage(err, "failed to save epoch data to db")
 	}
@@ -259,13 +287,13 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 	syncer.epochFrom += uint64(len(epochDataSlice))
 
 	for _, epdata := range epochDataSlice { // cache epoch pivot info for late use
-		err := syncer.epochPivotWin.push(epdata.GetPivotBlock())
+		err := syncer.epochPivotWin.Push(epdata.GetPivotBlock())
 		if err != nil {
 			logger.WithField("pivotBlockEpoch", epdata.Number).WithError(err).Info(
 				"Db syncer failed to push pivot block into epoch cache window",
 			)
 
-			syncer.epochPivotWin.reset()
+			syncer.epochPivotWin.Reset()
 			break
 		}
 	}
@@ -278,23 +306,22 @@ func (syncer *DatabaseSyncer) syncOnce() (bool, error) {
 	return false, nil
 }
 
-func (syncer *DatabaseSyncer) doTicker(ticker *time.Ticker) error {
+func (syncer *DatabaseSyncer) doTicker(ctx context.Context, ticker *time.Timer) error {
 	logrus.Debug("DB sync ticking")
 
 	start := time.Now()
-	complete, err := syncer.syncOnce()
+	complete, err := syncer.syncOnce(ctx)
 	metrics.Registry.Sync.SyncOnceQps("cfx", "db", err).UpdateSince(start)
 
 	if err != nil {
 		ticker.Reset(syncer.syncIntervalNormal)
-		return err
 	} else if complete {
 		ticker.Reset(syncer.syncIntervalNormal)
 	} else {
 		ticker.Reset(syncer.syncIntervalCatchUp)
 	}
 
-	return nil
+	return err
 }
 
 func (syncer *DatabaseSyncer) nextEpochTo(maxEpochTo uint64) (uint64, uint64) {
@@ -308,7 +335,7 @@ func (syncer *DatabaseSyncer) nextEpochTo(maxEpochTo uint64) (uint64, uint64) {
 	return epochTo, syncSize
 }
 
-func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
+func (syncer *DatabaseSyncer) pivotSwitchRevert(ctx context.Context, revertTo uint64) error {
 	if revertTo == 0 {
 		return errors.New("genesis epoch must not be reverted")
 	}
@@ -328,16 +355,30 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(revertTo uint64) error {
 	logger.Info("Db syncer reverting epoch data due to pivot chain switch")
 
 	// remove epoch data from database due to pivot switch
-	if err := syncer.db.Popn(revertTo); err != nil {
+	err := syncer.db.PopnWithFinalizer(revertTo, func(tx *gorm.DB) error {
+		if !syncer.elm.Extend(ctx) {
+			return store.ErrLeaderRenewal
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		if errors.Is(err, store.ErrLeaderRenewal) {
+			logger.
+				WithField("leaderIdentity", syncer.elm.Identity()).
+				Info("Db syncer failed to renew leadership on popping epoch data from db")
+			return nil
+		}
+
 		logger.WithError(err).Error(
 			"Db syncer failed to pop epoch data from db due to pivot switch",
 		)
-
 		return errors.WithMessage(err, "failed to pop epoch data from db")
 	}
 
 	// remove pivot data of reverted epoch from cache window
-	syncer.epochPivotWin.popn(revertTo)
+	syncer.epochPivotWin.Popn(revertTo)
 	// update syncer start epoch
 	syncer.epochFrom = revertTo
 
@@ -352,7 +393,7 @@ func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
 	latestEpochNo := syncer.latestStoreEpoch()
 
 	// load from in-memory cache first
-	if pivotHash, ok := syncer.epochPivotWin.getPivotHash(latestEpochNo); ok {
+	if pivotHash, ok := syncer.epochPivotWin.GetPivotHash(latestEpochNo); ok {
 		return pivotHash, nil
 	}
 
@@ -366,4 +407,8 @@ func (syncer *DatabaseSyncer) latestStoreEpoch() uint64 {
 	}
 
 	return 0
+}
+
+func (syncer *DatabaseSyncer) onLeadershipChanged(ctx context.Context, lm election.LeaderManager) {
+	syncer.epochPivotWin.Reset()
 }

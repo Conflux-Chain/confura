@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"sync"
+
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/pkg/errors"
@@ -8,6 +10,8 @@ import (
 
 // epochPivotWindow caches epoch pivot info with limited capacity.
 type epochPivotWindow struct {
+	mu sync.Mutex
+
 	// hashmap to cache pivot hash of epoch (epoch number => pivot block hash)
 	epochToPivotHash map[uint64]types.Hash
 	// maximum number of epochs to hold
@@ -23,9 +27,19 @@ func newEpochPivotWindow(capacity uint32) *epochPivotWindow {
 	return win
 }
 
-func (win *epochPivotWindow) getPivotHash(epoch uint64) (types.Hash, bool) {
+func (win *epochPivotWindow) GetPivotHash(epoch uint64) (types.Hash, bool) {
+	win.mu.Lock()
+	defer win.mu.Unlock()
+
 	pivotHash, ok := win.epochToPivotHash[epoch]
 	return pivotHash, ok
+}
+
+func (win *epochPivotWindow) Reset() {
+	win.mu.Lock()
+	defer win.mu.Unlock()
+
+	win.reset()
 }
 
 func (win *epochPivotWindow) reset() {
@@ -35,7 +49,10 @@ func (win *epochPivotWindow) reset() {
 	win.epochToPivotHash = make(map[uint64]types.Hash)
 }
 
-func (win *epochPivotWindow) push(pivotBlock *types.Block) error {
+func (win *epochPivotWindow) Push(pivotBlock *types.Block) error {
+	win.mu.Lock()
+	defer win.mu.Unlock()
+
 	pivotEpochNum := pivotBlock.EpochNumber.ToInt().Uint64()
 
 	if win.size() > 0 { // validate incoming pivot block
@@ -74,7 +91,10 @@ func (win *epochPivotWindow) expandTo(newEpoch uint64) {
 	}
 }
 
-func (win *epochPivotWindow) popn(epochUntil uint64) {
+func (win *epochPivotWindow) Popn(epochUntil uint64) {
+	win.mu.Lock()
+	defer win.mu.Unlock()
+
 	if win.size() == 0 || win.epochTo < epochUntil {
 		return
 	}
