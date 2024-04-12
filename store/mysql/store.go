@@ -78,6 +78,11 @@ func (ms *MysqlStore) Push(data *store.EpochData) error {
 }
 
 func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
+	return ms.PushnWithFinalizer(dataSlice, nil)
+}
+
+// Popn saves multiple epoch data into db with an extra finalizer to commit or rollback the transaction.
+func (ms *MysqlStore) PushnWithFinalizer(dataSlice []*store.EpochData, finalizer func(*gorm.DB) error) error {
 	if len(dataSlice) == 0 {
 		return nil
 	}
@@ -174,12 +179,25 @@ func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
 		}
 
 		// save epoch to block mapping data
-		return ms.epochBlockMapStore.Add(dbTx, dataSlice)
+		if err := ms.epochBlockMapStore.Add(dbTx, dataSlice); err != nil {
+			return errors.WithMessage(err, "failed to save epoch to block mapping data")
+		}
+
+		if finalizer != nil {
+			return finalizer(dbTx)
+		}
+
+		return nil
 	})
 }
 
 // Popn pops multiple epoch data from database.
 func (ms *MysqlStore) Popn(epochUntil uint64) error {
+	return ms.PopnWithFinalizer(epochUntil, nil)
+}
+
+// Popn pops multiple epoch data from database with an extra finalizer to commit or rollback the transaction.
+func (ms *MysqlStore) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.DB) error) error {
 	maxEpoch, ok, err := ms.MaxEpoch()
 	if err != nil {
 		return errors.WithMessage(err, "failed to get max epoch")
@@ -233,7 +251,15 @@ func (ms *MysqlStore) Popn(epochUntil uint64) error {
 		}
 
 		// pop is always due to pivot chain switch, update reorg version too
-		return ms.confStore.createOrUpdateReorgVersion(dbTx)
+		if err := ms.confStore.createOrUpdateReorgVersion(dbTx); err != nil {
+			return errors.WithMessage(err, "failed to update reorg version")
+		}
+
+		if finalizer != nil {
+			return finalizer(dbTx)
+		}
+
+		return nil
 	})
 }
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	gosql "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
@@ -25,6 +26,7 @@ var allModels = []interface{}{
 	&epochBlockMap{},
 	&bnPartition{},
 	&NodeRoute{},
+	&dlock.Dlock{},
 }
 
 // Config represents the mysql configurations to open a database instance.

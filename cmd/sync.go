@@ -6,7 +6,6 @@ import (
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	cisync "github.com/Conflux-Chain/confura/sync"
-	"github.com/Conflux-Chain/confura/sync/catchup"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -16,14 +15,6 @@ var (
 	syncOpt struct {
 		dbSyncEnabled  bool
 		ethSyncEnabled bool
-		catchupEnabled bool
-	}
-
-	// catch up settings
-	catchupSetting struct {
-		epochFrom, epochTo uint64
-		adaptive           bool
-		benchmark          bool
 	}
 
 	syncCmd = &cobra.Command{
@@ -44,35 +35,11 @@ func init() {
 		&syncOpt.ethSyncEnabled, "eth", false, "start ETH sync server",
 	)
 
-	// boot flag for core space fast catch-up
-	syncCmd.Flags().BoolVar(
-		&syncOpt.catchupEnabled, "catchup", false, "start core space fast catchup server",
-	)
-
-	// load fast catchup settings from command line arguments
-	syncCmd.Flags().Uint64Var(
-		&catchupSetting.epochFrom, "start", 0,
-		"the epoch from which fast catch-up sync will start",
-	)
-	syncCmd.Flags().Uint64Var(
-		&catchupSetting.epochTo, "end", 0,
-		"the epoch until which fast catch-up sync will end",
-	)
-	syncCmd.Flags().BoolVar(
-		&catchupSetting.adaptive, "adaptive", false,
-		"automatically adjust target epoch number to the latest stable epoch",
-	)
-	syncCmd.Flags().BoolVar(
-		&catchupSetting.benchmark, "benchmark", true,
-		"benchmarking the performance during fast catch-up sync",
-	)
-
 	rootCmd.AddCommand(syncCmd)
 }
 
 func startSyncService(*cobra.Command, []string) {
-	if !syncOpt.dbSyncEnabled &&
-		!syncOpt.ethSyncEnabled && !syncOpt.catchupEnabled {
+	if !syncOpt.dbSyncEnabled && !syncOpt.ethSyncEnabled {
 		logrus.Fatal("No Sync server specified")
 	}
 
@@ -87,10 +54,6 @@ func startSyncService(*cobra.Command, []string) {
 
 	if syncOpt.dbSyncEnabled { // start DB sync
 		startSyncCfxDatabase(ctx, &wg, syncCtx)
-	}
-
-	if syncOpt.catchupEnabled { // start fast catchup
-		startCatchupSyncCfxDatabase(ctx, &wg, syncCtx)
 	}
 
 	if syncOpt.ethSyncEnabled { // start ETH sync
@@ -135,28 +98,4 @@ func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.
 
 	// start evm space db prune
 	go syncCtx.EthDB.Prune()
-}
-
-func startCatchupSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
-	logrus.Info("Start to fast catch-up sync core space blockchain data into database")
-
-	if !catchupSetting.adaptive && catchupSetting.epochFrom >= catchupSetting.epochTo {
-		logrus.Info("Fast catch-up sync skipped due to start epoch >= end epoch for non-adaptive mode")
-		return
-	}
-
-	syncer := catchup.MustNewSyncer(
-		syncCtx.SyncCfx,
-		syncCtx.CfxDB,
-		catchup.WithBenchmark(catchupSetting.benchmark),
-		catchup.WithAdaptive(catchupSetting.adaptive),
-		catchup.WithEpochFrom(catchupSetting.epochFrom),
-		catchup.WithEpochTo(catchupSetting.epochTo),
-	)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		syncer.Sync(ctx)
-	}()
 }

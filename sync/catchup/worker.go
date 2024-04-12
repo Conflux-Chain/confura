@@ -8,6 +8,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,16 +32,25 @@ func mustNewWorker(name, nodeUrl string, chanSize int) *worker {
 func (w *worker) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epochTo, stepN uint64) {
 	defer wg.Done()
 
+	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
 	for eno := epochFrom; eno <= epochTo; {
-		epochData, ok := w.fetchEpoch(ctx, eno)
-		if !ok {
-			return
-		}
-
 		select {
 		case <-ctx.Done():
 			return
 		default:
+			epochData, err := w.fetchEpoch(eno)
+			etLogger.Log(
+				logrus.WithFields(logrus.Fields{
+					"epochNo":    eno,
+					"workerName": w.name,
+				}), err, "Catch-up worker failed to fetch epoch",
+			)
+
+			if err != nil {
+				time.Sleep(time.Second)
+				break
+			}
+
 			select {
 			case <-ctx.Done():
 				return
@@ -60,29 +70,11 @@ func (w *worker) Data() <-chan *store.EpochData {
 	return w.resultChan
 }
 
-func (w *worker) fetchEpoch(ctx context.Context, epochNo uint64) (*store.EpochData, bool) {
-	for try := 1; ; try++ {
-		select {
-		case <-ctx.Done():
-			return nil, false
-		default:
-		}
-
-		epochData, err := store.QueryEpochData(w.cfx, epochNo, true)
-		if err == nil {
-			return &epochData, true
-		}
-
-		logger := logrus.WithFields(logrus.Fields{
-			"epochNo": epochNo, "workerName": w.name,
-		}).WithError(err)
-
-		logf := logger.Debug
-		if try%50 == 0 {
-			logf = logger.Error
-		}
-
-		logf("Catch-up worker failed to fetch epoch")
-		time.Sleep(time.Second)
+func (w *worker) fetchEpoch(epochNo uint64) (*store.EpochData, error) {
+	epochData, err := store.QueryEpochData(w.cfx, epochNo, true)
+	if err == nil {
+		return &epochData, nil
 	}
+
+	return nil, err
 }

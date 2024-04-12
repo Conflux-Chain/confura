@@ -105,7 +105,7 @@ Confura is comprised of serveral components as below:
 
 ### Blockchain Sync
 
-You can use the `sync` subcommand to start sync service, including DB/ETH sync as well as fast catchup.
+You can use the `sync` subcommand to start sync service, including DB and ETH sync.
 
 > Usage:
 >   confura sync [flags]
@@ -114,11 +114,6 @@ You can use the `sync` subcommand to start sync service, including DB/ETH sync a
 >
 >       --db           start core space DB sync server
 >       --eth          start ETH sync server
->       --catchup      start core space fast catchup server
->       --adaptive     automatically adjust target epoch number to the latest stable epoch
->       --benchmark    benchmarking the performance during fast catch-up sync (default true)
->       --start uint   the epoch from which fast catch-up sync will start
->       --end uint     the epoch until which fast catch-up sync will end
 >       --help         help for sync
 
 eg., you can run the following to kick off synchronizing core space blockchain data into database:

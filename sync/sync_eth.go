@@ -8,14 +8,17 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
+	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 const (
@@ -49,8 +52,8 @@ type EthSyncer struct {
 	syncIntervalCatchUp time.Duration
 	// window to cache block info
 	epochPivotWin *epochPivotWindow
-	// error tolerant logger
-	etLogger *logutil.ErrorTolerantLogger
+	// HA leader/follower election
+	elm election.LeaderManager
 }
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
@@ -72,8 +75,13 @@ func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
-		etLogger:            logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 	}
+
+	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
+	elm := election.MustNewLeaderManagerFromViper(dlm, "sync.eth")
+	elm.OnElected(syncer.onLeadershipChanged)
+	elm.OnOusted(syncer.onLeadershipChanged)
+	syncer.elm = elm
 
 	// Load last sync block information
 	syncer.mustLoadLastSyncBlock()
@@ -88,17 +96,22 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
-	ticker := time.NewTicker(syncer.syncIntervalCatchUp)
+	go syncer.elm.Campaign(ctx)
+	defer syncer.elm.Stop(ctx)
+
+	ticker := time.NewTimer(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
 
-	for {
+	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
+	defer logrus.Info("ETH syncer shutdown ok")
+
+	for syncer.elm.Await(ctx) {
 		select {
 		case <-ctx.Done():
-			logrus.Info("ETH syncer shutdown ok")
 			return
 		case <-ticker.C:
-			err := syncer.doTicker(ticker)
-			syncer.etLogger.Log(
+			err := syncer.doTicker(ctx, ticker)
+			etLogger.Log(
 				logrus.WithField("fromBlock", syncer.fromBlock),
 				err, "ETH syncer failed to sync epoch data",
 			)
@@ -106,27 +119,32 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	}
 }
 
-func (syncer *EthSyncer) doTicker(ticker *time.Ticker) error {
+func (syncer *EthSyncer) doTicker(ctx context.Context, ticker *time.Timer) error {
 	logrus.Debug("ETH sync ticking")
 
 	start := time.Now()
-	complete, err := syncer.syncOnce()
+	complete, err := syncer.syncOnce(ctx)
 	metrics.Registry.Sync.SyncOnceQps("eth", "db", err).UpdateSince(start)
 
 	if err != nil {
 		ticker.Reset(syncer.syncIntervalNormal)
-		return err
 	} else if complete {
 		ticker.Reset(syncer.syncIntervalNormal)
 	} else {
 		ticker.Reset(syncer.syncIntervalCatchUp)
 	}
 
-	return nil
+	return err
+}
+
+func (syncer *EthSyncer) nextBlockTo(maxBlockTo uint64) (uint64, uint64) {
+	toBlock := util.MinUint64(syncer.fromBlock+syncer.maxSyncBlocks-1, maxBlockTo)
+	syncSize := toBlock - syncer.fromBlock + 1
+	return toBlock, syncSize
 }
 
 // Sync data once and return true if catch up to the most recent block, otherwise false.
-func (syncer *EthSyncer) syncOnce() (bool, error) {
+func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	recentBlockNumber, err := syncer.w3c.Eth.BlockNumber()
 	if err != nil {
 		return false, errors.WithMessage(err, "failed to query the latest block number")
@@ -135,6 +153,11 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	recentBlockNo := recentBlockNumber.Uint64()
 	if recentBlockNo > skipBlocksAheadLatest {
 		recentBlockNo = recentBlockNo - skipBlocksAheadLatest
+	}
+
+	// Load latest sync block from database
+	if _, err := syncer.loadLastSyncBlock(); err != nil {
+		return false, errors.WithMessage(err, "failed to load last sync epoch")
 	}
 
 	// catched up to the most recent block?
@@ -148,8 +171,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 		return true, nil
 	}
 
-	toBlock := util.MinUint64(syncer.fromBlock+syncer.maxSyncBlocks-1, recentBlockNo)
-	syncSize := toBlock - syncer.fromBlock + 1
+	toBlock, syncSize := syncer.nextBlockTo(recentBlockNo)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"syncSize":  syncSize,
@@ -187,7 +209,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 			}
 
 			if len(latestBlockHash) > 0 && data.Block.ParentHash.Hex() != latestBlockHash {
-				if err := syncer.reorgRevert(syncer.latestStoreBlock()); err != nil {
+				if err := syncer.reorgRevert(ctx, syncer.latestStoreBlock()); err != nil {
 					parentBlockHash := data.Block.ParentHash.Hex()
 
 					blogger.WithFields(logrus.Fields{
@@ -239,20 +261,34 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 		epochDataSlice = append(epochDataSlice, epochData)
 	}
 
-	if err = syncer.db.Pushn(epochDataSlice); err != nil {
+	err = syncer.db.PushnWithFinalizer(epochDataSlice, func(d *gorm.DB) error {
+		if !syncer.elm.Extend(ctx) {
+			return store.ErrLeaderRenewal
+		}
+		return nil
+	})
+
+	if err != nil {
+		if errors.Is(err, store.ErrLeaderRenewal) {
+			logger.
+				WithField("leaderIdentity", syncer.elm.Identity()).
+				Info("ETH syncer failed to renew leadership on pushing eth data to db")
+			return false, nil
+		}
+
 		logger.WithError(err).Error("ETH syncer failed to save eth data to ethdb")
 		return false, errors.WithMessage(err, "failed to save eth data")
 	}
 
 	for _, edata := range ethDataSlice { // cache eth block info for late use
 		cfxbh := cfxbridge.ConvertBlockHeader(edata.Block, syncer.chainId)
-		err := syncer.epochPivotWin.push(&cfxtypes.Block{BlockHeader: *cfxbh})
+		err := syncer.epochPivotWin.Push(&cfxtypes.Block{BlockHeader: *cfxbh})
 		if err != nil {
 			logger.WithField("blockNumber", edata.Number).WithError(err).Info(
 				"ETH syncer failed to push block into cache window",
 			)
 
-			syncer.epochPivotWin.reset()
+			syncer.epochPivotWin.Reset()
 			break
 		}
 	}
@@ -267,7 +303,7 @@ func (syncer *EthSyncer) syncOnce() (bool, error) {
 	return false, nil
 }
 
-func (syncer *EthSyncer) reorgRevert(revertTo uint64) error {
+func (syncer *EthSyncer) reorgRevert(ctx context.Context, revertTo uint64) error {
 	if revertTo == 0 {
 		return errors.New("genesis block must not be reverted")
 	}
@@ -284,16 +320,30 @@ func (syncer *EthSyncer) reorgRevert(revertTo uint64) error {
 	}
 
 	// remove block data from database due to chain re-org
-	if err := syncer.db.Popn(revertTo); err != nil {
+	err := syncer.db.PopnWithFinalizer(revertTo, func(d *gorm.DB) error {
+		if !syncer.elm.Extend(ctx) {
+			return store.ErrLeaderRenewal
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		if errors.Is(err, store.ErrLeaderRenewal) {
+			logger.
+				WithField("leaderIdentity", syncer.elm.Identity()).
+				Info("ETH syncer failed to renew leadership on popping eth data from db")
+			return nil
+		}
+
 		logger.WithError(err).Error(
 			"ETH syncer failed to pop eth data from ethdb due to chain re-org",
 		)
-
 		return errors.WithMessage(err, "failed to pop eth data from ethdb")
 	}
 
 	// remove block hash of reverted block from cache window
-	syncer.epochPivotWin.popn(revertTo)
+	syncer.epochPivotWin.Popn(revertTo)
 	// update syncer start block
 	syncer.fromBlock = revertTo
 
@@ -335,7 +385,7 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 	latestBlockNo := syncer.latestStoreBlock()
 
 	// load from in-memory cache first
-	if blockHash, ok := syncer.epochPivotWin.getPivotHash(latestBlockNo); ok {
+	if blockHash, ok := syncer.epochPivotWin.GetPivotHash(latestBlockNo); ok {
 		return string(blockHash), nil
 	}
 
@@ -375,4 +425,8 @@ func (syncer *EthSyncer) latestStoreBlock() uint64 {
 	}
 
 	return 0
+}
+
+func (syncer *EthSyncer) onLeadershipChanged(ctx context.Context, lm election.LeaderManager) {
+	syncer.epochPivotWin.Reset()
 }

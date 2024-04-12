@@ -48,6 +48,7 @@ var (
 	ErrContinousEpochRequired = errors.New("continous epoch required")
 	ErrAlreadyPruned          = errors.New("data already pruned")
 	ErrChainReorged           = errors.New("chain re-orged")
+	ErrLeaderRenewal          = errors.New("leadership renewal failure")
 
 	// operationable epoch data types
 	OpEpochDataTypes = []EpochDataType{
