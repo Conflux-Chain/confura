@@ -66,6 +66,7 @@ func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 	var ethConf syncEthConfig
 	viperutil.MustUnmarshalKey("sync.eth", &ethConf)
 
+	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
 	syncer := &EthSyncer{
 		conf:                &ethConf,
 		w3c:                 ethC,
@@ -75,13 +76,17 @@ func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
+		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.eth"),
 	}
 
-	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
-	elm := election.MustNewLeaderManagerFromViper(dlm, "sync.eth")
-	elm.OnElected(syncer.onLeadershipChanged)
-	elm.OnOusted(syncer.onLeadershipChanged)
-	syncer.elm = elm
+	// Register leader election callbacks
+	syncer.elm.OnElected(func(ctx context.Context, lm election.LeaderManager) {
+		syncer.onLeadershipChanged(ctx, lm, true)
+	})
+
+	syncer.elm.OnOusted(func(ctx context.Context, lm election.LeaderManager) {
+		syncer.onLeadershipChanged(ctx, lm, false)
+	})
 
 	// Load last sync block information
 	syncer.mustLoadLastSyncBlock()
@@ -97,7 +102,7 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	go syncer.elm.Campaign(ctx)
-	defer syncer.elm.Stop(ctx)
+	defer syncer.elm.Stop(context.Background())
 
 	ticker := time.NewTimer(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
@@ -156,7 +161,7 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	}
 
 	// Load latest sync block from database
-	if _, err := syncer.loadLastSyncBlock(); err != nil {
+	if err := syncer.loadLastSyncBlock(); err != nil {
 		return false, errors.WithMessage(err, "failed to load last sync epoch")
 	}
 
@@ -262,16 +267,13 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	}
 
 	err = syncer.db.PushnWithFinalizer(epochDataSlice, func(d *gorm.DB) error {
-		if !syncer.elm.Extend(ctx) {
-			return store.ErrLeaderRenewal
-		}
-		return nil
+		return syncer.elm.Extend(ctx)
 	})
 
 	if err != nil {
 		if errors.Is(err, store.ErrLeaderRenewal) {
-			logger.
-				WithField("leaderIdentity", syncer.elm.Identity()).
+			logger.WithField("leaderIdentity", syncer.elm.Identity()).
+				WithError(err).
 				Info("ETH syncer failed to renew leadership on pushing eth data to db")
 			return false, nil
 		}
@@ -321,17 +323,13 @@ func (syncer *EthSyncer) reorgRevert(ctx context.Context, revertTo uint64) error
 
 	// remove block data from database due to chain re-org
 	err := syncer.db.PopnWithFinalizer(revertTo, func(d *gorm.DB) error {
-		if !syncer.elm.Extend(ctx) {
-			return store.ErrLeaderRenewal
-		}
-
-		return nil
+		return syncer.elm.Extend(ctx)
 	})
 
 	if err != nil {
 		if errors.Is(err, store.ErrLeaderRenewal) {
-			logger.
-				WithField("leaderIdentity", syncer.elm.Identity()).
+			logger.WithField("leaderIdentity", syncer.elm.Identity()).
+				WithError(err).
 				Info("ETH syncer failed to renew leadership on popping eth data from db")
 			return nil
 		}
@@ -353,28 +351,28 @@ func (syncer *EthSyncer) reorgRevert(ctx context.Context, revertTo uint64) error
 
 // Load last sync block from databse to continue synchronization.
 func (syncer *EthSyncer) mustLoadLastSyncBlock() {
-	loaded, err := syncer.loadLastSyncBlock()
-	if err != nil {
+	if err := syncer.loadLastSyncBlock(); err != nil {
 		logrus.WithError(err).Fatal("Failed to load last sync block range from ethdb")
-	}
-
-	// Load eth sync start block config on initial loading if necessary.
-	if !loaded && syncer.conf != nil {
-		syncer.fromBlock = syncer.conf.FromBlock
 	}
 }
 
-func (syncer *EthSyncer) loadLastSyncBlock() (loaded bool, err error) {
+func (syncer *EthSyncer) loadLastSyncBlock() error {
+	// load last sync block from databse
 	maxBlock, ok, err := syncer.db.MaxEpoch()
 	if err != nil {
-		return false, errors.WithMessage(err, "failed to get max block from e2b mapping")
+		return errors.WithMessage(err, "failed to get max block from e2b mapping")
 	}
 
-	if ok {
+	if ok { // continue from the last sync epoch
 		syncer.fromBlock = maxBlock + 1
+	} else { // start from genesis or configured start block
+		syncer.fromBlock = 0
+		if syncer.conf != nil {
+			syncer.fromBlock = syncer.conf.FromBlock
+		}
 	}
 
-	return ok, nil
+	return nil
 }
 
 func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
@@ -427,6 +425,10 @@ func (syncer *EthSyncer) latestStoreBlock() uint64 {
 	return 0
 }
 
-func (syncer *EthSyncer) onLeadershipChanged(ctx context.Context, lm election.LeaderManager) {
+func (syncer *EthSyncer) onLeadershipChanged(
+	ctx context.Context, lm election.LeaderManager, gainedOrLost bool) {
 	syncer.epochPivotWin.Reset()
+	if !gainedOrLost && ctx.Err() != context.Canceled {
+		logrus.WithField("leaderID", lm.Identity()).Warn("ETH syncer lost HA leadership")
+	}
 }
