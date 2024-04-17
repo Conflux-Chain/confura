@@ -102,7 +102,7 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	go syncer.elm.Campaign(ctx)
-	defer syncer.elm.Stop(context.Background())
+	defer syncer.elm.Stop()
 
 	ticker := time.NewTimer(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()

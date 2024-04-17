@@ -47,7 +47,7 @@ type LeaderManager interface {
 	// Campaign starts the leader election process
 	Campaign(ctx context.Context)
 	// Stop stops the leader election process
-	Stop(ctx context.Context) error
+	Stop() error
 	// OnElected registers a leader elected callback function.
 	OnElected(cb ElectedCallback)
 	// OnOusted registers a leader ousted callback function.
@@ -198,12 +198,12 @@ func (l *DlockLeaderManager) Campaign(ctx context.Context) {
 }
 
 // Stop stops the leader election process and resigns from the leadership if appliable.
-func (l *DlockLeaderManager) Stop(ctx context.Context) error {
+func (l *DlockLeaderManager) Stop() error {
 	if l.cancel != nil {
 		l.cancel()
 	}
 
-	return l.lockMan.Release(ctx, l.lockIntent())
+	return l.lockMan.Release(context.Background(), l.lockIntent())
 }
 
 // retryLock consistently retries to acquire a lock until success.
@@ -355,7 +355,7 @@ func (l *noopLeaderManager) Identity() string                 { return "noop" }
 func (l *noopLeaderManager) Extend(ctx context.Context) error { return nil }
 func (l *noopLeaderManager) Await(ctx context.Context) bool   { return true }
 func (l *noopLeaderManager) Campaign(ctx context.Context)     { /* do nothing */ }
-func (l *noopLeaderManager) Stop(ctx context.Context) error   { return nil }
+func (l *noopLeaderManager) Stop() error                      { return nil }
 func (l *noopLeaderManager) OnElected(cb ElectedCallback)     { /* do nothing */ }
 func (l *noopLeaderManager) OnOusted(cb OustedCallback)       { /* do nothing */ }
 func (l *noopLeaderManager) OnError(cb ErrorCallback)         { /* do nothing */ }
