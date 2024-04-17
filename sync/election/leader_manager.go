@@ -2,15 +2,16 @@ package election
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -42,11 +43,11 @@ type LeaderManager interface {
 	// Wait until being elected as leader or context canceled
 	Await(ctx context.Context) bool
 	// Extend extends the leadership lease
-	Extend(ctx context.Context) bool
+	Extend(ctx context.Context) error
 	// Campaign starts the leader election process
 	Campaign(ctx context.Context)
 	// Stop stops the leader election process
-	Stop(ctx context.Context) error
+	Stop() error
 	// OnElected registers a leader elected callback function.
 	OnElected(cb ElectedCallback)
 	// OnOusted registers a leader ousted callback function.
@@ -57,15 +58,12 @@ type LeaderManager interface {
 
 // MustNewLeaderManagerFromViper creates a new LeaderManager with the given LockManager and election key.
 func MustNewLeaderManagerFromViper(dlm *dlock.LockManager, elecKey string) LeaderManager {
-	var conf struct {
-		Config
-		Enabled bool // leader election enabled or not?
-	}
+	var conf Config
 	viper.MustUnmarshalKey("sync.election", &conf)
 
 	if conf.Enabled {
-		logrus.WithField("config", conf.Config).Info("HA leader election enabled")
-		return NewDlockLeaderManager(dlm, conf.Config, elecKey)
+		logrus.WithField("config", conf).Info("HA leader election enabled")
+		return NewDlockLeaderManager(dlm, conf, elecKey)
 	}
 
 	return &noopLeaderManager{}
@@ -73,6 +71,8 @@ func MustNewLeaderManagerFromViper(dlm *dlock.LockManager, elecKey string) Leade
 
 // Config holds the configuration for the leader election.
 type Config struct {
+	// Leader election enabled or not?
+	Enabled bool
 	// Unique identifier for the leader
 	ID string `default:"leader"`
 	// Duration of the leader term
@@ -102,7 +102,7 @@ type DlockLeaderManager struct {
 
 // NewDlockLeaderManager creates a new `LeaderManager` with the provided configuration and election key.
 func NewDlockLeaderManager(dlm *dlock.LockManager, conf Config, elecKey string) *DlockLeaderManager {
-	conf.ID += uuid.NewString()[:8] // append a unique suffix to the `Id`
+	conf.ID += "#" + uuid.NewString()[:8] // append a unique suffix to the `Id`
 	return &DlockLeaderManager{
 		Config:      conf,
 		lockMan:     dlm,
@@ -135,13 +135,16 @@ func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 }
 
 // Extend extends leadership lease.
-func (l *DlockLeaderManager) Extend(ctx context.Context) bool {
+func (l *DlockLeaderManager) Extend(ctx context.Context) error {
 	if atomic.LoadInt32(&l.electionStatus) == StatusElected {
-		// acquire the lock to extend the lease
-		return l.acquireLock(ctx) == nil
+		if err := l.acquireLock(ctx); err != nil {
+			return errors.WithMessage(store.ErrLeaderRenewal, err.Error())
+		}
+
+		return nil
 	}
 
-	return false
+	return store.ErrLeaderRenewal
 }
 
 // Campaign starts the election process, which will run in a goroutine until contex canceled.
@@ -195,12 +198,12 @@ func (l *DlockLeaderManager) Campaign(ctx context.Context) {
 }
 
 // Stop stops the leader election process and resigns from the leadership if appliable.
-func (l *DlockLeaderManager) Stop(ctx context.Context) error {
+func (l *DlockLeaderManager) Stop() error {
 	if l.cancel != nil {
 		l.cancel()
 	}
 
-	return l.lockMan.Release(ctx, l.lockIntent())
+	return l.lockMan.Release(context.Background(), l.lockIntent())
 }
 
 // retryLock consistently retries to acquire a lock until success.
@@ -309,7 +312,7 @@ func (l *DlockLeaderManager) onOusted(ctx context.Context) {
 	logrus.WithFields(logrus.Fields{
 		"electionKey": l.electionKey,
 		"leaderID":    l.ID,
-	}).Warn("Leader ousted")
+	}).Info("Leader ousted")
 
 	atomic.StoreInt32(&l.electionStatus, int32(StatusOusted))
 
@@ -348,11 +351,11 @@ func (l *DlockLeaderManager) onError(ctx context.Context, err error) {
 // noopLeaderManager dummy leader manager that does nothing at all.
 type noopLeaderManager struct{}
 
-func (l *noopLeaderManager) Identity() string                { return "noop" }
-func (l *noopLeaderManager) Extend(ctx context.Context) bool { return true }
-func (l *noopLeaderManager) Await(ctx context.Context) bool  { return true }
-func (l *noopLeaderManager) Campaign(ctx context.Context)    { /* do nothing */ }
-func (l *noopLeaderManager) Stop(ctx context.Context) error  { return nil }
-func (l *noopLeaderManager) OnElected(cb ElectedCallback)    { /* do nothing */ }
-func (l *noopLeaderManager) OnOusted(cb OustedCallback)      { /* do nothing */ }
-func (l *noopLeaderManager) OnError(cb ErrorCallback)        { /* do nothing */ }
+func (l *noopLeaderManager) Identity() string                 { return "noop" }
+func (l *noopLeaderManager) Extend(ctx context.Context) error { return nil }
+func (l *noopLeaderManager) Await(ctx context.Context) bool   { return true }
+func (l *noopLeaderManager) Campaign(ctx context.Context)     { /* do nothing */ }
+func (l *noopLeaderManager) Stop() error                      { return nil }
+func (l *noopLeaderManager) OnElected(cb ElectedCallback)     { /* do nothing */ }
+func (l *noopLeaderManager) OnOusted(cb OustedCallback)       { /* do nothing */ }
+func (l *noopLeaderManager) OnError(cb ErrorCallback)         { /* do nothing */ }

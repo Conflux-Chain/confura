@@ -261,10 +261,7 @@ func (s *Syncer) persist(ctx context.Context, state *persistState, bmarker *benc
 
 	start := time.Now()
 	err := s.db.PushnWithFinalizer(state.epochs, func(d *gorm.DB) error {
-		if !s.elm.Extend(ctx) {
-			return store.ErrLeaderRenewal
-		}
-		return nil
+		return s.elm.Extend(ctx)
 	})
 
 	if err != nil {
@@ -288,6 +285,8 @@ func (s *Syncer) nextSyncRange() (uint64, uint64, error) {
 
 	if ok {
 		start++
+	} else {
+		start = 0
 	}
 
 	status, err := s.cfx.GetStatus()

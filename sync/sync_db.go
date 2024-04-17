@@ -66,6 +66,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 	var conf syncConfig
 	viperutil.MustUnmarshalKey("sync", &conf)
 
+	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
 	syncer := &DatabaseSyncer{
 		conf:                &conf,
 		cfx:                 cfx,
@@ -75,13 +76,17 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
+		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.cfx"),
 	}
 
-	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
-	elm := election.MustNewLeaderManagerFromViper(dlm, "sync.cfx")
-	elm.OnElected(syncer.onLeadershipChanged)
-	elm.OnOusted(syncer.onLeadershipChanged)
-	syncer.elm = elm
+	// Register leader election callbacks
+	syncer.elm.OnElected(func(ctx context.Context, lm election.LeaderManager) {
+		syncer.onLeadershipChanged(ctx, lm, true)
+	})
+
+	syncer.elm.OnOusted(func(ctx context.Context, lm election.LeaderManager) {
+		syncer.onLeadershipChanged(ctx, lm, false)
+	})
 
 	// Ensure epoch data validity in database
 	if err := ensureStoreEpochDataOk(cfx, db); err != nil {
@@ -102,7 +107,7 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	go syncer.elm.Campaign(ctx)
-	defer syncer.elm.Stop(ctx)
+	defer syncer.elm.Stop()
 
 	syncer.fastCatchup(ctx)
 
@@ -137,28 +142,28 @@ func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
 
 // Load last sync epoch from databse to continue synchronization.
 func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
-	loaded, err := syncer.loadLastSyncEpoch()
-	if err != nil {
+	if err := syncer.loadLastSyncEpoch(); err != nil {
 		logrus.WithError(err).Fatal("Failed to load last sync epoch range from db")
-	}
-
-	// Load db sync start epoch config on initial loading if necessary.
-	if !loaded && syncer.conf != nil {
-		syncer.epochFrom = syncer.conf.FromEpoch
 	}
 }
 
-func (syncer *DatabaseSyncer) loadLastSyncEpoch() (loaded bool, err error) {
+func (syncer *DatabaseSyncer) loadLastSyncEpoch() error {
+	// Load last sync epoch from databse
 	maxEpoch, ok, err := syncer.db.MaxEpoch()
 	if err != nil {
-		return false, errors.WithMessage(err, "failed to get max epoch from epoch to block mapping")
+		return errors.WithMessage(err, "failed to get max epoch from epoch to block mapping")
 	}
 
-	if ok {
+	if ok { // continue from the last sync epoch
 		syncer.epochFrom = maxEpoch + 1
+	} else { // start from genesis or configured start epoch
+		syncer.epochFrom = 0
+		if syncer.conf != nil {
+			syncer.epochFrom = syncer.conf.FromEpoch
+		}
 	}
 
-	return ok, nil
+	return nil
 }
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
@@ -172,7 +177,7 @@ func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 	}
 
 	// Load latest sync epoch from database
-	if _, err := syncer.loadLastSyncEpoch(); err != nil {
+	if err := syncer.loadLastSyncEpoch(); err != nil {
 		return false, errors.WithMessage(err, "failed to load last sync epoch")
 	}
 
@@ -265,17 +270,13 @@ func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 	}
 
 	err = syncer.db.PushnWithFinalizer(epochDataSlice, func(d *gorm.DB) error {
-		if !syncer.elm.Extend(ctx) {
-			return store.ErrLeaderRenewal
-		}
-
-		return nil
+		return syncer.elm.Extend(ctx)
 	})
 
 	if err != nil {
 		if errors.Is(err, store.ErrLeaderRenewal) {
-			logger.
-				WithField("leaderIdentity", syncer.elm.Identity()).
+			logger.WithField("leaderIdentity", syncer.elm.Identity()).
+				WithError(err).
 				Info("Db syncer failed to renew leadership on pushing epoch data to db")
 			return false, nil
 		}
@@ -356,17 +357,13 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(ctx context.Context, revertTo ui
 
 	// remove epoch data from database due to pivot switch
 	err := syncer.db.PopnWithFinalizer(revertTo, func(tx *gorm.DB) error {
-		if !syncer.elm.Extend(ctx) {
-			return store.ErrLeaderRenewal
-		}
-
-		return nil
+		return syncer.elm.Extend(ctx)
 	})
 
 	if err != nil {
 		if errors.Is(err, store.ErrLeaderRenewal) {
-			logger.
-				WithField("leaderIdentity", syncer.elm.Identity()).
+			logger.WithField("leaderIdentity", syncer.elm.Identity()).
+				WithError(err).
 				Info("Db syncer failed to renew leadership on popping epoch data from db")
 			return nil
 		}
@@ -409,6 +406,10 @@ func (syncer *DatabaseSyncer) latestStoreEpoch() uint64 {
 	return 0
 }
 
-func (syncer *DatabaseSyncer) onLeadershipChanged(ctx context.Context, lm election.LeaderManager) {
+func (syncer *DatabaseSyncer) onLeadershipChanged(
+	ctx context.Context, lm election.LeaderManager, gainedOrLost bool) {
 	syncer.epochPivotWin.Reset()
+	if !gainedOrLost && ctx.Err() != context.Canceled {
+		logrus.WithField("leaderID", lm.Identity()).Warn("DB syncer lost HA leadership")
+	}
 }
