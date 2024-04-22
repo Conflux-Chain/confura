@@ -137,11 +137,14 @@ func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 // Extend extends leadership lease.
 func (l *DlockLeaderManager) Extend(ctx context.Context) error {
 	if atomic.LoadInt32(&l.electionStatus) == StatusElected {
-		if err := l.acquireLock(ctx); err != nil {
-			return errors.WithMessage(store.ErrLeaderRenewal, err.Error())
+		err := l.acquireLock(ctx)
+		if err == nil {
+			return nil
 		}
 
-		return nil
+		if !errors.Is(err, dlock.ErrLockAcquisitionFailed) {
+			return err
+		}
 	}
 
 	return store.ErrLeaderRenewal
