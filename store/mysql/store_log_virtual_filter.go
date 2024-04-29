@@ -148,7 +148,7 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []VirtualFilterLog, p
 	}
 
 	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)
-	partitions, _, err := vfls.searchPartitions(fentity, types.RangeUint64{From: bnMin, To: bnMax})
+	partitions, err := vfls.searchOverlapPartitions(fentity, types.RangeUint64{From: bnMin, To: bnMax})
 	if err != nil {
 		return errors.WithMessage(err, "failed to search partitions")
 	}
