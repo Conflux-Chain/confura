@@ -38,9 +38,9 @@ type VipStatus struct {
 	Tier VipTier // VIP tier
 }
 
-// ValidateAccessToken validates if an access token from context
+// IsAccessTokenValid checks if access token from the context
 // is at least minimum length and only contains alphanumeric chars.
-func ValidateAccessToken(ctx context.Context) bool {
+func IsAccessTokenValid(ctx context.Context) bool {
 	token, ok := GetAccessTokenFromContext(ctx)
 	if !ok {
 		return false
