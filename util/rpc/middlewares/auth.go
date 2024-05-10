@@ -24,7 +24,7 @@ func Auth() rpc.HandleCallMsgMiddleware {
 
 func Authenticate(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
-		if !handlers.ValidateAccessToken(ctx) {
+		if !handlers.IsAccessTokenValid(ctx) {
 			return next(ctx, msg)
 		}
 
