@@ -5,9 +5,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	web3pay "github.com/Conflux-Chain/web3pay-service/client/middleware"
 	"github.com/Conflux-Chain/web3pay-service/types"
+)
+
+const (
+	// Minimun length for a valid access token
+	minAccessTokenLength = 20
 )
 
 type VipTier uint
@@ -30,6 +36,28 @@ const VipSubPropTierKey = "tier"
 type VipStatus struct {
 	ID   string  // VIP ID
 	Tier VipTier // VIP tier
+}
+
+// IsAccessTokenValid checks if access token from the context
+// is at least minimum length and only contains alphanumeric chars.
+func IsAccessTokenValid(ctx context.Context) bool {
+	token, ok := GetAccessTokenFromContext(ctx)
+	if !ok {
+		return false
+	}
+
+	if len(token) < minAccessTokenLength {
+		return false // Key length less than minimum
+	}
+
+	// Check for valid alphanumeric characters using loop
+	for _, r := range token {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // VipStatusFromContext returns VIP status from context
