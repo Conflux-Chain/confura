@@ -24,6 +24,10 @@ func Auth() rpc.HandleCallMsgMiddleware {
 
 func Authenticate(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
+		if !handlers.ValidateAccessToken(ctx) {
+			return next(ctx, msg)
+		}
+
 		if vs, ok := handlers.VipStatusFromContext(ctx); ok { // access from web3pay VIP user
 			ctx = context.WithValue(ctx, handlers.CtxKeyAuthId, vs.ID)
 		} else if svs, ok := rate.SVipStatusFromContext(ctx); ok { // access from SVIP user
