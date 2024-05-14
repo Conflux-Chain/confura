@@ -12,6 +12,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
+	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/sirupsen/logrus"
 )
@@ -39,6 +40,7 @@ type cfxAPI struct {
 	provider         *node.CfxClientProvider
 	inputEpochMetric metrics.InputEpochMetric
 	stateHandler     *handler.CfxStateHandler
+	etPubsubLogger   *logutil.ErrorTolerantLogger
 }
 
 func newCfxAPI(provider *node.CfxClientProvider, option ...CfxAPIOption) *cfxAPI {
@@ -48,9 +50,10 @@ func newCfxAPI(provider *node.CfxClientProvider, option ...CfxAPIOption) *cfxAPI
 	}
 
 	return &cfxAPI{
-		CfxAPIOption: opt,
-		provider:     provider,
-		stateHandler: handler.NewCfxStateHandler(provider),
+		CfxAPIOption:   opt,
+		provider:       provider,
+		stateHandler:   handler.NewCfxStateHandler(provider),
+		etPubsubLogger: logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 	}
 }
 

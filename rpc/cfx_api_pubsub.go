@@ -37,8 +37,10 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 	dClient := getOrNewDelegateClient(psCtx.cfx)
 
 	dSub, err := dClient.delegateSubscribeNewHeads(rpcSub.ID, headersCh)
+	api.etPubsubLogger.Log(
+		logrus.WithError(err), err, "Failed to delegate pubsub NewHeads",
+	)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to delegate pubsub NewHeads")
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
@@ -104,8 +106,11 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 	dClient := getOrNewDelegateClient(psCtx.cfx)
 
 	dSub, err := dClient.delegateSubscribeEpochs(rpcSub.ID, epochsCh, *subEpoch)
+	api.etPubsubLogger.Log(
+		logrus.WithField("subEpoch", subEpoch),
+		err, "Failed to delegate pubsub epochs subscription",
+	)
 	if err != nil {
-		logrus.WithError(err).Errorf("Failed to delegate pubsub epochs subscription (%v)", subEpoch)
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
@@ -165,8 +170,11 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 	dClient := getOrNewDelegateClient(psCtx.cfx)
 
 	dSub, err := dClient.delegateSubscribeLogs(rpcSub.ID, logsCh, filter)
+	api.etPubsubLogger.Log(
+		logrus.WithField("filter", filter),
+		err, "Failed to delegate pubsub logs subscription",
+	)
 	if err != nil {
-		logrus.WithField("filter", filter).WithError(err).Error("Failed to delegate pubsub logs subscription")
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
