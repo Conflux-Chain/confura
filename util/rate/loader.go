@@ -95,7 +95,7 @@ func (l *KeyLoader) populateCache(key string) (*KeyInfo, bool) {
 		// for db error, we cache nil for the key by which no expiry cache value existed
 		// so that db pressure can be mitigrated by reducing too many subsequential queries.
 		if _, _, found := l.keyCache.GetNoExp(key); !found {
-			l.keyCache.Add(key, nil)
+			l.keyCache.Add(key, (*KeyInfo)(nil))
 		}
 
 		logrus.WithField("key", key).
