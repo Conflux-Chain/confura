@@ -447,6 +447,14 @@ func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 	return w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))
 }
 
+// FeeHistory returns historical gas information, which could be used for tracking trends over time.
+func (api *ethAPI) FeeHistory(
+	ctx context.Context, blockCount hexutil.Uint64, lastBlock web3Types.BlockNumber, rewardPercentiles []float64,
+) (val *web3Types.FeeHistory, err error) {
+	w3c := GetEthClientFromContext(ctx)
+	return w3c.Eth.FeeHistory(uint64(blockCount), lastBlock, rewardPercentiles)
+}
+
 // TODO: This method should be removed once `web3Types.FilterQuery` is logging friendly.
 func (api *ethAPI) filterLogger(filter *web3Types.FilterQuery) *logrus.Entry {
 	logger := logrus.WithField("filter", filter)
@@ -461,6 +469,3 @@ func (api *ethAPI) filterLogger(filter *web3Types.FilterQuery) *logrus.Entry {
 
 	return logger
 }
-
-// The following RPC methods are not supported yet by the fullnode:
-// `eth_feeHistory`

@@ -467,6 +467,23 @@ func (api *cfxAPI) GetParamsFromVote(ctx context.Context, epoch *types.Epoch) (p
 	return api.stateHandler.GetParamsFromVote(ctx, cfx, epoch)
 }
 
+func (api *cfxAPI) GetFeeHistory(
+	ctx context.Context, blockCount hexutil.Uint64, lastEpoch types.Epoch, rewardPercentiles []float64,
+) (feeHistory *types.FeeHistory, err error) {
+	cfx := GetCfxClientFromContext(ctx)
+	return cfx.GetFeeHistory(blockCount, lastEpoch, rewardPercentiles)
+}
+
+func (api *cfxAPI) GetMaxPriorityFeePerGas(ctx context.Context) (*hexutil.Big, error) {
+	cfx := GetCfxClientFromContext(ctx)
+	return cfx.GetMaxPriorityFeePerGas()
+}
+
+func (api *cfxAPI) GetFeeBurnt(ctx context.Context, epoch ...*types.Epoch) (info *hexutil.Big, err error) {
+	cfx := GetCfxClientFromContext(ctx)
+	return cfx.GetFeeBurnt(epoch...)
+}
+
 func (h *cfxAPI) collectHitStats(method string, hit bool) {
 	metrics.Registry.RPC.StoreHit(method, "store").Mark(hit)
 }
