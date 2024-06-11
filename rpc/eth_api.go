@@ -15,15 +15,21 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3Types "github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	rpcMethodEthGetLogs = "eth_getLogs"
+	rpcMethodEthGetLogs     = "eth_getLogs"
+	maxNumRewardPercentiles = 50
 )
 
 var (
-	ethEmptyLogs = []web3Types.Log{}
+	ethEmptyLogs                = []web3Types.Log{}
+	errTooManyRewardPercentiles = errors.Errorf(
+		"the length of rewardPercentiles exceeds the maximum allowed (%v)",
+		maxNumRewardPercentiles,
+	)
 )
 
 type EthAPIOption struct {
@@ -451,6 +457,10 @@ func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 func (api *ethAPI) FeeHistory(
 	ctx context.Context, blockCount hexutil.Uint64, lastBlock web3Types.BlockNumber, rewardPercentiles []float64,
 ) (val *web3Types.FeeHistory, err error) {
+	if len(rewardPercentiles) > maxNumRewardPercentiles {
+		return nil, errTooManyRewardPercentiles
+	}
+
 	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.FeeHistory(uint64(blockCount), lastBlock, rewardPercentiles)
 }
