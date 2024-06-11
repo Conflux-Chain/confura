@@ -27,7 +27,7 @@ const (
 var (
 	ethEmptyLogs                = []web3Types.Log{}
 	errTooManyRewardPercentiles = errors.Errorf(
-		"the length of rewardPercentiles exceeds the maximum allowed (%v)",
+		"the length of `rewardPercentiles` exceeds the maximum allowed (%v)",
 		maxNumRewardPercentiles,
 	)
 )
