@@ -3,7 +3,7 @@ module github.com/Conflux-Chain/confura
 go 1.22
 
 require (
-	github.com/Conflux-Chain/go-conflux-sdk v1.5.9
+	github.com/Conflux-Chain/go-conflux-sdk v1.5.10-0.20240611031507-194d9c3a1028
 	github.com/Conflux-Chain/go-conflux-util v0.2.1-0.20240415073045-459b298cdcbd
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20230609030113-dc3c4d42820a
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
@@ -14,9 +14,10 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
+	github.com/mcuadros/go-defaults v1.2.0
 	github.com/montanaflynn/stats v0.6.6
 	github.com/openweb3/go-rpc-provider v0.3.3-0.20240314082803-8ee6dd0c7e4f
-	github.com/openweb3/web3go v0.2.6
+	github.com/openweb3/web3go v0.2.8-0.20240611080531-f6a84f75d083
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
 	github.com/rs/cors v1.7.0
@@ -82,7 +83,6 @@ require (
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mattn/go-sqlite3 v1.14.12 // indirect
-	github.com/mcuadros/go-defaults v1.2.0 // indirect
 	github.com/miguelmota/go-ethereum-hdwallet v0.1.1 // indirect
 	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/mitchellh/pointerstructure v1.2.0 // indirect

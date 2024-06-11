@@ -50,13 +50,13 @@ func (api *posAPI) GetConsensusBlocks(ctx context.Context) (blocks []*postypes.B
 	return GetCfxClientFromContext(ctx).Pos().GetConsensusBlocks()
 }
 
-func (api *posAPI) GetEpochState(ctx context.Context, epochNumber ...hexutil.Uint64) (epochState *postypes.EpochState, err error) {
-	return GetCfxClientFromContext(ctx).Pos().GetEpochState(epochNumber...)
+func (api *posAPI) GetEpochState(ctx context.Context, epochNumber hexutil.Uint64) (epochState *postypes.EpochState, err error) {
+	return GetCfxClientFromContext(ctx).Pos().GetEpochState(epochNumber)
 }
 
 func (api *posAPI) GetLedgerInfoByEpoch(
-	ctx context.Context, epochNumber ...hexutil.Uint64) (ledgerInfoWithSigs *postypes.LedgerInfoWithSignatures, err error) {
-	return GetCfxClientFromContext(ctx).Pos().GetLedgerInfoByEpoch(epochNumber...)
+	ctx context.Context, epochNumber hexutil.Uint64) (ledgerInfoWithSigs *postypes.LedgerInfoWithSignatures, err error) {
+	return GetCfxClientFromContext(ctx).Pos().GetLedgerInfoByEpoch(epochNumber)
 }
 
 func (api *posAPI) GetLedgerInfosByEpoch(
