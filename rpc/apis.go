@@ -6,6 +6,7 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util/metrics/service"
 	"github.com/Conflux-Chain/confura/util/rpc"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/pkg/errors"
 )
 
@@ -144,7 +145,8 @@ func evmSpaceApis(
 }
 
 // nativeSpaceBridgeApis adapts evm space RPCs to core space RPCs.
-func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
+func nativeSpaceBridgeApis(config *CfxBridgeServerConfig) ([]API, error) {
+	ethNodeURL, cfxNodeURL := config.EthNode, config.CfxNode
 	eth, err := rpc.NewEthClient(ethNodeURL)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to connect to eth space")
@@ -156,11 +158,15 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 	}
 	rpc.HookMiddlewares(eth.Provider(), ethNodeURL, "eth")
 
-	cfx, err := rpc.NewCfxClient(cfxNodeURL)
-	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to connect to cfx space")
+	var cfx *sdk.Client
+	if len(cfxNodeURL) > 0 { // optioinal
+		cfx, err = rpc.NewCfxClient(cfxNodeURL)
+		if err != nil {
+			return nil, errors.WithMessage(err, "Failed to connect to cfx space")
+		}
+
+		rpc.HookMiddlewares(cfx.Provider(), cfxNodeURL, "cfx")
 	}
-	rpc.HookMiddlewares(cfx.Provider(), cfxNodeURL, "cfx")
 
 	// Hook an event handler to reidrect HTTP headers for the sdk client request
 	// because we could use `Confura` RPC service as our client endpoint for `cfxBridge`.
@@ -170,7 +176,7 @@ func nativeSpaceBridgeApis(ethNodeURL, cfxNodeURL string) ([]API, error) {
 		{
 			Namespace: "cfx",
 			Version:   "1.0",
-			Service:   cfxbridge.NewCfxAPI(eth, uint32(*ethChainId), cfx),
+			Service:   cfxbridge.NewCfxAPI(eth, uint32(*ethChainId), cfx, config.BatchRcptImpl),
 			Public:    true,
 		}, {
 			Namespace: "trace",
