@@ -209,7 +209,10 @@ func (req *EthCallRequest) ToCallMsg() ethTypes.CallRequest {
 		msg.Data = hexutil.MustDecode(*req.Data)
 	}
 
-	msg.AccessList = req.AccessList.ToEthType()
+	if req.AccessList != nil {
+		msg.AccessList = req.AccessList.ToEthType()
+	}
+
 	return msg
 }
 
