@@ -8,21 +8,29 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	rpcp "github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go"
 	ethTypes "github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
+)
+
+const (
+	BatchRcptImplWithParityBlockReceipts = iota
+	BatchRcptImplWithEthTxnReceipt
+	BatchRcptImplWithEthBlockReceipts
 )
 
 type CfxAPI struct {
-	w3c          *web3go.Client
-	cfx          *sdk.Client
-	ethNetworkId uint32
+	w3c           *web3go.Client
+	cfx           *sdk.Client // optional
+	ethNetworkId  uint32
+	batchRcptImpl int
 }
 
-func NewCfxAPI(w3client *web3go.Client, ethNetId uint32, cfxClient *sdk.Client) *CfxAPI {
+func NewCfxAPI(
+	w3client *web3go.Client, ethNetId uint32, cfxClient *sdk.Client, batchRcptImpl int) *CfxAPI {
 	return &CfxAPI{
-		w3c:          w3client,
-		cfx:          cfxClient,
-		ethNetworkId: ethNetId,
+		w3c: w3client, cfx: cfxClient, ethNetworkId: ethNetId, batchRcptImpl: batchRcptImpl,
 	}
 }
 
@@ -36,7 +44,34 @@ func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexuti
 		epoch = types.EpochLatestState
 	}
 
-	return api.cfx.WithContext(ctx).GetEpochNumber(epoch)
+	if api.cfx != nil {
+		return api.cfx.WithContext(ctx).GetEpochNumber(epoch)
+	}
+
+	var blockNum ethTypes.BlockNumber
+	switch {
+	case epoch.Equals(types.EpochEarliest):
+		blockNum = ethTypes.EarliestBlockNumber
+	case epoch.Equals(types.EpochLatestConfirmed):
+		blockNum = ethTypes.SafeBlockNumber
+	case epoch.Equals(types.EpochLatestState):
+		blockNum = ethTypes.LatestBlockNumber
+	case epoch.Equals(types.EpochLatestMined):
+		blockNum = ethTypes.LatestBlockNumber
+	case epoch.Equals(types.EpochLatestFinalized):
+		blockNum = ethTypes.FinalizedBlockNumber
+	case epoch.Equals(types.EpochLatestCheckpoint):
+		return HexBig0, nil
+	default:
+		return nil, ErrEpochUnsupported
+	}
+
+	block, err := api.w3c.WithContext(ctx).Eth.BlockByNumber(blockNum, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return (*hexutil.Big)(block.Number), nil
 }
 
 func (api *CfxAPI) GetBalance(ctx context.Context, address EthAddress, bn *EthBlockNumber) (*hexutil.Big, error) {
@@ -228,17 +263,64 @@ func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 }
 
 func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) ([][]*types.TransactionReceipt, error) {
-	receipts, err := api.w3c.WithContext(ctx).Parity.BlockReceipts(bnh.ToArg())
-	if err != nil {
-		return nil, err
+	var receipts []*ethTypes.Receipt
+
+	switch api.batchRcptImpl {
+	case BatchRcptImplWithEthTxnReceipt:
+		block, err := api.getBlockByBlockNumberOrHash(ctx, bnh, false)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, txn := range block.Transactions.Hashes() {
+			receipt, err := api.w3c.WithContext(ctx).Eth.TransactionReceipt(txn)
+			if err != nil {
+				return nil, err
+			}
+
+			if receipt.BlockHash != block.Hash { // reorg?
+				return nil, errors.New("pivot reorg, please retry again")
+			}
+
+			receipts = append(receipts, receipt)
+		}
+
+	case BatchRcptImplWithParityBlockReceipts:
+		blockReceipts, err := api.w3c.WithContext(ctx).Parity.BlockReceipts(bnh.ToArg())
+		if err != nil {
+			return nil, err
+		}
+
+		for i := range blockReceipts {
+			receipts = append(receipts, &blockReceipts[i])
+		}
+
+	case BatchRcptImplWithEthBlockReceipts:
+		blockReceipts, err := api.w3c.WithContext(ctx).Eth.BlockReceipts(bnh.ToArg())
+		if err != nil {
+			return nil, err
+		}
+
+		receipts = blockReceipts
+	default:
+		return nil, errors.New("unsupported batch receipt implementation")
 	}
 
 	result := make([]*types.TransactionReceipt, len(receipts))
 	for i := range receipts {
-		result[i] = ConvertReceipt(&receipts[i], api.ethNetworkId)
+		result[i] = ConvertReceipt(receipts[i], api.ethNetworkId)
 	}
 
 	return [][]*types.TransactionReceipt{result}, nil
+}
+
+func (api *CfxAPI) getBlockByBlockNumberOrHash(
+	ctx context.Context, bnh EthBlockNumberOrHash, isFull bool) (*ethTypes.Block, error) {
+	if bn, ok := bnh.ToArg().Number(); ok {
+		return api.w3c.WithContext(ctx).Eth.BlockByNumber(bn, isFull)
+	}
+
+	return api.w3c.WithContext(ctx).Eth.BlockByHash(*bnh.ToArg().BlockHash, isFull)
 }
 
 func (api *CfxAPI) GetAccount(ctx context.Context, address EthAddress, bn *EthBlockNumber) (types.AccountInfo, error) {
@@ -277,11 +359,65 @@ func (api *CfxAPI) GetAccumulateInterestRate(ctx context.Context, bn *EthBlockNu
 }
 
 func (api *CfxAPI) GetConfirmationRiskByHash(ctx context.Context, blockHash types.Hash) (*hexutil.Big, error) {
-	return api.cfx.WithContext(ctx).GetRawBlockConfirmationRisk(blockHash)
+	if api.cfx != nil {
+		return api.cfx.WithContext(ctx).GetRawBlockConfirmationRisk(blockHash)
+	}
+
+	block, err := api.w3c.Eth.BlockByHash(*blockHash.ToCommonHash(), false)
+	if block == nil || err != nil {
+		return nil, err
+	}
+
+	// TODO: calculate confirmation risk based on various confirmed blocks.
+	return HexBig0, nil
 }
 
-func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
-	status, err := api.cfx.WithContext(ctx).GetStatus()
+func (api *CfxAPI) GetStatus(ctx context.Context) (status types.Status, err error) {
+	if api.cfx != nil {
+		return api.getCrossSpaceStatus(ctx)
+	}
+
+	var batchElems []rpcp.BatchElem
+	for _, bn := range []rpcp.BlockNumber{
+		ethTypes.LatestBlockNumber,
+		ethTypes.SafeBlockNumber,
+		ethTypes.FinalizedBlockNumber,
+	} {
+		batchElems = append(batchElems, rpcp.BatchElem{
+			Method: "eth_getBlockByNumber",
+			Args:   []interface{}{bn, false},
+			Result: new(ethTypes.Block),
+		})
+	}
+
+	if err := api.w3c.Provider().BatchCallContext(ctx, batchElems); err != nil {
+		return types.Status{}, err
+	}
+
+	latestBlock := batchElems[0].Result.(*ethTypes.Block)
+	safeBlock := batchElems[1].Result.(*ethTypes.Block)
+	finBlock := batchElems[2].Result.(*ethTypes.Block)
+
+	chainID := hexutil.Uint64(api.ethNetworkId)
+	latestBlockNumber := hexutil.Uint64(latestBlock.Number.Uint64())
+
+	return types.Status{
+		BestHash:             ConvertHash(latestBlock.Hash),
+		ChainID:              chainID,
+		EthereumSpaceChainId: chainID,
+		NetworkID:            chainID,
+		EpochNumber:          latestBlockNumber,
+		BlockNumber:          latestBlockNumber,
+		LatestState:          latestBlockNumber,
+		LatestConfirmed:      hexutil.Uint64(safeBlock.Number.Uint64()),
+		LatestFinalized:      hexutil.Uint64(finBlock.Number.Uint64()),
+		LatestCheckpoint:     0,
+		PendingTxNumber:      0,
+	}, nil
+}
+
+func (api *CfxAPI) getCrossSpaceStatus(ctx context.Context) (status types.Status, err error) {
+	status, err = api.cfx.WithContext(ctx).GetStatus()
 	if err != nil {
 		return types.Status{}, err
 	}
@@ -305,7 +441,13 @@ func (api *CfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
 }
 
 func (api *CfxAPI) GetBlockRewardInfo(ctx context.Context, epoch types.Epoch) ([]types.RewardInfo, error) {
-	return api.cfx.WithContext(ctx).GetBlockRewardInfo(epoch)
+	if api.cfx != nil {
+		return api.cfx.WithContext(ctx).GetBlockRewardInfo(epoch)
+	}
+
+	// TODO: Calculate block reward based on the following implementation:
+	// https://docs.alchemy.com/docs/how-to-calculate-ethereum-miner-rewards
+	return []types.RewardInfo{}, nil
 }
 
 func (api *CfxAPI) ClientVersion(ctx context.Context) (string, error) {
@@ -317,15 +459,21 @@ func (api *CfxAPI) GetSupplyInfo(ctx context.Context, epoch *types.Epoch) (types
 		epoch = types.EpochLatestState
 	}
 
-	result, err := api.cfx.WithContext(ctx).GetSupplyInfo(epoch)
-	if err != nil {
-		return types.TokenSupplyInfo{}, err
+	if api.cfx != nil {
+		result, err := api.cfx.WithContext(ctx).GetSupplyInfo(epoch)
+		if err != nil {
+			return types.TokenSupplyInfo{}, err
+		}
+
+		result.TotalCirculating = result.TotalEspaceTokens
+		result.TotalIssued = result.TotalEspaceTokens
+		result.TotalStaking = HexBig0
+		result.TotalCollateral = HexBig0
+
+		return result, nil
 	}
 
-	result.TotalCirculating = result.TotalEspaceTokens
-	result.TotalIssued = result.TotalEspaceTokens
-	result.TotalStaking = HexBig0
-	result.TotalCollateral = HexBig0
-
-	return result, nil
+	// TODO: Calculate supply info based on the following implementation:
+	// https://github.com/lastmjs/eth-total-supply
+	return types.TokenSupplyInfo{}, nil
 }

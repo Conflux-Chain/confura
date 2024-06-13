@@ -15,8 +15,13 @@ rpc:
   cfxBridge:
     # EVM space fullnode endpoint
     ethNode: http://evmtestnet.confluxrpc.com
-    # core space fullnode endpoint
+    # core space fullnode endpoint (optional)
     cfxNode: http://test.confluxrpc.com
+    # Implementation method for batch receipts, available options are:
+    # 0 - `parity_getBlockReceipts`
+    # 1 - `eth_getTransactionReceipt`
+    # 2 - `eth_getBlockReceipts`
+    # batchRcptImpl: 0
     # Available exposed modules are `cfx`, `txpool`, `trace`, if empty all APIs will be exposed.
     # exposedModules: []
     # Served HTTP endpoint
