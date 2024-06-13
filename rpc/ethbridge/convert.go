@@ -67,36 +67,42 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 		nonce = tx.Nonce.ToInt().Uint64()
 	}
 
+	var access gethTypes.AccessList
+	if tx.AccessList != nil {
+		access = *tx.AccessList.ToEthType()
+	}
+
 	ethTxn := &types.TransactionDetail{
-		BlockHash:        tx.BlockHash.ToCommonHash(),
-		ChainID:          big.NewInt(int64(chainId)),
-		Creates:          creates,
-		From:             from,
-		Gas:              gas,
-		GasPrice:         tx.GasPrice.ToInt(),
-		Hash:             ConvertHash(tx.Hash),
-		Input:            input,
-		Nonce:            nonce,
-		R:                tx.R.ToInt(),
-		S:                tx.S.ToInt(),
-		Status:           ConvertTxStatus(tx.Status),
-		To:               to,
-		TransactionIndex: (*uint64)(tx.TransactionIndex),
-		V:                tx.V.ToInt(),
-		Value:            tx.Value.ToInt(),
+		Type:                 (*uint64)(tx.TransactionType),
+		Accesses:             access,
+		BlockHash:            tx.BlockHash.ToCommonHash(),
+		ChainID:              big.NewInt(int64(chainId)),
+		Creates:              creates,
+		From:                 from,
+		Gas:                  gas,
+		GasPrice:             tx.GasPrice.ToInt(),
+		Hash:                 ConvertHash(tx.Hash),
+		Input:                input,
+		MaxFeePerGas:         tx.MaxFeePerGas.ToInt(),
+		MaxPriorityFeePerGas: tx.MaxPriorityFeePerGas.ToInt(),
+		Nonce:                nonce,
+		R:                    tx.R.ToInt(),
+		S:                    tx.S.ToInt(),
+		Status:               ConvertTxStatus(tx.Status),
+		To:                   to,
+		TransactionIndex:     (*uint64)(tx.TransactionIndex),
+		V:                    tx.V.ToInt(),
+		Value:                tx.Value.ToInt(),
+		YParity:              (*uint64)(tx.YParity),
 	}
 
 	if !util.IsEip155Tx(ethTxn) { // only return chainID for EIP155 tx
 		tx.ChainID = nil
 	}
 
-	// fill missed data field `Accesses`, `BlockNumber`, `MaxFeePerGas`, `MaxPriorityFeePerGas`, `type`, `StandardV`
+	// fill missed data field `BlockNumber` and `StandardV`
 	if txExt != nil {
-		ethTxn.Accesses = txExt.Accesses
 		ethTxn.BlockNumber = txExt.BlockNumber.ToInt()
-		ethTxn.MaxFeePerGas = txExt.MaxFeePerGas.ToInt()
-		ethTxn.MaxPriorityFeePerGas = txExt.MaxPriorityFeePerGas.ToInt()
-		ethTxn.Type = txExt.Type
 		ethTxn.StandardV = txExt.StandardV.ToInt()
 	}
 
@@ -149,6 +155,7 @@ func ConvertBlockHeader(value *cfxtypes.BlockHeader, blockExt *store.BlockExtra)
 
 	ethBlock := &types.Block{
 		Author:           &minerAddr,
+		BaseFeePerGas:    value.BaseFeePerGas.ToInt(),
 		Difficulty:       (*big.Int)(value.Difficulty),
 		ExtraData:        extraData,
 		GasLimit:         value.GasLimit.ToInt().Uint64(),
@@ -167,9 +174,8 @@ func ConvertBlockHeader(value *cfxtypes.BlockHeader, blockExt *store.BlockExtra)
 		Uncles:           uncleHashes,
 	}
 
-	// fill missed data fields `BaseFeePerGas`, `MixHash`, `TotalDifficulty`, `Sha3Uncles`
+	// fill missed data fields `MixHash`, `TotalDifficulty` and `Sha3Uncles`
 	if blockExt != nil {
-		ethBlock.BaseFeePerGas = blockExt.BaseFeePerGas.ToInt()
 		ethBlock.MixHash = blockExt.MixHash
 		ethBlock.TotalDifficulty = blockExt.TotalDifficulty.ToInt()
 
@@ -240,33 +246,33 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 		root, _ = hexutil.Decode(string(value.StateRoot))
 	}
 
-	receipt := &types.Receipt{
-		BlockHash:        ConvertHash(value.BlockHash),
-		BlockNumber:      uint64(*value.EpochNumber),
-		ContractAddress:  contractAddr,
-		From:             from,
-		GasUsed:          value.GasUsed.ToInt().Uint64(),
-		Logs:             logs,
-		LogsBloom:        logsBloom,
-		Root:             root,
-		Status:           ConvertTxStatus(&value.OutcomeStatus),
-		To:               to,
-		TransactionHash:  ConvertHash(value.TransactionHash),
-		TransactionIndex: uint64(value.Index),
-		TxExecErrorMsg:   value.TxExecErrorMsg,
+	var cumulativeGasUsed uint64
+	if value.AccumulatedGasUsed != nil {
+		cumulativeGasUsed = value.AccumulatedGasUsed.ToInt().Uint64()
 	}
 
-	// fill missed data field `CumulativeGasUsed`, `EffectiveGasPrice`, `Type`
-	if rcptExtra != nil {
-		if rcptExtra.CumulativeGasUsed != nil {
-			receipt.CumulativeGasUsed = *rcptExtra.CumulativeGasUsed
-		}
+	var effectiveGasPrice uint64
+	if value.EffectiveGasPrice != nil {
+		effectiveGasPrice = value.EffectiveGasPrice.ToInt().Uint64()
+	}
 
-		if rcptExtra.EffectiveGasPrice != nil {
-			receipt.EffectiveGasPrice = *rcptExtra.EffectiveGasPrice
-		}
-
-		receipt.Type = rcptExtra.Type
+	receipt := &types.Receipt{
+		BlockHash:         ConvertHash(value.BlockHash),
+		BlockNumber:       uint64(*value.EpochNumber),
+		ContractAddress:   contractAddr,
+		CumulativeGasUsed: cumulativeGasUsed,
+		EffectiveGasPrice: effectiveGasPrice,
+		From:              from,
+		GasUsed:           value.GasUsed.ToInt().Uint64(),
+		Logs:              logs,
+		LogsBloom:         logsBloom,
+		Root:              root,
+		Status:            ConvertTxStatus(&value.OutcomeStatus),
+		To:                to,
+		TransactionHash:   ConvertHash(value.TransactionHash),
+		TransactionIndex:  uint64(value.Index),
+		TxExecErrorMsg:    value.TxExecErrorMsg,
+		Type:              (*uint64)(value.Type),
 	}
 
 	return receipt

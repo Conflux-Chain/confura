@@ -3,14 +3,12 @@ package store
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	gethTypes "github.com/ethereum/go-ethereum/core/types"
 	web3Types "github.com/openweb3/web3go/types"
 )
 
 // custom block fields for extention
 type BlockExtra struct {
 	// extended fields for ETH block
-	BaseFeePerGas   *hexutil.Big `json:"baseFeePerGas,omitempty"`
 	MixHash         *common.Hash `json:"mixHash,omitempty"`
 	TotalDifficulty *hexutil.Big `json:"totalDifficulty,omitempty"`
 	Sha3Uncles      *common.Hash `json:"sha3Uncles,omitempty"`
@@ -21,21 +19,13 @@ type BlockExtra struct {
 // custom transaction fields for extention
 type TransactionExtra struct {
 	// extended fields for ETH transaction
-	Accesses             gethTypes.AccessList `json:"accessList,omitempty"`
-	BlockNumber          *hexutil.Big         `json:"blockNumber,omitempty"`
-	MaxFeePerGas         *hexutil.Big         `json:"maxFeePerGas,omitempty"`
-	MaxPriorityFeePerGas *hexutil.Big         `json:"maxPriorityFeePerGas,omitempty"`
-	Type                 *uint64              `json:"type,omitempty"`
-	StandardV            *hexutil.Big         `json:"standardV,omitempty"`
+	BlockNumber *hexutil.Big `json:"blockNumber,omitempty"`
+	StandardV   *hexutil.Big `json:"standardV,omitempty"`
 }
 
 // custom receipt fields for extention
 type ReceiptExtra struct {
 	// extended fields for ETH receipt
-	CumulativeGasUsed *uint64 `json:"cumulativeGasUsed,omitempty"`
-	EffectiveGasPrice *uint64 `json:"effectiveGasPrice,omitempty"`
-	Type              *uint   `json:"type,omitempty"`
-
 	LogExts []*LogExtra `json:"-"`
 }
 
@@ -55,7 +45,6 @@ func ExtractEthBlockExt(ethBlock *web3Types.Block) *BlockExtra {
 	}
 
 	return &BlockExtra{
-		BaseFeePerGas:   (*hexutil.Big)(ethBlock.BaseFeePerGas),
 		MixHash:         ethBlock.MixHash,
 		TotalDifficulty: (*hexutil.Big)(ethBlock.TotalDifficulty),
 		Sha3Uncles:      &ethBlock.Sha3Uncles,
@@ -65,12 +54,8 @@ func ExtractEthBlockExt(ethBlock *web3Types.Block) *BlockExtra {
 
 func ExtractEthTransactionExt(ethTxn *web3Types.TransactionDetail) *TransactionExtra {
 	return &TransactionExtra{
-		Accesses:             ethTxn.Accesses,
-		BlockNumber:          (*hexutil.Big)(ethTxn.BlockNumber),
-		MaxFeePerGas:         (*hexutil.Big)(ethTxn.MaxFeePerGas),
-		MaxPriorityFeePerGas: (*hexutil.Big)(ethTxn.MaxPriorityFeePerGas),
-		Type:                 ethTxn.Type,
-		StandardV:            (*hexutil.Big)(ethTxn.StandardV),
+		BlockNumber: (*hexutil.Big)(ethTxn.BlockNumber),
+		StandardV:   (*hexutil.Big)(ethTxn.StandardV),
 	}
 }
 
@@ -89,9 +74,6 @@ func ExtractEthReceiptExt(ethRcpt *web3Types.Receipt) *ReceiptExtra {
 	}
 
 	return &ReceiptExtra{
-		CumulativeGasUsed: &ethRcpt.CumulativeGasUsed,
-		EffectiveGasPrice: &ethRcpt.EffectiveGasPrice,
-		Type:              ethRcpt.Type,
-		LogExts:           logExts,
+		LogExts: logExts,
 	}
 }
