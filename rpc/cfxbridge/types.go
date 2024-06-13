@@ -161,15 +161,18 @@ func (ea *EthAddress) UnmarshalJSON(data []byte) error {
 }
 
 // EthCallRequest is compatible with CFX CallRequest and accepts hex40 format address.
-// Note, StorageLimit field is simply ignored.
+// Note, `StorageLimit` and `TransactionType` fields are simply ignored.
 type EthCallRequest struct {
-	From     *EthAddress
-	To       *EthAddress
-	GasPrice *hexutil.Big
-	Gas      *hexutil.Uint64
-	Value    *hexutil.Big
-	Nonce    *hexutil.Uint64
-	Data     *string
+	From                 *EthAddress
+	To                   *EthAddress
+	GasPrice             *hexutil.Big
+	Gas                  *hexutil.Uint64
+	MaxFeePerGas         *hexutil.Big
+	MaxPriorityFeePerGas *hexutil.Big
+	Value                *hexutil.Big
+	Nonce                *hexutil.Uint64
+	Data                 *string
+	AccessList           types.AccessList
 }
 
 func (req *EthCallRequest) ToCallMsg() ethTypes.CallRequest {
@@ -186,6 +189,14 @@ func (req *EthCallRequest) ToCallMsg() ethTypes.CallRequest {
 		msg.Gas = (*uint64)(req.Gas)
 	}
 
+	if req.MaxFeePerGas != nil {
+		msg.MaxFeePerGas = req.MaxFeePerGas.ToInt()
+	}
+
+	if req.MaxPriorityFeePerGas != nil {
+		msg.MaxPriorityFeePerGas = req.MaxPriorityFeePerGas.ToInt()
+	}
+
 	if req.Value != nil {
 		msg.Value = req.Value.ToInt()
 	}
@@ -198,6 +209,7 @@ func (req *EthCallRequest) ToCallMsg() ethTypes.CallRequest {
 		msg.Data = hexutil.MustDecode(*req.Data)
 	}
 
+	msg.AccessList = req.AccessList.ToEthType()
 	return msg
 }
 
