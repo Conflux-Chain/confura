@@ -475,5 +475,11 @@ func (api *CfxAPI) GetSupplyInfo(ctx context.Context, epoch *types.Epoch) (types
 
 	// TODO: Calculate supply info based on the following implementation:
 	// https://github.com/lastmjs/eth-total-supply
-	return types.TokenSupplyInfo{}, nil
+	return types.TokenSupplyInfo{
+		TotalCirculating: HexBig0,
+		TotalIssued: HexBig0,
+		TotalStaking: HexBig0,
+		TotalCollateral: HexBig0,
+		TotalEspaceTokens: HexBig0,
+	}, nil
 }
