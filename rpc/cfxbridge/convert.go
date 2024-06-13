@@ -15,6 +15,14 @@ import (
 var (
 	txnStatusFailed  = hexutil.Uint64(1) // conflux tx status `failed`
 	txnStatusSuccess = hexutil.Uint64(0) // conflux tx status `success`
+
+	// conflux txn type
+	txnTypeLegacy = hexutil.Uint64(types.TRANSACTION_TYPE_LEGACY)
+	txnType1559   = hexutil.Uint64(types.TRANSACTION_TYPE_1559)
+	txnType2930   = hexutil.Uint64(types.TRANSACTION_TYPE_2930)
+
+	// conflux space
+	spaceEVM = types.SPACE_EVM
 )
 
 func NormalizeBig(value *big.Int, err error) (*hexutil.Big, error) {
@@ -87,6 +95,18 @@ func ConvertTxStatusNullable(value *uint64) (status *hexutil.Uint64) {
 	return
 }
 
+// Deduce transaction type from other transaction fields but without furthur validation.
+func DeduceTxnType(txn *ethTypes.TransactionDetail) *hexutil.Uint64 {
+	switch {
+	case txn.MaxFeePerGas != nil || txn.MaxPriorityFeePerGas != nil:
+		return &txnType1559
+	case txn.Accesses != nil:
+		return &txnType2930
+	default:
+		return &txnTypeLegacy
+	}
+}
+
 func ConvertTx(tx *ethTypes.TransactionDetail, ethNetworkId uint32) *types.Transaction {
 	if tx == nil {
 		return nil
@@ -97,25 +117,36 @@ func ConvertTx(tx *ethTypes.TransactionDetail, ethNetworkId uint32) *types.Trans
 		chainId = types.NewBigIntByRaw(tx.ChainID)
 	}
 
+	var acl *types.AccessList
+	if tx.Accesses != nil {
+		acl = &types.AccessList{}
+		acl.FromEthType(&tx.Accesses, ethNetworkId)
+	}
+
 	return &types.Transaction{
-		Hash:             types.Hash(tx.Hash.Hex()),
-		Nonce:            types.NewBigInt(tx.Nonce),
-		BlockHash:        ConvertHashNullable(tx.BlockHash),
-		TransactionIndex: (*hexutil.Uint64)(tx.TransactionIndex),
-		From:             ConvertAddress(tx.From, ethNetworkId),
-		To:               ConvertAddressNullable(tx.To, ethNetworkId),
-		Value:            types.NewBigIntByRaw(tx.Value),
-		GasPrice:         types.NewBigIntByRaw(tx.GasPrice),
-		Gas:              types.NewBigInt(tx.Gas),
-		ContractCreated:  ConvertAddressNullable(tx.Creates, ethNetworkId),
-		Data:             hexutil.Encode(tx.Input),
-		StorageLimit:     HexBig0,
-		EpochHeight:      HexBig0,
-		ChainID:          chainId,
-		Status:           ConvertTxStatusNullable(tx.Status),
-		V:                types.NewBigIntByRaw(tx.V),
-		R:                types.NewBigIntByRaw(tx.R),
-		S:                types.NewBigIntByRaw(tx.S),
+		TransactionType:      DeduceTxnType(tx),
+		Hash:                 types.Hash(tx.Hash.Hex()),
+		Nonce:                types.NewBigInt(tx.Nonce),
+		BlockHash:            ConvertHashNullable(tx.BlockHash),
+		TransactionIndex:     (*hexutil.Uint64)(tx.TransactionIndex),
+		From:                 ConvertAddress(tx.From, ethNetworkId),
+		To:                   ConvertAddressNullable(tx.To, ethNetworkId),
+		Value:                types.NewBigIntByRaw(tx.Value),
+		GasPrice:             types.NewBigIntByRaw(tx.GasPrice),
+		Gas:                  types.NewBigInt(tx.Gas),
+		ContractCreated:      ConvertAddressNullable(tx.Creates, ethNetworkId),
+		Data:                 hexutil.Encode(tx.Input),
+		StorageLimit:         HexBig0,
+		EpochHeight:          HexBig0,
+		ChainID:              chainId,
+		Status:               ConvertTxStatusNullable(tx.Status),
+		AccessList:           acl,
+		MaxPriorityFeePerGas: types.NewBigIntByRaw(tx.MaxPriorityFeePerGas),
+		MaxFeePerGas:         types.NewBigIntByRaw(tx.MaxFeePerGas),
+		V:                    types.NewBigIntByRaw(tx.V),
+		R:                    types.NewBigIntByRaw(tx.R),
+		S:                    types.NewBigIntByRaw(tx.S),
+		YParity:              (*hexutil.Uint64)(tx.YParity),
 	}
 }
 
@@ -148,6 +179,7 @@ func ConvertBlockHeader(block *ethTypes.Block, ethNetworkId uint32) *types.Block
 		BlockNumber:           types.NewBigIntByRaw(block.Number),
 		GasLimit:              types.NewBigInt(block.GasLimit),
 		GasUsed:               types.NewBigInt(block.GasUsed),
+		BaseFeePerGas:         types.NewBigIntByRaw(block.BaseFeePerGas),
 		Timestamp:             types.NewBigInt(block.Timestamp),
 		Difficulty:            types.NewBigIntByRaw(block.Difficulty),
 		PowQuality:            HexBig0,
@@ -215,6 +247,7 @@ func ConvertLog(log *ethTypes.Log, ethNetworkId uint32) *types.Log {
 		TransactionIndex:    types.NewBigInt(uint64(log.TxIndex)),              // tx index in block
 		LogIndex:            types.NewBigInt(uint64(log.Index)),                // log index in block
 		TransactionLogIndex: types.NewBigInt(uint64(*log.TransactionLogIndex)), // log index in tx
+		Space:               &spaceEVM,
 	}
 }
 
@@ -241,6 +274,7 @@ func ConvertReceipt(receipt *ethTypes.Receipt, ethNetworkId uint32) *types.Trans
 	)
 
 	return &types.TransactionReceipt{
+		Type:                    (*hexutil.Uint64)(receipt.Type),
 		TransactionHash:         types.Hash(receipt.TransactionHash.Hex()),
 		Index:                   hexutil.Uint64(receipt.TransactionIndex),
 		BlockHash:               types.Hash(receipt.BlockHash.Hex()),
@@ -248,7 +282,9 @@ func ConvertReceipt(receipt *ethTypes.Receipt, ethNetworkId uint32) *types.Trans
 		From:                    ConvertAddress(receipt.From, ethNetworkId),
 		To:                      ConvertAddressNullable(receipt.To, ethNetworkId),
 		GasUsed:                 types.NewBigInt(receipt.GasUsed),
+		AccumulatedGasUsed:      types.NewBigInt(receipt.CumulativeGasUsed),
 		GasFee:                  types.NewBigIntByRaw(gasFee),
+		EffectiveGasPrice:       types.NewBigInt(receipt.EffectiveGasPrice),
 		ContractCreated:         ConvertAddressNullable(receipt.ContractAddress, ethNetworkId),
 		Logs:                    logs,
 		LogsBloom:               types.Bloom(hexutil.Encode(receipt.LogsBloom.Bytes())),
@@ -259,6 +295,7 @@ func ConvertReceipt(receipt *ethTypes.Receipt, ethNetworkId uint32) *types.Trans
 		StorageCoveredBySponsor: false,
 		StorageCollateralized:   0,
 		StorageReleased:         emptyStorageChangeList,
+		BurntGasFee:             types.NewBigIntByRaw(receipt.BurntGasFee),
 	}
 }
 
