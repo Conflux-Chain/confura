@@ -17,7 +17,7 @@ require (
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/montanaflynn/stats v0.6.6
 	github.com/openweb3/go-rpc-provider v0.3.3-0.20240314082803-8ee6dd0c7e4f
-	github.com/openweb3/web3go v0.2.8-0.20240611080531-f6a84f75d083
+	github.com/openweb3/web3go v0.2.8-0.20240613033628-df44b448f8a4
 	github.com/pkg/errors v0.9.1
 	github.com/royeo/dingrobot v1.0.1-0.20191230075228-c90a788ca8fd
 	github.com/rs/cors v1.7.0

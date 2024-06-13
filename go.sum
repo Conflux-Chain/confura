@@ -600,8 +600,8 @@ github.com/openweb3/go-rpc-provider v0.3.3-0.20240314082803-8ee6dd0c7e4f/go.mod 
 github.com/openweb3/go-sdk-common v0.0.0-20220720074746-a7134e1d372c h1:BrPXZpkTdmZe5bNjSSnxWqL44X9FcZ3xftLcYNkIJ68=
 github.com/openweb3/go-sdk-common v0.0.0-20220720074746-a7134e1d372c/go.mod h1:0WCVKMiLiYEaHhpQWQ3rgLti/Fv/+JPRiB0sEoovwk8=
 github.com/openweb3/web3go v0.2.3/go.mod h1:oiiUgYd/A1D6ZX8PjVnWZGX4aUn/n8DlSLFyrsqQg1k=
-github.com/openweb3/web3go v0.2.8-0.20240611080531-f6a84f75d083 h1:Lv9YSJLAvXiiAnbkwrJ8WckcEsCVyfWBDFUvHIe1U28=
-github.com/openweb3/web3go v0.2.8-0.20240611080531-f6a84f75d083/go.mod h1:FKQRl5wjQE/in9GEiHFCJ9JNVhizKeJ7KLxhbhUA/cw=
+github.com/openweb3/web3go v0.2.8-0.20240613033628-df44b448f8a4 h1:FBYV/425wN6U6ZyJlFVa86ZwB8laYQbzWcYH3+LflrU=
+github.com/openweb3/web3go v0.2.8-0.20240613033628-df44b448f8a4/go.mod h1:FKQRl5wjQE/in9GEiHFCJ9JNVhizKeJ7KLxhbhUA/cw=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pascaldekloe/goe v0.1.0/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
