@@ -278,11 +278,7 @@ func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHas
 				return nil, err
 			}
 
-			if receipt == nil {
-				continue
-			}
-
-			if receipt.BlockHash != block.Hash { // reorg?
+			if receipt != nil && receipt.BlockHash != block.Hash { // reorg?
 				return nil, errors.New("pivot reorg, please retry again")
 			}
 
