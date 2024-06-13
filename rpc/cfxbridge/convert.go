@@ -205,6 +205,11 @@ func ConvertLog(log *ethTypes.Log, ethNetworkId uint32) *types.Log {
 		topics[i] = types.Hash(log.Topics[i].Hex())
 	}
 
+	var txnLogIdx *hexutil.Big
+	if log.TransactionLogIndex != nil {
+		txnLogIdx = types.NewBigInt(uint64(*log.TransactionLogIndex))
+	}
+
 	return &types.Log{
 		Address:             ConvertAddress(log.Address, ethNetworkId),
 		Topics:              topics,
@@ -212,9 +217,9 @@ func ConvertLog(log *ethTypes.Log, ethNetworkId uint32) *types.Log {
 		BlockHash:           ConvertHashNullable(&log.BlockHash),
 		EpochNumber:         types.NewBigInt(log.BlockNumber),
 		TransactionHash:     ConvertHashNullable(&log.TxHash),
-		TransactionIndex:    types.NewBigInt(uint64(log.TxIndex)),              // tx index in block
-		LogIndex:            types.NewBigInt(uint64(log.Index)),                // log index in block
-		TransactionLogIndex: types.NewBigInt(uint64(*log.TransactionLogIndex)), // log index in tx
+		TransactionIndex:    types.NewBigInt(uint64(log.TxIndex)), // tx index in block
+		LogIndex:            types.NewBigInt(uint64(log.Index)),   // log index in block
+		TransactionLogIndex: txnLogIdx,                            // log index in tx
 	}
 }
 
