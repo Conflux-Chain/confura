@@ -67,14 +67,9 @@ func ConvertTx(tx *cfxtypes.Transaction, txExt *store.TransactionExtra) *types.T
 		nonce = tx.Nonce.ToInt().Uint64()
 	}
 
-	var access gethTypes.AccessList
-	if tx.AccessList != nil {
-		access = *tx.AccessList.ToEthType()
-	}
-
 	ethTxn := &types.TransactionDetail{
 		Type:                 (*uint64)(tx.TransactionType),
-		Accesses:             access,
+		Accesses:             tx.AccessList.ToEthType(),
 		BlockHash:            tx.BlockHash.ToCommonHash(),
 		ChainID:              big.NewInt(int64(chainId)),
 		Creates:              creates,

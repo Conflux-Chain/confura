@@ -468,7 +468,7 @@ func (api *cfxAPI) GetParamsFromVote(ctx context.Context, epoch *types.Epoch) (p
 }
 
 func (api *cfxAPI) GetFeeHistory(
-	ctx context.Context, blockCount hexutil.Uint64, lastEpoch types.Epoch, rewardPercentiles []float64,
+	ctx context.Context, blockCount types.HexOrDecimalUint64, lastEpoch types.Epoch, rewardPercentiles []float64,
 ) (feeHistory *types.FeeHistory, err error) {
 	if len(rewardPercentiles) > maxNumRewardPercentiles {
 		return nil, errTooManyRewardPercentiles

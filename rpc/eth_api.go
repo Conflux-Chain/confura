@@ -11,6 +11,7 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
+	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -455,7 +456,7 @@ func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 
 // FeeHistory returns historical gas information, which could be used for tracking trends over time.
 func (api *ethAPI) FeeHistory(
-	ctx context.Context, blockCount hexutil.Uint64, lastBlock web3Types.BlockNumber, rewardPercentiles []float64,
+	ctx context.Context, blockCount types.HexOrDecimalUint64, lastBlock web3Types.BlockNumber, rewardPercentiles []float64,
 ) (val *web3Types.FeeHistory, err error) {
 	if len(rewardPercentiles) > maxNumRewardPercentiles {
 		return nil, errTooManyRewardPercentiles
