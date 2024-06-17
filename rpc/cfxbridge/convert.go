@@ -117,12 +117,6 @@ func ConvertTx(tx *ethTypes.TransactionDetail, ethNetworkId uint32) *types.Trans
 		chainId = types.NewBigIntByRaw(tx.ChainID)
 	}
 
-	var acl *types.AccessList
-	if tx.Accesses != nil {
-		acl = &types.AccessList{}
-		acl.FromEthType(&tx.Accesses, ethNetworkId)
-	}
-
 	return &types.Transaction{
 		TransactionType:      DeduceTxnType(tx),
 		Hash:                 types.Hash(tx.Hash.Hex()),
@@ -140,7 +134,7 @@ func ConvertTx(tx *ethTypes.TransactionDetail, ethNetworkId uint32) *types.Trans
 		EpochHeight:          HexBig0,
 		ChainID:              chainId,
 		Status:               ConvertTxStatusNullable(tx.Status),
-		AccessList:           acl,
+		AccessList:           types.ConvertEthAccessListToCfx(tx.Accesses, ethNetworkId),
 		MaxPriorityFeePerGas: types.NewBigIntByRaw(tx.MaxPriorityFeePerGas),
 		MaxFeePerGas:         types.NewBigIntByRaw(tx.MaxFeePerGas),
 		V:                    types.NewBigIntByRaw(tx.V),
