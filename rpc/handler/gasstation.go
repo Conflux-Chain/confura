@@ -124,8 +124,8 @@ func (w *PriorityFeeWindow) Remove(blockHashes ...string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	for _, blockHash := range blockHashes {
-		if e, ok := w.hashToFee[blockHash]; ok {
+	for i := range blockHashes {
+		if e, ok := w.hashToFee[blockHashes[i]]; ok {
 			w.feeChain.Remove(e)
 		}
 	}
@@ -145,7 +145,7 @@ func (w *PriorityFeeWindow) Push(blockFee *BlockPriorityFee) {
 	w.updateHistoricalPriorityFeeRange(blockFee)
 
 	// If the window is full, prune the oldest block.
-	if w.feeChain.Len() > w.capacity {
+	for w.feeChain.Len() > w.capacity {
 		w.feeChain.Remove(w.feeChain.Front())
 	}
 }
@@ -252,7 +252,6 @@ func (w *PriorityFeeWindow) calculateAvgPriorityFees(percentiles []float64) (res
 }
 
 func (w *PriorityFeeWindow) calculateAvgPriorityFee(p float64) *big.Int {
-	// Calculate the average priority fee per gas percentiled by the given percentiles per block in the window.
 	totalFee := big.NewInt(0)
 	totalSize := int64(0)
 
@@ -316,7 +315,7 @@ func (w *PriorityFeeWindow) determinePriorityFeeTrend(prevBlockFee, latestBlockF
 }
 
 func (w *PriorityFeeWindow) calculateNetworkCongestion() float64 {
-	if e := w.feeChain.Front(); e != nil {
+	if e := w.feeChain.Back(); e != nil {
 		return e.Value.(*BlockPriorityFee).gasUsedRatio
 	}
 
@@ -351,6 +350,10 @@ func (w *PriorityFeeWindow) calculateLatestPriorityFeeRange() (res []*big.Int) {
 
 // ToHexBigSlice converts a slice of `*big.Int` to a slice of `*hexutil.Big`.
 func ToHexBigSlice(arr []*big.Int) []*hexutil.Big {
+	if len(arr) == 0 {
+		return nil
+	}
+
 	res := make([]*hexutil.Big, len(arr))
 	for i, v := range arr {
 		res[i] = (*hexutil.Big)(v)
