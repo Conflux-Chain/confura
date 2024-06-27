@@ -88,6 +88,15 @@ eth:
     # The cold interval before the circuit breaker turns to be half-open since being turned open.
     openColdTime: 15s
 
+# # Gas station configurations
+# gasstation:
+#   # Whether to enable gas station.
+#   enabled: true
+#   # The number of blocks (or epochs) from the latest block (or epoch) to peek for gas price estimation.
+#   historicalPeekCount: 100
+#   # Percentiles of average txn gas price mapped to three levels of urgency (`low`, `medium` and `high`).
+#   percentiles: [1, 50, 99]
+
 # Blockchain sync configurations
 sync:
   # Core space sync configurations

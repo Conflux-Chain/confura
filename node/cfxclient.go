@@ -6,6 +6,7 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/pkg/errors"
 )
 
 // CfxClientProvider provides core space client by router.
@@ -23,7 +24,7 @@ func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvide
 	}
 }
 
-// GetClient gets client of specific group (or use normal HTTP group as default.
+// GetClient gets client of specific group (or use normal HTTP group as default).
 func (p *CfxClientProvider) GetClient(key string, groups ...Group) (sdk.ClientOperator, error) {
 	client, err := p.getClient(key, cfxNodeGroup(groups...))
 	if err != nil {
@@ -44,6 +45,25 @@ func (p *CfxClientProvider) GetClientByIP(ctx context.Context, groups ...Group) 
 	return client.(sdk.ClientOperator), nil
 }
 
+// GetClientsByGroup gets all clients of specific group.
+func (p *CfxClientProvider) GetClientsByGroup(grp Group) (clients []sdk.ClientOperator, err error) {
+	np := locateNodeProvider(p.router)
+	if np == nil {
+		return nil, errors.New("unsupported router type")
+	}
+
+	nodeUrls := np.ListNodesByGroup(grp)
+	for _, url := range nodeUrls {
+		if c, err := p.getOrRegisterClient(string(url), grp); err == nil {
+			clients = append(clients, c.(sdk.ClientOperator))
+		} else {
+			return nil, err
+		}
+	}
+
+	return clients, nil
+}
+
 func cfxNodeGroup(groups ...Group) Group {
 	grp := GroupCfxHttp
 	if len(groups) > 0 {
@@ -51,4 +71,21 @@ func cfxNodeGroup(groups ...Group) Group {
 	}
 
 	return grp
+}
+
+// locateNodeProvider finds node provider from the router chain or nil.
+func locateNodeProvider(r Router) NodeProvider {
+	if np, ok := r.(NodeProvider); ok {
+		return np
+	}
+
+	if cr, ok := r.(*chainedRouter); ok {
+		for _, r := range cr.routers {
+			if np := locateNodeProvider(r); np != nil {
+				return np
+			}
+		}
+	}
+
+	return nil
 }

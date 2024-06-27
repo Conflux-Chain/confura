@@ -1,146 +1,359 @@
 package handler
 
 import (
+	"container/list"
 	"math/big"
+	"slices"
+	"sync"
+	"time"
 
-	"github.com/Conflux-Chain/confura/store"
-	itypes "github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
+	"github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/sirupsen/logrus"
 )
 
-const ( // gas station price configs
-	ConfGasStationPriceFast    = "gasstation_price_fast"
-	ConfGasStationPriceFastest = "gasstation_price_fastest"
-	ConfGasStationPriceSafeLow = "gasstation_price_safe_low"
-	ConfGasStationPriceAverage = "gasstation_price_average"
+const (
+	// The interval to sync data in normal mode.
+	syncIntervalNormal time.Duration = time.Second
+	// The interval to sync data in catch-up mode.
+	syncIntervalCatchUp time.Duration = time.Millisecond
+	// The interval to update the node cluster.
+	clusterUpdateInterval = time.Minute
 )
+
+// GasStationStatus represents the status of gas station.
+type GasStationStatus struct{ error }
 
 var (
-	defaultGasStationPriceFastest = big.NewInt(1_000_000_000) // (1G)
-	defaultGasStationPriceFast    = big.NewInt(1_000_000_000) // (1G)
-	defaultGasStationPriceAverage = big.NewInt(1_000_000_000) // (1G)
-	defaultGasStationPriceSafeLow = big.NewInt(1_000_000_000) // (1G)
-
-	maxGasStationPriceFastest = big.NewInt(10_000_000_000) // (10G)
-	maxGasStationPriceFast    = big.NewInt(10_000_000_000) // (10G)
-	maxGasStationPriceAverage = big.NewInt(10_000_000_000) // (10G)
-	maxGasStationPriceSafeLow = big.NewInt(10_000_000_000) // (10G)
+	StationStatusOk                GasStationStatus = GasStationStatus{}
+	StationStatusClientUnavailable GasStationStatus = GasStationStatus{node.ErrClientUnavailable}
 )
 
-// GasStationHandler RPC handler to serve gas price estimation etc.,
-type GasStationHandler struct {
-	db, cache store.Configurable
+type GasStationConfig struct {
+	// Whether to enable gas station.
+	Enabled bool
+	// Number of blocks/epochs to peek for gas price estimation.
+	HistoricalPeekCount int `default:"100"`
+	// Percentiles for average txn gas price mapped to three levels of urgency (`low`, `medium` and `high`).
+	Percentiles [3]float64 `default:"[1, 50, 99]"`
 }
 
-func NewGasStationHandler(db, cache store.Configurable) *GasStationHandler {
-	return &GasStationHandler{db: db, cache: cache}
+// BlockPriorityFee holds the gas fees of transactions within a single block.
+type BlockPriorityFee struct {
+	number       uint64            // Block number
+	hash         string            // Block hash
+	baseFee      *big.Int          // Base fee per gas of the block
+	gasUsedRatio float64           // Gas used ratio of the block
+	txnTips      []*TxnPriorityFee // Slice of ordered transaction priority fees
 }
 
-func (handler *GasStationHandler) GetPrice() (*itypes.GasStationPrice, error) {
-	gasStationPriceConfs := []string{ // order is important !!!
-		ConfGasStationPriceFast,
-		ConfGasStationPriceFastest,
-		ConfGasStationPriceSafeLow,
-		ConfGasStationPriceAverage,
+// Append appends transaction priority fees to the block and sorts them in ascending order.
+func (b *BlockPriorityFee) Append(txnTips ...*TxnPriorityFee) {
+	b.txnTips = append(b.txnTips, txnTips...)
+	slices.SortFunc(b.txnTips, func(l, r *TxnPriorityFee) int {
+		return l.tip.Cmp(r.tip)
+	})
+}
+
+// Percentile calculates the percentile of transaction priority fees
+func (b *BlockPriorityFee) Percentile(p float64) *big.Int {
+	// Return nil if there are no transaction tips
+	if len(b.txnTips) == 0 {
+		return nil
 	}
 
-	maxGasStationPrices := []*big.Int{ // order is important !!!
-		maxGasStationPriceFast,
-		maxGasStationPriceFastest,
-		maxGasStationPriceSafeLow,
-		maxGasStationPriceAverage,
+	// Ensure the percentile is between 0 and 100
+	if p < 0 || p > 100 {
+		return nil
 	}
 
-	var gasPriceConf map[string]interface{}
-	var err error
+	// Calculate the index corresponding to the given percentile
+	index := int(p * float64(len(b.txnTips)) / 100)
+	// Ensure the index is within bounds
+	if index >= len(b.txnTips) {
+		index = len(b.txnTips) - 1
+	}
 
-	useCache := false
-	if !util.IsInterfaceValNil(handler.cache) { // load from cache first
-		useCache = true
+	return b.txnTips[index].tip
+}
 
-		gasPriceConf, err = handler.cache.LoadConfig(gasStationPriceConfs...)
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get gasstation price config from cache")
-			useCache = false
+// TipRange returns the range of transaction priority fees in the block.
+func (b *BlockPriorityFee) TipRange() []*big.Int {
+	if len(b.txnTips) == 0 {
+		return nil
+	}
+
+	return []*big.Int{b.txnTips[0].tip, b.txnTips[len(b.txnTips)-1].tip}
+}
+
+// TxnPriorityFee holds the priority fee information of a single transaction.
+type TxnPriorityFee struct {
+	hash string   // Transaction hash
+	tip  *big.Int // Priority fee of the transaction
+}
+
+// PriorityFeeWindow holds priority fees of the latest blocks using a sliding window mechanism.
+type PriorityFeeWindow struct {
+	mu                         sync.Mutex
+	feeChain                   *list.List               // List of chronologically ordered blocks
+	hashToFee                  map[string]*list.Element // Map of block hash to linked list element
+	capacity                   int                      // Number of blocks to maintain in the window
+	historicalBaseFeeRanges    []*big.Int               // Range of base fees per gas over a historical period
+	historicalPriorityFeeRange []*big.Int               // Range of priority fees per gas over a historical period
+}
+
+// NewPriorityFeeWindow creates a new `PriorityFeeWindow` with the specified capacity.
+func NewPriorityFeeWindow(capacity int) *PriorityFeeWindow {
+	return &PriorityFeeWindow{
+		feeChain:  list.New(),
+		hashToFee: make(map[string]*list.Element),
+		capacity:  capacity,
+	}
+}
+
+// Size returns the number of blocks in the window.
+func (w *PriorityFeeWindow) Size() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.feeChain.Len()
+}
+
+// Remove removes blocks from the window.
+func (w *PriorityFeeWindow) Remove(blockHashes ...string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for _, blockHash := range blockHashes {
+		if e, ok := w.hashToFee[blockHash]; ok {
+			w.feeChain.Remove(e)
+		}
+	}
+}
+
+// Push adds a new block to the window.
+func (w *PriorityFeeWindow) Push(blockFee *BlockPriorityFee) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if _, ok := w.hashToFee[blockFee.hash]; ok { // Block already exists
+		return
+	}
+
+	w.insertBlock(blockFee)
+	w.updateHistoricalBaseFeeRange(blockFee)
+	w.updateHistoricalPriorityFeeRange(blockFee)
+
+	// If the window is full, prune the oldest block.
+	if w.feeChain.Len() > w.capacity {
+		w.feeChain.Remove(w.feeChain.Front())
+	}
+}
+
+// insertBlock inserts a block to the linked list.
+func (w *PriorityFeeWindow) insertBlock(blockFee *BlockPriorityFee) {
+	// Locate the postion where this block should be inserted
+	var e *list.Element
+	for e = w.feeChain.Back(); e != nil; e = e.Prev() {
+		if e.Value.(*BlockPriorityFee).number < blockFee.number {
+			break
+		}
+	}
+
+	if e == nil {
+		w.hashToFee[blockFee.hash] = w.feeChain.PushFront(blockFee)
+	} else {
+		w.hashToFee[blockFee.hash] = w.feeChain.InsertAfter(blockFee, e)
+	}
+}
+
+func (w *PriorityFeeWindow) updateHistoricalBaseFeeRange(blockFee *BlockPriorityFee) {
+	// Update the historical base fee range
+	if w.historicalBaseFeeRanges == nil { // initial setup
+		w.historicalBaseFeeRanges = []*big.Int{
+			big.NewInt(0).Set(blockFee.baseFee), big.NewInt(0).Set(blockFee.baseFee),
+		}
+		return
+	}
+
+	if blockFee.baseFee.Cmp(w.historicalBaseFeeRanges[0]) < 0 { // update min
+		w.historicalBaseFeeRanges[0].Set(blockFee.baseFee)
+	}
+
+	if blockFee.baseFee.Cmp(w.historicalBaseFeeRanges[1]) > 0 { // update max
+		w.historicalBaseFeeRanges[1].Set(blockFee.baseFee)
+	}
+}
+
+func (w *PriorityFeeWindow) updateHistoricalPriorityFeeRange(blockFee *BlockPriorityFee) {
+	tipRange := blockFee.TipRange()
+	if tipRange == nil {
+		return
+	}
+
+	if w.historicalPriorityFeeRange == nil { // initial setup
+		w.historicalPriorityFeeRange = []*big.Int{
+			big.NewInt(0).Set(tipRange[0]), big.NewInt(0).Set(tipRange[1]),
+		}
+		return
+	}
+
+	if tipRange[0].Cmp(w.historicalPriorityFeeRange[0]) < 0 { // update min
+		w.historicalPriorityFeeRange[0] = big.NewInt(0).Set(tipRange[0])
+	}
+
+	if tipRange[1].Cmp(w.historicalPriorityFeeRange[1]) > 0 { // update max
+		w.historicalPriorityFeeRange[1] = big.NewInt(0).Set(tipRange[1])
+	}
+}
+
+type GasStats struct {
+	NetworkCongestion          float64           // Current congestion on the network (0 to 1)
+	LatestPriorityFeeRange     []*big.Int        // Range of priority fees for recent transactions
+	HistoricalPriorityFeeRange []*big.Int        // Range of priority fees over a historical period
+	HistoricalBaseFeeRange     []*big.Int        // Range of base fees over a historical period
+	AvgPercentiledPriorityFee  []*big.Int        // Average priority fee per gas by given percentiles
+	PriorityFeeTrend           types.GasFeeTrend // Current trend in priority fees
+	BaseFeeTrend               types.GasFeeTrend // Current trend in base fees
+}
+
+// Calculate calculates the gas fee statistics from the data within the window.
+func (w *PriorityFeeWindow) Calculate(percentiles []float64) (stats GasStats) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Calculate the average priority fee of the given percentiles.
+	stats.AvgPercentiledPriorityFee = w.calculateAvgPriorityFees(percentiles)
+
+	// Calculate latest priority fee range.
+	stats.LatestPriorityFeeRange = w.calculateLatestPriorityFeeRange()
+	stats.HistoricalPriorityFeeRange = w.historicalPriorityFeeRange
+	stats.HistoricalBaseFeeRange = w.historicalBaseFeeRanges
+
+	// Calculate the network congestion.
+	stats.NetworkCongestion = w.calculateNetworkCongestion()
+
+	// Calculate the trend of priority fee and base fee.
+	stats.PriorityFeeTrend, stats.BaseFeeTrend = w.calculateFeeTrend()
+
+	return stats
+}
+
+func (w *PriorityFeeWindow) calculateAvgPriorityFees(percentiles []float64) (res []*big.Int) {
+	for _, p := range percentiles {
+		if fee := w.calculateAvgPriorityFee(p); fee == nil {
+			return nil
 		} else {
-			logrus.WithField("gasPriceConf", gasPriceConf).Debug("Loaded gasstation price config from cache")
+			res = append(res, fee)
 		}
 	}
 
-	if len(gasPriceConf) != len(gasStationPriceConfs) && !util.IsInterfaceValNil(handler.db) { // load from db
-		gasPriceConf, err = handler.db.LoadConfig(gasStationPriceConfs...)
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get gasstation price config from db")
+	return res
+}
 
-			goto defaultR
-		}
+func (w *PriorityFeeWindow) calculateAvgPriorityFee(p float64) *big.Int {
+	// Calculate the average priority fee per gas percentiled by the given percentiles per block in the window.
+	totalFee := big.NewInt(0)
+	totalSize := int64(0)
 
-		logrus.WithField("gasPriceConf", gasPriceConf).Debug("Gasstation price loaded from db")
-
-		if useCache { // update cache
-			for confName, confVal := range gasPriceConf {
-				if err := handler.cache.StoreConfig(confName, confVal); err != nil {
-					logrus.WithError(err).Error("Failed to update gas station price config in cache")
-				} else {
-					logrus.WithFields(logrus.Fields{
-						"confName": confName, "confVal": confVal,
-					}).Debug("Update gas station price config in cache")
-				}
-			}
+	for e := w.feeChain.Front(); e != nil; e = e.Next() {
+		blockFee := e.Value.(*BlockPriorityFee)
+		if v := blockFee.Percentile(p); v != nil {
+			totalFee.Add(totalFee, v)
+			totalSize++
 		}
 	}
 
-	if len(gasPriceConf) == len(gasStationPriceConfs) {
-		var gsp itypes.GasStationPrice
-
-		setPtrs := []**hexutil.Big{ // order is important !!!
-			&gsp.Fast, &gsp.Fastest, &gsp.SafeLow, &gsp.Average,
-		}
-
-		for i, gpc := range gasStationPriceConfs {
-			var bigV hexutil.Big
-
-			gasPriceHex, ok := gasPriceConf[gpc].(string)
-			if !ok {
-				logrus.WithFields(logrus.Fields{
-					"gasPriceConfig": gpc, "gasPriceConf": gasPriceConf,
-				}).Error("Invalid gas statation gas price config")
-
-				goto defaultR
-			}
-
-			if err := bigV.UnmarshalText([]byte(gasPriceHex)); err != nil {
-				logrus.WithFields(logrus.Fields{
-					"gasPriceConfig": gpc, "gasPriceHex": gasPriceHex,
-				}).Error("Failed to unmarshal gas price from hex string")
-
-				goto defaultR
-			}
-
-			if maxGasStationPrices[i].Cmp((*big.Int)(&bigV)) < 0 {
-				logrus.WithFields(logrus.Fields{
-					"gasPriceConfig": gpc, "bigV": bigV.ToInt(),
-				}).Warn("Configured gas statation price overflows max limit, pls double check")
-
-				*setPtrs[i] = (*hexutil.Big)(maxGasStationPrices[i])
-			} else {
-				*setPtrs[i] = &bigV
-			}
-		}
-
-		return &gsp, nil
+	if totalSize != 0 { // Return the average priority fee per gas per block in the window.
+		return totalFee.Div(totalFee, big.NewInt(totalSize))
 	}
 
-defaultR:
-	logrus.Debug("Gas station uses default as final gas price")
+	return nil
+}
 
-	// use default gas price
-	return &itypes.GasStationPrice{
-		Fast:    (*hexutil.Big)(defaultGasStationPriceFast),
-		Fastest: (*hexutil.Big)(defaultGasStationPriceFastest),
-		SafeLow: (*hexutil.Big)(defaultGasStationPriceSafeLow),
-		Average: (*hexutil.Big)(defaultGasStationPriceAverage),
-	}, nil
+func (w *PriorityFeeWindow) calculateFeeTrend() (priorityFeeTrend, baseFeeTrend types.GasFeeTrend) {
+	if w.feeChain.Len() < 2 {
+		return types.GasFeeTrendUp, types.GasFeeTrendUp
+	}
+
+	latestBlockFee := w.feeChain.Back().Value.(*BlockPriorityFee)
+	prevBlockFee := w.feeChain.Back().Prev().Value.(*BlockPriorityFee)
+
+	baseFeeTrend = w.determineTrend(prevBlockFee.baseFee, latestBlockFee.baseFee)
+	priorityFeeTrend = w.determinePriorityFeeTrend(prevBlockFee, latestBlockFee)
+
+	return priorityFeeTrend, baseFeeTrend
+}
+
+func (w *PriorityFeeWindow) determineTrend(prevFee, latestFee *big.Int) types.GasFeeTrend {
+	if cmp := prevFee.Cmp(latestFee); cmp < 0 {
+		return types.GasFeeTrendUp
+	} else if cmp > 0 {
+		return types.GasFeeTrendDown
+	}
+
+	return ""
+}
+
+func (w *PriorityFeeWindow) determinePriorityFeeTrend(prevBlockFee, latestBlockFee *BlockPriorityFee) types.GasFeeTrend {
+	prevAvgP50 := prevBlockFee.Percentile(50)
+	if prevAvgP50 == nil {
+		prevAvgP50 = big.NewInt(0)
+	}
+
+	latestAvgP50 := latestBlockFee.Percentile(50)
+	if latestAvgP50 == nil {
+		latestAvgP50 = big.NewInt(0)
+	}
+
+	if cmp := prevAvgP50.Cmp(latestAvgP50); cmp < 0 {
+		return types.GasFeeTrendUp
+	} else if cmp > 0 {
+		return types.GasFeeTrendDown
+	}
+
+	return ""
+}
+
+func (w *PriorityFeeWindow) calculateNetworkCongestion() float64 {
+	if e := w.feeChain.Front(); e != nil {
+		return e.Value.(*BlockPriorityFee).gasUsedRatio
+	}
+
+	return 0
+}
+
+func (w *PriorityFeeWindow) calculateLatestPriorityFeeRange() (res []*big.Int) {
+	for e := w.feeChain.Front(); e != nil; e = e.Next() {
+		tipRange := e.Value.(*BlockPriorityFee).TipRange()
+		if tipRange == nil { // skip empty range
+			continue
+		}
+
+		if res == nil { // initial setup
+			res = []*big.Int{
+				big.NewInt(0).Set(tipRange[0]), big.NewInt(0).Set(tipRange[1]),
+			}
+			continue
+		}
+
+		if tipRange[0].Cmp(res[0]) < 0 {
+			res[0] = big.NewInt(0).Set(tipRange[0])
+		}
+
+		if tipRange[1].Cmp(res[1]) > 0 {
+			res[1] = big.NewInt(0).Set(tipRange[1])
+		}
+	}
+
+	return res
+}
+
+// ToHexBigSlice converts a slice of `*big.Int` to a slice of `*hexutil.Big`.
+func ToHexBigSlice(arr []*big.Int) []*hexutil.Big {
+	res := make([]*hexutil.Big, len(arr))
+	for i, v := range arr {
+		res[i] = (*hexutil.Big)(v)
+	}
+	return res
 }

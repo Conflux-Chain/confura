@@ -57,6 +57,11 @@ type Router interface {
 	Route(group Group, key []byte) string
 }
 
+// NodeProvider provides full node URLs by group.
+type NodeProvider interface {
+	ListNodesByGroup(group Group) (urls []string)
+}
+
 // MustNewRouter creates an instance of Router.
 func MustNewRouter(redisURL string, nodeRPCURL string, groupConf map[Group]UrlConfig) Router {
 	var routers []Router
@@ -235,7 +240,6 @@ func NewLocalRouter(group2Urls map[Group][]string) *LocalRouter {
 	for k, v := range group2Urls {
 		groups[k] = newLocalNodeGroup(v)
 	}
-
 	return &LocalRouter{groups: groups}
 }
 
@@ -253,6 +257,23 @@ func (r *LocalRouter) Route(group Group, key []byte) string {
 	}
 
 	return ""
+}
+
+// ListNodesByGroup returns all node URLs in a group.
+func (r *LocalRouter) ListNodesByGroup(group Group) (urls []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	item, ok := r.groups[group]
+	if !ok {
+		return nil
+	}
+
+	for _, v := range item.nodes {
+		urls = append(urls, v.String())
+	}
+
+	return urls
 }
 
 func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {

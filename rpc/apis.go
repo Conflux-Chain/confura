@@ -54,7 +54,7 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 
 // nativeSpaceApis returns the collection of built-in RPC APIs for core space.
 func nativeSpaceApis(
-	clientProvider *node.CfxClientProvider, gashandler *handler.GasStationHandler, option ...CfxAPIOption,
+	clientProvider *node.CfxClientProvider, gashandler *handler.CfxGasStationHandler, option ...CfxAPIOption,
 ) []API {
 	return []API{
 		{
