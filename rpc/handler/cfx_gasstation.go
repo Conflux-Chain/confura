@@ -22,7 +22,7 @@ import (
 
 const (
 	// maxCachedBlockHashEpochs is the max number of epochs to cache their block hashes.
-	maxCachedBlockHashEpochs = 150
+	maxCachedBlockHashEpochs = 100
 )
 
 // CfxGasStationHandler handles RPC requests for gas price estimation.
