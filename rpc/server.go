@@ -49,11 +49,12 @@ func MustNewNativeSpaceServer(
 func MustNewEvmSpaceServer(
 	registry *rate.Registry,
 	clientProvider *infuraNode.EthClientProvider,
+	gasHandler *handler.EthGasStationHandler,
 	exposedModules []string,
 	option ...EthAPIOption,
 ) *rpc.Server {
 	// retrieve all available evm space rpc apis
-	allApis, err := evmSpaceApis(clientProvider, option...)
+	allApis, err := evmSpaceApis(clientProvider, gasHandler, option...)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new EVM space RPC server")
 	}

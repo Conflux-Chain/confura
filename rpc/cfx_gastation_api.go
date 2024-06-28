@@ -12,22 +12,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// gasStationAPI provides core space gasstation API.
-type gasStationAPI struct {
+// cfxGasStationAPI provides core space gasstation API.
+type cfxGasStationAPI struct {
 	handler  *handler.CfxGasStationHandler
 	etLogger *logutil.ErrorTolerantLogger
 }
 
-// newGasStationAPI creates a new instance of gasStationAPI.
-func newGasStationAPI(handler *handler.CfxGasStationHandler) *gasStationAPI {
-	return &gasStationAPI{
+// newCfxGasStationAPI creates a new instance of `cfxGasStationAPI`.
+func newCfxGasStationAPI(handler *handler.CfxGasStationHandler) *cfxGasStationAPI {
+	return &cfxGasStationAPI{
 		handler:  handler,
 		etLogger: logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 	}
 }
 
 // SuggestedGasFees retrieves the suggested gas fees.
-func (api *gasStationAPI) SuggestedGasFees(ctx context.Context) (*types.SuggestedGasFees, error) {
+func (api *cfxGasStationAPI) SuggestedGasFees(ctx context.Context) (*types.SuggestedGasFees, error) {
 	cfx := GetCfxClientFromContext(ctx)
 
 	// Attempt to get suggested gas fees from the handler if available.
@@ -65,7 +65,7 @@ func (api *gasStationAPI) SuggestedGasFees(ctx context.Context) (*types.Suggeste
 }
 
 // TODO: Deprecate it if not used by the community any more.
-func (api *gasStationAPI) Price(ctx context.Context) (*types.GasStationPrice, error) {
+func (api *cfxGasStationAPI) Price(ctx context.Context) (*types.GasStationPrice, error) {
 	// Use oracle gas price from the blockchain.
 	cfx := GetCfxClientFromContext(ctx)
 	price, err := cfx.GetGasPrice()

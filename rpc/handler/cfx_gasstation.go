@@ -45,7 +45,7 @@ func MustNewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) *CfxGasSta
 		return nil
 	}
 
-	// Get all clients in the group.
+	// Get all clients in the http group.
 	clients, err := cp.GetClientsByGroup(node.GroupCfxHttp)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get fullnode cluster")
@@ -232,7 +232,7 @@ func (h *CfxGasStationHandler) handleReorg() {
 }
 
 func (h *CfxGasStationHandler) handleBlock(block *cfxtypes.Block) {
-	ratio, _ := big.NewInt(0).Div(block.GasUsed.ToInt(), block.GasLimit.ToInt()).Float64()
+	ratio, _ := new(big.Rat).SetFrac(block.GasUsed.ToInt(), block.GasLimit.ToInt()).Float64()
 	blockFee := &BlockPriorityFee{
 		number:       block.BlockNumber.ToInt().Uint64(),
 		hash:         block.Hash.String(),
@@ -259,15 +259,22 @@ func (h *CfxGasStationHandler) handleBlock(block *cfxtypes.Block) {
 			}
 
 			baseFeePerGas := block.BaseFeePerGas.ToInt()
+			if maxFeePerGas == nil || baseFeePerGas == nil || maxFeePerGas.Cmp(baseFeePerGas) < 0 {
+				// This shouldn't happen, but just in case.
+				logrus.WithField("txnHash", txn.Hash).Warn("Gas station handler found abnormal txn fee")
+				continue
+			}
+
 			txn.MaxPriorityFeePerGas = (*hexutil.Big)(big.NewInt(0).Sub(maxFeePerGas, baseFeePerGas))
 		}
+
 		logrus.WithFields(logrus.Fields{
 			"txnHash":              txn.Hash,
 			"maxPriorityFeePerGas": txn.MaxPriorityFeePerGas,
 			"maxFeePerGas":         txn.MaxFeePerGas,
 			"baseFeePerGas":        block.BaseFeePerGas,
 			"gasPrice":             txn.GasPrice,
-		}).Debug("Gas station handler calculated txn priority fee")
+		}).Debug("Gas station handler found txn priority fee")
 
 		txnTips = append(txnTips, &TxnPriorityFee{
 			hash: txn.Hash.String(),
@@ -304,7 +311,7 @@ func (h *CfxGasStationHandler) prevEpochPivotBlockHash() cfxtypes.Hash {
 
 func (h *CfxGasStationHandler) push(blockHashes []cfxtypes.Hash) {
 	h.epochBlockHashList.PushBack(blockHashes)
-	if h.epochBlockHashList.Len() > maxCachedBlockHashEpochs {
+	for h.epochBlockHashList.Len() > maxCachedBlockHashEpochs {
 		// Remove old epoch block hashes if capacity is reached
 		h.epochBlockHashList.Remove(h.epochBlockHashList.Front())
 	}

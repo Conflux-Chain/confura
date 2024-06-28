@@ -6,7 +6,6 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/pkg/errors"
 )
 
 // CfxClientProvider provides core space client by router.
@@ -49,7 +48,7 @@ func (p *CfxClientProvider) GetClientByIP(ctx context.Context, groups ...Group) 
 func (p *CfxClientProvider) GetClientsByGroup(grp Group) (clients []sdk.ClientOperator, err error) {
 	np := locateNodeProvider(p.router)
 	if np == nil {
-		return nil, errors.New("unsupported router type")
+		return nil, ErrNotSupportedRouter
 	}
 
 	nodeUrls := np.ListNodesByGroup(grp)

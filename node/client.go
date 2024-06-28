@@ -19,7 +19,8 @@ const (
 )
 
 var (
-	ErrClientUnavailable = errors.New("no full node available")
+	ErrClientUnavailable  = errors.New("no full node available")
+	ErrNotSupportedRouter = errors.New("not supported router")
 )
 
 // clientFactory factory method to create RPC client for fullnode proxy.
