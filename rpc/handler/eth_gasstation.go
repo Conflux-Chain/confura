@@ -22,7 +22,7 @@ type EthGasStationHandler struct {
 	clientProvider *node.EthClientProvider // Client provider to get full node clients
 	clients        []*node.Web3goClient    // Clients used to get historical data
 	cliIndex       int                     // Index of the main client
-	fromBlock      uint64                  // Start epoch number to sync from
+	fromBlock      uint64                  // Start block number to sync from
 }
 
 func MustNewEthGasStationHandlerFromViper(cp *node.EthClientProvider) *EthGasStationHandler {
@@ -231,8 +231,8 @@ func (h *EthGasStationHandler) refreshClusterNodes() error {
 }
 
 func (h *EthGasStationHandler) Suggest(eth *node.Web3goClient) (*types.SuggestedGasFees, error) {
-	if status := h.status.Load(); status != StationStatusOk {
-		return nil, status.(error)
+	if err := h.checkStatus(); err != nil {
+		return nil, err
 	}
 
 	latestBlock, err := eth.Eth.BlockByNumber(ethtypes.LatestBlockNumber, false)

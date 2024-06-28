@@ -101,6 +101,14 @@ func (h *baseGasStationHandler) resetSyncTicker(syncTicker *time.Timer, complete
 	}
 }
 
+func (h *baseGasStationHandler) checkStatus() error {
+	if status := h.status.Load(); status != nil && status != StationStatusOk {
+		return status.(error)
+	}
+
+	return nil
+}
+
 // BlockPriorityFee holds the gas fees of transactions within a single block.
 type BlockPriorityFee struct {
 	number       uint64            // Block number

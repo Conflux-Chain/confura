@@ -292,8 +292,8 @@ func (h *CfxGasStationHandler) refreshClusterNodes() error {
 }
 
 func (h *CfxGasStationHandler) Suggest(cfx sdk.ClientOperator) (*types.SuggestedGasFees, error) {
-	if status := h.status.Load(); status != StationStatusOk {
-		return nil, status.(error)
+	if err := h.checkStatus(); err != nil {
+		return nil, err
 	}
 
 	latestBlock, err := cfx.GetBlockSummaryByEpoch(cfxtypes.EpochLatestState)
