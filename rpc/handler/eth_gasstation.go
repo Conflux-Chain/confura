@@ -1,36 +1,28 @@
 package handler
 
 import (
-	"container/list"
 	"math/big"
 	"math/rand"
-	"sync/atomic"
-	"time"
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/types"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/go-rpc-provider/utils"
 	ethtypes "github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 )
 
-// zeroHash represents a geth hash value with all zero bytes.
-var zeroHash common.Hash
+// zeroGethHash represents a geth hash value with all zero bytes.
+var zeroGethHash common.Hash
 
 // EthGasStationHandler handles RPC requests for gas price estimation.
 type EthGasStationHandler struct {
-	config         *GasStationConfig       // Gas station configuration
-	status         atomic.Value            // Gas station status
+	*baseGasStationHandler
 	clientProvider *node.EthClientProvider // Client provider to get full node clients
 	clients        []*node.Web3goClient    // Clients used to get historical data
 	cliIndex       int                     // Index of the main client
 	fromBlock      uint64                  // Start epoch number to sync from
-	blockHashList  *list.List              // Linked list to store block hashes ascendingly
-	window         *PriorityFeeWindow      // Block priority fee window
 }
 
 func MustNewEthGasStationHandlerFromViper(cp *node.EthClientProvider) *EthGasStationHandler {
@@ -61,47 +53,15 @@ func MustNewEthGasStationHandlerFromViper(cp *node.EthClientProvider) *EthGasSta
 
 	fromBlock := latestBlockNumber.Uint64() - uint64(cfg.HistoricalPeekCount)
 	h := &EthGasStationHandler{
-		config:         &cfg,
-		clientProvider: cp,
-		clients:        clients,
-		cliIndex:       cliIndex,
-		blockHashList:  list.New(),
-		fromBlock:      fromBlock,
-		window:         NewPriorityFeeWindow(cfg.HistoricalPeekCount),
+		baseGasStationHandler: newBaseGasStationHandler(&cfg),
+		clientProvider:        cp,
+		clients:               clients,
+		cliIndex:              cliIndex,
+		fromBlock:             fromBlock,
 	}
 
-	go h.run()
+	go h.run(h.sync, h.refreshClusterNodes)
 	return h
-}
-
-// run starts to sync historical data and refresh cluster nodes.
-func (h *EthGasStationHandler) run() {
-	syncTicker := time.NewTimer(0)
-	defer syncTicker.Stop()
-
-	refreshTicker := time.NewTicker(clusterUpdateInterval)
-	defer refreshTicker.Stop()
-
-	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
-	for {
-		select {
-		case <-syncTicker.C:
-			complete, err := h.sync()
-			etLogger.Log(
-				logrus.WithFields(logrus.Fields{
-					"status":    h.status.Load(),
-					"fromBlock": h.fromBlock,
-					"clients":   h.clients,
-				}), err, "Gas Station handler sync error",
-			)
-			h.updateStatus(err)
-			h.resetSyncTicker(syncTicker, complete, err)
-		case <-refreshTicker.C:
-			if err := h.refreshClusterNodes(); err != nil {
-				logrus.WithError(err).Error("Gas station handler cluster refresh error")
-			}
-		}
-	}
 }
 
 // sync synchronizes historical data from the full node cluster.
@@ -157,7 +117,7 @@ func (h *EthGasStationHandler) trySync(eth *node.Web3goClient) (bool, error) {
 	}
 
 	prevBlockHash := h.prevBlockHash()
-	if prevBlockHash != zeroHash && prevBlockHash != block.ParentHash {
+	if prevBlockHash != zeroGethHash && prevBlockHash != block.ParentHash {
 		logrus.WithFields(logrus.Fields{
 			"prevBlockHash":   prevBlockHash,
 			"blockHash":       block.Hash,
@@ -177,9 +137,10 @@ func (h *EthGasStationHandler) trySync(eth *node.Web3goClient) (bool, error) {
 }
 
 func (h *EthGasStationHandler) handleReorg() {
-	if blockHash := h.pop(); blockHash != zeroHash {
+	if blockHash := h.pop(); blockHash != zeroGethHash {
 		h.window.Remove(blockHash.String())
-		logrus.WithField("blockHash", blockHash).Info("Gas station handler removed blocks due to reorg")
+		logrus.WithField("blockHash", blockHash).
+			Info("Gas station handler removed block due to reorg")
 	}
 }
 
@@ -236,7 +197,7 @@ func (h *EthGasStationHandler) handleBlock(block *ethtypes.Block) {
 
 func (h *EthGasStationHandler) pop() common.Hash {
 	if h.blockHashList.Len() == 0 {
-		return zeroHash
+		return zeroGethHash
 	}
 
 	lastElement := h.blockHashList.Back()
@@ -245,7 +206,7 @@ func (h *EthGasStationHandler) pop() common.Hash {
 
 func (h *EthGasStationHandler) prevBlockHash() common.Hash {
 	if h.blockHashList.Len() == 0 {
-		return zeroHash
+		return zeroGethHash
 	}
 
 	return h.blockHashList.Back().Value.(common.Hash)
@@ -259,15 +220,6 @@ func (h *EthGasStationHandler) push(blockHash common.Hash) {
 	}
 }
 
-func (h *EthGasStationHandler) updateStatus(err error) {
-	if err != nil && !utils.IsRPCJSONError(err) {
-		// Set the gas station as unavailable due to network error.
-		h.status.Store(err)
-	} else {
-		h.status.Store(StationStatusOk)
-	}
-}
-
 func (h *EthGasStationHandler) refreshClusterNodes() error {
 	clients, err := h.clientProvider.GetClientsByGroup(node.GroupEthHttp)
 	if err != nil {
@@ -276,17 +228,6 @@ func (h *EthGasStationHandler) refreshClusterNodes() error {
 
 	h.clients = clients
 	return nil
-}
-
-func (h *EthGasStationHandler) resetSyncTicker(syncTicker *time.Timer, complete bool, err error) {
-	switch {
-	case err != nil:
-		syncTicker.Reset(syncIntervalNormal)
-	case complete:
-		syncTicker.Reset(syncIntervalNormal)
-	default:
-		syncTicker.Reset(syncIntervalCatchUp)
-	}
 }
 
 func (h *EthGasStationHandler) Suggest(eth *node.Web3goClient) (*types.SuggestedGasFees, error) {
@@ -303,37 +244,18 @@ func (h *EthGasStationHandler) Suggest(eth *node.Web3goClient) (*types.Suggested
 	// Calculate the gas fee stats from the priority fee window.
 	stats := h.window.Calculate(h.config.Percentiles[:])
 
-	priorityFees := stats.AvgPercentiledPriorityFee
-	if priorityFees == nil { // use gas fees directly from the blockchain if no estimation made
+	if priorityFees := stats.AvgPercentiledPriorityFee; priorityFees == nil {
+		// Use priority fee directly from the blockchain if no estimation were managed to make.
 		oracleFee, err := eth.Eth.MaxPriorityFeePerGas()
 		if err != nil {
 			return nil, err
 		}
 
-		for i := 0; i < 3; i++ {
+		for i := 0; i < len(h.config.Percentiles); i++ {
 			priorityFees = append(priorityFees, oracleFee)
 		}
+		stats.AvgPercentiledPriorityFee = priorityFees
 	}
 
-	return &types.SuggestedGasFees{
-		Low: types.GasFeeEstimation{
-			SuggestedMaxPriorityFeePerGas: (*hexutil.Big)(priorityFees[0]),
-			SuggestedMaxFeePerGas:         (*hexutil.Big)(big.NewInt(0).Add(baseFeePerGas, priorityFees[0])),
-		},
-		Medium: types.GasFeeEstimation{
-			SuggestedMaxPriorityFeePerGas: (*hexutil.Big)(priorityFees[1]),
-			SuggestedMaxFeePerGas:         (*hexutil.Big)(big.NewInt(0).Add(baseFeePerGas, priorityFees[1])),
-		},
-		High: types.GasFeeEstimation{
-			SuggestedMaxPriorityFeePerGas: (*hexutil.Big)(priorityFees[2]),
-			SuggestedMaxFeePerGas:         (*hexutil.Big)(big.NewInt(0).Add(baseFeePerGas, priorityFees[2])),
-		},
-		EstimatedBaseFee:           (*hexutil.Big)(latestBlock.BaseFeePerGas),
-		NetworkCongestion:          stats.NetworkCongestion,
-		LatestPriorityFeeRange:     ToHexBigSlice(stats.LatestPriorityFeeRange),
-		HistoricalPriorityFeeRange: ToHexBigSlice(stats.HistoricalPriorityFeeRange),
-		HistoricalBaseFeeRange:     ToHexBigSlice(stats.HistoricalBaseFeeRange),
-		PriorityFeeTrend:           stats.PriorityFeeTrend,
-		BaseFeeTrend:               stats.BaseFeeTrend,
-	}, nil
+	return assembleSuggestedGasFees(baseFeePerGas, &stats), nil
 }
