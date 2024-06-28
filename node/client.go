@@ -132,24 +132,27 @@ func (p *clientProvider) populateCache(token string) (grp Group, ok bool) {
 
 // getClient gets client based on keyword and node group type.
 func (p *clientProvider) getClient(key string, group Group) (interface{}, error) {
-	clients := p.getOrRegisterGroup(group)
-
-	logger := logrus.WithFields(logrus.Fields{
-		"key":   key,
-		"group": group,
-	})
-
 	url := p.router.Route(group, []byte(key))
 	if len(url) == 0 {
-		logger.WithError(ErrClientUnavailable).Error("Failed to get full node client from provider")
+		logrus.WithFields(logrus.Fields{
+			"key":   key,
+			"group": group,
+		}).Error("No full node client available from router")
 		return nil, ErrClientUnavailable
 	}
 
+	return p.getOrRegisterClient(url, group)
+}
+
+// getOrRegisterClient gets or registers RPC client for fullnode proxy.
+func (p *clientProvider) getOrRegisterClient(url string, group Group) (interface{}, error) {
+	clients := p.getOrRegisterGroup(group)
 	nodeName := rpc.Url2NodeName(url)
 
-	logger = logger.WithFields(logrus.Fields{
-		"node": nodeName,
-		"url":  url,
+	logger := logrus.WithFields(logrus.Fields{
+		"node":  nodeName,
+		"url":   url,
+		"group": group,
 	})
 	logger.Trace("Route RPC requests")
 

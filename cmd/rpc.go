@@ -115,7 +115,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	}
 
 	// initialize gas station handler
-	gasHandler := handler.NewGasStationHandler(storeCtx.CfxDB, storeCtx.CfxCache)
+	gasHandler := handler.MustNewCfxGasStationHandlerFromViper(clientProvider)
 
 	if storeCtx.CfxDB != nil {
 		// initialize pruned logs handler

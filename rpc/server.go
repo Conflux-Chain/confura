@@ -24,7 +24,7 @@ const (
 func MustNewNativeSpaceServer(
 	registry *rate.Registry,
 	clientProvider *infuraNode.CfxClientProvider,
-	gashandler *handler.GasStationHandler,
+	gashandler *handler.CfxGasStationHandler,
 	exposedModules []string,
 	option ...CfxAPIOption,
 ) *rpc.Server {
