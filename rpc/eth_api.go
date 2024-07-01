@@ -21,15 +21,25 @@ import (
 )
 
 const (
-	rpcMethodEthGetLogs     = "eth_getLogs"
-	maxNumRewardPercentiles = 50
+	rpcMethodEthGetLogs = "eth_getLogs"
+
+	// The maximum number of percentile values to sample from each block's
+	// effective priority fees per gas in ascending order.
+	maxRewardPercentileCnt = 50
+	// The maximum number of blocks in the requested range for fee history.
+	maxFeeHistoryBlockCnt = 1024
 )
 
 var (
-	ethEmptyLogs                = []web3Types.Log{}
+	ethEmptyLogs = []web3Types.Log{}
+
 	errTooManyRewardPercentiles = errors.Errorf(
-		"the length of `rewardPercentiles` exceeds the maximum allowed (%v)",
-		maxNumRewardPercentiles,
+		"the number of reward percentiles exceeds the maximum allowed (%v)",
+		maxRewardPercentileCnt,
+	)
+	errTooManyBlocksForFeeHistory = errors.Errorf(
+		"the number of blocks in the requested range exceeds the maximum allowed (%v)",
+		maxFeeHistoryBlockCnt,
 	)
 )
 
@@ -458,7 +468,11 @@ func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 func (api *ethAPI) FeeHistory(
 	ctx context.Context, blockCount types.HexOrDecimalUint64, lastBlock web3Types.BlockNumber, rewardPercentiles []float64,
 ) (val *web3Types.FeeHistory, err error) {
-	if len(rewardPercentiles) > maxNumRewardPercentiles {
+	if blockCount > maxFeeHistoryBlockCnt {
+		return nil, errTooManyBlocksForFeeHistory
+	}
+
+	if len(rewardPercentiles) > maxRewardPercentileCnt {
 		return nil, errTooManyRewardPercentiles
 	}
 
