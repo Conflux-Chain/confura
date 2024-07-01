@@ -54,7 +54,9 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 
 // nativeSpaceApis returns the collection of built-in RPC APIs for core space.
 func nativeSpaceApis(
-	clientProvider *node.CfxClientProvider, gashandler *handler.CfxGasStationHandler, option ...CfxAPIOption,
+	clientProvider *node.CfxClientProvider,
+	gashandler *handler.CfxGasStationHandler,
+	option ...CfxAPIOption,
 ) []API {
 	return []API{
 		{
@@ -85,7 +87,7 @@ func nativeSpaceApis(
 		}, {
 			Namespace: "gasstation",
 			Version:   "1.0",
-			Service:   newGasStationAPI(gashandler),
+			Service:   newCfxGasStationAPI(gashandler),
 			Public:    false,
 		}, {
 			Namespace: "debug",
@@ -97,7 +99,10 @@ func nativeSpaceApis(
 }
 
 // evmSpaceApis returns the collection of built-in RPC APIs for EVM space.
-func evmSpaceApis(clientProvider *node.EthClientProvider, option ...EthAPIOption) ([]API, error) {
+func evmSpaceApis(
+	clientProvider *node.EthClientProvider,
+	gashandler *handler.EthGasStationHandler,
+	option ...EthAPIOption) ([]API, error) {
 	return []API{
 		{
 			Namespace: "eth",
@@ -123,6 +128,11 @@ func evmSpaceApis(clientProvider *node.EthClientProvider, option ...EthAPIOption
 			Namespace: "parity",
 			Version:   "1.0",
 			Service:   &parityAPI{},
+			Public:    false,
+		}, {
+			Namespace: "gasstation",
+			Version:   "1.0",
+			Service:   newEthGasStationAPI(gashandler),
 			Public:    false,
 		},
 	}, nil

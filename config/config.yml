@@ -28,7 +28,7 @@ rpc:
 
 # EVM space RPC proxy server configurations
 ethrpc:
-  # Available exposed modules are `eth`, `web3`, `net`, `trace`, `parity`,
+  # Available exposed modules are `eth`, `web3`, `net`, `trace`, `parity`, `gasstation`.
   # if left empty all public APIs will be exposed.
   exposedModules: []
   # Served HTTP endpoint
@@ -91,7 +91,7 @@ eth:
 # # Gas station configurations
 # gasstation:
 #   # Whether to enable gas station.
-#   enabled: true
+#   enabled: false
 #   # The number of blocks (or epochs) from the latest block (or epoch) to peek for gas price estimation.
 #   historicalPeekCount: 100
 #   # Percentiles of average txn gas price mapped to three levels of urgency (`low`, `medium` and `high`).

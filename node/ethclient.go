@@ -63,6 +63,25 @@ func (p *EthClientProvider) GetClientByIP(ctx context.Context, groups ...Group) 
 	return client.(*Web3goClient), nil
 }
 
+// GetClientsByGroup gets all clients of specific group.
+func (p *EthClientProvider) GetClientsByGroup(grp Group) (clients []*Web3goClient, err error) {
+	np := locateNodeProvider(p.router)
+	if np == nil {
+		return nil, ErrNotSupportedRouter
+	}
+
+	nodeUrls := np.ListNodesByGroup(grp)
+	for _, url := range nodeUrls {
+		if c, err := p.getOrRegisterClient(string(url), grp); err == nil {
+			clients = append(clients, c.(*Web3goClient))
+		} else {
+			return nil, err
+		}
+	}
+
+	return clients, nil
+}
+
 func (p *EthClientProvider) GetClientRandom() (*Web3goClient, error) {
 	key := fmt.Sprintf("random_key_%v", rand.Int())
 	client, err := p.getClient(key, GroupEthHttp)

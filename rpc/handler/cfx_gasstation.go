@@ -1,19 +1,15 @@
 package handler
 
 import (
-	"container/list"
 	"errors"
 	"math/big"
 	"math/rand"
-	"sync/atomic"
-	"time"
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/go-rpc-provider/utils"
@@ -27,14 +23,11 @@ const (
 
 // CfxGasStationHandler handles RPC requests for gas price estimation.
 type CfxGasStationHandler struct {
-	config             *GasStationConfig       // Gas station configuration
-	status             atomic.Value            // Gas station status
-	clientProvider     *node.CfxClientProvider // Client provider to get full node clients
-	clients            []sdk.ClientOperator    // Clients used to get historical data
-	cliIndex           int                     // Index of the main client
-	fromEpoch          uint64                  // Start epoch number to sync from
-	epochBlockHashList *list.List              // Linked list to store epoch block hashes
-	window             *PriorityFeeWindow      // Block priority fee window
+	*baseGasStationHandler
+	clientProvider *node.CfxClientProvider // Client provider to get full node clients
+	clients        []sdk.ClientOperator    // Clients used to get historical data
+	cliIndex       int                     // Index of the main client
+	fromEpoch      uint64                  // Start epoch number to sync from
 }
 
 func MustNewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) *CfxGasStationHandler {
@@ -45,7 +38,7 @@ func MustNewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) *CfxGasSta
 		return nil
 	}
 
-	// Get all clients in the group.
+	// Get all clients in the http group.
 	clients, err := cp.GetClientsByGroup(node.GroupCfxHttp)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get fullnode cluster")
@@ -65,47 +58,15 @@ func MustNewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) *CfxGasSta
 
 	fromEpoch := latestEpoch.ToInt().Uint64() - uint64(cfg.HistoricalPeekCount)
 	h := &CfxGasStationHandler{
-		config:             &cfg,
-		clientProvider:     cp,
-		clients:            clients,
-		cliIndex:           cliIndex,
-		epochBlockHashList: list.New(),
-		fromEpoch:          fromEpoch,
-		window:             NewPriorityFeeWindow(cfg.HistoricalPeekCount),
+		baseGasStationHandler: newBaseGasStationHandler(&cfg),
+		clientProvider:        cp,
+		clients:               clients,
+		cliIndex:              cliIndex,
+		fromEpoch:             fromEpoch,
 	}
 
-	go h.run()
+	go h.run(h.sync, h.refreshClusterNodes)
 	return h
-}
-
-// run starts to sync historical data and refresh cluster nodes.
-func (h *CfxGasStationHandler) run() {
-	syncTicker := time.NewTimer(0)
-	defer syncTicker.Stop()
-
-	refreshTicker := time.NewTicker(clusterUpdateInterval)
-	defer refreshTicker.Stop()
-
-	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
-	for {
-		select {
-		case <-syncTicker.C:
-			complete, err := h.sync()
-			etLogger.Log(
-				logrus.WithFields(logrus.Fields{
-					"status":    h.status.Load(),
-					"fromEpoch": h.fromEpoch,
-					"clients":   h.clients,
-				}), err, "Gas Station handler sync error",
-			)
-			h.updateStatus(err)
-			h.resetSyncTicker(syncTicker, complete, err)
-		case <-refreshTicker.C:
-			if err := h.refreshClusterNodes(); err != nil {
-				logrus.WithError(err).Error("Gas station handler cluster refresh error")
-			}
-		}
-	}
 }
 
 // sync synchronizes historical data from the full node cluster.
@@ -226,13 +187,16 @@ func (h *CfxGasStationHandler) handleReorg() {
 	for _, bh := range h.pop() {
 		blockHashes = append(blockHashes, bh.String())
 	}
-	h.window.Remove(blockHashes...)
 
-	logrus.WithField("blockHashes", blockHashes).Info("Gas station handler removed blocks due to reorg")
+	if len(blockHashes) > 0 {
+		h.window.Remove(blockHashes...)
+		logrus.WithField("blockHashes", blockHashes).
+			Info("Gas station handler removed blocks due to reorg")
+	}
 }
 
 func (h *CfxGasStationHandler) handleBlock(block *cfxtypes.Block) {
-	ratio, _ := big.NewInt(0).Div(block.GasUsed.ToInt(), block.GasLimit.ToInt()).Float64()
+	ratio, _ := new(big.Rat).SetFrac(block.GasUsed.ToInt(), block.GasLimit.ToInt()).Float64()
 	blockFee := &BlockPriorityFee{
 		number:       block.BlockNumber.ToInt().Uint64(),
 		hash:         block.Hash.String(),
@@ -259,15 +223,22 @@ func (h *CfxGasStationHandler) handleBlock(block *cfxtypes.Block) {
 			}
 
 			baseFeePerGas := block.BaseFeePerGas.ToInt()
+			if maxFeePerGas == nil || baseFeePerGas == nil || maxFeePerGas.Cmp(baseFeePerGas) < 0 {
+				// This shouldn't happen, but just in case.
+				logrus.WithField("txnHash", txn.Hash).Warn("Gas station handler found abnormal txn fee")
+				continue
+			}
+
 			txn.MaxPriorityFeePerGas = (*hexutil.Big)(big.NewInt(0).Sub(maxFeePerGas, baseFeePerGas))
 		}
+
 		logrus.WithFields(logrus.Fields{
 			"txnHash":              txn.Hash,
 			"maxPriorityFeePerGas": txn.MaxPriorityFeePerGas,
 			"maxFeePerGas":         txn.MaxFeePerGas,
 			"baseFeePerGas":        block.BaseFeePerGas,
 			"gasPrice":             txn.GasPrice,
-		}).Debug("Gas station handler calculated txn priority fee")
+		}).Debug("Gas station handler found txn priority fee")
 
 		txnTips = append(txnTips, &TxnPriorityFee{
 			hash: txn.Hash.String(),
@@ -285,37 +256,28 @@ func (h *CfxGasStationHandler) handleBlock(block *cfxtypes.Block) {
 }
 
 func (h *CfxGasStationHandler) pop() []cfxtypes.Hash {
-	if h.epochBlockHashList.Len() == 0 {
+	if h.blockHashList.Len() == 0 {
 		return nil
 	}
 
-	lastElement := h.epochBlockHashList.Back()
-	return h.epochBlockHashList.Remove(lastElement).([]cfxtypes.Hash)
+	lastElement := h.blockHashList.Back()
+	return h.blockHashList.Remove(lastElement).([]cfxtypes.Hash)
 }
 
 func (h *CfxGasStationHandler) prevEpochPivotBlockHash() cfxtypes.Hash {
-	if h.epochBlockHashList.Len() == 0 {
+	if h.blockHashList.Len() == 0 {
 		return cfxtypes.Hash("")
 	}
 
-	blockHashes := h.epochBlockHashList.Back().Value.([]cfxtypes.Hash)
+	blockHashes := h.blockHashList.Back().Value.([]cfxtypes.Hash)
 	return blockHashes[len(blockHashes)-1]
 }
 
 func (h *CfxGasStationHandler) push(blockHashes []cfxtypes.Hash) {
-	h.epochBlockHashList.PushBack(blockHashes)
-	if h.epochBlockHashList.Len() > maxCachedBlockHashEpochs {
+	h.blockHashList.PushBack(blockHashes)
+	for h.blockHashList.Len() > maxCachedBlockHashEpochs {
 		// Remove old epoch block hashes if capacity is reached
-		h.epochBlockHashList.Remove(h.epochBlockHashList.Front())
-	}
-}
-
-func (h *CfxGasStationHandler) updateStatus(err error) {
-	if err != nil && !utils.IsRPCJSONError(err) {
-		// Set the gas station as unavailable due to network error.
-		h.status.Store(err)
-	} else {
-		h.status.Store(StationStatusOk)
+		h.blockHashList.Remove(h.blockHashList.Front())
 	}
 }
 
@@ -329,20 +291,9 @@ func (h *CfxGasStationHandler) refreshClusterNodes() error {
 	return nil
 }
 
-func (h *CfxGasStationHandler) resetSyncTicker(syncTicker *time.Timer, complete bool, err error) {
-	switch {
-	case err != nil:
-		syncTicker.Reset(syncIntervalNormal)
-	case complete:
-		syncTicker.Reset(syncIntervalNormal)
-	default:
-		syncTicker.Reset(syncIntervalCatchUp)
-	}
-}
-
 func (h *CfxGasStationHandler) Suggest(cfx sdk.ClientOperator) (*types.SuggestedGasFees, error) {
-	if status := h.status.Load(); status != StationStatusOk {
-		return nil, status.(error)
+	if err := h.checkStatus(); err != nil {
+		return nil, err
 	}
 
 	latestBlock, err := cfx.GetBlockSummaryByEpoch(cfxtypes.EpochLatestState)
@@ -354,37 +305,18 @@ func (h *CfxGasStationHandler) Suggest(cfx sdk.ClientOperator) (*types.Suggested
 	// Calculate the gas fee stats from the priority fee window.
 	stats := h.window.Calculate(h.config.Percentiles[:])
 
-	priorityFees := stats.AvgPercentiledPriorityFee
-	if priorityFees == nil { // use gas fees directly from the blockchain if no estimation made
+	if priorityFees := stats.AvgPercentiledPriorityFee; priorityFees == nil {
+		// Use priority fee directly from the blockchain if no estimation were managed to make.
 		oracleFee, err := cfx.GetMaxPriorityFeePerGas()
 		if err != nil {
 			return nil, err
 		}
 
-		for i := 0; i < 3; i++ {
+		for i := 0; i < len(h.config.Percentiles); i++ {
 			priorityFees = append(priorityFees, oracleFee.ToInt())
 		}
+		stats.AvgPercentiledPriorityFee = priorityFees
 	}
 
-	return &types.SuggestedGasFees{
-		Low: types.GasFeeEstimation{
-			SuggestedMaxPriorityFeePerGas: (*hexutil.Big)(priorityFees[0]),
-			SuggestedMaxFeePerGas:         (*hexutil.Big)(big.NewInt(0).Add(baseFeePerGas, priorityFees[0])),
-		},
-		Medium: types.GasFeeEstimation{
-			SuggestedMaxPriorityFeePerGas: (*hexutil.Big)(priorityFees[1]),
-			SuggestedMaxFeePerGas:         (*hexutil.Big)(big.NewInt(0).Add(baseFeePerGas, priorityFees[1])),
-		},
-		High: types.GasFeeEstimation{
-			SuggestedMaxPriorityFeePerGas: (*hexutil.Big)(priorityFees[2]),
-			SuggestedMaxFeePerGas:         (*hexutil.Big)(big.NewInt(0).Add(baseFeePerGas, priorityFees[2])),
-		},
-		EstimatedBaseFee:           latestBlock.BaseFeePerGas,
-		NetworkCongestion:          stats.NetworkCongestion,
-		LatestPriorityFeeRange:     ToHexBigSlice(stats.LatestPriorityFeeRange),
-		HistoricalPriorityFeeRange: ToHexBigSlice(stats.HistoricalPriorityFeeRange),
-		HistoricalBaseFeeRange:     ToHexBigSlice(stats.HistoricalBaseFeeRange),
-		PriorityFeeTrend:           stats.PriorityFeeTrend,
-		BaseFeeTrend:               stats.BaseFeeTrend,
-	}, nil
+	return assembleSuggestedGasFees(baseFeePerGas, &stats), nil
 }

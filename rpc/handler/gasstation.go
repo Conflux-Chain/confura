@@ -5,11 +5,15 @@ import (
 	"math/big"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/types"
+	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/openweb3/go-rpc-provider/utils"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -29,6 +33,15 @@ var (
 	StationStatusClientUnavailable GasStationStatus = GasStationStatus{node.ErrClientUnavailable}
 )
 
+func newGasStationStatus(err error) GasStationStatus {
+	if err != nil && !utils.IsRPCJSONError(err) {
+		// Regarded as unavailable due to non JSON-RPC error eg., io error.
+		return GasStationStatus{err}
+	}
+
+	return StationStatusOk
+}
+
 type GasStationConfig struct {
 	// Whether to enable gas station.
 	Enabled bool
@@ -36,6 +49,64 @@ type GasStationConfig struct {
 	HistoricalPeekCount int `default:"100"`
 	// Percentiles for average txn gas price mapped to three levels of urgency (`low`, `medium` and `high`).
 	Percentiles [3]float64 `default:"[1, 50, 99]"`
+}
+
+type baseGasStationHandler struct {
+	config        *GasStationConfig  // Gas station configuration
+	status        atomic.Value       // Gas station status
+	blockHashList *list.List         // Linked list to store historical block hashes for reorg detection
+	window        *PriorityFeeWindow // Block priority fee window
+}
+
+func newBaseGasStationHandler(config *GasStationConfig) *baseGasStationHandler {
+	return &baseGasStationHandler{
+		config:        config,
+		blockHashList: list.New(),
+		window:        NewPriorityFeeWindow(config.HistoricalPeekCount),
+	}
+}
+
+// run starts to sync historical data and refresh cluster nodes.
+func (h *baseGasStationHandler) run(sync func() (bool, error), refresh func() error) {
+	syncTicker := time.NewTimer(0)
+	defer syncTicker.Stop()
+
+	refreshTicker := time.NewTicker(clusterUpdateInterval)
+	defer refreshTicker.Stop()
+
+	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
+	for {
+		select {
+		case <-syncTicker.C:
+			complete, err := sync()
+			h.status.Store(newGasStationStatus(err))
+			h.resetSyncTicker(syncTicker, complete, err)
+			etLogger.Log(logrus.StandardLogger(), err, "Gas Station handler sync error")
+		case <-refreshTicker.C:
+			if err := refresh(); err != nil {
+				logrus.WithError(err).Error("Gas station handler cluster refresh error")
+			}
+		}
+	}
+}
+
+func (h *baseGasStationHandler) resetSyncTicker(syncTicker *time.Timer, complete bool, err error) {
+	switch {
+	case err != nil:
+		syncTicker.Reset(syncIntervalNormal)
+	case complete:
+		syncTicker.Reset(syncIntervalNormal)
+	default:
+		syncTicker.Reset(syncIntervalCatchUp)
+	}
+}
+
+func (h *baseGasStationHandler) checkStatus() error {
+	if status := h.status.Load(); status != nil && status != StationStatusOk {
+		return status.(error)
+	}
+
+	return nil
 }
 
 // BlockPriorityFee holds the gas fees of transactions within a single block.
@@ -359,4 +430,29 @@ func ToHexBigSlice(arr []*big.Int) []*hexutil.Big {
 		res[i] = (*hexutil.Big)(v)
 	}
 	return res
+}
+
+func assembleSuggestedGasFees(baseFeePerGas *big.Int, stats *GasStats) *types.SuggestedGasFees {
+	priorityFees := stats.AvgPercentiledPriorityFee
+	return &types.SuggestedGasFees{
+		Low: types.GasFeeEstimation{
+			SuggestedMaxPriorityFeePerGas: (*hexutil.Big)(priorityFees[0]),
+			SuggestedMaxFeePerGas:         (*hexutil.Big)(big.NewInt(0).Add(baseFeePerGas, priorityFees[0])),
+		},
+		Medium: types.GasFeeEstimation{
+			SuggestedMaxPriorityFeePerGas: (*hexutil.Big)(priorityFees[1]),
+			SuggestedMaxFeePerGas:         (*hexutil.Big)(big.NewInt(0).Add(baseFeePerGas, priorityFees[1])),
+		},
+		High: types.GasFeeEstimation{
+			SuggestedMaxPriorityFeePerGas: (*hexutil.Big)(priorityFees[2]),
+			SuggestedMaxFeePerGas:         (*hexutil.Big)(big.NewInt(0).Add(baseFeePerGas, priorityFees[2])),
+		},
+		EstimatedBaseFee:           (*hexutil.Big)(baseFeePerGas),
+		NetworkCongestion:          stats.NetworkCongestion,
+		LatestPriorityFeeRange:     ToHexBigSlice(stats.LatestPriorityFeeRange),
+		HistoricalPriorityFeeRange: ToHexBigSlice(stats.HistoricalPriorityFeeRange),
+		HistoricalBaseFeeRange:     ToHexBigSlice(stats.HistoricalBaseFeeRange),
+		PriorityFeeTrend:           stats.PriorityFeeTrend,
+		BaseFeeTrend:               stats.BaseFeeTrend,
+	}
 }
