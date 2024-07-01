@@ -2,6 +2,7 @@ package handler
 
 import (
 	"container/list"
+	"math"
 	"math/big"
 	"slices"
 	"sync"
@@ -139,7 +140,11 @@ func (b *BlockPriorityFee) Percentile(p float64) *big.Int {
 	}
 
 	// Calculate the index corresponding to the given percentile
-	index := int(p * float64(len(b.txnTips)) / 100)
+	index := 0
+	if p > 0 {
+		index = int(math.Ceil(p*float64(len(b.txnTips))/100)) - 1
+	}
+
 	// Ensure the index is within bounds
 	if index >= len(b.txnTips) {
 		index = len(b.txnTips) - 1
