@@ -155,23 +155,39 @@ sync:
 # # Metrics configurations
 # metrics:
 #   # Whether to collect metrics
-#   enabled: true
+#   enabled: false
+#   # Namespace for metrics reporting
+#   namespace:
+#   # Interval to report collected metrics to InfluxDB periodically
+#   reportInterval: 10s
 #   # InfluxDB configurations
 #   influxdb:
 #     host: http://127.0.0.1:8086
-#     db: confura
-#     username: root
-#     password: root
-#   report:
-#     # Whether to report collected metrics to InfluxDB periodically
-#     enabled: false
-#     interval: 10s
+#     db: metrics_db
+#     username:
+#     password:
 
-# # Logs configurations
+# # Log Configurations
 # log:
-#   # Available levels are `trace`, `debug`, `info`, `error` and `fatal` 
+#   # Available levels are `trace`, `debug`, `info`, `error` and `fatal`
 #   level: info
 #   forceColor: false
+#   disableColor: false
+#   alertHook: # Alert hooking settings
+#     # Hooked logrus level for alert notification
+#     level: warn
+#     # Default notification channels
+#     channels: []
+#     # Maximum request timeout allowed to send alert.
+#     sendTimeout: 3s
+#     # Async worker options for sending alert
+#     async:
+#       # The number of worker goroutines (Set to 0 to disable async mode).
+#       numWorkers: 0
+#       # The maximum number of queued jobs.
+#       queueSize: 60
+#       # Maximum timeout allowed to gracefully stop.
+#       StopTimeout: 5s
 
 # # Core space store configurations
 # store:
@@ -221,15 +237,26 @@ sync:
 
 # # Alert configurations
 # alert:
-#   # Distinguishing tags
+#   # Custom tags are used to distinguish between different networks and environments.
+#   # For example, they can be used to differentiate between mainnet/testnet, prod/test/dev, etc.
 #   customTags: [testnet,dev]
-#   # DingTalk integration configurations
-#   dingtalk:
-#     enabled: false
-#     webhook: https://oapi.dingtalk.com/robot/send?access_token=${your_access_token}
-#     secret:  ${your_access_secret}
-#     atMobiles: []
-#     isAtAll: false
+#   # Channels are used for sending notifications.
+#   # Each channel is identified by a unique key (e.g., channel ID), which is case insensitive.
+#   # The value for each key is the configuration for that channel.
+#   channels:
+#     # Example configuration for the DingTalk robot channel
+#     dingrobot:
+#       # The type of the channel. In this case, it's 'dingtalk'.
+#       platform: dingtalk
+#       # The webhook URL for the DingTalk robot.
+#       webhook: https://oapi.dingtalk.com/robot/send?access_token=${your_access_token}
+#       # The secret key for the DingTalk robot.
+#       secret: ${your_access_secret}
+#       # List of mobile numbers to be mentioned in the alert. If empty, no one is mentioned.
+#       atMobiles: []
+#       # If set to true, all members are mentioned in the alert. If false, only the members
+#       # in 'atMobiles' are mentioned.
+#       isAtAll: false
 
 # # Prune configurations
 # prune:
