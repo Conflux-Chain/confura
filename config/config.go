@@ -21,11 +21,10 @@ import (
 // eg., `INFURA_LOG_LEVEL` will override "log.level" config item from the config file.
 const viperEnvPrefix = "infura"
 
-func init() {
-	metrics.DefaultRegistry = cmetrics.InfuraRegistry
-}
-
 func Init() {
+	// use geth default metrics registry
+	metrics.DefaultRegistry = cmetrics.InfuraRegistry
+
 	// init utilities eg., viper, alert, metrics and logging
 	config.MustInit(viperEnvPrefix)
 
