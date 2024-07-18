@@ -1,92 +1,92 @@
-# Core space RPC proxy server configurations
-rpc:
-  # Available exposed modules are `cfx`, `txpool`, `pos`, `trace`, `gasstation`, `debug`.
-  # if left empty all public APIs will be exposed.
-  exposedModules: []
-  # Served HTTP endpoint
-  endpoint: ":22537"
-  # Served debug endpoint
-  # debugEndpoint: ":22588"
-  # Served websocket endpoint
-  # wsEndpoint: ":22535"
-  # The websocket ping/pong heartbeating interval
-  # wsPingInterval: "10s"
-  # Core space bridge server configurations
-  cfxBridge:
-    # EVM space fullnode endpoint
-    ethNode: http://evmtestnet.confluxrpc.com
-    # core space fullnode endpoint
-    cfxNode: http://test.confluxrpc.com
-    # Available exposed modules are `cfx`, `txpool`, `trace`, if empty all APIs will be exposed.
-    # exposedModules: []
-    # Served HTTP endpoint
-    # endpoint: ":32537"
-  # # Throttling configurations for requesting pruned event logs from archive fullnode
-  # throttling:
-  #   # Redis used for throttling based on reference counter
-  #   redisUrl: redis://<user>:<pass>@localhost:6379/<db>
+# # Core space RPC proxy server configurations
+# rpc:
+#   # Available exposed modules are `cfx`, `txpool`, `pos`, `trace`, `gasstation`, `debug`.
+#   # if left empty all public APIs will be exposed.
+#   exposedModules: []
+#   # Served HTTP endpoint
+#   endpoint: ":22537"
+#   # Served debug endpoint
+#   debugEndpoint: ":22588"
+#   # Served websocket endpoint
+#   wsEndpoint: ":22535"
+#   # The websocket ping/pong heartbeating interval
+#   wsPingInterval: "10s"
+#   # Core space bridge server configurations
+#   cfxBridge:
+#     # EVM space fullnode endpoint
+#     ethNode: http://evmtestnet.confluxrpc.com
+#     # core space fullnode endpoint
+#     cfxNode: http://test.confluxrpc.com
+#     # Available exposed modules are `cfx`, `txpool`, `trace`, if empty all APIs will be exposed.
+#     exposedModules: []
+#     # Served HTTP endpoint
+#     endpoint: ":32537"
+#   #Throttling configurations for requesting pruned event logs from archive fullnode
+#   throttling:
+#     # Redis used for throttling based on reference counter
+#     redisUrl: redis://<user>:<pass>@localhost:6379/<db>
 
-# EVM space RPC proxy server configurations
-ethrpc:
-  # Available exposed modules are `eth`, `web3`, `net`, `trace`, `parity`, `gasstation`.
-  # if left empty all public APIs will be exposed.
-  exposedModules: []
-  # Served HTTP endpoint
-  endpoint: ":28545"
-  # Served debug endpoint
-  # debugEndpoint: ":28588"
-  # Served websocket endpoint
-  # wsEndpoint: ":28535"
+# # EVM space RPC proxy server configurations
+# ethrpc:
+#   # Available exposed modules are `eth`, `web3`, `net`, `trace`, `parity`, `debug`, `gasstation`.
+#   # if left empty all public APIs will be exposed.
+#   exposedModules: []
+#   # Served HTTP endpoint
+#   endpoint: ":28545"
+#   # Served debug endpoint
+#   debugEndpoint: ":28588"
+#   # Served websocket endpoint
+#   wsEndpoint: ":28535"
 
-# Core space SDK client configurations
-cfx:
-  # Fullnode websocket endpoint
-  ws: ws://test.confluxrpc.com/ws
-  # Fullnode HTTP endpoint
-  http: http://test.confluxrpc.com
-  # Retry times if failure, if 0 never
-  retry: 0
-  # Interval duration before each retry
-  retryInterval: 1s
-  # Request timeout duration
-  requestTimeout: 3s
-  # Max connections allowed per fullnode
-  maxConnsPerHost: 1024
-  # Circuit breaker configurations
-  circuitBreaker:
-    # Turn on/off switch.
-    enabled: false
-    # Threshold of continuous failure times.
-    maxFail: 10
-    # The time window within which the threshold of continuous failure times is achieved to
-    # open the circuit breaker.
-    failTimeWindow: 1s
-    # The cold interval before the circuit breaker turns to be half-open since being turned open.
-    openColdTime: 15s
+# # Core space SDK client configurations
+# cfx:
+#   # Fullnode websocket endpoint
+#   ws: ws://test.confluxrpc.com/ws
+#   # Fullnode HTTP endpoint
+#   http: http://test.confluxrpc.com
+#   # Retry times if failure, if 0 never
+#   retry: 0
+#   # Interval duration before each retry
+#   retryInterval: 1s
+#   # Request timeout duration
+#   requestTimeout: 3s
+#   # Max connections allowed per fullnode
+#   maxConnsPerHost: 1024
+#   # Circuit breaker configurations
+#   circuitBreaker:
+#     # Turn on/off switch.
+#     enabled: false
+#     # Threshold of continuous failure times.
+#     maxFail: 10
+#     # The time window within which the threshold of continuous failure times is achieved to
+#     # open the circuit breaker.
+#     failTimeWindow: 1s
+#     # The cold interval before the circuit breaker turns to be half-open since being turned open.
+#     openColdTime: 15s
 
-# EVM space SDK client configurations
-eth:
-  # Fullnode HTTP endpoint
-  http: http://evmtestnet.confluxrpc.com
-  # Retry times if failure, if 0 never
-  retry: 0
-  # Interval duration before each retry
-  retryInterval: 1s
-  # Request timeout duration
-  requestTimeout: 3s
-  # Max connections allowed per fullnode
-  maxConnsPerHost: 1024
-  # Circuit breaker configurations
-  circuitBreaker:
-    # Turn on/off switch.
-    enabled: false
-    # Threshold of continuous failure times.
-    maxFail: 10
-    # The time window within which the threshold of continuous failure times is achieved to
-    # open the circuit breaker.
-    failTimeWindow: 1s
-    # The cold interval before the circuit breaker turns to be half-open since being turned open.
-    openColdTime: 15s
+# # EVM space SDK client configurations
+# eth:
+#   # Fullnode HTTP endpoint
+#   http: http://evmtestnet.confluxrpc.com
+#   # Retry times if failure, if 0 never
+#   retry: 0
+#   # Interval duration before each retry
+#   retryInterval: 1s
+#   # Request timeout duration
+#   requestTimeout: 3s
+#   # Max connections allowed per fullnode
+#   maxConnsPerHost: 1024
+#   # Circuit breaker configurations
+#   circuitBreaker:
+#     # Turn on/off switch.
+#     enabled: false
+#     # Threshold of continuous failure times.
+#     maxFail: 10
+#     # The time window within which the threshold of continuous failure times is achieved to
+#     # open the circuit breaker.
+#     failTimeWindow: 1s
+#     # The cold interval before the circuit breaker turns to be half-open since being turned open.
+#     openColdTime: 15s
 
 # # Gas station configurations
 # gasstation:
@@ -97,60 +97,61 @@ eth:
 #   # Percentiles of average txn gas price mapped to three levels of urgency (`low`, `medium` and `high`).
 #   percentiles: [1, 50, 99]
 
-# Blockchain sync configurations
-sync:
-  # Core space sync configurations
-  #
-  # Pub/Sub configurations
-  sub:
-    # Channel size to buffer notified epoch response
-    buffer: 1000
-  # # Whether to use `epoch_getEpochReceipts` to batch get receipts
-  # useBatch: false
-  # # The epoch number from which to sync core space
-  # fromEpoch: 0
-  # # Maximum number of epochs to batch sync once
-  # maxEpochs: 10
-  # Blacklisted contract address(es) whose event logs will be ignored until some specific
-  # epoch height, with 0 means always.
-  blackListAddrs: >
-    [
-      {"address": "cfx:acav5v98np8t3m66uw7x61yer1ja1jm0dpzj1zyzxv", "epoch": 0}
-    ]
-  # # Fast cache-up sync configuration
-  # catchup:
-  #   # Pool of fullnodes for catching up. There will be 1 goroutine per fullnode or
-  #   # the catch up will be disabled if none fullnode provided.
-  #   cfxPool: [http://test.confluxrpc.com]
-  #   # Threshold for number of db rows per batch persistence
-  #   dbRowsThreshold: 2500
-  #   # Max number of db rows collected before persistence to restrict memory usage
-  #   maxDbRows: 7500
-  #   # Capacity of channel per worker to buffer queried epoch data
-  #   workerChanSize: 5
+# # Blockchain sync configurations
+# sync:
+#   # Core space sync configurations
+#   #
+#   # Pub/Sub configurations
+#   sub:
+#     # Channel size to buffer notified epoch response
+#     buffer: 1000
+#   # Whether to use `epoch_getEpochReceipts` to batch get receipts or `eth_getTransactionReceipt` 
+#   # will be used instead.
+#   useBatch: false
+#   # The epoch number from which to sync core space
+#   fromEpoch: 0
+#   # Maximum number of epochs to batch sync once
+#   maxEpochs: 10
+#   # Blacklisted contract address(es) whose event logs will be ignored until some specific
+#   # epoch height, with 0 means always.
+#   blackListAddrs: >
+#     [
+#       {"address": "cfx:acav5v98np8t3m66uw7x61yer1ja1jm0dpzj1zyzxv", "epoch": 0}
+#     ]
+#   # Fast cache-up sync configuration
+#   catchup:
+#     # Pool of fullnodes for catching up. There will be 1 goroutine per fullnode or
+#     # the catch up will be disabled if none fullnode provided.
+#     cfxPool: [http://test.confluxrpc.com]
+#     # Threshold for number of db rows per batch persistence
+#     dbRowsThreshold: 2500
+#     # Max number of db rows collected before persistence to restrict memory usage
+#     maxDbRows: 7500
+#     # Capacity of channel per worker to buffer queried epoch data
+#     workerChanSize: 5
 
-  # # EVM space sync configurations
-  # eth:
-  #   # Whether to use `parity_getBlockReceipts` to batch get receipts
-  #   useBatch: false
-  #   # The block number from which to sync evm space, better use the evm space hardfork point:
-  #   # for mainnet it is 36935000, for testnet it is 61465000
-  #   fromBlock: 61465000
-  #   # Maximum number of blocks to batch sync ETH data once
-  #   maxBlocks: 10
+#   # EVM space sync configurations
+#   eth:
+#     # Whether to use `parity_getBlockReceipts` to batch get receipts
+#     useBatch: false
+#     # The block number from which to sync evm space, better use the evm space hardfork point:
+#     # for mainnet it is 36935000, for testnet it is 61465000
+#     fromBlock: 61465000
+#     # Maximum number of blocks to batch sync ETH data once
+#     maxBlocks: 10
 
-  # # HA leader/follower election.
-  # election:
-  #   # Enable/disable leader election
-  #   enabled: false
-  #   # The leader identity
-  #   id: "leader"
-  #   # The duration of the leader term
-  #   lease: 1m
-  #   # the amount of time to wait between retries of becoming the leader
-  #   retry: 5s
-  #   # the time interval at which the leader will try to renew its term
-  #   renew: 15s
+#   # HA leader/follower election.
+#   election:
+#     # Enable/disable leader election
+#     enabled: false
+#     # The leader identity
+#     id: "leader"
+#     # The duration of the leader term
+#     lease: 1m
+#     # the amount of time to wait between retries of becoming the leader
+#     retry: 5s
+#     # the time interval at which the leader will try to renew its term
+#     renew: 15s
 
 # # Metrics configurations
 # metrics:
@@ -272,70 +273,70 @@ sync:
 #       maxTxs: 100000
 #       maxLogs: 100000
 
-# Node management configurations
-node:
-  # Group `cfxhttp` fullnodes
-  urls: [http://test.confluxrpc.com]
-  # Group `cfxfullstate` fullnodes
-  # fullStateURLs: [http://test.confluxrpc.com]
-  # Group `cfxws` fullnodes
-  # wsUrls: [ws://test.confluxrpc.com/ws]
-  # Group `cfxlog` fullnodes
-  # logNodes: [http://test.confluxrpc.com]
-  # Group `cfxfilter` fullnodes
-  # filterNodes: [http://test.confluxrpc.com]
-  # Group `cfxarchives` fullnodes
-  # archiveNodes: []
-  # Group `ethhttp` fullnodes
-  ethurls: [http://evmtestnet.confluxrpc.com]
-  # Group `ethfullstate` fullnodes
-  # ethFullStateURLs: [http://evmtestnet.confluxrpc.com]
-  # Group `ethlogs` fullnodes
-  # ethLogNodes: [http://evmtestnet.confluxrpc.com]
-  # Group `ethfilter` fullnodes
-  # ethFilterNodes: [http://evmtestnet.confluxrpc.com]
-  # Group `ethws` fullnodes
-  # ethWsUrls: [wss://evmtestnet.confluxrpc.com/ws]
-  # # Consistent hash ring configurations
-  # hashRing:
-  #   partitionCount: 15739
-  #   replicationFactor: 51
-  #   load: 1.25
-  # # Health monitoring configurations
-  # monitor:
-  #   interval: 1s
-  #   # Unhealth conditions
-  #   unhealth:
-  #     failures: 3
-  #     epochsFallBehind: 30
-  #     latencyPercentile: 0.9
-  #     maxLatency: 3s
-  #   # Recovering conditions
-  #   recover:
-  #     remindInterval: 5m
-  #     successCounter: 60
-  # # Served HTTP endpoint for core space
-  # endpoint: ":22530"
-  # # Served HTTP endpoint for evm space
-  # ethEndpoint: ":28530"
-  # # Chained routers configurations
-  # router:
-  #   # Redis used for `RedisRouter`
-  #   redisUrl: redis://<user>:<pass>@localhost:6379/<db>
-  #   # Node manager RPC endpoint for `NodeRpcRouter`
-  #   nodeRpcUrl: http://127.0.0.1:22530
-  #   # EVM space node manager RPC endpoint for `NodeRpcRouter`
-  #   ethNodeRpcUrl: http://127.0.0.1:28530
-  #   # Failover fullnode configuration
-  #   chainedFailover:
-  #     # Failover fullnode if group `cfxhttp` is capsized
-  #     url:
-  #     # Failover fullnode if group `cfxws` is capsized
-  #     wsUrl:
-  #     # Failover fullnode if group `ethhttp` is capsized
-  #     ethUrl:
-  #     # Failover fullnode if group `ethws` is capsized
-  #     ethWsUrl:
+# # Node management configurations
+# node:
+#   # Group `cfxhttp` fullnodes
+#   urls: [http://test.confluxrpc.com]
+#   # Group `cfxfullstate` fullnodes
+#   fullStateURLs: [http://test.confluxrpc.com]
+#   # Group `cfxws` fullnodes
+#   wsUrls: [ws://test.confluxrpc.com/ws]
+#   # Group `cfxlog` fullnodes
+#   logNodes: [http://test.confluxrpc.com]
+#   # Group `cfxfilter` fullnodes
+#   filterNodes: [http://test.confluxrpc.com]
+#   # Group `cfxarchives` fullnodes
+#   archiveNodes: []
+#   # Group `ethhttp` fullnodes
+#   ethurls: [http://evmtestnet.confluxrpc.com]
+#   # Group `ethfullstate` fullnodes
+#   ethFullStateURLs: [http://evmtestnet.confluxrpc.com]
+#   # Group `ethlogs` fullnodes
+#   ethLogNodes: [http://evmtestnet.confluxrpc.com]
+#   # Group `ethfilter` fullnodes
+#   ethFilterNodes: [http://evmtestnet.confluxrpc.com]
+#   # Group `ethws` fullnodes
+#   ethWsUrls: [wss://evmtestnet.confluxrpc.com/ws]
+#   # Consistent hash ring configurations
+#   hashRing:
+#     partitionCount: 15739
+#     replicationFactor: 51
+#     load: 1.25
+#   # Health monitoring configurations
+#   monitor:
+#     interval: 1s
+#     # Unhealth conditions
+#     unhealth:
+#       failures: 3
+#       epochsFallBehind: 30
+#       latencyPercentile: 0.9
+#       maxLatency: 3s
+#     # Recovering conditions
+#     recover:
+#       remindInterval: 5m
+#       successCounter: 60
+#   # Served HTTP endpoint for core space
+#   endpoint: ":22530"
+#   # Served HTTP endpoint for evm space
+#   ethEndpoint: ":28530"
+#   # Chained routers configurations
+#   router:
+#     # Redis used for `RedisRouter`
+#     redisUrl: redis://<user>:<pass>@localhost:6379/<db>
+#     # Node manager RPC endpoint for `NodeRpcRouter`
+#     nodeRpcUrl: http://127.0.0.1:22530
+#     # EVM space node manager RPC endpoint for `NodeRpcRouter`
+#     ethNodeRpcUrl: http://127.0.0.1:28530
+#     # Failover fullnode configuration
+#     chainedFailover:
+#       # Failover fullnode if group `cfxhttp` is capsized
+#       url:
+#       # Failover fullnode if group `cfxws` is capsized
+#       wsUrl:
+#       # Failover fullnode if group `ethhttp` is capsized
+#       ethUrl:
+#       # Failover fullnode if group `ethws` is capsized
+#       ethWsUrl:
 
 # # Transaction relay configurations
 # relay:
