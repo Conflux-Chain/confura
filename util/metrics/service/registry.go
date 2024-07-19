@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	infuraMetrics "github.com/Conflux-Chain/confura/util/metrics"
+	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
@@ -51,7 +51,7 @@ func (r *Registry) GetOrRegisterMeter(name string, args ...interface{}) metrics.
 func (r *Registry) GetOrRegisterHistogram(name string, args ...interface{}) metrics.Histogram {
 	metricName := fmt.Sprintf(name, args...)
 	return r.Registry.GetOrRegister(name, func() metrics.Histogram {
-		return &Histogram{clientMetric{metricName, r.updater}, infuraMetrics.NewHistogram()}
+		return &Histogram{clientMetric{metricName, r.updater}, metricUtil.NewDefaultHistogram()}
 	}).(metrics.Histogram)
 }
 
@@ -62,20 +62,20 @@ func (r *Registry) GetOrRegisterTimer(name string, args ...interface{}) metrics.
 	}).(metrics.Timer)
 }
 
-func (r *Registry) GetOrRegisterPercentage(name string, args ...interface{}) infuraMetrics.Percentage {
+func (r *Registry) GetOrRegisterPercentage(name string, args ...interface{}) metricUtil.Percentage {
 	metricName := fmt.Sprintf(name, args...)
-	return r.Registry.GetOrRegister(name, func() infuraMetrics.Percentage {
-		return &Percentage{clientMetric{metricName, r.updater}, infuraMetrics.NewPercentage()}
-	}).(infuraMetrics.Percentage)
+	return r.Registry.GetOrRegister(name, func() metricUtil.Percentage {
+		return &Percentage{clientMetric{metricName, r.updater}, metricUtil.NewPercentage()}
+	}).(metricUtil.Percentage)
 }
 
-func (r *Registry) GetOrRegisterTimeWindowPercentageDefault(name string, args ...interface{}) infuraMetrics.Percentage {
+func (r *Registry) GetOrRegisterTimeWindowPercentageDefault(name string, args ...interface{}) metricUtil.Percentage {
 	return r.GetOrRegisterTimeWindowPercentage(10, time.Minute, name, args...)
 }
 
-func (r *Registry) GetOrRegisterTimeWindowPercentage(slots int, slotInterval time.Duration, name string, args ...interface{}) infuraMetrics.Percentage {
+func (r *Registry) GetOrRegisterTimeWindowPercentage(slots int, slotInterval time.Duration, name string, args ...interface{}) metricUtil.Percentage {
 	metricName := fmt.Sprintf(name, args...)
-	return r.Registry.GetOrRegister(name, func() infuraMetrics.Percentage {
-		return &TimeWindowPercentage{clientMetric{metricName, r.updater}, infuraMetrics.NewPercentage(), slots, slotInterval}
-	}).(infuraMetrics.Percentage)
+	return r.Registry.GetOrRegister(name, func() metricUtil.Percentage {
+		return &TimeWindowPercentage{clientMetric{metricName, r.updater}, metricUtil.NewPercentage(), slots, slotInterval}
+	}).(metricUtil.Percentage)
 }

@@ -5,16 +5,11 @@ import (
 	"github.com/Conflux-Chain/confura/rpc"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util/blacklist"
-	cmetrics "github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/confura/util/pprof"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/go-conflux-util/config"
-	"github.com/Conflux-Chain/go-conflux-util/metrics"
-
-	// For go-ethereum v1.0.15, node pkg imports internal/debug pkg which will inits log root
-	// with `log.GlogHandler`. If we import node pkg from somewhere else, it will override our
-	// custom handler defined within function `adaptGethLogger`.
-	_ "github.com/ethereum/go-ethereum/node"
+	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
+	"github.com/ethereum/go-ethereum/metrics"
 )
 
 // Read system enviroment variables prefixed with "INFURA".
@@ -22,8 +17,10 @@ import (
 const viperEnvPrefix = "infura"
 
 func Init() {
-	// use geth default metrics registry
-	metrics.DefaultRegistry = cmetrics.InfuraRegistry
+	// Note, must use metrics.DefaultRegistry from geth, since go-rpc-provider depends on it
+	// for rpc metrics by default. When RPC middleware supported at server side, we can use
+	// a custom metrics registry.
+	metricUtil.DefaultRegistry = metrics.DefaultRegistry
 
 	// init utilities eg., viper, alert, metrics and logging
 	config.MustInit(viperEnvPrefix)
