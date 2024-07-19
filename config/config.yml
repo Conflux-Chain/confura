@@ -1,6 +1,6 @@
 # Core space RPC proxy server configurations
 rpc:
-  # Available exposed modules are `cfx`, `txpool`, `pos`, `trace`, `gasstation`, `debug`.
+  # Available exposed modules are `cfx`, `txpool`, `pos`, `trace`, `gasstation` and `debug`.
   # if left empty all public APIs will be exposed.
   exposedModules: []
   # Served HTTP endpoint
@@ -28,7 +28,7 @@ rpc:
 
 # EVM space RPC proxy server configurations
 ethrpc:
-  # Available exposed modules are `eth`, `web3`, `net`, `trace`, `parity`, `gasstation`.
+  # Available exposed modules are `eth`, `web3`, `net`, `trace`, `parity`, `gasstation` and `debug`.
   # if left empty all public APIs will be exposed.
   exposedModules: []
   # Served HTTP endpoint
