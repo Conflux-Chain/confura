@@ -130,6 +130,11 @@ func evmSpaceApis(
 			Service:   &parityAPI{},
 			Public:    false,
 		}, {
+			Namespace: "debug",
+			Version:   "1.0",
+			Service:   &ethDebugAPI{},
+			Public:    false,
+		}, {
 			Namespace: "gasstation",
 			Version:   "1.0",
 			Service:   newEthGasStationAPI(gashandler),
