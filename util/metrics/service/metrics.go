@@ -3,7 +3,7 @@ package service
 import (
 	"time"
 
-	infuraMetrics "github.com/Conflux-Chain/confura/util/metrics"
+	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
@@ -126,7 +126,7 @@ func (timer *Timer) Stop() {
 // Percentage
 type Percentage struct {
 	clientMetric
-	infuraMetrics.Percentage
+	metricUtil.Percentage
 }
 
 func (p *Percentage) Mark(marked bool) {
@@ -137,7 +137,7 @@ func (p *Percentage) Mark(marked bool) {
 // TimeWindowPercentage
 type TimeWindowPercentage struct {
 	clientMetric
-	infuraMetrics.Percentage
+	metricUtil.Percentage
 	slots    int
 	interval time.Duration
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
+	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	ring "github.com/zealws/golang-ring"
@@ -83,8 +84,8 @@ func (s *Status) MarshalJSON() ([]byte, error) {
 		LatestHeartBeatErrs []string `json:"latestHeartBeatErrs"`
 	}
 
-	availability := metrics.GetOrRegisterTimeWindowPercentageDefault(s.metric.availability).Value()
-	latency := metrics.GetOrRegisterHistogram(s.metric.latency).Snapshot()
+	availability := metricUtil.GetOrRegisterTimeWindowPercentageDefault(s.metric.availability).Value()
+	latency := metricUtil.GetOrRegisterHistogram(s.metric.latency).Snapshot()
 
 	scopy := Status{
 		NodeName:         s.nodeName,
@@ -174,7 +175,7 @@ func (s *Status) checkHealth(targetEpoch uint64) error {
 	// latency too high
 	percentile := cfg.Monitor.Unhealth.LatencyPercentile
 	maxLatency := cfg.Monitor.Unhealth.MaxLatency
-	latencySnapshot := metrics.GetOrRegisterHistogram(s.metric.latency).Snapshot()
+	latencySnapshot := metricUtil.GetOrRegisterHistogram(s.metric.latency).Snapshot()
 	latency := time.Duration(latencySnapshot.Percentile(percentile))
 	if latency > maxLatency {
 		return errors.Errorf("Latency too high (%v)", latency)
@@ -201,13 +202,13 @@ func newStatusMetrics(latency, availability string) *statusMetrics {
 
 func (sm *statusMetrics) update(start time.Time, err error) {
 	if err == nil {
-		metrics.GetOrRegisterHistogram(sm.latency).Update(time.Since(start).Nanoseconds())
+		metricUtil.GetOrRegisterHistogram(sm.latency).Update(time.Since(start).Nanoseconds())
 	}
 
-	metrics.GetOrRegisterTimeWindowPercentageDefault(sm.availability).Mark(err == nil)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(sm.availability).Mark(err == nil)
 }
 
 func (sm *statusMetrics) unregisterAll() {
-	metrics.InfuraRegistry.Unregister(sm.latency)
-	metrics.InfuraRegistry.Unregister(sm.availability)
+	metrics.Unregister(sm.latency)
+	metrics.Unregister(sm.availability)
 }

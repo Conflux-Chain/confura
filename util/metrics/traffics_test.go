@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestTrafficCollector(t *testing.T) {
-	timeWin := NewTimeWindow(time.Second, 5)
+	timeWin := metricUtil.NewTimeWindow(time.Second, 5)
 	tc := &timeWindowTrafficCollector{window: timeWin}
 
 	tvisitors := make([]Visitor, 100)

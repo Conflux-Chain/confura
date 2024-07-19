@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
@@ -49,7 +50,7 @@ type twTrafficData struct {
 
 // implements `SlotData` interface
 
-func (d twTrafficData) Add(v SlotData) SlotData {
+func (d twTrafficData) Add(v metricUtil.SlotData) metricUtil.SlotData {
 	rhs := v.(twTrafficData)
 	for k, v := range rhs.data {
 		d.data[k] += v
@@ -58,7 +59,7 @@ func (d twTrafficData) Add(v SlotData) SlotData {
 	return twTrafficData{data: d.data}
 }
 
-func (d twTrafficData) Sub(v SlotData) SlotData {
+func (d twTrafficData) Sub(v metricUtil.SlotData) metricUtil.SlotData {
 	rhs := v.(twTrafficData)
 	for k, v := range rhs.data {
 		d.data[k] -= v
@@ -70,7 +71,7 @@ func (d twTrafficData) Sub(v SlotData) SlotData {
 	return twTrafficData{data: d.data}
 }
 
-func (d twTrafficData) SnapShot() SlotData {
+func (d twTrafficData) SnapShot() metricUtil.SlotData {
 	data := make(map[string]int, len(d.data))
 
 	for k, v := range d.data {
@@ -85,14 +86,14 @@ type timeWindowTrafficCollector struct {
 	// For our usage context now, memory shouldn't be a problem since the
 	// number of unique visitors (identified by source) is quite limited
 	// (far less than a million).
-	window *TimeWindow // traffic data within a sliding time window.
+	window *metricUtil.TimeWindow // traffic data within a sliding time window.
 }
 
 func newTimeWindowTrafficCollector(
 	slotInterval time.Duration, numSlots int) *timeWindowTrafficCollector {
 
 	return &timeWindowTrafficCollector{
-		window: NewTimeWindow(slotInterval, numSlots),
+		window: metricUtil.NewTimeWindow(slotInterval, numSlots),
 	}
 }
 
