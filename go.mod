@@ -17,7 +17,7 @@ require (
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/montanaflynn/stats v0.6.6
 	github.com/openweb3/go-rpc-provider v0.3.3
-	github.com/openweb3/web3go v0.2.10-0.20240717072905-f6d2629a21e7
+	github.com/openweb3/web3go v0.2.10-0.20240723105407-295a74844a46
 	github.com/pkg/errors v0.9.1
 	github.com/rs/cors v1.7.0
 	github.com/sirupsen/logrus v1.9.3
