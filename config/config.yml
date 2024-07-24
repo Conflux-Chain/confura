@@ -22,6 +22,9 @@ rpc:
     # 1 - `eth_getTransactionReceipt`
     # 2 - `eth_getBlockReceipts`
     # batchRcptImpl: 0
+    # The number of concurrencies to retrieve batch receipts for better performance, only effective
+    # when `eth_getTransactionReceipt` is used as the implementation method.
+    # batchRcptConcurrency: 4
     # Available exposed modules are `cfx`, `txpool`, `trace`, if empty all APIs will be exposed.
     # exposedModules: []
     # Served HTTP endpoint

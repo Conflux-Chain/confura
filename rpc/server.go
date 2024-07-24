@@ -72,11 +72,12 @@ func MustNewEvmSpaceServer(
 }
 
 type CfxBridgeServerConfig struct {
-	EthNode        string
-	CfxNode        string
-	BatchRcptImpl  int
-	ExposedModules []string
-	Endpoint       string `default:":32537"`
+	EthNode              string
+	CfxNode              string
+	BatchRcptImpl        int
+	BatchRcptConcurrency int `default:"4"`
+	ExposedModules       []string
+	Endpoint             string `default:":32537"`
 }
 
 func MustNewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeServerConfig) *rpc.Server {

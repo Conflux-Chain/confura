@@ -12,6 +12,7 @@ import (
 	"github.com/openweb3/web3go"
 	ethTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -21,16 +22,21 @@ const (
 )
 
 type CfxAPI struct {
-	w3c           *web3go.Client
-	cfx           *sdk.Client // optional
-	ethNetworkId  uint32
-	batchRcptImpl int
+	w3c                  *web3go.Client
+	cfx                  *sdk.Client // optional
+	ethNetworkId         uint32
+	batchRcptImpl        int
+	batchRcptConcurrency int
 }
 
 func NewCfxAPI(
-	w3client *web3go.Client, ethNetId uint32, cfxClient *sdk.Client, batchRcptImpl int) *CfxAPI {
+	w3client *web3go.Client, ethNetId uint32, cfxClient *sdk.Client, batchRcptImpl int, concurrency int) *CfxAPI {
 	return &CfxAPI{
-		w3c: w3client, cfx: cfxClient, ethNetworkId: ethNetId, batchRcptImpl: batchRcptImpl,
+		w3c:                  w3client,
+		cfx:                  cfxClient,
+		ethNetworkId:         ethNetId,
+		batchRcptImpl:        batchRcptImpl,
+		batchRcptConcurrency: concurrency,
 	}
 }
 
@@ -272,17 +278,38 @@ func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHas
 			return nil, err
 		}
 
-		for _, txn := range block.Transactions.Hashes() {
-			receipt, err := api.w3c.WithContext(ctx).Eth.TransactionReceipt(txn)
-			if err != nil {
-				return nil, err
-			}
+		errGrp, ctx := errgroup.WithContext(ctx)
+		errGrp.SetLimit(api.batchRcptConcurrency)
 
-			if receipt != nil && receipt.BlockHash != block.Hash { // reorg?
-				return nil, errors.New("pivot reorg, please retry again")
-			}
+		txnHashes := block.Transactions.Hashes()
+		receipts = make([]*ethTypes.Receipt, len(txnHashes))
 
-			receipts = append(receipts, receipt)
+	loop:
+		for idx, txn := range txnHashes {
+			rcptIdx := idx
+			errGrp.Go(func() error {
+				receipt, err := api.w3c.WithContext(ctx).Eth.TransactionReceipt(txn)
+				if err != nil {
+					return err
+				}
+
+				if receipt != nil && receipt.BlockHash != block.Hash { // reorg?
+					return errors.New("pivot reorg, please retry again")
+				}
+
+				receipts[rcptIdx] = receipt
+				return nil
+			})
+
+			select {
+			case <-ctx.Done(): // any error happened during the fetch?
+				break loop
+			default:
+			}
+		}
+
+		if err := errGrp.Wait(); err != nil {
+			return nil, err
 		}
 
 	case BatchRcptImplWithParityBlockReceipts:
