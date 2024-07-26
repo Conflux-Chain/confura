@@ -467,7 +467,7 @@ func (api *cfxAPI) GetParamsFromVote(ctx context.Context, epoch *types.Epoch) (p
 	return api.stateHandler.GetParamsFromVote(ctx, cfx, epoch)
 }
 
-func (api *cfxAPI) GetFeeHistory(
+func (api *cfxAPI) FeeHistory(
 	ctx context.Context, blockCount types.HexOrDecimalUint64, lastEpoch types.Epoch, rewardPercentiles []float64,
 ) (feeHistory *types.FeeHistory, err error) {
 	if blockCount > maxFeeHistoryBlockCnt {
@@ -482,7 +482,7 @@ func (api *cfxAPI) GetFeeHistory(
 	return cfx.GetFeeHistory(blockCount, lastEpoch, rewardPercentiles)
 }
 
-func (api *cfxAPI) GetMaxPriorityFeePerGas(ctx context.Context) (*hexutil.Big, error) {
+func (api *cfxAPI) MaxPriorityFeePerGas(ctx context.Context) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	return cfx.GetMaxPriorityFeePerGas()
 }
