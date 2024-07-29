@@ -16,15 +16,10 @@ import (
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/web3go"
+	ethtypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
-)
-
-const (
-	// Number of blocks ahead of the latest block to skip sync, which helps prevent
-	// frequent store delete operation due to chain reorg.
-	skipBlocksAheadLatest = 30
 )
 
 type syncEthConfig struct {
@@ -150,15 +145,12 @@ func (syncer *EthSyncer) nextBlockTo(maxBlockTo uint64) (uint64, uint64) {
 
 // Sync data once and return true if catch up to the most recent block, otherwise false.
 func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
-	recentBlockNumber, err := syncer.w3c.Eth.BlockNumber()
+	latestBlock, err := syncer.w3c.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
 	if err != nil {
 		return false, errors.WithMessage(err, "failed to query the latest block number")
 	}
 
-	recentBlockNo := recentBlockNumber.Uint64()
-	if recentBlockNo > skipBlocksAheadLatest {
-		recentBlockNo = recentBlockNo - skipBlocksAheadLatest
-	}
+	recentBlockNo := latestBlock.Number.Uint64()
 
 	// Load latest sync block from database
 	if err := syncer.loadLastSyncBlock(); err != nil {
@@ -168,7 +160,7 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	// catched up to the most recent block?
 	if syncer.fromBlock > recentBlockNo {
 		logrus.WithFields(logrus.Fields{
-			"latestBlockNo": recentBlockNumber.Uint64(),
+			"latestBlockNo": recentBlockNo,
 			"syncFromBlock": syncer.fromBlock,
 			"recentBlockNo": recentBlockNo,
 		}).Debug("ETH syncer skipped due to already catched up")
