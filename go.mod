@@ -27,6 +27,7 @@ require (
 	github.com/valyala/fasthttp v1.40.0
 	github.com/zealws/golang-ring v0.0.0-20210116075443-7c86fdb43134
 	go.uber.org/multierr v1.6.0
+	golang.org/x/sync v0.7.0
 	golang.org/x/time v0.5.0
 	gorm.io/driver/mysql v1.3.6
 	gorm.io/gorm v1.23.8
@@ -153,7 +154,6 @@ require (
 	golang.org/x/crypto v0.23.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/sync v0.7.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect

@@ -72,14 +72,16 @@ func MustNewEvmSpaceServer(
 }
 
 type CfxBridgeServerConfig struct {
-	EthNode        string
-	CfxNode        string
-	ExposedModules []string
-	Endpoint       string `default:":32537"`
+	EthNode              string
+	CfxNode              string
+	BatchRcptImpl        int
+	BatchRcptConcurrency int `default:"4"`
+	ExposedModules       []string
+	Endpoint             string `default:":32537"`
 }
 
 func MustNewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeServerConfig) *rpc.Server {
-	allApis, err := nativeSpaceBridgeApis(config.EthNode, config.CfxNode)
+	allApis, err := nativeSpaceBridgeApis(config)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server")
 	}
