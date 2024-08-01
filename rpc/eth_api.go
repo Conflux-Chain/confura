@@ -195,6 +195,16 @@ func (api *ethAPI) GetUncleCountByBlockHash(ctx context.Context, hash common.Has
 	return (*hexutil.Big)(count), err
 }
 
+// GetUncleCountByBlockNumber returns the number of uncles in a block from a block matching
+// the given block number.
+func (api *ethAPI) GetUncleCountByBlockNumber(ctx context.Context, blockNum web3Types.BlockNumber) (
+	*hexutil.Big, error,
+) {
+	w3c := GetEthClientFromContext(ctx)
+	count, err := w3c.Eth.BlockUnclesCountByNumber(blockNum)
+	return (*hexutil.Big)(count), err
+}
+
 // ProtocolVersion returns the current ethereum protocol version.
 func (api *ethAPI) ProtocolVersion(ctx context.Context) (string, error) {
 	return GetEthClientFromContext(ctx).Eth.ProtocolVersion()
