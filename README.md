@@ -36,7 +36,14 @@ Comparatively running your full node, Confura makes it easy to build a high perf
 
 #### Metrics
 
-* Component instrumentation && monitoring using [RED](https://www.weave.works/blog/the-red-method-key-metrics-for-microservices-architecture/) method.
+- Component instrumentation && monitoring using [RED](https://www.weave.works/blog/the-red-method-key-metrics-for-microservices-architecture/) method.
+
+#### EVM Compatibility
+
+Confura aims to achieve maximum compatibility with the Ethereum ecosystem. The following EVM-compatible blockchains, spaces, or Layer2 solutions have been verified to work seamlessly with Confura:
+- [Conflux eSpace](https://doc.confluxnetwork.org/docs/espace/build/jsonrpc-compatibility): Fully EVM-compatible space (chain) of the Conflux network.
+- [0G](./0g.md): Scalable and decentralized data availability layer.
+- [Scroll](https://github.com/scroll-tech/rpc-gateway): ZK rollup Layer2 solution for Ethereum.
 
 ## Prerequisites
 
