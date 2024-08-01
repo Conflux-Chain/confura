@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Conflux-Chain/confura/rpc/cache"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // netAPI provides evm space net RPC proxy API.
@@ -13,4 +14,18 @@ type netAPI struct{}
 func (api *netAPI) Version(ctx context.Context) (string, error) {
 	w3c := GetEthClientFromContext(ctx)
 	return cache.EthDefault.GetNetVersion(w3c.Client)
+}
+
+// Listening returns true if client is actively listening for network connections.
+func (api *netAPI) Listening(ctx context.Context) (res bool, err error) {
+	w3c := GetEthClientFromContext(ctx)
+	err = w3c.Client.CallContext(ctx, &res, "net_listening")
+	return res, err
+}
+
+// PeerCount Returns number of peers currently connected to the client.
+func (api *netAPI) PeerCount(ctx context.Context) (res hexutil.Uint64, err error) {
+	w3c := GetEthClientFromContext(ctx)
+	err = w3c.Client.CallContext(ctx, (*uint64)(&res), "net_peerCount")
+	return res, err
 }
