@@ -36,7 +36,11 @@ Comparatively running your full node, Confura makes it easy to build a high perf
 
 #### Metrics
 
-* Component instrumentation && monitoring using [RED](https://www.weave.works/blog/the-red-method-key-metrics-for-microservices-architecture/) method.
+- Component instrumentation && monitoring using [RED](https://www.weave.works/blog/the-red-method-key-metrics-for-microservices-architecture/) method.
+
+#### EVM Compatibility
+
+- Strives for maximum compatibility with EVM-compatible blockchains, spaces, and Layer2 solutions.
 
 ## Prerequisites
 
