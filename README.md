@@ -40,7 +40,7 @@ Comparatively running your full node, Confura makes it easy to build a high perf
 
 #### EVM Compatibility
 
-- Aims to achieve maximum compatibility with EVM-compatible blockchains, spaces, or Layer2 solutions.
+- Strives for maximum compatibility with EVM-compatible blockchains, spaces, and Layer2 solutions.
 
 ## Prerequisites
 
