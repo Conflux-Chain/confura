@@ -246,7 +246,7 @@ func (api *ethAPI) GetTransactionCount(
 	return (*hexutil.Big)(count), err
 }
 
-// SendTransaction injects a signed transaction into the pending pool for execution.
+// SendRawTransaction injects a signed transaction into the pending pool for execution.
 //
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
