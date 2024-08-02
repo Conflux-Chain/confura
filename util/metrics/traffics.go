@@ -118,9 +118,12 @@ func (tc *timeWindowTrafficCollector) TopkVisitors(k int) []Visitor {
 		return nil
 	}
 
-	topkHeap := topkVisitorHeap(make([]*visitorItem, 0, k+1))
-	tdata := tc.window.Data().(twTrafficData)
+	tdata, ok := tc.window.Data().(twTrafficData)
+	if !ok { // no data
+		return nil
+	}
 
+	topkHeap := topkVisitorHeap(make([]*visitorItem, 0, k+1))
 	for src, hits := range tdata.data {
 		vi := &visitorItem{
 			Visitor: Visitor{Source: src, Hits: hits},
