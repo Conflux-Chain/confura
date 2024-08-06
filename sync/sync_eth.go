@@ -406,6 +406,20 @@ func (syncer *EthSyncer) convertToEpochData(ethData *store.EthData) *store.Epoch
 		epochData.ReceiptExts[txHash] = store.ExtractEthReceiptExt(rcpt)
 	}
 
+	// Transaction `status` field is not a standard field for evm-compatible chain, so we have
+	// to manually fill this field from their receipt.
+	for i := range pivotBlock.Transactions {
+		if pivotBlock.Transactions[i].Status != nil {
+			continue
+		}
+
+		txnHash := pivotBlock.Transactions[i].Hash
+		if rcpt, ok := epochData.Receipts[txnHash]; ok && rcpt != nil {
+			txnStatus := rcpt.OutcomeStatus
+			pivotBlock.Transactions[i].Status = &txnStatus
+		}
+	}
+
 	return epochData
 }
 
