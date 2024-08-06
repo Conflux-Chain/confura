@@ -8,6 +8,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cmptutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	gethTypes "github.com/ethereum/go-ethereum/core/types"
 	ethTypes "github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 )
@@ -84,9 +85,9 @@ func ConvertTxStatusNullable(value *uint64) (status *hexutil.Uint64) {
 	}
 
 	switch {
-	case *value == 0: // eth tx status `failed`
+	case *value == gethTypes.ReceiptStatusFailed: // eth tx status `failed`
 		status = &txnStatusFailed
-	case *value == 1: // eth tx status `success`
+	case *value == gethTypes.ReceiptStatusSuccessful: // eth tx status `success`
 		status = &txnStatusSuccess
 	default:
 		logrus.WithField("ethTxStatus", *value).Error("Unexpected tx status from eth space")
