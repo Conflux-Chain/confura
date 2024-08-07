@@ -44,10 +44,38 @@ func Url2NodeName(url string) string {
 	return strings.TrimPrefix(nodeName, "/")
 }
 
-func HookMiddlewares(provider *providers.MiddlewarableProvider, url, space string) {
+// MiddlewareHookFlag represents the type for middleware hook flags.
+type MiddlewareHookFlag int
+
+const (
+	// MiddlewareHookNone represents no middleware hooks enabled.
+	MiddlewareHookNone MiddlewareHookFlag = 0
+
+	// MiddlewareHookAll enables all middleware hooks.
+	MiddlewareHookAll MiddlewareHookFlag = ^MiddlewareHookFlag(0)
+
+	// MiddlewareHookLog enables logging middleware hook.
+	MiddlewareHookLog MiddlewareHookFlag = 1 << iota
+
+	// MiddlewareHookLogMetrics enables metrics logging middleware hook.
+	MiddlewareHookLogMetrics
+)
+
+func HookMiddlewares(provider *providers.MiddlewarableProvider, url, space string, flags ...MiddlewareHookFlag) {
 	nodeName := Url2NodeName(url)
-	provider.HookCallContext(middlewareLog(nodeName, space))
-	provider.HookCallContext(middlewareMetrics(nodeName, space))
+
+	flag := MiddlewareHookAll
+	if len(flags) > 0 {
+		flag = flags[0]
+	}
+
+	if flag&MiddlewareHookLog != 0 {
+		provider.HookCallContext(middlewareLog(nodeName, space))
+	}
+
+	if flag&MiddlewareHookLogMetrics != 0 {
+		provider.HookCallContext(middlewareMetrics(nodeName, space))
+	}
 }
 
 func middlewareMetrics(fullnode, space string) providers.CallContextMiddleware {

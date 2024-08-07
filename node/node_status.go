@@ -18,6 +18,10 @@ type HealthMonitor interface {
 	// Usually, it is the middle epoch number of all full nodes.
 	HealthyEpoch() uint64
 
+	// HealthStatus checks the health status of a full node and returns whether it is unhealthy
+	// along with the time when it was reported as unhealthy.
+	HealthStatus(nodeName string) (isUnhealthy bool, reportedAt time.Time)
+
 	// ReportEpoch fired when epoch changes.
 	ReportEpoch(nodeName string, epoch uint64)
 
@@ -38,9 +42,6 @@ type Status struct {
 	successCounter   uint64
 	failureCounter   uint64
 
-	unhealthy        bool
-	unhealthReportAt time.Time
-
 	latestHeartBeatErrs *ring.Ring
 }
 
@@ -59,9 +60,13 @@ func NewStatus(group Group, nodeName string) Status {
 }
 
 // Update heartbeats with node and updates health status.
-func (s *Status) Update(n Node, monitor HealthMonitor) {
+func (s *Status) Update(n Node) {
 	s.heartbeat(n)
-	s.updateHealth(monitor)
+}
+
+// Report reports health status to monitor.
+func (s *Status) Report(hm HealthMonitor) {
+	s.updateHealth(hm)
 }
 
 // MarshalJSON marshals as JSON.
@@ -78,8 +83,6 @@ func (s *Status) MarshalJSON() ([]byte, error) {
 		LatestStateEpoch uint64 `json:"latestStateEpoch"`
 		SuccessCounter   uint64 `json:"successCounter"`
 		FailureCounter   uint64 `json:"failureCounter"`
-		Unhealthy        bool   `json:"unhealthy"`
-		UnhealthReportAt string `json:"unhealthReportAt"`
 
 		LatestHeartBeatErrs []string `json:"latestHeartBeatErrs"`
 	}
@@ -96,8 +99,6 @@ func (s *Status) MarshalJSON() ([]byte, error) {
 		LatestStateEpoch: s.latestStateEpoch,
 		SuccessCounter:   s.successCounter,
 		FailureCounter:   s.failureCounter,
-		Unhealthy:        s.unhealthy,
-		UnhealthReportAt: s.unhealthReportAt.Format(time.RFC3339),
 	}
 
 	hbErrors := s.latestHeartBeatErrs.Values()
@@ -131,21 +132,19 @@ func (s *Status) heartbeat(n Node) {
 // updateHealth reports health status to monitor.
 func (s *Status) updateHealth(monitor HealthMonitor) {
 	reason := s.checkHealth(monitor.HealthyEpoch())
+	unhealthy, unhealthReportAt := monitor.HealthStatus(s.nodeName)
 
-	if s.unhealthy {
+	if unhealthy {
 		if reason == nil {
 			// node become healthy after N success
 			if s.successCounter >= cfg.Monitor.Recover.SuccessCounter {
-				s.unhealthy = false
-				s.unhealthReportAt = time.Time{}
 				monitor.ReportHealthy(s.nodeName)
 			}
 		} else {
 			// remind long unhealthy every N minutes, even occasionally succeeded
-			remindTime := s.unhealthReportAt.Add(cfg.Monitor.Recover.RemindInterval)
+			remindTime := unhealthReportAt.Add(cfg.Monitor.Recover.RemindInterval)
 			if now := time.Now(); now.After(remindTime) {
 				monitor.ReportUnhealthy(s.nodeName, true, reason)
-				s.unhealthReportAt = now
 			}
 		}
 	} else {
@@ -153,8 +152,6 @@ func (s *Status) updateHealth(monitor HealthMonitor) {
 			monitor.ReportEpoch(s.nodeName, s.latestStateEpoch)
 		} else {
 			// node become unhealthy
-			s.unhealthy = true
-			s.unhealthReportAt = time.Now()
 			monitor.ReportUnhealthy(s.nodeName, false, reason)
 		}
 	}
