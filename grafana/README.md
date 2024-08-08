@@ -14,4 +14,5 @@ This folder contains all dashboard JSON models which can be imported into Grafan
 | Sync-RED            	| RED metrics for indexing sync             	|
 | Sync-Fullnode-Query 	| Full node query metrics for indexing sync 	|
 | Sync-Store-Ops      	| Store operation metrics for indexing sync 	|
-*`RED`: Three key metrics collected: `Rate`, `Error` and `Duration`.*
+| Virtual-Filter      	| Operation (eg., polling) metrics for filter 	|
+*`RED`: Three key metrics are collected: `Rate`, `Error` and `Duration`.*

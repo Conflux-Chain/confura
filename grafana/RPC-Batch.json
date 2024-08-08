@@ -1,40 +1,4 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_INFURA_MAINET",
-      "label": "infura_mainet",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "influxdb",
-      "pluginName": "InfluxDB"
-    }
-  ],
-  "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "8.2.6"
-    },
-    {
-      "type": "datasource",
-      "id": "influxdb",
-      "name": "InfluxDB",
-      "version": "1.0.0"
-    },
-    {
-      "type": "panel",
-      "id": "text",
-      "name": "Text",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "timeseries",
-      "name": "Time series",
-      "version": ""
-    }
-  ],
   "annotations": {
     "list": [
       {
@@ -44,25 +8,17 @@
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
-        "target": {
-          "limit": 100,
-          "matchAny": false,
-          "tags": [],
-          "type": "dashboard"
-        },
         "type": "dashboard"
       }
     ]
   },
   "description": "",
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": null,
-  "iteration": 1680765882807,
+  "id": 53,
+  "iteration": 1723105048485,
   "links": [],
-  "liveNow": false,
   "panels": [
     {
       "collapsed": false,
@@ -90,7 +46,7 @@
         "content": "This dashboard measures number of requests and request latency per batch.",
         "mode": "markdown"
       },
-      "pluginVersion": "8.2.6",
+      "pluginVersion": "8.0.3",
       "title": "README",
       "type": "text"
     },
@@ -109,7 +65,7 @@
       "type": "row"
     },
     {
-      "datasource": "${DS_INFURA_MAINET}",
+      "datasource": "${network}",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -312,7 +268,7 @@
       "type": "row"
     },
     {
-      "datasource": "${DS_INFURA_MAINET}",
+      "datasource": "${network}",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -503,7 +459,7 @@
       "type": "timeseries"
     }
   ],
-  "schemaVersion": 32,
+  "schemaVersion": 30,
   "style": "dark",
   "tags": [
     "batch",

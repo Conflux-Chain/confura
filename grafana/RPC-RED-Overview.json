@@ -1,46 +1,4 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_INFURA_MAINET",
-      "label": "infura_mainet",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "influxdb",
-      "pluginName": "InfluxDB"
-    }
-  ],
-  "__requires": [
-    {
-      "type": "panel",
-      "id": "gauge",
-      "name": "Gauge",
-      "version": ""
-    },
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "8.2.6"
-    },
-    {
-      "type": "datasource",
-      "id": "influxdb",
-      "name": "InfluxDB",
-      "version": "1.0.0"
-    },
-    {
-      "type": "panel",
-      "id": "text",
-      "name": "Text",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "timeseries",
-      "name": "Time series",
-      "version": ""
-    }
-  ],
   "annotations": {
     "list": [
       {
@@ -50,25 +8,17 @@
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
-        "target": {
-          "limit": 100,
-          "matchAny": false,
-          "tags": [],
-          "type": "dashboard"
-        },
         "type": "dashboard"
       }
     ]
   },
   "description": "",
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": null,
-  "iteration": 1680766060580,
+  "id": 49,
+  "iteration": 1723105313583,
   "links": [],
-  "liveNow": false,
   "panels": [
     {
       "collapsed": false,
@@ -96,7 +46,7 @@
         "content": "This dashboard follows the RED method (Rate of traffic, Errors, Duration/latency) to measure RPC from high level perspective.\n\n- The \"Network\" variable is the data source for the dashboard, and applies to the whole dashboard. \n- The \"QPS\" variable only applies to the rate breakdown, and the \"Latency\" variable only applies to the duration breakdown.\n\nFor more details, please refer to the drilldown dashboard.",
         "mode": "markdown"
       },
-      "pluginVersion": "8.2.6",
+      "pluginVersion": "8.0.3",
       "title": "README",
       "type": "text"
     },
@@ -115,7 +65,7 @@
       "type": "row"
     },
     {
-      "datasource": "${DS_INFURA_MAINET}",
+      "datasource": "${network}",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -627,7 +577,7 @@
       "id": 11,
       "panels": [
         {
-          "datasource": "${DS_INFURA_MAINET}",
+          "datasource": "${network}",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -715,7 +665,7 @@
           "type": "gauge"
         },
         {
-          "datasource": "${DS_INFURA_MAINET}",
+          "datasource": "${network}",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -803,7 +753,7 @@
           "type": "gauge"
         },
         {
-          "datasource": "${DS_INFURA_MAINET}",
+          "datasource": "${network}",
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -892,7 +842,7 @@
           "type": "gauge"
         },
         {
-          "datasource": "${DS_INFURA_MAINET}",
+          "datasource": "${network}",
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -1560,7 +1510,7 @@
       "id": 26,
       "panels": [
         {
-          "datasource": "${DS_INFURA_MAINET}",
+          "datasource": "${network}",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1989,7 +1939,7 @@
       "type": "row"
     }
   ],
-  "schemaVersion": 32,
+  "schemaVersion": 30,
   "style": "dark",
   "tags": [
     "RPC",
@@ -2104,12 +2054,12 @@
     ]
   },
   "time": {
-    "from": "now-12h",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "RPC RED Overview",
   "uid": "0ldg1yq7k",
-  "version": 19
+  "version": 18
 }
