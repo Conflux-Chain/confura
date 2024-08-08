@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,17 +27,21 @@ type Node interface {
 	Name() string
 	Url() string
 	Status() Status
-
 	LatestEpochNumber() (uint64, error)
+
+	Register(HealthMonitor)
+	Deregister(HealthMonitor)
 
 	Close()
 }
 
 type baseNode struct {
+	mu           sync.Mutex
 	name         string
 	url          string
 	cancel       context.CancelFunc
 	atomicStatus atomic.Value
+	monitors     []HealthMonitor
 }
 
 func newBaseNode(name, url string, cancel context.CancelFunc) *baseNode {
@@ -62,7 +67,7 @@ func (n *baseNode) String() string {
 }
 
 // monitor periodically heartbeats with node to monitor health status
-func (n *baseNode) monitor(ctx context.Context, node Node, hm HealthMonitor) {
+func (n *baseNode) monitor(ctx context.Context, node Node) {
 	ticker := time.NewTicker(cfg.Monitor.Interval)
 	defer ticker.Stop()
 
@@ -73,14 +78,57 @@ func (n *baseNode) monitor(ctx context.Context, node Node, hm HealthMonitor) {
 			return
 		case <-ticker.C:
 			status := n.atomicStatus.Load().(Status)
-			status.Update(node, hm)
+			status.Update(node)
+
+			monitors := n.snapshot()
+			for _, hm := range monitors {
+				status.Report(hm)
+			}
+
+			logrus.WithFields(logrus.Fields{
+				"numHealthMonitors": len(monitors),
+				"status":            status,
+			}).Debug("Node health status reported")
+
 			n.atomicStatus.Store(status)
 		}
 	}
 }
 
+// snapshot snapshots all health monitors.
+func (n *baseNode) snapshot() []HealthMonitor {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	res := make([]HealthMonitor, 0, len(n.monitors))
+	return append(res, n.monitors...)
+}
+
+// Register registers a health monitor to node.
+func (n *baseNode) Register(hm HealthMonitor) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.monitors = append(n.monitors, hm)
+}
+
+// Deregister deregisters a health monitor from node.
+func (n *baseNode) Deregister(hm HealthMonitor) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	monitors := []HealthMonitor{}
+	for _, m := range n.monitors {
+		if m != hm {
+			monitors = append(monitors, m)
+		}
+	}
+	n.monitors = monitors
+}
+
 func (n *baseNode) Close() {
 	n.cancel()
+
 	status := n.Status()
 	status.Close()
 }
@@ -93,7 +141,7 @@ type EthNode struct {
 
 // NewEthNode creates an instance of evm space node and start to monitor
 // node health in a separate goroutine until node closed.
-func NewEthNode(group Group, name, url string, hm HealthMonitor) (*EthNode, error) {
+func NewEthNode(group Group, name, url string) (*EthNode, error) {
 	eth, err := rpc.NewEthClient(url)
 	if err != nil {
 		return nil, err
@@ -107,7 +155,7 @@ func NewEthNode(group Group, name, url string, hm HealthMonitor) (*EthNode, erro
 
 	n.atomicStatus.Store(NewStatus(group, name))
 
-	go n.monitor(ctx, n, hm)
+	go n.monitor(ctx, n)
 
 	return n, nil
 }
@@ -135,7 +183,7 @@ type CfxNode struct {
 
 // NewCfxNode creates an instance of core space fullnode and start to monitor
 // node health in a separate goroutine until node closed.
-func NewCfxNode(group Group, name, url string, hm HealthMonitor) (*CfxNode, error) {
+func NewCfxNode(group Group, name, url string) (*CfxNode, error) {
 	cfx, err := rpc.NewCfxClient(url)
 	if err != nil {
 		return nil, err
@@ -149,7 +197,7 @@ func NewCfxNode(group Group, name, url string, hm HealthMonitor) (*CfxNode, erro
 
 	n.atomicStatus.Store(NewStatus(group, name))
 
-	go n.monitor(ctx, n, hm)
+	go n.monitor(ctx, n)
 
 	return n, nil
 }

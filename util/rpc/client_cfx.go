@@ -69,9 +69,15 @@ func NewCfxClient(url string, options ...ClientOption) (*sdk.Client, error) {
 	}
 
 	cfx, err := sdk.NewClient(url, *opt.ClientOption)
-	if err == nil && opt.hookMetrics {
-		HookMiddlewares(cfx.Provider(), url, "cfx")
+	if err != nil {
+		return cfx, err
 	}
 
-	return cfx, err
+	hookFlag := MiddlewareHookAll
+	if !opt.hookMetrics {
+		hookFlag ^= MiddlewareHookLogMetrics
+	}
+	HookMiddlewares(cfx.Provider(), url, "cfx", hookFlag)
+
+	return cfx, nil
 }

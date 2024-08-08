@@ -7,6 +7,12 @@ import (
 	"github.com/pkg/errors"
 )
 
+// refNode reusable nodes with reference count
+type refNode struct {
+	Node
+	refCnt int
+}
+
 // nodePool manages all full nodes by group
 type nodePool struct {
 	mu sync.Mutex
@@ -16,12 +22,16 @@ type nodePool struct {
 	// node cluster managers by group:
 	// group name => node cluster manager
 	managers map[Group]*Manager
+	// all managed nodes:
+	// node name => refNode
+	nodes map[string]refNode
 }
 
 func newNodePool(nf nodeFactory) *nodePool {
 	return &nodePool{
 		nf:       nf,
 		managers: make(map[Group]*Manager),
+		nodes:    make(map[string]refNode),
 	}
 }
 
@@ -40,23 +50,36 @@ func (p *nodePool) add(grp Group, urls ...string) error {
 	}
 
 	m := p.managers[grp]
-	nodes := make([]Node, 0, len(urls))
+	refNodes := make([]refNode, 0, len(urls))
 
 	for i := range urls {
 		nn := rpc.Url2NodeName(urls[i])
-		if _, ok := m.Get(nn); ok {
+		if _, ok := m.Get(nn); ok { // node already grouped?
 			continue
 		}
 
-		n, err := p.nf(grp, nn, urls[i], m)
+		if node, ok := p.nodes[nn]; ok { // node already exists?
+			refNodes = append(refNodes, node)
+			continue
+		}
+
+		n, err := p.nf(grp, nn, urls[i])
 		if err != nil {
 			return errors.WithMessagef(err, "failed to new node with url %v", urls[i])
 		}
 
-		nodes = append(nodes, n)
+		refNodes = append(refNodes, refNode{Node: n})
 	}
 
-	m.Add(nodes...)
+	for _, rn := range refNodes {
+		m.Add(rn)
+		rn.Register(m)
+
+		// reference the shared node
+		rn.refCnt++
+		p.nodes[rn.Name()] = rn
+	}
+
 	return nil
 }
 
@@ -71,12 +94,29 @@ func (p *nodePool) del(grp Group, urls ...string) {
 	}
 
 	for i := range urls {
-		m.Remove(rpc.Url2NodeName(urls[i]))
+		nn := rpc.Url2NodeName(urls[i])
+		if _, ok := m.Get(nn); !ok { // node not grouped?
+			continue
+		}
+
+		m.Remove(nn)
+
+		if rn, ok := p.nodes[nn]; ok {
+			rn.Deregister(m)
+
+			// unreference the shared node
+			if rn.refCnt > 1 {
+				rn.refCnt--
+				p.nodes[nn] = rn
+			} else {
+				rn.Close()
+				delete(p.nodes, nn)
+			}
+		}
 	}
 
 	if len(m.List()) == 0 {
 		// uninstall group manager if no node exists anymore
-		m.Close()
 		delete(p.managers, grp)
 	}
 }

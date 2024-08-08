@@ -32,7 +32,7 @@ type dummyNode struct {
 	*baseNode
 }
 
-func newDummyNode(group Group, name, url string, hm HealthMonitor) (*dummyNode, error) {
+func newDummyNode(group Group, name, url string) (*dummyNode, error) {
 	return &dummyNode{newBaseNode(name, url, nil)}, nil
 }
 
@@ -41,8 +41,10 @@ func (n *dummyNode) LatestEpochNumber() (uint64, error) {
 }
 
 func BenchmarkNodePoolRoute(b *testing.B) {
-	pool := newNodePool(func(group Group, name, url string, hm HealthMonitor) (Node, error) {
-		return newDummyNode(group, name, url, hm)
+	MustInit()
+
+	pool := newNodePool(func(group Group, name, url string) (Node, error) {
+		return newDummyNode(group, name, url)
 	})
 
 	var groups []Group
