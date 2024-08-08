@@ -114,7 +114,7 @@ func (r *Registry) genDefaultGroupAndKey(
 
 	stg, ok := r.strategies[DefaultStrategy]
 	if !ok { // no default strategy
-		logrus.WithField("resource", resource).Info("Default strategy not configured")
+		logrus.WithField("resource", resource).Debug("Default rate limit strategy not configured")
 		return
 	}
 
