@@ -41,10 +41,6 @@ func MustNewCfxClientFromViper(options ...ClientOption) *sdk.Client {
 	return MustNewCfxClient(cfxClientCfg.Http, options...)
 }
 
-func MustNewCfxWsClientFromViper(options ...ClientOption) *sdk.Client {
-	return MustNewCfxClient(cfxClientCfg.WS, options...)
-}
-
 func MustNewCfxClient(url string, options ...ClientOption) *sdk.Client {
 	cfx, err := NewCfxClient(url, options...)
 	if err != nil {

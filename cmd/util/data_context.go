@@ -75,7 +75,6 @@ type SyncContext struct {
 	StoreContext
 
 	SyncCfx *sdk.Client
-	SubCfx  *sdk.Client
 	SyncEth *web3go.Client
 }
 
@@ -84,7 +83,6 @@ func MustInitSyncContext(storeCtx StoreContext) SyncContext {
 
 	if storeCtx.CfxDB != nil || storeCtx.CfxCache != nil {
 		sc.SyncCfx = rpc.MustNewCfxClientFromViper(rpc.WithClientHookMetrics(true))
-		sc.SubCfx = rpc.MustNewCfxWsClientFromViper()
 	}
 
 	if storeCtx.EthDB != nil {
@@ -100,10 +98,6 @@ func (ctx *SyncContext) Close() {
 
 	if ctx.SyncCfx != nil {
 		ctx.SyncCfx.Close()
-	}
-
-	if ctx.SubCfx != nil {
-		ctx.SubCfx.Close()
 	}
 
 	if ctx.SyncEth != nil {

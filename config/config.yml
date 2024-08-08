@@ -48,8 +48,6 @@ ethrpc:
 
 # Core space SDK client configurations
 cfx:
-  # Fullnode websocket endpoint
-  ws: ws://test.confluxrpc.com/ws
   # Fullnode HTTP endpoint
   http: http://test.confluxrpc.com
   # Retry times if failure, if 0 never

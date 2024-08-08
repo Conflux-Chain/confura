@@ -19,7 +19,6 @@ type circuitBreakerConfig struct {
 }
 
 type clientConfig struct {
-	WS              string
 	Http            string
 	Retry           int
 	RetryInterval   time.Duration `default:"1s"`
