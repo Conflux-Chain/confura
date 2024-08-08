@@ -196,26 +196,26 @@ func (*VirtualFilterMetrics) Sessions(space string, filterType, node string) met
 
 func (*VirtualFilterMetrics) PollOnceQps(space, node string, err error) metrics.Timer {
 	if util.IsInterfaceValNil(err) {
-		return metricUtil.GetOrRegisterTimer("infura/virtualFilter/poll/%v/%v/once/success", space, node)
+		return metricUtil.GetOrRegisterTimer("infura/virtualFilter/%v/poll/%v/once/success", space, node)
 	}
 
-	return metricUtil.GetOrRegisterTimer("infura/virtualFilter/poll/%v/once/failure", node)
+	return metricUtil.GetOrRegisterTimer("infura/virtualFilter/%v/poll/%v/once/failure", space, node)
 }
 
 func (*VirtualFilterMetrics) PollOnceSize(space, node string) metrics.Histogram {
-	return metricUtil.GetOrRegisterHistogram("infura/virtualFilter/poll/%v/%v/once/size", space, node)
+	return metricUtil.GetOrRegisterHistogram("infura/virtualFilter/%v/poll/%v/once/size", space, node)
 }
 
 func (*VirtualFilterMetrics) PersistFilterChanges(space, node, store string) metricUtil.TimerUpdater {
-	return metricUtil.NewTimerUpdaterByName(fmt.Sprintf("infura/virtualFilter/persist/%v/%v/filterChanges/%v", space, node, store))
+	return metricUtil.NewTimerUpdaterByName(fmt.Sprintf("infura/virtualFilter/%v/persist/%v/filterChanges/%v", space, node, store))
 }
 
 func (*VirtualFilterMetrics) QueryFilterChanges(space, node, store string) metricUtil.TimerUpdater {
-	metricName := fmt.Sprintf("infura/virtualFilter/query/%v/%v/filterChanges/%v", space, node, store)
+	metricName := fmt.Sprintf("infura/virtualFilter/%v/query/%v/filterChanges/%v", space, node, store)
 	return metricUtil.NewTimerUpdaterByName(metricName)
 }
 
 func (*VirtualFilterMetrics) StoreQueryPercentage(space string, node, store string) metricUtil.Percentage {
-	metricName := fmt.Sprintf("infura/virtualFilter/percentage/query/%v/%v/filterChanges/%v", space, node, store)
+	metricName := fmt.Sprintf("infura/virtualFilter/%v/percentage/query/%v/filterChanges/%v", space, node, store)
 	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(metricName)
 }

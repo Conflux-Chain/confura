@@ -1,40 +1,4 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_INFURA_MAINET",
-      "label": "infura_mainet",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "influxdb",
-      "pluginName": "InfluxDB"
-    }
-  ],
-  "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "8.2.6"
-    },
-    {
-      "type": "datasource",
-      "id": "influxdb",
-      "name": "InfluxDB",
-      "version": "1.0.0"
-    },
-    {
-      "type": "panel",
-      "id": "text",
-      "name": "Text",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "timeseries",
-      "name": "Time series",
-      "version": ""
-    }
-  ],
   "annotations": {
     "list": [
       {
@@ -44,25 +8,17 @@
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
-        "target": {
-          "limit": 100,
-          "matchAny": false,
-          "tags": [],
-          "type": "dashboard"
-        },
         "type": "dashboard"
       }
     ]
   },
   "description": "",
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": null,
-  "iteration": 1680765987481,
+  "id": 55,
+  "iteration": 1723105273131,
   "links": [],
-  "liveNow": false,
   "panels": [
     {
       "collapsed": false,
@@ -90,7 +46,7 @@
         "content": "This dashboard measures the rpc input parameter behaviors such as:\n\n- input epoch/block type percent and input epoch/block gap to the latest mined epoch\n- percentage of behavior for retrieving detailed transaction while fetching block\n- log filter type percentage and log filter splitting behavior percentage\n\n\nThe variable filter rule:\n\n- The \"Network\" variable is the data source for the dashboard, and \"Space\" variable is the network space, both apply to the whole dashboard. \n- The \"inputMethod\" only applies to the input epoch/block type percent pannel, and \"Gap\" variable only applies to the input epoch/block gap pannel.",
         "mode": "markdown"
       },
-      "pluginVersion": "8.2.6",
+      "pluginVersion": "8.0.3",
       "title": "README",
       "type": "text"
     },
@@ -109,7 +65,7 @@
       "type": "row"
     },
     {
-      "datasource": "${DS_INFURA_MAINET}",
+      "datasource": "${network}",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -232,7 +188,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${DS_INFURA_MAINET}",
+      "datasource": "${network}",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -353,7 +309,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${DS_INFURA_MAINET}",
+      "datasource": "${network}",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -474,7 +430,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${DS_INFURA_MAINET}",
+      "datasource": "${network}",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -596,18 +552,139 @@
       "type": "timeseries"
     },
     {
+      "datasource": "${network}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
+      "id": 40,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "alias": "$m",
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "measurement": "/^$fullStateMetrics$/",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "value"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              }
+            ]
+          ],
+          "tags": []
+        }
+      ],
+      "title": "Full State Delegation Ratio",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "infura/rpc/percentage/(.*)/.+\\.gauge",
+            "renamePattern": "$1"
+          }
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
       "collapsed": true,
       "datasource": null,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 33
       },
       "id": 26,
       "panels": [
         {
-          "datasource": "${DS_INFURA_MAINET}",
+          "datasource": "${network}",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -842,7 +919,7 @@
           "type": "timeseries"
         },
         {
-          "datasource": "${DS_INFURA_MAINET}",
+          "datasource": "${network}",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -967,7 +1044,8 @@
       "type": "row"
     }
   ],
-  "schemaVersion": 32,
+  "refresh": "",
+  "schemaVersion": 30,
   "style": "dark",
   "tags": [
     "rpc",
@@ -979,8 +1057,8 @@
       {
         "current": {
           "selected": false,
-          "text": "infura_mainet",
-          "value": "infura_mainet"
+          "text": "infura_testnet",
+          "value": "infura_testnet"
         },
         "description": null,
         "error": null,
@@ -1030,8 +1108,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "cfx_call",
+          "value": "cfx_call"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1050,8 +1132,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1070,8 +1156,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "epoch",
+          "value": "epoch"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1090,8 +1180,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1110,8 +1204,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1130,8 +1228,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1150,8 +1252,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1170,8 +1276,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1190,8 +1300,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1210,8 +1324,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1230,8 +1348,12 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_INFURA_MAINET}",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
         "definition": "show measurements",
         "description": null,
         "error": null,
@@ -1293,6 +1415,30 @@
         "queryValue": "",
         "skipUrlSync": false,
         "type": "custom"
+      },
+      {
+        "allValue": null,
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "${network}",
+        "definition": "show measurements",
+        "description": null,
+        "error": null,
+        "hide": 2,
+        "includeAll": true,
+        "label": "",
+        "multi": true,
+        "name": "fullStateMetrics",
+        "options": [],
+        "query": "show measurements",
+        "refresh": 1,
+        "regex": "/^infura/rpc/percentage/${space}_.+/fullState.+gauge$/",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   },
@@ -1304,5 +1450,5 @@
   "timezone": "",
   "title": "RPC Input Breakdown",
   "uid": "TNMAKrq7k",
-  "version": 20
+  "version": 23
 }
