@@ -1,5 +1,3 @@
-version: '3.7'
-
 services:
   # node management
   node-management:
@@ -9,8 +7,15 @@ services:
     ports:
       - 22530:22530
     restart: unless-stopped
+    depends_on:
+      - influxdb
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - INFURA_LOG_LEVEL=debug
+      - INFURA_METRICS_ENABLED=true
+      - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
+      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
     container_name: confura-node-management
 
   ethnode-management:
@@ -19,8 +24,15 @@ services:
     ports:
       - 28530:28530
     restart: unless-stopped
+    depends_on:
+      - influxdb
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - INFURA_LOG_LEVEL=debug
+      - INFURA_METRICS_ENABLED=true
+      - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
+      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
     container_name: confura-ethnode-management
 
   # blockchain sync
@@ -30,13 +42,16 @@ services:
     restart: unless-stopped
     depends_on:
       - db
-      - redis
+      - influxdb
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - INFURA_LOG_LEVEL=debug
       - INFURA_STORE_MYSQL_ENABLED=true
       - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_cfx?parseTime=true
-      - INFURA_STORE_REDIS_ENABLED=true
-      - INFURA_STORE_REDIS_URL=redis://redis:6379/0
+      - INFURA_METRICS_ENABLED=true
+      - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
+      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
     container_name: confura-sync
 
   ethchain-sync:
@@ -45,27 +60,59 @@ services:
     restart: unless-stopped
     depends_on:
       - db
+      - influxdb
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - INFURA_LOG_LEVEL=debug
       - INFURA_ETHSTORE_MYSQL_ENABLED=true
       - INFURA_ETHSTORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_eth?parseTime=true
       - INFURA_SYNC_ETH_FROMBLOCK=36935000
+      - INFURA_METRICS_ENABLED=true
+      - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
+      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
     container_name: confura-ethsync
 
   # virtual filter
   virtual-filter:
     image: conflux/confura:latest
-    command: vf
+    command: vf --cfx
+    ports:
+      - "42537:42537"
+    restart: unless-stopped
+    depends_on:
+      - db
+      - influxdb
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - INFURA_STORE_MYSQL_ENABLED=true
+      - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_cfx?parseTime=true
+      - INFURA_METRICS_ENABLED=true
+      - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
+      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+    container_name: confura-virtual-filter
+
+  ethvirtual-filter:
+    image: conflux/confura:latest
+    command: vf --eth
     ports:
       - "48545:48545"
     restart: unless-stopped
     depends_on:
       - db
+      - influxdb
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - INFURA_LOG_LEVEL=debug
       - INFURA_ETHSTORE_MYSQL_ENABLED=true
       - INFURA_ETHSTORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_eth?parseTime=true
-    container_name: confura-virtual-filter
+      - INFURA_METRICS_ENABLED=true
+      - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
+      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+    container_name: confura-ethvirtual-filter
 
   # rpc proxy
   rpc-proxy:
@@ -76,15 +123,21 @@ services:
     restart: unless-stopped
     depends_on:
       - db
-      - redis
+      - influxdb
       - node-management
+      - virtual-filter
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - INFURA_LOG_LEVEL=debug
       - INFURA_STORE_MYSQL_ENABLED=true
       - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_cfx?parseTime=true
-      - INFURA_STORE_REDIS_ENABLED=true
-      - INFURA_STORE_REDIS_URL=redis://redis:6379/0
       - INFURA_NODE_ROUTER_NODERPCURL=http://node-management:22530
+      - INFURA_VIRTUALFILTERS_CLIENT_ENABLED=true
+      - INFURA_VIRTUALFILTERS_CLIENT_SERVICERPCURL=http://virtual-filter:42537
+      - INFURA_METRICS_ENABLED=true
+      - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
+      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
     container_name: confura-rpc
 
   ethrpc-proxy:
@@ -95,63 +148,65 @@ services:
     restart: unless-stopped
     depends_on:
       - db
+      - influxdb
       - ethnode-management
-      - virtual-filter
+      - ethvirtual-filter
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - INFURA_LOG_LEVEL=debug
       - INFURA_STORE_MYSQL_ENABLED=true
       - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_eth?parseTime=true
       - INFURA_NODE_ROUTER_ETHNODERPCURL=http://ethnode-management:28530
-      - INFURA_VIRTUALFILTERS_SERVICERPCURL=http://virtual-filter:48545
+      - INFURA_ETHVIRTUALFILTERS_CLIENT_ENABLED=true
+      - INFURA_ETHVIRTUALFILTERS_CLIENT_SERVICERPCURL=http://ethvirtual-filter:48545
+      - INFURA_METRICS_ENABLED=true
+      - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
+      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
     container_name: confura-ethrpc
-
-  # data validator
-  data-validator:
-    image: conflux/confura:latest
-    command: test cfx -f http://test.confluxrpc.com -u http://rpc-proxy:22537
-    restart: on-failure:3
-    volumes:
-      - validator-data:/root
-    depends_on:
-      - rpc-proxy
-      - chain-sync
-    environment:
-      - INFURA_LOG_LEVEL=debug
-    container_name: confura-data-validator
-
-  ethdata-validator:
-    image: conflux/confura:latest
-    command: test eth -f http://evmtestnet.confluxrpc.com -u http://ethrpc-proxy:28545 -b 36935000
-    restart: on-failure:3
-    volumes:
-      - validator-data:/root
-    depends_on:
-      - ethrpc-proxy
-      - ethchain-sync
-    environment:
-      - INFURA_LOG_LEVEL=debug
-    container_name: confura-ethdata-validator
 
   # middlewares
   db:
-    image: mysql:5.7
+    image: mysql:8
     ports:
       - "3306"
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     environment:
       - MYSQL_ROOT_PASSWORD=root
     volumes:
       - db-data:/var/lib/mysql
     container_name: confura-database
 
-  redis:
-    image: redis:6.2
+  influxdb:
+    image: influxdb:1.8-alpine
+    platform: linux/amd64
     ports:
-      - "6379"
+      - "8086"
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - INFLUXDB_DB=infura_testnet
     volumes:
-      - redis-data:/data
-    container_name: confura-redis
+      - influxdb-data:/var/lib/influxdb
+    container_name: confura-influxdb
+
+  grafana:
+    image: grafana/grafana:8.0.3
+    platform: linux/amd64
+    ports:
+      - "3000"
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    container_name: confura-grafana
 
 # others
 networks:
@@ -160,5 +215,5 @@ networks:
 
 volumes:
   db-data: {}
-  redis-data: {}
-  validator-data: {}
+  influxdb-data: {}
+  grafana-data: {}
