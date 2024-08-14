@@ -105,7 +105,7 @@ After setting up InfluxDB, you can access a Grafana dashboard to visualize the c
 
 To set up Grafana, follow these steps:
 
-1.	Configure InfluxDB as a Data Source:
+1. Configure InfluxDB as a Data Source:
 - Open the Grafana web interface.
 - Go to the data sources section and add InfluxDB as a data source.
 - Name the data source `infura_testnet` or `infura_mainet`, depending on your environment.
