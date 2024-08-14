@@ -272,6 +272,12 @@ func (api *ethAPI) Call(
 ) (hexutil.Bytes, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_call", w3c.Eth)
+
+	// TODO: remove this after full node EVM compatibility upgrade with support of `input` field
+	if request.Data == nil {
+		request.Data = request.Input
+	}
+
 	return api.stateHandler.Call(ctx, w3c, request, blockNumOrHash)
 }
 
@@ -284,6 +290,12 @@ func (api *ethAPI) EstimateGas(
 ) (*hexutil.Big, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_estimateGas", w3c.Eth)
+
+	// TODO: remove this after full node EVM compatibility upgrade with support of `input` field
+	if request.Data == nil {
+		request.Data = request.Input
+	}
+
 	gas, err := api.stateHandler.EstimateGas(ctx, w3c, request, blockNumOrHash)
 	return (*hexutil.Big)(gas), err
 }
