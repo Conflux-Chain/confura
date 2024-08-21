@@ -39,7 +39,7 @@ func QpsRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 func errQpsRateLimited(err error) error {
 	return &rpc.JsonError{
 		Code:    ratelimitErrorCode,
-		Message: errors.WithMessage(err, "allowed qps exceeded").Error(),
+		Message: errors.WithMessage(err, "request rate exceeded").Error(),
 	}
 }
 
@@ -62,6 +62,6 @@ func DailyMaxReqRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 func errDailyMaxReqRateLimited(err error) error {
 	return &rpc.JsonError{
 		Code:    ratelimitErrorCode,
-		Message: errors.WithMessage(err, "daily request limit exceeded").Error(),
+		Message: errors.WithMessage(err, "daily request count exceeded").Error(),
 	}
 }
