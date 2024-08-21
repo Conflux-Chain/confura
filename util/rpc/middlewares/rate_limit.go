@@ -10,6 +10,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	ratelimitErrorCode = -32005
+)
+
 func QpsRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
 		registry, ok := ctx.Value(handlers.CtxKeyRateRegistry).(*rate.Registry)
@@ -33,7 +37,10 @@ func QpsRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 }
 
 func errQpsRateLimited(err error) error {
-	return errors.WithMessage(err, "allowed qps exceeded")
+	return &rpc.JsonError{
+		Code:    ratelimitErrorCode,
+		Message: errors.WithMessage(err, "allowed qps exceeded").Error(),
+	}
 }
 
 func DailyMaxReqRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
@@ -53,5 +60,8 @@ func DailyMaxReqRateLimit(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 }
 
 func errDailyMaxReqRateLimited(err error) error {
-	return errors.WithMessage(err, "daily request limit exceeded")
+	return &rpc.JsonError{
+		Code:    ratelimitErrorCode,
+		Message: errors.WithMessage(err, "daily request limit exceeded").Error(),
+	}
 }
