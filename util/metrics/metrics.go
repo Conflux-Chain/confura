@@ -76,12 +76,20 @@ func (*RpcMetrics) InputEpochGap(method string) metrics.Histogram {
 	return metricUtil.GetOrRegisterHistogram("infura/rpc/input/epoch/gap/%v", method)
 }
 
+func (*RpcMetrics) InputEpochRange(method string) metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/rpc/input/epoch/range/%v", method)
+}
+
 func (*RpcMetrics) InputBlock(method, block string) metricUtil.Percentage {
 	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/input/block/%v/%v", method, block)
 }
 
 func (*RpcMetrics) InputBlockGap(method string) metrics.Histogram {
 	return metricUtil.GetOrRegisterHistogram("infura/rpc/input/block/gap/%v", method)
+}
+
+func (*RpcMetrics) InputBlockRange(method string) metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/rpc/input/block/range/%v", method)
 }
 
 // PRC metrics - percentages

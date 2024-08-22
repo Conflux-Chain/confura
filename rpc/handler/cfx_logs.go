@@ -85,9 +85,17 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		return nil, false, err
 	}
 
-	metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/alldatabase").Mark(fnFilter == nil)
-	metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/allfullnode").Mark(len(dbFilters) == 0)
-	metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(len(dbFilters) > 0 && fnFilter != nil)
+	if len(delegatedRpcMethod) > 0 {
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/alldatabase").Mark(fnFilter == nil)
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/allfullnode").Mark(len(dbFilters) == 0)
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(len(dbFilters) > 0 && fnFilter != nil)
+
+		if blkRange, valid := calculateCfxBlockRange(fnFilter); valid {
+			metrics.Registry.RPC.InputBlockRange(delegatedRpcMethod).Update(blkRange)
+		} else if epochRange, valid := calculateEpochRange(fnFilter); valid {
+			metrics.Registry.RPC.InputEpochRange(delegatedRpcMethod).Update(epochRange)
+		}
+	}
 
 	var logs []types.Log
 
@@ -366,22 +374,16 @@ func (handler *CfxLogsApiHandler) splitLogFilterByEpochRange(
 //
 // Note this function assumes the log filter is valid and normalized.
 func (handler *CfxLogsApiHandler) checkFullnodeLogFilter(filter *types.LogFilter) error {
-	// epoch range bound checking
-	if filter.FromEpoch != nil && filter.ToEpoch != nil {
-		ef, _ := filter.FromEpoch.ToInt()
-		et, _ := filter.ToEpoch.ToInt()
-		epochFrom, epochTo := ef.Uint64(), et.Uint64()
-
-		if epochTo-epochFrom+1 > store.MaxLogEpochRange {
+	// Epoch range bound checking
+	if epochRange, valid := calculateEpochRange(filter); valid {
+		if uint64(epochRange) > store.MaxLogEpochRange {
 			return store.ErrGetLogsQuerySetTooLarge
 		}
 	}
 
-	// block range bound checking
-	if filter.FromBlock != nil && filter.ToBlock != nil {
-		fromBlock := filter.FromBlock.ToInt().Uint64()
-		toBlock := filter.ToBlock.ToInt().Uint64()
-		if toBlock-fromBlock+1 > store.MaxLogBlockRange {
+	// Block range bound checking
+	if blockRange, valid := calculateCfxBlockRange(filter); valid {
+		if uint64(blockRange) > store.MaxLogBlockRange {
 			return store.ErrGetLogsQuerySetTooLarge
 		}
 	}
@@ -398,4 +400,30 @@ func checkTimeout(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// calculateCfxBlockRange calculates the block range from the log filter.
+func calculateCfxBlockRange(filter *types.LogFilter) (int64, bool) {
+	if filter == nil || filter.FromBlock == nil || filter.ToBlock == nil {
+		return 0, false
+	}
+
+	bf := filter.FromBlock.ToInt()
+	bt := filter.ToBlock.ToInt()
+	blockFrom, blockTo := bf.Int64(), bt.Int64()
+
+	return blockTo - blockFrom + 1, true
+}
+
+// calculateEpochRange calculates the epoch range from the log filter.
+func calculateEpochRange(filter *types.LogFilter) (int64, bool) {
+	if filter == nil || filter.FromEpoch == nil || filter.ToEpoch == nil {
+		return 0, false
+	}
+
+	ef, _ := filter.FromEpoch.ToInt()
+	et, _ := filter.ToEpoch.ToInt()
+	epochFrom, epochTo := ef.Int64(), et.Int64()
+
+	return epochTo - epochFrom + 1, true
 }

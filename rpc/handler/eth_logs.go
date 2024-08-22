@@ -81,6 +81,10 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/alldatabase").Mark(fnFilter == nil)
 		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/allfullnode").Mark(dbFilter == nil)
 		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
+
+		if blkRange, valid := calculateEthBlockRange(fnFilter); valid {
+			metrics.Registry.RPC.InputBlockRange(delegatedRpcMethod).Update(blkRange)
+		}
 	}
 
 	var logs []types.Log
@@ -239,14 +243,20 @@ func (handler *EthLogsApiHandler) GetNetworkId(eth *client.RpcEthClient) (uint32
 //
 // Note this function assumes the log filter is valid and normalized.
 func (handler *EthLogsApiHandler) checkFnEthLogFilter(filter *types.FilterQuery) error {
-	if filter.FromBlock == nil || filter.ToBlock == nil {
-		return nil
-	}
-
-	gap := *filter.ToBlock - *filter.FromBlock + 1
-	if uint64(gap) > store.MaxLogEpochRange {
+	blkRange, valid := calculateEthBlockRange(filter)
+	if valid && uint64(blkRange) > store.MaxLogEpochRange {
 		return store.ErrGetLogsQuerySetTooLarge
 	}
 
 	return nil
+}
+
+// calculateEthBlockRange calculates the block range of the log filter and returns the gap and a boolean indicating success.
+func calculateEthBlockRange(filter *types.FilterQuery) (int64, bool) {
+	if filter == nil || filter.FromBlock == nil || filter.ToBlock == nil {
+		return 0, false
+	}
+
+	blkRange := *filter.ToBlock - *filter.FromBlock + 1
+	return int64(blkRange), true
 }
