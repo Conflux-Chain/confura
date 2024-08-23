@@ -376,14 +376,14 @@ func (handler *CfxLogsApiHandler) splitLogFilterByEpochRange(
 func (handler *CfxLogsApiHandler) checkFullnodeLogFilter(filter *types.LogFilter) error {
 	// Epoch range bound checking
 	if epochRange, valid := calculateEpochRange(filter); valid {
-		if uint64(epochRange) > store.MaxLogEpochRange {
+		if epochRange > int64(store.MaxLogEpochRange) {
 			return store.ErrGetLogsQuerySetTooLarge
 		}
 	}
 
 	// Block range bound checking
 	if blockRange, valid := calculateCfxBlockRange(filter); valid {
-		if uint64(blockRange) > store.MaxLogBlockRange {
+		if blockRange > int64(store.MaxLogBlockRange) {
 			return store.ErrGetLogsQuerySetTooLarge
 		}
 	}

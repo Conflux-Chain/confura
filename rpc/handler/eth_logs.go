@@ -244,7 +244,7 @@ func (handler *EthLogsApiHandler) GetNetworkId(eth *client.RpcEthClient) (uint32
 // Note this function assumes the log filter is valid and normalized.
 func (handler *EthLogsApiHandler) checkFnEthLogFilter(filter *types.FilterQuery) error {
 	blkRange, valid := calculateEthBlockRange(filter)
-	if valid && uint64(blkRange) > store.MaxLogEpochRange {
+	if valid && blkRange > int64(store.MaxLogEpochRange) {
 		return store.ErrGetLogsQuerySetTooLarge
 	}
 
