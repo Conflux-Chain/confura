@@ -84,6 +84,12 @@ func (*RpcMetrics) InputBlockGap(method string) metrics.Histogram {
 	return metricUtil.GetOrRegisterHistogram("infura/rpc/input/block/gap/%v", method)
 }
 
+// RPC metrics - handler
+
+func (*RpcMetrics) LogFilterSplit(method, name string) metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/rpc/handler/%v/filter/split/%v", method, name)
+}
+
 // PRC metrics - percentages
 
 func (*RpcMetrics) Percentage(method, name string) metricUtil.Percentage {
