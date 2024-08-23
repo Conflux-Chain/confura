@@ -91,9 +91,9 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(len(dbFilters) > 0 && fnFilter != nil)
 
 		if blkRange, valid := calculateCfxBlockRange(fnFilter); valid {
-			metrics.Registry.RPC.InputBlockRange(delegatedRpcMethod).Update(blkRange)
+			metrics.Registry.RPC.LogFilterSplit(delegatedRpcMethod, "fullnode/blockRange").Update(blkRange)
 		} else if epochRange, valid := calculateEpochRange(fnFilter); valid {
-			metrics.Registry.RPC.InputEpochRange(delegatedRpcMethod).Update(epochRange)
+			metrics.Registry.RPC.LogFilterSplit(delegatedRpcMethod, "fullnode/epochRange").Update(epochRange)
 		}
 	}
 

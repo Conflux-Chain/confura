@@ -83,7 +83,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
 
 		if blkRange, valid := calculateEthBlockRange(fnFilter); valid {
-			metrics.Registry.RPC.InputBlockRange(delegatedRpcMethod).Update(blkRange)
+			metrics.Registry.RPC.LogFilterSplit(delegatedRpcMethod, "fullnode/blockRange").Update(blkRange)
 		}
 	}
 
