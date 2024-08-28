@@ -3,7 +3,7 @@ module github.com/Conflux-Chain/confura
 go 1.22
 
 require (
-	github.com/Conflux-Chain/go-conflux-sdk v1.5.10-0.20240712034956-87f8e0245ad4
+	github.com/Conflux-Chain/go-conflux-sdk v1.5.10
 	github.com/Conflux-Chain/go-conflux-util v0.2.2-0.20240718082304-6c749d77bd5a
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20240718085234-2c8c8f7586bf
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
