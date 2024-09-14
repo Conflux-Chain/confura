@@ -11,13 +11,31 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 )
 
 var (
+	// Maximum number of bytes for the response body of getLogs requests
+	maxGetLogsResponseBytes     uint64
+	errResponseBodySizeTooLarge error
+
 	errEventLogsTooStale = errors.New("event logs are too stale (already pruned)")
 )
+
+func Init() {
+	var constraint struct {
+		MaxGetLogsResponseBytes uint64 `default:"10485760"` // default 10MB
+	}
+	viper.MustUnmarshalKey("constraints.rpc", &constraint)
+
+	maxGetLogsResponseBytes = constraint.MaxGetLogsResponseBytes
+	errResponseBodySizeTooLarge = fmt.Errorf(
+		"result body size is too large with more than %d bytes, please narrow down your filter condition",
+		constraint.MaxGetLogsResponseBytes,
+	)
+}
 
 // CfxLogsApiHandler RPC handler to get core space event logs from store or fullnode.
 type CfxLogsApiHandler struct {
@@ -98,6 +116,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	}
 
 	var logs []types.Log
+	var bodySizeAccumulator responseBodySizeAccumulator
 
 	// query data from database
 	for i := range dbFilters {
@@ -110,6 +129,10 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		// succeeded to get logs from database
 		if err == nil {
 			for _, v := range dbLogs {
+				if err := bodySizeAccumulator.Add(len(v.Extra)); err != nil {
+					return nil, false, err
+				}
+
 				log, _ := v.ToCfxLog()
 				logs = append(logs, *log)
 			}
@@ -144,6 +167,11 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		for i := range fnLogs {
+			if err := bodySizeAccumulator.Add(len(fnLogs[i].Data)); err != nil {
+				return nil, false, err
+			}
+		}
 		logs = append(logs, fnLogs...)
 	}
 
@@ -164,6 +192,11 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		for i := range fnLogs {
+			if err := bodySizeAccumulator.Add(len(fnLogs[i].Data)); err != nil {
+				return nil, false, err
+			}
+		}
 		logs = append(logs, fnLogs...)
 	}
 
@@ -426,4 +459,22 @@ func calculateEpochRange(filter *types.LogFilter) (int64, bool) {
 	epochFrom, epochTo := ef.Int64(), et.Int64()
 
 	return epochTo - epochFrom + 1, true
+}
+
+// responseBodySizeAccumulator is a helper to check if the result body size exceeds the limit.
+type responseBodySizeAccumulator struct {
+	accumulator uint64
+}
+
+// Add adds the given size to the accumulator and checks if the result body size exceeds the limit.
+func (rb *responseBodySizeAccumulator) Add(size int) error {
+	// Add the new size to the accumulator.
+	rb.accumulator += uint64(size)
+
+	// If the accumulator exceeds the limit, return an error.
+	if rb.accumulator > maxGetLogsResponseBytes {
+		return errResponseBodySizeTooLarge
+	}
+
+	return nil
 }

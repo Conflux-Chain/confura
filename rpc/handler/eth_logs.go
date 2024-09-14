@@ -88,6 +88,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	}
 
 	var logs []types.Log
+	var bodySizeAccumulator responseBodySizeAccumulator
 
 	// query data from database
 	if dbFilter != nil {
@@ -98,6 +99,10 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for _, v := range dbLogs {
+			if err := bodySizeAccumulator.Add(len(v.Extra)); err != nil {
+				return nil, false, err
+			}
+
 			cfxLog, ext := v.ToCfxLog()
 			logs = append(logs, *ethbridge.ConvertLog(cfxLog, ext))
 		}
@@ -120,6 +125,11 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		for i := range fnLogs {
+			if err := bodySizeAccumulator.Add(len(fnLogs[i].Data)); err != nil {
+				return nil, false, err
+			}
+		}
 		logs = append(logs, fnLogs...)
 	}
 

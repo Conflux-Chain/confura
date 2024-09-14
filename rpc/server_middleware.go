@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/confura/util/rpc/middlewares"
@@ -19,6 +20,9 @@ const (
 )
 
 func MustInit() {
+	// init handler
+	handler.Init()
+
 	// init metrics
 	initMetrics()
 
