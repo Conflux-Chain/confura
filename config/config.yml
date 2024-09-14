@@ -424,6 +424,10 @@ node:
 #     maxSplitEpochRange: 1000
 #     # Maximum block range for the log filter split to the full node
 #     maxSplitBlockRange: 1000
+#   # RPC handler
+#   rpc:
+#     # Maximum number of bytes for the response body of getLogs requests
+#     maxGetLogsResponseBytes: 10 * 1024 * 1024
 
 # # Go performance profiling
 # pprof:
