@@ -64,7 +64,7 @@ func (l *KeyLoader) Load(key string) (*KeyInfo, bool) {
 }
 
 func (l *KeyLoader) cacheLoad(key string) (*KeyInfo, bool) {
-	cv, expired, found := l.keyCache.GetNoExp(key)
+	cv, expired, found := l.keyCache.GetWithoutExp(key)
 	if found && !expired { // found in cache
 		return cv.(*KeyInfo), true
 	}
@@ -72,7 +72,7 @@ func (l *KeyLoader) cacheLoad(key string) (*KeyInfo, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	cv, expired, found = l.keyCache.GetNoExp(key)
+	cv, expired, found = l.keyCache.GetWithoutExp(key)
 	if found && !expired { // double check
 		return cv.(*KeyInfo), true
 	}
@@ -94,7 +94,7 @@ func (l *KeyLoader) populateCache(key string) (*KeyInfo, bool) {
 
 		// for db error, we cache nil for the key by which no expiry cache value existed
 		// so that db pressure can be mitigrated by reducing too many subsequential queries.
-		if _, _, found := l.keyCache.GetNoExp(key); !found {
+		if _, _, found := l.keyCache.GetWithoutExp(key); !found {
 			l.keyCache.Add(key, (*KeyInfo)(nil))
 		}
 

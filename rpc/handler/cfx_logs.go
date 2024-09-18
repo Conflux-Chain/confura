@@ -24,16 +24,16 @@ var (
 	errEventLogsTooStale = errors.New("event logs are too stale (already pruned)")
 )
 
-func Init() {
-	var constraint struct {
+func MustInitFromViper() {
+	var resrcLimit struct {
 		MaxGetLogsResponseBytes uint64 `default:"10485760"` // default 10MB
 	}
-	viper.MustUnmarshalKey("constraints.rpc", &constraint)
+	viper.MustUnmarshalKey("requestControl.resourceLimits", &resrcLimit)
 
-	maxGetLogsResponseBytes = constraint.MaxGetLogsResponseBytes
+	maxGetLogsResponseBytes = resrcLimit.MaxGetLogsResponseBytes
 	errResponseBodySizeTooLarge = fmt.Errorf(
 		"result body size is too large with more than %d bytes, please narrow down your filter condition",
-		constraint.MaxGetLogsResponseBytes,
+		resrcLimit.MaxGetLogsResponseBytes,
 	)
 }
 

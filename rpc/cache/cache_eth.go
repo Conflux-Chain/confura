@@ -1,16 +1,49 @@
 package cache
 
 import (
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"math/big"
 	"time"
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/web3go"
+	"github.com/openweb3/web3go/types"
+	"github.com/sirupsen/logrus"
 )
 
-var EthDefault = NewEth()
+var (
+	EthDefault *EthCache = newEthCache(newEthCacheConfig())
+)
+
+type EthCacheConfig struct {
+	NetVersionExpiration    time.Duration `default:"1m"`
+	ClientVersionExpiration time.Duration `default:"1m"`
+	ChainIdExpiration       time.Duration `default:"8760h"`
+	BlockNumberExpiration   time.Duration `default:"1s"`
+	PriceExpiration         time.Duration `default:"3s"`
+	CallCacheExpiration     time.Duration `default:"1s"`
+	CallCacheSize           int           `default:"128"`
+}
+
+// newEthCacheConfig returns a EthCacheConfig with default values.
+func newEthCacheConfig() EthCacheConfig {
+	var cfg EthCacheConfig
+	defaults.SetDefaults(&cfg)
+	return cfg
+}
+
+func MustInitFromViper() {
+	config := newEthCacheConfig()
+	viper.MustUnmarshalKey("requestControl.ethCache", &config)
+
+	EthDefault = newEthCache(config)
+}
 
 // EthCache memory cache for some evm space RPC methods
 type EthCache struct {
@@ -19,15 +52,17 @@ type EthCache struct {
 	chainIdCache       *expiryCache
 	priceCache         *expiryCache
 	blockNumberCache   *nodeExpiryCaches
+	callCache          *keyExpiryLruCaches
 }
 
-func NewEth() *EthCache {
+func newEthCache(cfg EthCacheConfig) *EthCache {
 	return &EthCache{
-		netVersionCache:    newExpiryCache(time.Minute),
-		clientVersionCache: newExpiryCache(time.Minute),
-		chainIdCache:       newExpiryCache(time.Hour * 24 * 365 * 100),
-		priceCache:         newExpiryCache(3 * time.Second),
-		blockNumberCache:   newNodeExpiryCaches(time.Second),
+		netVersionCache:    newExpiryCache(cfg.NetVersionExpiration),
+		clientVersionCache: newExpiryCache(cfg.ClientVersionExpiration),
+		chainIdCache:       newExpiryCache(cfg.ChainIdExpiration),
+		priceCache:         newExpiryCache(cfg.PriceExpiration),
+		blockNumberCache:   newNodeExpiryCaches(cfg.BlockNumberExpiration),
+		callCache:          newKeyExpiryLruCaches(cfg.CallCacheExpiration, cfg.CallCacheSize),
 	}
 }
 
@@ -91,4 +126,51 @@ func (cache *EthCache) GetBlockNumber(client *node.Web3goClient) (*hexutil.Big, 
 	}
 
 	return (*hexutil.Big)(val.(*big.Int)), nil
+}
+
+func (cache *EthCache) Call(client *node.Web3goClient, callRequest types.CallRequest, blockNum *types.BlockNumberOrHash) ([]byte, error) {
+	nodeName := rpc.Url2NodeName(client.URL)
+
+	cacheKey, err := generateCallCacheKey(nodeName, callRequest, blockNum)
+	if err != nil {
+		// This should rarely happen, but if it does, we don't want to fail the entire request due to cache error.
+		// The error is logged and the request is forwarded to the node directly.
+		logrus.WithFields(logrus.Fields{
+			"nodeName": nodeName,
+			"callReq":  callRequest,
+			"blockNum": blockNum,
+		}).WithError(err).Error("Failed to generate cache key for `eth_call`")
+		return client.Eth.Call(callRequest, blockNum)
+	}
+
+	val, err := cache.callCache.getOrUpdate(cacheKey, func() (interface{}, error) {
+		return client.Eth.Call(callRequest, blockNum)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return val.([]byte), nil
+}
+
+func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockNum *types.BlockNumberOrHash) (string, error) {
+	// Create a map of parameters to be serialized
+	params := map[string]interface{}{
+		"nodeName":    nodeName,
+		"callRequest": callRequest,
+		"blockNum":    blockNum,
+	}
+
+	// Serialize the parameters to JSON
+	jsonBytes, err := json.Marshal(params)
+	if err != nil {
+		return "", err
+	}
+
+	// Generate MD5 hash
+	hash := md5.New()
+	hash.Write(jsonBytes)
+
+	// Convert hash to a hexadecimal string
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
