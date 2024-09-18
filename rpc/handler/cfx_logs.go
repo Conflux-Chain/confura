@@ -24,7 +24,7 @@ var (
 	errEventLogsTooStale = errors.New("event logs are too stale (already pruned)")
 )
 
-func Init() {
+func MustInitFromViper() {
 	var resrcLimit struct {
 		MaxGetLogsResponseBytes uint64 `default:"10485760"` // default 10MB
 	}

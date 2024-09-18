@@ -22,10 +22,10 @@ const (
 
 func MustInit() {
 	// init cache
-	cache.Init()
+	cache.MustInitFromViper()
 
 	// init handler
-	handler.Init()
+	handler.MustInitFromViper()
 
 	// init metrics
 	initMetrics()

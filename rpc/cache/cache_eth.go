@@ -38,7 +38,7 @@ func newEthCacheConfig() EthCacheConfig {
 	return cfg
 }
 
-func Init() {
+func MustInitFromViper() {
 	config := newEthCacheConfig()
 	viper.MustUnmarshalKey("requestControl.ethCache", &config)
 
