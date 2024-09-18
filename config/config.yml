@@ -410,24 +410,41 @@ node:
 #     # Exposed RPC endpoint of virtual filter service for client request
 #     serviceRpcUrl: http://127.0.0.1:42537
 
-# # Global constraints
-# constraints:
-#   # Log filter constraint
-#   logfilter:
-#     # Maximum count of block hashes
+# # Request control Configuration
+# requestControl:
+#   # Log filter limits for handling 'getLogs' requests
+#   logFilter:
+#   # Maximum number of block hashes allowed in a filter
 #     maxBlockHashCount: 32
-#     # Maximum count of address
+#     # Maximum number of addresses allowed in a filter
 #     maxAddressCount: 32
-#     # Maximum count of topics
+#     # Maximum number of topics allowed in a filter
 #     maxTopicCount: 32
-#     # Maximum epoch range for the log filter split to the full node
+#     # Maximum epoch range to split log filters for full nodes
 #     maxSplitEpochRange: 1000
-#     # Maximum block range for the log filter split to the full node
+#     # Maximum block range to split log filters for full nodes
 #     maxSplitBlockRange: 1000
-#   # RPC handler
-#   rpc:
-#     # Maximum number of bytes for the response body of getLogs requests
-#     maxGetLogsResponseBytes: 10 * 1024 * 1024
+#
+#   # Resource usage constraints
+#   resourceLimits:
+#     # Maximum response size for 'getLogs' requests (default 10MB)
+#     maxGetLogsResponseSize: 10485760
+#
+#   # ETH Cache settings
+#   ethCache:
+#     # Cache expiration time duration for 'net_version' requests
+#     netVersionExpiration: 1m
+#     # Cache expiration time duration for 'eth_clientVersion' requests
+#     clientVersionExpiration: 1m
+#     # Cache expiration time duration for 'eth_chainId' requests
+#     chainIdExpiration: 8760h
+#     # Cache expiration time duration for 'eth_blockNumber'equests
+#     blockNumberExpiration: 1s
+#     # Cache expiration time duration for 'eth_gasPrice'
+#     priceExpiration: 3s
+#     # LRU Cache size and expiration time duration for 'eth_call'
+#     callCacheExpiration: 1s
+#     callCacheSize: 128
 
 # # Go performance profiling
 # pprof:

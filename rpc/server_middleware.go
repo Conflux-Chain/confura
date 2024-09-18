@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Conflux-Chain/confura/node"
+	"github.com/Conflux-Chain/confura/rpc/cache"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
@@ -20,6 +21,9 @@ const (
 )
 
 func MustInit() {
+	// init cache
+	cache.Init()
+
 	// init handler
 	handler.Init()
 

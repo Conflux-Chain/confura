@@ -53,7 +53,7 @@ func initLogFilter() {
 		MaxSplitBlockRange uint64 `default:"1000"`
 	}
 
-	viper.MustUnmarshalKey("constraints.logfilter", &lfc)
+	viper.MustUnmarshalKey("requestControl.logfilter", &lfc)
 
 	MaxLogBlockHashesSize = lfc.MaxBlockHashCount
 	MaxLogFilterAddrCount = lfc.MaxAddressCount

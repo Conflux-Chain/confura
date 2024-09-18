@@ -78,7 +78,7 @@ func (p *clientProvider) GetRouteGroup(key string) (grp Group, ok bool) {
 }
 
 func (p *clientProvider) cacheLoad(key string) (Group, bool) {
-	v, expired, found := p.routeKeyCache.GetNoExp(key)
+	v, expired, found := p.routeKeyCache.GetWithoutExp(key)
 	if found && !expired { // cache hit
 		return v.(Group), true
 	}
@@ -86,7 +86,7 @@ func (p *clientProvider) cacheLoad(key string) (Group, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	v, expired, found = p.routeKeyCache.GetNoExp(key)
+	v, expired, found = p.routeKeyCache.GetWithoutExp(key)
 	if found && !expired { // double check
 		return v.(Group), true
 	}
@@ -109,7 +109,7 @@ func (p *clientProvider) populateCache(token string) (grp Group, ok bool) {
 
 		// for db error, we cache an empty group for the key by which no expiry cache value existed
 		// so that db pressure can be mitigrated by reducing too many subsequential queries.
-		if _, _, found := p.routeKeyCache.GetNoExp(token); !found {
+		if _, _, found := p.routeKeyCache.GetWithoutExp(token); !found {
 			p.routeKeyCache.Add(token, grp)
 		}
 

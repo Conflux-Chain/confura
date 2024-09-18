@@ -97,3 +97,24 @@ func (caches *nodeExpiryCaches) getOrUpdate(node string, updateFunc func() (inte
 
 	return val.(*expiryCache).getOrUpdate(updateFunc)
 }
+
+// keyExpiryLruCaches caches value with specified expiration time and size using LRU eviction policy.
+type keyExpiryLruCaches struct {
+	key2Caches *util.ExpirableLruCache // cache key => expiryCache
+	ttl        time.Duration
+}
+
+func newKeyExpiryLruCaches(ttl time.Duration, size int) *keyExpiryLruCaches {
+	return &keyExpiryLruCaches{
+		ttl:        ttl,
+		key2Caches: util.NewExpirableLruCache(size, ttl),
+	}
+}
+
+func (caches *keyExpiryLruCaches) getOrUpdate(cacheKey string, updateFunc func() (interface{}, error)) (interface{}, error) {
+	val, _ := caches.key2Caches.GetOrUpdate(cacheKey, func() (interface{}, error) {
+		return newExpiryCache(caches.ttl), nil
+	})
+
+	return val.(*expiryCache).getOrUpdate(updateFunc)
+}
