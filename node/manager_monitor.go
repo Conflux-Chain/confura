@@ -62,5 +62,9 @@ func (m *Manager) ReportHealthy(nodeName string) {
 	logrus.WithField("node", nodeName).Warn("Node became healthy now")
 
 	// add recovered node into hash ring again
-	m.hashRing.Add(m.nodes[nodeName])
+	if n, ok := m.Get(nodeName); ok {
+		m.hashRing.Add(n)
+	} else { // this should not happen, but just in case
+		logrus.WithField("node", nodeName).Error("Node not found in manager")
+	}
 }
