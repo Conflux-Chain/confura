@@ -128,7 +128,8 @@ func NormalizeEthBlockNumber(
 	// pending or latest => latest_mined or latest_state
 	block, err := w3c.Eth.BlockByNumber(*blockNum, false)
 	if err != nil {
-		return nil, errors.WithMessage(err, "failed to normalize block number")
+		blockText, _ := blockNum.MarshalText()
+		return nil, errors.WithMessagef(err, "failed to get block (%v)", blockText)
 	}
 
 	// !!! eth rpc may return nil for `pending` and `earlist` block number
