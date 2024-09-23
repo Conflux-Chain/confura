@@ -1,4 +1,4 @@
-## Grafana Dashboard
+# Grafana Dashboard
 
 This folder contains all dashboard JSON models which can be imported into Grafana.
 | Json Model          	| Description                               	|
