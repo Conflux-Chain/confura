@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/election"
+	"github.com/Conflux-Chain/confura/sync/monitor"
 	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
@@ -35,6 +36,8 @@ type Syncer struct {
 	benchmark bool
 	// HA leader/follower election
 	elm election.LeaderManager
+	// sync monitor
+	monitor *monitor.Monitor
 }
 
 // functional options for syncer
@@ -65,8 +68,10 @@ func WithBenchmark(benchmark bool) SyncOption {
 }
 
 func MustNewSyncer(
-	cfx sdk.ClientOperator, db *mysql.MysqlStore,
-	elm election.LeaderManager, opts ...SyncOption) *Syncer {
+	cfx sdk.ClientOperator,
+	db *mysql.MysqlStore,
+	elm election.LeaderManager,
+	opts ...SyncOption) *Syncer {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
@@ -197,6 +202,8 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 
 				// collect epoch data
 				eno++
+
+				s.monitor.Update(eno)
 			}
 
 			epochDbRows, storeDbRows := state.update(epochData)

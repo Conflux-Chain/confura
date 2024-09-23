@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/catchup"
 	"github.com/Conflux-Chain/confura/sync/election"
+	"github.com/Conflux-Chain/confura/sync/monitor"
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
@@ -59,6 +60,8 @@ type DatabaseSyncer struct {
 	epochPivotWin *epochPivotWindow
 	// HA leader/follower election manager
 	elm election.LeaderManager
+	// sync monitor
+	monitor *monitor.Monitor
 }
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
@@ -67,6 +70,14 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 	viperutil.MustUnmarshalKey("sync", &conf)
 
 	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
+	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (uint64, error) {
+		epoch, err := cfx.GetEpochNumber(types.EpochLatestConfirmed)
+		if err != nil {
+			return 0, err
+		}
+		return epoch.ToInt().Uint64(), nil
+	})
+
 	syncer := &DatabaseSyncer{
 		conf:                &conf,
 		cfx:                 cfx,
@@ -75,16 +86,19 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 		maxSyncEpochs:       conf.MaxEpochs,
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
+		monitor:             monitor,
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.cfx"),
 	}
 
 	// Register leader election callbacks
 	syncer.elm.OnElected(func(ctx context.Context, lm election.LeaderManager) {
+		syncer.monitor.Start(ctx)
 		syncer.onLeadershipChanged(ctx, lm, true)
 	})
 
 	syncer.elm.OnOusted(func(ctx context.Context, lm election.LeaderManager) {
+		syncer.monitor.Stop()
 		syncer.onLeadershipChanged(ctx, lm, false)
 	})
 
@@ -286,6 +300,7 @@ func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 	}
 
 	syncer.epochFrom += uint64(len(epochDataSlice))
+	syncer.monitor.Update(syncer.epochFrom)
 
 	for _, epdata := range epochDataSlice { // cache epoch pivot info for late use
 		err := syncer.epochPivotWin.Push(epdata.GetPivotBlock())

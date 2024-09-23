@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/election"
+	"github.com/Conflux-Chain/confura/sync/monitor"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -49,6 +50,8 @@ type EthSyncer struct {
 	epochPivotWin *epochPivotWindow
 	// HA leader/follower election
 	elm election.LeaderManager
+	// sync monitor
+	monitor *monitor.Monitor
 }
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
@@ -62,6 +65,14 @@ func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 	viperutil.MustUnmarshalKey("sync.eth", &ethConf)
 
 	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
+	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (uint64, error) {
+		block, err := ethC.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
+		if err != nil {
+			return 0, err
+		}
+		return block.Number.Uint64(), nil
+	})
+
 	syncer := &EthSyncer{
 		conf:                &ethConf,
 		w3c:                 ethC,
@@ -70,16 +81,19 @@ func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 		maxSyncBlocks:       ethConf.MaxBlocks,
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
+		monitor:             monitor,
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.eth"),
 	}
 
 	// Register leader election callbacks
 	syncer.elm.OnElected(func(ctx context.Context, lm election.LeaderManager) {
+		syncer.monitor.Start(ctx)
 		syncer.onLeadershipChanged(ctx, lm, true)
 	})
 
 	syncer.elm.OnOusted(func(ctx context.Context, lm election.LeaderManager) {
+		syncer.monitor.Stop()
 		syncer.onLeadershipChanged(ctx, lm, false)
 	})
 
@@ -288,6 +302,7 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	}
 
 	syncer.fromBlock += uint64(len(ethDataSlice))
+	syncer.monitor.Update(syncer.fromBlock)
 
 	logger.WithFields(logrus.Fields{
 		"newSyncFrom":   syncer.fromBlock,
