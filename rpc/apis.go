@@ -176,8 +176,10 @@ func nativeSpaceBridgeApis(config *CfxBridgeServerConfig) ([]API, error) {
 		{
 			Namespace: "cfx",
 			Version:   "1.0",
-			Service:   cfxbridge.NewCfxAPI(eth, uint32(*ethChainId), cfx, config.BatchRcptImpl, config.BatchRcptConcurrency),
-			Public:    true,
+			Service: cfxbridge.NewCfxAPI(
+				eth, uint32(*ethChainId), cfx, config.RcptRetrievalMethod, config.RcptRetrievalConcurrency,
+			),
+			Public: true,
 		}, {
 			Namespace: "trace",
 			Version:   "1.0",

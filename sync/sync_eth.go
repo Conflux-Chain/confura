@@ -23,9 +23,10 @@ import (
 )
 
 type syncEthConfig struct {
-	FromBlock uint64 `default:"1"`
-	MaxBlocks uint64 `default:"10"`
-	UseBatch  bool   `default:"false"`
+	RcptRetrievalMethod      int
+	RcptRetrievalConcurrency int    `default:"4"`
+	FromBlock                uint64 `default:"1"`
+	MaxBlocks                uint64 `default:"10"`
 }
 
 // EthSyncer is used to synchronize evm space blockchain data into db store.
@@ -178,12 +179,17 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 
 	logger.Debug("ETH syncer started to sync with block range")
 
+	rcptOption := store.EthReceiptRetrievalOption{
+		Method:      store.EthReceiptRetrievalMethod(syncer.conf.RcptRetrievalMethod),
+		Concurrency: syncer.conf.RcptRetrievalConcurrency,
+	}
+
 	ethDataSlice := make([]*store.EthData, 0, syncSize)
 	for i := uint64(0); i < syncSize; i++ {
 		blockNo := syncer.fromBlock + uint64(i)
 		blogger := logger.WithField("block", blockNo)
 
-		data, err := store.QueryEthData(syncer.w3c, blockNo, syncer.conf.UseBatch)
+		data, err := store.QueryEthData(ctx, syncer.w3c, blockNo, rcptOption)
 
 		// If chain re-orged, stop the querying right now since it's pointless to query data
 		// that will be reverted late.
