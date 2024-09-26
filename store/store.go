@@ -169,4 +169,5 @@ func MustInit() {
 	ethStoreConfig.mustInit("ethstore")
 
 	initLogFilter()
+	initEth()
 }

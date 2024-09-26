@@ -176,7 +176,7 @@ func nativeSpaceBridgeApis(config *CfxBridgeServerConfig) ([]API, error) {
 		{
 			Namespace: "cfx",
 			Version:   "1.0",
-			Service:   cfxbridge.NewCfxAPI(eth, uint32(*ethChainId), cfx, config.BatchRcptImpl, config.BatchRcptConcurrency),
+			Service:   cfxbridge.NewCfxAPI(eth, uint32(*ethChainId), cfx),
 			Public:    true,
 		}, {
 			Namespace: "trace",

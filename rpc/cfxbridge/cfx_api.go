@@ -3,6 +3,7 @@ package cfxbridge
 import (
 	"context"
 
+	"github.com/Conflux-Chain/confura/store"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
@@ -11,32 +12,19 @@ import (
 	rpcp "github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go"
 	ethTypes "github.com/openweb3/web3go/types"
-	"github.com/pkg/errors"
-	"golang.org/x/sync/errgroup"
-)
-
-const (
-	BatchRcptImplWithParityBlockReceipts = iota
-	BatchRcptImplWithEthTxnReceipt
-	BatchRcptImplWithEthBlockReceipts
 )
 
 type CfxAPI struct {
-	w3c                  *web3go.Client
-	cfx                  *sdk.Client // optional
-	ethNetworkId         uint32
-	batchRcptImpl        int
-	batchRcptConcurrency int
+	w3c          *web3go.Client
+	cfx          *sdk.Client // optional
+	ethNetworkId uint32
 }
 
-func NewCfxAPI(
-	w3client *web3go.Client, ethNetId uint32, cfxClient *sdk.Client, batchRcptImpl int, concurrency int) *CfxAPI {
+func NewCfxAPI(w3client *web3go.Client, ethNetId uint32, cfxClient *sdk.Client) *CfxAPI {
 	return &CfxAPI{
-		w3c:                  w3client,
-		cfx:                  cfxClient,
-		ethNetworkId:         ethNetId,
-		batchRcptImpl:        batchRcptImpl,
-		batchRcptConcurrency: concurrency,
+		w3c:          w3client,
+		cfx:          cfxClient,
+		ethNetworkId: ethNetId,
 	}
 }
 
@@ -269,68 +257,9 @@ func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 }
 
 func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) ([][]*types.TransactionReceipt, error) {
-	var receipts []*ethTypes.Receipt
-
-	switch api.batchRcptImpl {
-	case BatchRcptImplWithEthTxnReceipt:
-		block, err := api.getBlockByBlockNumberOrHash(ctx, bnh, false)
-		if err != nil {
-			return nil, err
-		}
-
-		errGrp, ctx := errgroup.WithContext(ctx)
-		errGrp.SetLimit(api.batchRcptConcurrency)
-
-		txnHashes := block.Transactions.Hashes()
-		receipts = make([]*ethTypes.Receipt, len(txnHashes))
-
-	loop:
-		for idx, txn := range txnHashes {
-			rcptIdx := idx
-			errGrp.Go(func() error {
-				receipt, err := api.w3c.WithContext(ctx).Eth.TransactionReceipt(txn)
-				if err != nil {
-					return err
-				}
-
-				if receipt != nil && receipt.BlockHash != block.Hash { // reorg?
-					return errors.New("pivot reorg, please retry again")
-				}
-
-				receipts[rcptIdx] = receipt
-				return nil
-			})
-
-			select {
-			case <-ctx.Done(): // any error happened during the fetch?
-				break loop
-			default:
-			}
-		}
-
-		if err := errGrp.Wait(); err != nil {
-			return nil, err
-		}
-
-	case BatchRcptImplWithParityBlockReceipts:
-		blockReceipts, err := api.w3c.WithContext(ctx).Parity.BlockReceipts(bnh.ToArg())
-		if err != nil {
-			return nil, err
-		}
-
-		for i := range blockReceipts {
-			receipts = append(receipts, &blockReceipts[i])
-		}
-
-	case BatchRcptImplWithEthBlockReceipts:
-		blockReceipts, err := api.w3c.WithContext(ctx).Eth.BlockReceipts(bnh.ToArg())
-		if err != nil {
-			return nil, err
-		}
-
-		receipts = blockReceipts
-	default:
-		return nil, errors.New("unsupported batch receipt implementation")
+	receipts, err := store.QueryEthReceipt(ctx, api.w3c, *bnh.ToArg())
+	if err != nil {
+		return nil, err
 	}
 
 	result := make([]*types.TransactionReceipt, len(receipts))
@@ -339,15 +268,6 @@ func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHas
 	}
 
 	return [][]*types.TransactionReceipt{result}, nil
-}
-
-func (api *CfxAPI) getBlockByBlockNumberOrHash(
-	ctx context.Context, bnh EthBlockNumberOrHash, isFull bool) (*ethTypes.Block, error) {
-	if bn, ok := bnh.ToArg().Number(); ok {
-		return api.w3c.WithContext(ctx).Eth.BlockByNumber(bn, isFull)
-	}
-
-	return api.w3c.WithContext(ctx).Eth.BlockByHash(*bnh.ToArg().BlockHash, isFull)
 }
 
 func (api *CfxAPI) GetAccount(ctx context.Context, address EthAddress, bn *EthBlockNumber) (types.AccountInfo, error) {

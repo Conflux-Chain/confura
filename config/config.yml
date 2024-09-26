@@ -17,14 +17,6 @@ rpc:
     ethNode: http://evmtestnet.confluxrpc.com
     # core space fullnode endpoint (optional)
     # cfxNode: http://test.confluxrpc.com
-    # Implementation method for batch receipts, available options are:
-    # 0 - `parity_getBlockReceipts`
-    # 1 - `eth_getTransactionReceipt`
-    # 2 - `eth_getBlockReceipts`
-    # batchRcptImpl: 0
-    # The number of concurrencies to retrieve batch receipts for better performance, only effective
-    # when `eth_getTransactionReceipt` is used as the implementation method.
-    # batchRcptConcurrency: 4
     # Available exposed modules are `cfx`, `txpool`, `trace`, if empty all APIs will be exposed.
     # exposedModules: []
     # Served HTTP endpoint
@@ -137,8 +129,6 @@ sync:
 
   # # EVM space sync configurations
   # eth:
-  #   # Whether to use `parity_getBlockReceipts` to batch get receipts
-  #   useBatch: false
   #   # The block number from which to sync evm space, better use the evm space hardfork point:
   #   # for mainnet it is 36935000, for testnet it is 61465000
   #   fromBlock: 61465000
@@ -445,6 +435,16 @@ node:
 #     # LRU Cache size and expiration time duration for 'eth_call'
 #     callCacheExpiration: 1s
 #     callCacheSize: 128
+#
+#   # ETH receipt retrieval configuration
+#   ethReceiptRetrieval:
+#     # 0 - Auto-detect (tries following methods in order)
+#     # 1 - `eth_getBlockReceipts` (limited support)
+#     # 2 - `parity_getBlockReceipts` (limited support)
+#     # 3 - `eth_getTransactionReceipt` (universal but slower)
+#     method: 0
+#     # Concurrent operations for `eth_getTransactionReceipt` only
+#     concurrency: 0
 
 # # Go performance profiling
 # pprof:
