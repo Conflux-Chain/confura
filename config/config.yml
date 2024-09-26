@@ -129,11 +129,6 @@ sync:
 
   # # EVM space sync configurations
   # eth:
-  #   # Available transaction receipt retrieval methods are:
-  #   # 0 - `parity_getBlockReceipts`, 1 - `eth_getTransactionReceipt`, 2 - `eth_getBlockReceipts`
-  #   rcptRetrievalMethod: 0
-  #   # Number of concurrent retrieval operations, effective only for `eth_getTransactionReceipt`
-  #   rcptRetrievalConcurrency: 4
   #   # The block number from which to sync evm space, better use the evm space hardfork point:
   #   # for mainnet it is 36935000, for testnet it is 61465000
   #   fromBlock: 61465000
