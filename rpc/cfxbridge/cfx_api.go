@@ -15,22 +15,16 @@ import (
 )
 
 type CfxAPI struct {
-	w3c           *web3go.Client
-	cfx           *sdk.Client // optional
-	ethNetworkId  uint32
-	receiptOption store.EthReceiptRetrievalOption
+	w3c          *web3go.Client
+	cfx          *sdk.Client // optional
+	ethNetworkId uint32
 }
 
-func NewCfxAPI(
-	w3client *web3go.Client, ethNetId uint32, cfxClient *sdk.Client, rcptMethod int, rcptConcurrency int) *CfxAPI {
+func NewCfxAPI(w3client *web3go.Client, ethNetId uint32, cfxClient *sdk.Client) *CfxAPI {
 	return &CfxAPI{
 		w3c:          w3client,
 		cfx:          cfxClient,
 		ethNetworkId: ethNetId,
-		receiptOption: store.EthReceiptRetrievalOption{
-			Method:      store.EthReceiptRetrievalMethod(rcptMethod),
-			Concurrency: rcptConcurrency,
-		},
 	}
 }
 
@@ -263,7 +257,7 @@ func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 }
 
 func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) ([][]*types.TransactionReceipt, error) {
-	receipts, err := store.QueryEthReceipt(ctx, api.w3c, *bnh.ToArg(), api.receiptOption)
+	receipts, err := store.QueryEthReceipt(ctx, api.w3c, *bnh.ToArg())
 	if err != nil {
 		return nil, err
 	}
