@@ -192,11 +192,11 @@ func GetBlockByBlockNumberOrHash(
 		return w3c.WithContext(ctx).Eth.BlockByNumber(bn, isFull)
 	}
 
-	return w3c.WithContext(ctx).Eth.BlockByHash(*bnh.BlockHash, isFull)
-}
+	if bh, ok := bnh.Hash(); ok {
+		return w3c.WithContext(ctx).Eth.BlockByHash(bh, isFull)
+	}
 
-func wrapReceiptMethodNotSupportedError(method EthReceiptMethod) error {
-	return errors.Errorf("receipt retrieval method %v not supported", method)
+	return nil, errors.New("invalid block number or hash")
 }
 
 func QueryEthReceipt(
@@ -211,7 +211,7 @@ func QueryEthReceipt(
 		opt = opts[0]
 	}
 
-	// If the method is set to auto-detect or invalid, perform detection
+	// If the method is a concrete one, perform method detection
 	if !opt.Method.IsConcrete() {
 		method, err := defaultRcptMethodDetector.Detect(ctx, w3c, bnh)
 		if err != nil {
@@ -229,7 +229,7 @@ func QueryEthReceipt(
 	case EthReceiptMethodEthBlockReceipts:
 		return queryEthReceiptByEthBlockReceipts(ctx, w3c, bnh, opt)
 	default:
-		return nil, wrapReceiptMethodNotSupportedError(opt.Method)
+		return nil, errors.Errorf("unsupported receipt method: %v", opt.Method)
 	}
 }
 
@@ -289,8 +289,18 @@ func queryEthData(
 	blockTxs := block.Transactions.Transactions()
 
 	for i := 0; i < len(blockTxs); i++ {
+		txnHash := blockTxs[i].Hash
+
+		if i >= len(blockReceipts) {
+			return nil, errors.WithMessagef(
+				ErrChainReorged,
+				"txn index out of bounds: txn (%v) in block (%v) exceeds available receipts",
+				txnHash, block.Hash,
+			)
+		}
+
 		receipt := blockReceipts[i]
-		if err := verifyEthTxnReceipt(block, i, receipt); err != nil {
+		if err := verifyEthTxnReceipt(block, txnHash, receipt); err != nil {
 			return nil, errors.WithMessage(err, "failed to verify txn receipt")
 		}
 
@@ -322,36 +332,33 @@ func wrapReceiptRetrievalError(cause error, txnHash common.Hash) error {
 	return errors.WithMessagef(cause, "failed to query receipt for txn %v", txnHash)
 }
 
-func verifyEthTxnReceipt(block *types.Block, txnIndex int, receipt *types.Receipt) error {
-	// sanity check in case of chain re-org
+func verifyEthTxnReceipt(block *types.Block, txnHash common.Hash, receipt *types.Receipt) error {
+	// Check for potential chain reorg or invalid data
 	switch {
-	case receipt == nil: // receipt shouldn't be nil unless chain re-org
+	case receipt == nil:
 		return errors.WithMessagef(
-			ErrChainReorged, "nil txn receipt for block %v at index %v", block.Hash, txnIndex,
+			ErrChainReorged,
+			"nil receipt for txn (%v) in block (%v)",
+			txnHash, block.Hash,
 		)
 	case receipt.BlockHash != block.Hash:
 		return errors.WithMessagef(
-			ErrChainReorged, "receipt block hash %v mismatch for block %v at index %v",
-			receipt.BlockHash, block.Hash, txnIndex,
+			ErrChainReorged,
+			"block hash mismatch: receipt has %v, expected %v",
+			receipt.BlockHash, block.Hash,
 		)
 	case receipt.BlockNumber != block.Number.Uint64():
 		return errors.WithMessagef(
-			ErrChainReorged, "receipt block number #%v mismatch for block #%v at index %v",
-			receipt.BlockNumber, block.Nonce.Uint64(), txnIndex,
+			ErrChainReorged,
+			"block number mismatch: receipt has #%v, expected #%v",
+			receipt.BlockNumber, block.Number.Uint64(),
 		)
 	default:
-		txnHashes := getEthBlockTxnHashes(block)
-		if len(txnHashes) <= txnIndex {
+		if txnHash != receipt.TransactionHash {
 			return errors.WithMessagef(
-				ErrChainReorged, "failed to match txn %v within block %v due to index %v out of bound",
-				receipt.TransactionHash, block.Hash, txnIndex,
-			)
-		}
-
-		if th := txnHashes[txnIndex]; th != receipt.TransactionHash {
-			return errors.WithMessagef(
-				ErrChainReorged, "receipt tx hash %v mismatch for txn %v within block %v at index %v",
-				receipt.TransactionHash, th, block.Hash, txnIndex,
+				ErrChainReorged,
+				"txn hash mismatch: receipt has %v, expected %v in block %v",
+				receipt.TransactionHash, txnHash, block.Hash,
 			)
 		}
 		return nil
@@ -380,12 +387,12 @@ func queryEthReceiptByEthTxnReceipt(
 	if !ok || block == nil {
 		block, err = GetBlockByBlockNumberOrHash(ctx, w3c, bnh, false)
 		if err != nil {
-			return nil, errors.WithMessage(err, "failed to get block by block number or hash")
+			return nil, errors.WithMessagef(err, "failed to get block (%v)", bnh)
 		}
 	}
 	txnHashes := getEthBlockTxnHashes(block)
 
-	if rcptOpt.Concurrency == 0 {
+	if rcptOpt.Concurrency == 0 { // No parallelism
 		for i := 0; i < len(txnHashes); i++ {
 			receipt, err := w3c.Eth.TransactionReceipt(txnHashes[i])
 			if err != nil {
@@ -398,7 +405,7 @@ func queryEthReceiptByEthTxnReceipt(
 				return nil, wrapReceiptRetrievalError(err, txnHashes[i])
 			}
 
-			if err := verifyEthTxnReceipt(block, i, receipt); err != nil {
+			if err := verifyEthTxnReceipt(block, txnHashes[i], receipt); err != nil {
 				return nil, errors.WithMessage(err, "failed to verify transaction receipt")
 			}
 			receipts = append(receipts, receipt)
@@ -410,7 +417,8 @@ func queryEthReceiptByEthTxnReceipt(
 	errGrp, ctx := errgroup.WithContext(ctx)
 	errGrp.SetLimit(rcptOpt.Concurrency)
 
-	breakLoop, receipts := false, make([]*types.Receipt, len(txnHashes))
+	var breakLoop bool
+	receipts = make([]*types.Receipt, len(txnHashes))
 	for idx := 0; !breakLoop && idx < len(txnHashes); idx++ {
 		// Capture loop variables
 		txnHash, rcptIdx := txnHashes[idx], idx
@@ -422,11 +430,11 @@ func queryEthReceiptByEthTxnReceipt(
 				return wrapReceiptRetrievalError(err, txnHash)
 			}
 
-			if err := verifyEthTxnReceipt(block, rcptIdx, receipt); err != nil {
+			if err := verifyEthTxnReceipt(block, txnHash, receipt); err != nil {
 				return errors.WithMessage(err, "failed to verify transaction receipt")
 			}
 
-			// Thread safe to write here since receipt index is unique for each goroutine within the group.
+			// Thread safe to write here since slice index is unique for each goroutine within the group.
 			receipts[rcptIdx] = receipt
 			return nil
 		})
