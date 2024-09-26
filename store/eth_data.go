@@ -66,7 +66,7 @@ var (
 )
 
 func initEth() {
-	// Initialize DefaultEthOption with config values from viper
+	// Initialize `DefaultReceiptOption` with config values from viper
 	viper.MustUnmarshalKey(
 		"requestControl.ethReceiptRetrieval", &DefaultReceiptOption,
 	)
@@ -211,7 +211,7 @@ func QueryEthReceipt(
 		opt = opts[0]
 	}
 
-	// If the method is a concrete one, perform method detection
+	// If the method is not a concrete one, perform method detection
 	if !opt.Method.IsConcrete() {
 		method, err := defaultRcptMethodDetector.Detect(ctx, w3c, bnh)
 		if err != nil {
@@ -281,10 +281,6 @@ func queryEthData(
 		return nil, errors.WithMessage(err, "failed to get block receipts")
 	}
 
-	if blockReceipts == nil {
-		return nil, errors.WithMessage(ErrChainReorged, "block receipts nil")
-	}
-
 	txReceipts := map[common.Hash]*types.Receipt{}
 	blockTxs := block.Transactions.Transactions()
 
@@ -304,7 +300,7 @@ func queryEthData(
 			return nil, errors.WithMessage(err, "failed to verify txn receipt")
 		}
 
-		txReceipts[blockTxs[i].Hash] = receipt
+		txReceipts[txnHash] = receipt
 	}
 
 	return &EthData{blockNumber, block, txReceipts}, nil
@@ -353,14 +349,13 @@ func verifyEthTxnReceipt(block *types.Block, txnHash common.Hash, receipt *types
 			"block number mismatch: receipt has #%v, expected #%v",
 			receipt.BlockNumber, block.Number.Uint64(),
 		)
+	case txnHash != receipt.TransactionHash:
+		return errors.WithMessagef(
+			ErrChainReorged,
+			"txn hash mismatch: receipt has %v, expected %v in block %v",
+			receipt.TransactionHash, txnHash, block.Hash,
+		)
 	default:
-		if txnHash != receipt.TransactionHash {
-			return errors.WithMessagef(
-				ErrChainReorged,
-				"txn hash mismatch: receipt has %v, expected %v in block %v",
-				receipt.TransactionHash, txnHash, block.Hash,
-			)
-		}
 		return nil
 	}
 }
@@ -392,7 +387,7 @@ func queryEthReceiptByEthTxnReceipt(
 	}
 	txnHashes := getEthBlockTxnHashes(block)
 
-	if rcptOpt.Concurrency == 0 { // No parallelism
+	if rcptOpt.Concurrency <= 1 { // No parallelism
 		for i := 0; i < len(txnHashes); i++ {
 			receipt, err := w3c.Eth.TransactionReceipt(txnHashes[i])
 			if err != nil {
@@ -401,7 +396,7 @@ func queryEthReceiptByEthTxnReceipt(
 					"blockNumber": block.Number.Int64(),
 					"txnHash":     txnHashes[i],
 					"txnIndex":    i,
-				}).WithError(err).Info("Failed to query eth transaction receipt")
+				}).WithError(err).Debug("Failed to query eth transaction receipt")
 				return nil, wrapReceiptRetrievalError(err, txnHashes[i])
 			}
 
