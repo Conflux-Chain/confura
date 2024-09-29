@@ -54,9 +54,6 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	filter *types.LogFilter,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
-	timeoutCtx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
-	defer cancel()
-
 	// record the reorg version before query to ensure data consistence
 	lastReorgVersion, err := handler.ms.GetReorgVersion()
 	if err != nil {
@@ -64,7 +61,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	}
 
 	for {
-		logs, hitStore, err := handler.getLogsReorgGuard(timeoutCtx, cfx, filter, delegatedRpcMethod)
+		logs, hitStore, err := handler.getLogsReorgGuard(ctx, cfx, filter, delegatedRpcMethod)
 		if err != nil {
 			return nil, false, err
 		}
@@ -80,7 +77,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 		}
 
 		// when reorg occurred, check timeout before retry.
-		if err := checkTimeout(timeoutCtx); err != nil {
+		if err := checkTimeout(ctx); err != nil {
 			return nil, false, err
 		}
 
@@ -118,6 +115,12 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	var logs []types.Log
 	var bodySizeAccumulator responseBodySizeAccumulator
 
+	if len(dbFilters) > 0 {
+		// add db query timeout
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
+		defer cancel()
+	}
 	// query data from database
 	for i := range dbFilters {
 		if err := checkTimeout(ctx); err != nil {

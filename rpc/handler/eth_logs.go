@@ -30,9 +30,6 @@ func (handler *EthLogsApiHandler) GetLogs(
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
-	timeoutCtx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
-	defer cancel()
-
 	// record the reorg version before query to ensure data consistence
 	lastReorgVersion, err := handler.ms.GetReorgVersion()
 	if err != nil {
@@ -40,7 +37,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 	}
 
 	for {
-		logs, hitStore, err := handler.getLogsReorgGuard(timeoutCtx, eth, filter, delegatedRpcMethod)
+		logs, hitStore, err := handler.getLogsReorgGuard(ctx, eth, filter, delegatedRpcMethod)
 		if err != nil {
 			return nil, false, err
 		}
@@ -92,6 +89,11 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 
 	// query data from database
 	if dbFilter != nil {
+		// add db query timeout
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
+		defer cancel()
+
 		dbLogs, err := handler.ms.GetLogs(ctx, *dbFilter)
 		if err != nil {
 			// TODO ErrPrunedAlready
