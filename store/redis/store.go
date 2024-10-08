@@ -33,10 +33,10 @@ type RedisStore struct {
 	ctx       context.Context
 	rdb       *redis.Client
 	cacheTime time.Duration
-	disabler  store.StoreDisabler
+	disabler  store.ChainDataDisabler
 }
 
-func MustNewRedisStoreFromViper(disabler store.StoreDisabler) (*RedisStore, bool) {
+func MustNewRedisStoreFromViper(disabler store.ChainDataDisabler) (*RedisStore, bool) {
 	var rsconf RedisStoreConfig
 	viper.MustUnmarshalKey("store.redis", &rsconf)
 

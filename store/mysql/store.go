@@ -20,7 +20,7 @@ var (
 )
 
 type StoreOption struct {
-	Disabler store.StoreDisabler
+	Disabler store.ChainDataDisabler
 }
 
 // MysqlStore aggregation store for chain data persistence operation.
@@ -42,7 +42,7 @@ type MysqlStore struct {
 	// config
 	config *Config
 	// store chaindata disabler
-	disabler store.StoreDisabler
+	disabler store.ChainDataDisabler
 	// store pruner
 	pruner *storePruner
 }

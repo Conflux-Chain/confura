@@ -96,7 +96,7 @@ func EthStoreConfig() *storeConfig {
 	return &ethStoreConfig
 }
 
-type StoreDisabler interface {
+type ChainDataDisabler interface {
 	IsChainBlockDisabled() bool
 	IsChainTxnDisabled() bool
 	IsChainReceiptDisabled() bool
