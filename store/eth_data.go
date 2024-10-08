@@ -233,19 +233,29 @@ func QueryEthReceipt(
 	}
 }
 
+type QueryOption struct {
+	ReceiptConfig EthReceiptOption
+	Disabler      ChainDataDisabler
+}
+
 // QueryEthData queries blockchain data for the specified block number.
 func QueryEthData(
 	ctx context.Context,
 	w3c *web3go.Client,
 	blockNumber uint64,
-	opts ...EthReceiptOption,
+	opts ...QueryOption,
 ) (*EthData, error) {
 	updater := metrics.Registry.Sync.QueryEpochData("eth")
 	defer updater.Update()
 
-	opt := DefaultReceiptOption
+	var opt QueryOption
 	if len(opts) > 0 {
 		opt = opts[0]
+	} else {
+		opt = QueryOption{
+			ReceiptConfig: DefaultReceiptOption,
+			Disabler:      &ethStoreConfig,
+		}
 	}
 
 	data, err := queryEthData(ctx, w3c, blockNumber, opt)
@@ -259,9 +269,9 @@ func queryEthData(
 	ctx context.Context,
 	w3c *web3go.Client,
 	blockNumber uint64,
-	rcptOpt EthReceiptOption,
+	opt QueryOption,
 ) (*EthData, error) {
-	// Get block by number
+	// Retrieve the block by number
 	block, err := w3c.Eth.BlockByNumber(types.BlockNumber(blockNumber), true)
 
 	if err == nil && block == nil {
@@ -272,38 +282,85 @@ func queryEthData(
 		return nil, errors.WithMessagef(err, "failed to get block by number %v", blockNumber)
 	}
 
-	// Set the block as prefetched data so that no need to query it again.
-	rcptOpt.Prefetched = block
+	txnReceipts := map[common.Hash]*types.Receipt{}
+	blockTxs := block.Transactions.Transactions()
 
+	// Check if ChainReceipts are disabled
+	if opt.Disabler != nil && opt.Disabler.IsChainReceiptDisabled() {
+		// If both ChainReceipt and ChainLog are disabled, return only the block data
+		if opt.Disabler.IsChainLogDisabled() {
+			return &EthData{
+				Number: blockNumber,
+				Block:  block,
+			}, nil
+		}
+
+		// Retrieve logs for the block
+		logs, err := w3c.Eth.Logs(types.FilterQuery{BlockHash: &block.Hash})
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to get block event logs")
+		}
+
+		// Map logs to their respective transaction hashes
+		txnLogs := map[common.Hash][]*types.Log{}
+		for i := range logs {
+			txnHash := logs[i].TxHash
+			txnLogs[txnHash] = append(txnLogs[txnHash], &logs[i])
+		}
+
+		// Construct minimal receipts with logs for each transaction
+		for i, tx := range blockTxs {
+			txnReceipts[tx.Hash] = &types.Receipt{
+				BlockHash:        block.Hash,
+				BlockNumber:      blockNumber,
+				TransactionHash:  tx.Hash,
+				TransactionIndex: uint64(i),
+				Logs:             txnLogs[tx.Hash],
+			}
+		}
+
+		return &EthData{
+			Number:   blockNumber,
+			Block:    block,
+			Receipts: txnReceipts,
+		}, nil
+	}
+
+	// Set the block as prefetched data to avoid redundant queries
+	opt.ReceiptConfig.Prefetched = block
+
+	// Retrieve full receipts for the block
 	blockNumOrHash := types.BlockNumberOrHashWithNumber(types.BlockNumber(blockNumber))
-	blockReceipts, err := QueryEthReceipt(ctx, w3c, blockNumOrHash, rcptOpt)
+	blockReceipts, err := QueryEthReceipt(ctx, w3c, blockNumOrHash, opt.ReceiptConfig)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to get block receipts")
 	}
 
-	txReceipts := map[common.Hash]*types.Receipt{}
-	blockTxs := block.Transactions.Transactions()
-
-	for i := 0; i < len(blockTxs); i++ {
-		txnHash := blockTxs[i].Hash
-
-		if i >= len(blockReceipts) {
-			return nil, errors.WithMessagef(
-				ErrChainReorged,
-				"txn index out of bounds: txn (%v) in block (%v) exceeds available receipts",
-				txnHash, block.Hash,
-			)
-		}
-
-		receipt := blockReceipts[i]
-		if err := verifyEthTxnReceipt(block, txnHash, receipt); err != nil {
-			return nil, errors.WithMessage(err, "failed to verify txn receipt")
-		}
-
-		txReceipts[txnHash] = receipt
+	// Ensure the number of receipts matches the number of transactions
+	if len(blockReceipts) != len(blockTxs) {
+		return nil, errors.Errorf(
+			"mismatch in number of transactions and receipts: %d transactions, %d receipts for block %v",
+			len(blockTxs), len(blockReceipts), block.Hash,
+		)
 	}
 
-	return &EthData{blockNumber, block, txReceipts}, nil
+	// Verify each receipt and map it to its transaction hash
+	for i, tx := range blockTxs {
+		txnHash := tx.Hash
+		receipt := blockReceipts[i]
+
+		if err := verifyEthTxnReceipt(block, txnHash, receipt); err != nil {
+			return nil, errors.WithMessagef(err, "failed to verify txn receipt for txn %v", txnHash)
+		}
+
+		txnReceipts[txnHash] = receipt
+	}
+
+	return &EthData{
+		Number:   blockNumber,
+		Block:    block,
+		Receipts: txnReceipts,
+	}, nil
 }
 
 func queryEthReceiptByParityBlockReceipts(
