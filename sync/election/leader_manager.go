@@ -352,13 +352,30 @@ func (l *DlockLeaderManager) onError(ctx context.Context, err error) {
 }
 
 // noopLeaderManager dummy leader manager that does nothing at all.
-type noopLeaderManager struct{}
+type noopLeaderManager struct {
+	mu               sync.Mutex        // mutex lock
+	electedCallbacks []ElectedCallback // leader elected callback functions
+}
 
 func (l *noopLeaderManager) Identity() string                 { return "noop" }
 func (l *noopLeaderManager) Extend(ctx context.Context) error { return nil }
 func (l *noopLeaderManager) Await(ctx context.Context) bool   { return true }
-func (l *noopLeaderManager) Campaign(ctx context.Context)     { /* do nothing */ }
 func (l *noopLeaderManager) Stop() error                      { return nil }
-func (l *noopLeaderManager) OnElected(cb ElectedCallback)     { /* do nothing */ }
 func (l *noopLeaderManager) OnOusted(cb OustedCallback)       { /* do nothing */ }
 func (l *noopLeaderManager) OnError(cb ErrorCallback)         { /* do nothing */ }
+
+func (l *noopLeaderManager) Campaign(ctx context.Context) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	for _, cb := range l.electedCallbacks {
+		cb(ctx, l)
+	}
+}
+
+func (l *noopLeaderManager) OnElected(cb ElectedCallback) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.electedCallbacks = append(l.electedCallbacks, cb)
+}
