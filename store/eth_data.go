@@ -235,8 +235,9 @@ func QueryEthReceipt(
 }
 
 type QueryOption struct {
-	ReceiptConfig EthReceiptOption
-	Disabler      ChainDataDisabler
+	ReceiptConfig          EthReceiptOption
+	Disabler               ChainDataDisabler
+	EnableLogsOptimization bool // use `eth_getLogs` for better performance if possible
 }
 
 // QueryEthData queries blockchain data for the specified block number.
@@ -296,35 +297,38 @@ func queryEthData(
 			}, nil
 		}
 
-		// Retrieve logs for the block
-		logs, err := w3c.Eth.Logs(types.FilterQuery{BlockHash: &block.Hash})
-		if err != nil {
-			return nil, errors.WithMessage(err, "failed to get block event logs")
-		}
-
-		// Map logs to their respective transaction hashes
-		txnLogs := map[common.Hash][]*types.Log{}
-		for i := range logs {
-			txnHash := logs[i].TxHash
-			txnLogs[txnHash] = append(txnLogs[txnHash], &logs[i])
-		}
-
-		// Construct minimal receipts with logs for each transaction
-		for i, tx := range blockTxs {
-			txnReceipts[tx.Hash] = &types.Receipt{
-				BlockHash:        block.Hash,
-				BlockNumber:      blockNumber,
-				TransactionHash:  tx.Hash,
-				TransactionIndex: uint64(i),
-				Logs:             txnLogs[tx.Hash],
+		// If only ChainLog is enabled, use `eth_getLogs` for better performance
+		if opt.EnableLogsOptimization {
+			// Retrieve logs for the block
+			logs, err := w3c.Eth.Logs(types.FilterQuery{BlockHash: &block.Hash})
+			if err != nil {
+				return nil, errors.WithMessage(err, "failed to get block event logs")
 			}
-		}
 
-		return &EthData{
-			Number:   blockNumber,
-			Block:    block,
-			Receipts: txnReceipts,
-		}, nil
+			// Map logs to their respective transaction hashes
+			txnLogs := map[common.Hash][]*types.Log{}
+			for i := range logs {
+				txnHash := logs[i].TxHash
+				txnLogs[txnHash] = append(txnLogs[txnHash], &logs[i])
+			}
+
+			// Construct minimal receipts with logs for each transaction
+			for i, tx := range blockTxs {
+				txnReceipts[tx.Hash] = &types.Receipt{
+					BlockHash:        block.Hash,
+					BlockNumber:      blockNumber,
+					TransactionHash:  tx.Hash,
+					TransactionIndex: uint64(i),
+					Logs:             txnLogs[tx.Hash],
+				}
+			}
+
+			return &EthData{
+				Number:   blockNumber,
+				Block:    block,
+				Receipts: txnReceipts,
+			}, nil
+		}
 	}
 
 	// Set the block as prefetched data to avoid redundant queries
