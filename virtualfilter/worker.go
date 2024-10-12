@@ -233,9 +233,8 @@ func (w *filterWorker) dumpFilterChain() {
 }
 
 func (w *filterWorker) merge(fchanges filterChanges) error {
-	metricTimer := metrics.Registry.VirtualFilter.
-		PersistFilterChanges(w.space, w.nodeName, "memory")
-	defer metricTimer.Update()
+	startTime := time.Now()
+	defer metrics.Registry.VirtualFilter.PersistFilterChanges(w.space, w.nodeName, "memory").UpdateSince(startTime)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -348,8 +347,8 @@ func (w *ethFilterWorker) fetchPollingChanges(fid rpc.ID) (*ethPollingChanges, e
 		return nil, errFilterNotFound
 	}
 
-	metricTimer := metrics.Registry.VirtualFilter.QueryFilterChanges("eth", w.nodeName, "memory")
-	defer metricTimer.Update()
+	startTime := time.Now()
+	defer metrics.Registry.VirtualFilter.QueryFilterChanges("eth", w.nodeName, "memory").UpdateSince(startTime)
 
 	var fblocks []ethFilterBlock
 	err := w.session.fchain.traverse(cursor, func(node *filterNode, forkPoint bool) bool {
@@ -486,8 +485,8 @@ func (w *cfxFilterWorker) fetchPollingChanges(fid rpc.ID) (*cfxPollingChanges, e
 		return nil, errFilterNotFound
 	}
 
-	metricTimer := metrics.Registry.VirtualFilter.QueryFilterChanges("cfx", w.nodeName, "memory")
-	defer metricTimer.Update()
+	startTime := time.Now()
+	defer metrics.Registry.VirtualFilter.PersistFilterChanges(w.space, w.nodeName, "cfx").UpdateSince(startTime)
 
 	var fepochs []cfxFilterEpoch
 	err := w.session.fchain.traverse(cursor, func(node *filterNode, forkPoint bool) bool {

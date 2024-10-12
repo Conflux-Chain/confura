@@ -10,7 +10,7 @@ import (
 )
 
 func TestTrafficCollector(t *testing.T) {
-	timeWin := metricUtil.NewTimeWindow(time.Second, 5)
+	timeWin := metricUtil.NewTimeWindow(time.Second, 5, twTrafficSlotAggregator{})
 	tc := &timeWindowTrafficCollector{window: timeWin}
 
 	tvisitors := make([]Visitor, 100)

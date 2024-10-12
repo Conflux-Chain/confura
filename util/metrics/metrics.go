@@ -45,14 +45,14 @@ func (*RpcMetrics) UpdateDuration(method string, err error, start time.Time) {
 	}
 
 	// Overall rate statistics
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/success").Mark(isNilErr)
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/rpcErr").Mark(isRpcErr)
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/nonRpcErr").Mark(!isNilErr && !isRpcErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(100, "infura/rpc/rate/success").Mark(isNilErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/rpcErr").Mark(isRpcErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/nonRpcErr").Mark(!isNilErr && !isRpcErr)
 
 	// RPC rate statistics
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/success/%v", method).Mark(isNilErr)
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/rpcErr/%v", method).Mark(isRpcErr)
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/rate/nonRpcErr/%v", method).Mark(!isNilErr && !isRpcErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(100, "infura/rpc/rate/success/%v", method).Mark(isNilErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/rpcErr/%v", method).Mark(isRpcErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/nonRpcErr/%v", method).Mark(!isNilErr && !isRpcErr)
 
 	// Only update QPS & Latency if success or rpc error. Because, io error usually takes long time
 	// and impact the average latency.
@@ -65,11 +65,11 @@ func (*RpcMetrics) UpdateDuration(method string, err error, start time.Time) {
 // RPC metrics - inputs
 
 func (*RpcMetrics) InputEpoch(method, epoch string) metricUtil.Percentage {
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/input/epoch/%v/%v", method, epoch)
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/input/epoch/%v/%v", method, epoch)
 }
 
 func (*RpcMetrics) InputBlockHash(method string) metricUtil.Percentage {
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/input/blockHash/%v", method)
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/input/blockHash/%v", method)
 }
 
 func (*RpcMetrics) InputEpochGap(method string) metrics.Histogram {
@@ -77,7 +77,7 @@ func (*RpcMetrics) InputEpochGap(method string) metrics.Histogram {
 }
 
 func (*RpcMetrics) InputBlock(method, block string) metricUtil.Percentage {
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/input/block/%v/%v", method, block)
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/input/block/%v/%v", method, block)
 }
 
 func (*RpcMetrics) InputBlockGap(method string) metrics.Histogram {
@@ -93,14 +93,14 @@ func (*RpcMetrics) LogFilterSplit(method, name string) metrics.Histogram {
 // PRC metrics - percentages
 
 func (*RpcMetrics) Percentage(method, name string) metricUtil.Percentage {
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/percentage/%v/%v", method, name)
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/percentage/%v/%v", method, name)
 }
 
 // RPC metrics - store hit ratio
 
 func (*RpcMetrics) StoreHit(method, storeName string) metricUtil.Percentage {
 	// use rpc method to distinguish cfx and eth
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/store/hit/%v/%v", storeName, method)
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/store/hit/%v/%v", storeName, method)
 }
 
 // RPC metrics - fullnode
@@ -115,18 +115,18 @@ func (*RpcMetrics) FullnodeQps(node, space, method string, err error) metrics.Ti
 
 func (*RpcMetrics) FullnodeErrorRate(node ...string) metricUtil.Percentage {
 	if len(node) == 0 {
-		return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/fullnode/rate/error")
+		return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/fullnode/rate/error")
 	}
 
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/fullnode/rate/error/%v", node[0])
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/fullnode/rate/error/%v", node[0])
 }
 
 func (*RpcMetrics) FullnodeNonRpcErrorRate(node ...string) metricUtil.Percentage {
 	if len(node) == 0 {
-		return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/fullnode/rate/nonRpcErr")
+		return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/fullnode/rate/nonRpcErr")
 	}
 
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/fullnode/rate/nonRpcErr/%v", node[0])
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/fullnode/rate/nonRpcErr/%v", node[0])
 }
 
 // Sync service metrics
@@ -144,27 +144,27 @@ func (*SyncMetrics) SyncOnceSize(space, storeName string) metrics.Histogram {
 	return metricUtil.GetOrRegisterHistogram("infura/sync/%v/%v/once/size", space, storeName)
 }
 
-func (*SyncMetrics) QueryEpochData(space string) metricUtil.TimerUpdater {
-	return metricUtil.NewTimerUpdaterByName(fmt.Sprintf("infura/sync/%v/fullnode", space))
+func (*SyncMetrics) QueryEpochData(space string) metrics.Timer {
+	return metricUtil.GetOrRegisterTimer("infura/sync/%v/fullnode", space)
 }
 
 func (*SyncMetrics) QueryEpochDataAvailability(space string) metricUtil.Percentage {
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/sync/%v/fullnode/availability", space)
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/sync/%v/fullnode/availability", space)
 }
 
 // Store metrics
 type StoreMetrics struct{}
 
-func (*StoreMetrics) Push(storeName string) metricUtil.TimerUpdater {
-	return metricUtil.NewTimerUpdaterByName(fmt.Sprintf("infura/store/%v/push", storeName))
+func (*StoreMetrics) Push(storeName string) metrics.Timer {
+	return metricUtil.GetOrRegisterTimer("infura/store/%v/push", storeName)
 }
 
-func (*StoreMetrics) Pop(storeName string) metricUtil.TimerUpdater {
-	return metricUtil.NewTimerUpdaterByName(fmt.Sprintf("infura/store/%v/pop", storeName))
+func (*StoreMetrics) Pop(storeName string) metrics.Timer {
+	return metricUtil.GetOrRegisterTimer("infura/store/%v/pop", storeName)
 }
 
-func (*StoreMetrics) GetLogs() metricUtil.TimerUpdater {
-	return metricUtil.NewTimerUpdaterByName("infura/store/mysql/getlogs")
+func (*StoreMetrics) GetLogs() metrics.Timer {
+	return metricUtil.GetOrRegisterTimer("infura/store/mysql/getlogs")
 }
 
 // Node manager metrics
@@ -190,7 +190,7 @@ func (*PubSubMetrics) Sessions(space, topic, node string) metrics.Gauge {
 }
 
 func (*PubSubMetrics) InputLogFilter(space string) metricUtil.Percentage {
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/pubsub/%v/input/logFilter", space)
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/pubsub/%v/input/logFilter", space)
 }
 
 // Virtual filter metrics
@@ -212,16 +212,15 @@ func (*VirtualFilterMetrics) PollOnceSize(space, node string) metrics.Histogram 
 	return metricUtil.GetOrRegisterHistogram("infura/virtualFilter/%v/poll/%v/once/size", space, node)
 }
 
-func (*VirtualFilterMetrics) PersistFilterChanges(space, node, store string) metricUtil.TimerUpdater {
-	return metricUtil.NewTimerUpdaterByName(fmt.Sprintf("infura/virtualFilter/%v/persist/%v/filterChanges/%v", space, node, store))
+func (*VirtualFilterMetrics) PersistFilterChanges(space, node, store string) metrics.Timer {
+	return metricUtil.GetOrRegisterTimer("infura/virtualFilter/%v/persist/%v/filterChanges/%v", space, node, store)
 }
 
-func (*VirtualFilterMetrics) QueryFilterChanges(space, node, store string) metricUtil.TimerUpdater {
-	metricName := fmt.Sprintf("infura/virtualFilter/%v/query/%v/filterChanges/%v", space, node, store)
-	return metricUtil.NewTimerUpdaterByName(metricName)
+func (*VirtualFilterMetrics) QueryFilterChanges(space, node, store string) metrics.Timer {
+	return metricUtil.GetOrRegisterTimer("infura/virtualFilter/%v/query/%v/filterChanges/%v", space, node, store)
 }
 
 func (*VirtualFilterMetrics) StoreQueryPercentage(space string, node, store string) metricUtil.Percentage {
 	metricName := fmt.Sprintf("infura/virtualFilter/%v/percentage/query/%v/filterChanges/%v", space, node, store)
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(metricName)
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, metricName)
 }

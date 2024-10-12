@@ -100,15 +100,15 @@ func (api *MetricsAPI) StopTimer(name string) {
 }
 
 // Percentage
-func (api *MetricsAPI) MarkPercentage(name string, marked bool) {
-	metricUtil.GetOrRegisterPercentage(name).Mark(marked)
+func (api *MetricsAPI) MarkPercentage(defaultVal float64, name string, marked bool) {
+	metricUtil.GetOrRegisterPercentage(defaultVal, name).Mark(marked)
 }
 
 // TimeWindowPercentage
-func (api *MetricsAPI) MarkTimeWindowPercentageDefault(name string, marked bool) {
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault(name).Mark(marked)
+func (api *MetricsAPI) MarkTimeWindowPercentageDefault(defaultVal float64, name string, marked bool) {
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(defaultVal, name).Mark(marked)
 }
 
-func (api *MetricsAPI) MarkTimeWindowPercentage(name string, marked bool, slots int, slotIntervalNanos int64) {
-	metricUtil.GetOrRegisterTimeWindowPercentage(time.Duration(slotIntervalNanos), slots, name).Mark(marked)
+func (api *MetricsAPI) MarkTimeWindowPercentage(defaultVal float64, name string, marked bool, slots int, slotIntervalNanos int64) {
+	metricUtil.GetOrRegisterTimeWindowPercentage(defaultVal, time.Duration(slotIntervalNanos), slots, name).Mark(marked)
 }

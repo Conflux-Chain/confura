@@ -43,42 +43,50 @@ type Visitor struct {
 	Hits   int    // visitor hit count
 }
 
-// twTrafficData time window traffic data
-type twTrafficData struct {
-	data map[string]int // source => hits
-}
+// twTrafficSlotData time window traffic slot data
+type twTrafficSlotData map[string]int // source => hits
 
-// implements `SlotData` interface
+type twTrafficSlotAggregator struct{}
 
-func (d twTrafficData) Add(v metricUtil.SlotData) metricUtil.SlotData {
-	rhs := v.(twTrafficData)
-	for k, v := range rhs.data {
-		d.data[k] += v
+// implements `SlotAggregatorCloneable` interface
+func (twTrafficSlotAggregator) Add(acc, val twTrafficSlotData) twTrafficSlotData {
+	if acc == nil {
+		acc = make(twTrafficSlotData, len(val))
 	}
 
-	return twTrafficData{data: d.data}
+	for k, v := range val {
+		acc[k] += v
+	}
+
+	return acc
 }
 
-func (d twTrafficData) Sub(v metricUtil.SlotData) metricUtil.SlotData {
-	rhs := v.(twTrafficData)
-	for k, v := range rhs.data {
-		d.data[k] -= v
-		if d.data[k] <= 0 {
-			delete(d.data, k)
+func (twTrafficSlotAggregator) Sub(acc, val twTrafficSlotData) twTrafficSlotData {
+	if acc == nil { // This should never happen, but just in case
+		return make(twTrafficSlotData)
+	}
+
+	for k, v := range val {
+		acc[k] -= v
+		if acc[k] <= 0 {
+			delete(acc, k)
 		}
 	}
 
-	return twTrafficData{data: d.data}
+	return acc
 }
 
-func (d twTrafficData) SnapShot() metricUtil.SlotData {
-	data := make(map[string]int, len(d.data))
-
-	for k, v := range d.data {
-		data[k] = v
+func (twTrafficSlotAggregator) Clone(v twTrafficSlotData) twTrafficSlotData {
+	if v == nil {
+		return nil
 	}
 
-	return twTrafficData{data: data}
+	copy := make(twTrafficSlotData, len(v))
+	for k, v := range v {
+		copy[k] = v
+	}
+
+	return copy
 }
 
 // timeWindowTrafficCollector collects traffic hits using sliding window
@@ -86,22 +94,20 @@ type timeWindowTrafficCollector struct {
 	// For our usage context now, memory shouldn't be a problem since the
 	// number of unique visitors (identified by source) is quite limited
 	// (far less than a million).
-	window *metricUtil.TimeWindow // traffic data within a sliding time window.
+	window *metricUtil.TimeWindow[twTrafficSlotData] // traffic data within a sliding time window.
 }
 
 func newTimeWindowTrafficCollector(
 	slotInterval time.Duration, numSlots int) *timeWindowTrafficCollector {
 
 	return &timeWindowTrafficCollector{
-		window: metricUtil.NewTimeWindow(slotInterval, numSlots),
+		window: metricUtil.NewTimeWindowCloneable(slotInterval, numSlots, twTrafficSlotAggregator{}),
 	}
 }
 
 // MarkHit mark hits from a visitor source
 func (tc *timeWindowTrafficCollector) MarkHit(source string) {
-	tc.window.Add(twTrafficData{
-		data: map[string]int{source: 1},
-	})
+	tc.window.Add(twTrafficSlotData{source: 1})
 }
 
 // TopkVisitors statisticize topK visitors.
@@ -118,13 +124,13 @@ func (tc *timeWindowTrafficCollector) TopkVisitors(k int) []Visitor {
 		return nil
 	}
 
-	tdata, ok := tc.window.Data().(twTrafficData)
-	if !ok { // no data
+	tdata := tc.window.Data()
+	if tdata == nil { // no data
 		return nil
 	}
 
 	topkHeap := topkVisitorHeap(make([]*visitorItem, 0, k+1))
-	for src, hits := range tdata.data {
+	for src, hits := range tdata {
 		vi := &visitorItem{
 			Visitor: Visitor{Source: src, Hits: hits},
 		}

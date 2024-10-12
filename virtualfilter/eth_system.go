@@ -2,6 +2,7 @@ package virtualfilter
 
 import (
 	"encoding/json"
+	"time"
 
 	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/node"
@@ -99,8 +100,8 @@ func (fs *ethFilterSystem) onPolled(nodeName string, fid rpc.ID, changes filterC
 		return nil
 	}
 
-	metricTimer := metrics.Registry.VirtualFilter.PersistFilterChanges("eth", nodeName, "mysql")
-	defer metricTimer.Update()
+	startTime := time.Now()
+	defer metrics.Registry.VirtualFilter.PersistFilterChanges("eth", nodeName, "mysql").UpdateSince(startTime)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"fid":      fid,
