@@ -2,6 +2,7 @@ package virtualfilter
 
 import (
 	"encoding/json"
+	"time"
 
 	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/store/mysql"
@@ -101,8 +102,8 @@ func (fs *cfxFilterSystem) onPolled(nodeName string, fid rpc.ID, changes filterC
 		return nil
 	}
 
-	metricTimer := metrics.Registry.VirtualFilter.PersistFilterChanges("cfx", nodeName, "mysql")
-	defer metricTimer.Update()
+	startTime := time.Now()
+	defer metrics.Registry.VirtualFilter.PersistFilterChanges("cfx", nodeName, "mysql").UpdateSince(startTime)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"fid":      fid,

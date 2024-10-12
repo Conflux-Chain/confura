@@ -202,8 +202,8 @@ func (rs *RedisStore) Pushn(dataSlice []*store.EpochData) error {
 		return nil
 	}
 
-	updater := metrics.Registry.Store.Push("redis")
-	defer updater.Update()
+	startTime := time.Now()
+	defer metrics.Registry.Store.Push("redis").UpdateSince(startTime)
 
 	_, lastEpoch, err := rs.GetGlobalEpochRange()
 	if rs.IsRecordNotFound(err) {
@@ -467,8 +467,8 @@ func (rs *RedisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 		return errors.Errorf("invalid epoch range (%v,%v)", epochFrom, epochTo)
 	}
 
-	updater := metrics.Registry.Store.Pop("redis")
-	defer updater.Update()
+	startTime := time.Now()
+	defer metrics.Registry.Store.Pop("redis").UpdateSince(startTime)
 
 	numEpochs := epochTo - epochFrom + 1
 	watchKeys := make([]string, 0, numEpochs)

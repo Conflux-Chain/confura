@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"time"
 
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util"
@@ -94,8 +95,8 @@ func (epoch *EpochData) IsContinuousTo(prev *EpochData) (continuous bool, desc s
 
 // QueryEpochData queries blockchain data for the specified epoch number.
 func QueryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (EpochData, error) {
-	updater := metrics.Registry.Sync.QueryEpochData("cfx")
-	defer updater.Update()
+	startTime := time.Now()
+	defer metrics.Registry.Sync.QueryEpochData("cfx").UpdateSince(startTime)
 
 	data, err := queryEpochData(cfx, epochNumber, useBatch)
 	metrics.Registry.Sync.QueryEpochDataAvailability("cfx").

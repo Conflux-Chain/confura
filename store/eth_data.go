@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
@@ -245,8 +246,8 @@ func QueryEthData(
 	blockNumber uint64,
 	opts ...QueryOption,
 ) (*EthData, error) {
-	updater := metrics.Registry.Sync.QueryEpochData("eth")
-	defer updater.Update()
+	startTime := time.Now()
+	defer metrics.Registry.Sync.QueryEpochData("eth").UpdateSince(startTime)
 
 	var opt QueryOption
 	if len(opts) > 0 {

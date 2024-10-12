@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sort"
+	"time"
 
 	"github.com/Conflux-Chain/confura/store"
 	citypes "github.com/Conflux-Chain/confura/types"
@@ -100,8 +101,8 @@ func (ms *MysqlStore) PushnWithFinalizer(dataSlice []*store.EpochData, finalizer
 		return err
 	}
 
-	updater := metrics.Registry.Store.Push("mysql")
-	defer updater.Update()
+	startTime := time.Now()
+	defer metrics.Registry.Store.Push("mysql").UpdateSince(startTime)
 
 	// the log partition to write universal event logs
 	var logPartition bnPartition
@@ -207,8 +208,8 @@ func (ms *MysqlStore) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.
 		return nil
 	}
 
-	updater := metrics.Registry.Store.Pop("mysql")
-	defer updater.Update()
+	startTime := time.Now()
+	defer metrics.Registry.Store.Pop("mysql").UpdateSince(startTime)
 
 	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
 		if !ms.disabler.IsChainBlockDisabled() {
@@ -264,8 +265,8 @@ func (ms *MysqlStore) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.
 }
 
 func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([]*store.Log, error) {
-	updater := metrics.Registry.Store.GetLogs()
-	defer updater.Update()
+	startTime := time.Now()
+	defer metrics.Registry.Store.GetLogs().UpdateSince(startTime)
 
 	contracts := storeFilter.Contracts.ToSlice()
 

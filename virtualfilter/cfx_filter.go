@@ -134,8 +134,8 @@ func (f *cfxLogFilter) fetch() (filterChanges, error) {
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), store.TimeoutGetLogs)
 		defer cancel()
 
-		metricTimer := metrics.Registry.VirtualFilter.QueryFilterChanges("cfx", f.nodeName(), "mysql")
-		defer metricTimer.Update()
+		startTime := time.Now()
+		defer metrics.Registry.VirtualFilter.QueryFilterChanges("cfx", f.nodeName(), "mysql").UpdateSince(startTime)
 
 		sfilter := store.ParseCfxLogFilter(bnMin, bnMax, &f.crit)
 		logs, err := f.logStore.GetLogs(timeoutCtx, string(pchanges.fid), sfilter, missingBlockhashes...)

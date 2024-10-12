@@ -51,7 +51,10 @@ func (r *Registry) GetOrRegisterMeter(name string, args ...interface{}) metrics.
 func (r *Registry) GetOrRegisterHistogram(name string, args ...interface{}) metrics.Histogram {
 	metricName := fmt.Sprintf(name, args...)
 	return r.Registry.GetOrRegister(name, func() metrics.Histogram {
-		return &Histogram{clientMetric{metricName, r.updater}, metricUtil.NewDefaultHistogram()}
+		return &Histogram{
+			clientMetric{metricName, r.updater},
+			metrics.NewHistogram(metrics.NewExpDecaySample(1028, 0.015)),
+		}
 	}).(metrics.Histogram)
 }
 
