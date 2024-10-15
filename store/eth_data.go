@@ -446,7 +446,12 @@ func queryEthReceiptByEthTxnReceipt(
 		if err != nil {
 			return nil, errors.WithMessagef(err, "failed to get block (%v)", bnh)
 		}
+
+		if block == nil {
+			return nil, errors.New("invalid block data (must not be nil)")
+		}
 	}
+
 	txnHashes := getEthBlockTxnHashes(block)
 
 	if rcptOpt.Concurrency <= 1 { // No parallelism
