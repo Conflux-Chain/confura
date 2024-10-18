@@ -1439,8 +1439,8 @@
         {
           "current": {
             "selected": true,
-            "text": "infura_testnet",
-            "value": "infura_testnet"
+            "text": "confura_testnet",
+            "value": "confura_testnet"
           },
           "description": null,
           "error": null,
@@ -1453,7 +1453,7 @@
           "query": "influxdb",
           "queryValue": "",
           "refresh": 1,
-          "regex": "/.*infura_*./",
+          "regex": "/.*confura_*./",
           "skipUrlSync": false,
           "type": "datasource"
         },

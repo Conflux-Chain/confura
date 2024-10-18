@@ -15,7 +15,7 @@ services:
     environment:
       - INFURA_METRICS_ENABLED=true
       - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
-      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+      - INFURA_METRICS_INFLUXDB_DB=confura_testnet
     container_name: confura-node-management
 
   ethnode-management:
@@ -32,7 +32,7 @@ services:
     environment:
       - INFURA_METRICS_ENABLED=true
       - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
-      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+      - INFURA_METRICS_INFLUXDB_DB=confura_testnet
     container_name: confura-ethnode-management
 
   # blockchain sync
@@ -51,7 +51,7 @@ services:
       - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_cfx?parseTime=true
       - INFURA_METRICS_ENABLED=true
       - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
-      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+      - INFURA_METRICS_INFLUXDB_DB=confura_testnet
     container_name: confura-sync
 
   ethchain-sync:
@@ -70,7 +70,7 @@ services:
       - INFURA_SYNC_ETH_FROMBLOCK=36935000
       - INFURA_METRICS_ENABLED=true
       - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
-      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+      - INFURA_METRICS_INFLUXDB_DB=confura_testnet
     container_name: confura-ethsync
 
   # virtual filter
@@ -91,7 +91,7 @@ services:
       - INFURA_STORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_cfx?parseTime=true
       - INFURA_METRICS_ENABLED=true
       - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
-      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+      - INFURA_METRICS_INFLUXDB_DB=confura_testnet
     container_name: confura-virtual-filter
 
   ethvirtual-filter:
@@ -111,7 +111,7 @@ services:
       - INFURA_ETHSTORE_MYSQL_DSN=root:root@tcp(db:3306)/confura_eth?parseTime=true
       - INFURA_METRICS_ENABLED=true
       - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
-      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+      - INFURA_METRICS_INFLUXDB_DB=confura_testnet
     container_name: confura-ethvirtual-filter
 
   # rpc proxy
@@ -137,7 +137,7 @@ services:
       - INFURA_VIRTUALFILTERS_CLIENT_SERVICERPCURL=http://virtual-filter:42537
       - INFURA_METRICS_ENABLED=true
       - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
-      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+      - INFURA_METRICS_INFLUXDB_DB=confura_testnet
     container_name: confura-rpc
 
   ethrpc-proxy:
@@ -162,7 +162,7 @@ services:
       - INFURA_ETHVIRTUALFILTERS_CLIENT_SERVICERPCURL=http://ethvirtual-filter:48545
       - INFURA_METRICS_ENABLED=true
       - INFURA_METRICS_INFLUXDB_HOST=http://influxdb:8086
-      - INFURA_METRICS_INFLUXDB_DB=infura_testnet
+      - INFURA_METRICS_INFLUXDB_DB=confura_testnet
     container_name: confura-ethrpc
 
   # middlewares
@@ -190,7 +190,7 @@ services:
       - path: .env
         required: false
     environment:
-      - INFLUXDB_DB=infura_testnet
+      - INFLUXDB_DB=confura_testnet
     volumes:
       - influxdb-data:/var/lib/influxdb
     container_name: confura-influxdb
