@@ -996,8 +996,8 @@
       {
         "current": {
           "selected": false,
-          "text": "infura_mainet",
-          "value": "infura_mainet"
+          "text": "confura_mainnet",
+          "value": "confura_mainnet"
         },
         "description": null,
         "error": null,
@@ -1010,7 +1010,7 @@
         "query": "influxdb",
         "queryValue": "",
         "refresh": 1,
-        "regex": "/.*infura_*./",
+        "regex": "/.*confura_*./",
         "skipUrlSync": false,
         "type": "datasource"
       }

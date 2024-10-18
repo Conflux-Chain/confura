@@ -108,7 +108,7 @@ To set up Grafana, follow these steps:
 1. Configure InfluxDB as a Data Source:
 - Open the Grafana web interface.
 - Go to the data sources section and add InfluxDB as a data source.
-- Name the data source `infura_testnet` or `infura_mainet`, depending on your environment.
+- Name the data source `confura_testnet` or `confura_mainnet`, depending on your environment.
 
 2. Import the Dashboard Configuration:
 - Refer to the [Grafana Dashboard](../grafana/README.md) for the provided dashboard configuration files.
