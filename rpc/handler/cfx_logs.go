@@ -33,7 +33,7 @@ func MustInitFromViper() {
 	maxGetLogsResponseBytes = resrcLimit.MaxGetLogsResponseBytes
 	errResponseBodySizeTooLarge = fmt.Errorf(
 		"result body size is too large with more than %d bytes, please narrow down your filter condition",
-		resrcLimit.MaxGetLogsResponseBytes,
+		maxGetLogsResponseBytes,
 	)
 }
 

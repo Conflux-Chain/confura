@@ -417,8 +417,8 @@ node:
 #
 #   # Resource usage constraints
 #   resourceLimits:
-#     # Maximum response size for 'getLogs' requests (default 10MB)
-#     maxGetLogsResponseSize: 10485760
+#     # Maximum response bytes for 'getLogs' requests (default 10MB)
+#     MaxGetLogsResponseBytes: 10485760
 #
 #   # ETH Cache settings
 #   ethCache:
