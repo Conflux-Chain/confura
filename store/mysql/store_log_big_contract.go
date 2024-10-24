@@ -131,7 +131,7 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 
 		aidb := dbTx.Table(aiTableName).Where("cid = ?", contract.ID)
 		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeLogInsert, func(tx *gorm.DB, batch int) error {
-			deleteIds := make([]uint64, len(aiLogs))
+			deleteIds := make([]uint64, 0, len(aiLogs))
 			clLogs := make([]*contractLog, 0, len(aiLogs))
 
 			for _, aiLog := range aiLogs {
