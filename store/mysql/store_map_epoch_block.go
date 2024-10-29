@@ -128,7 +128,7 @@ func (e2bms *epochBlockMapStore) BlockRange(epoch uint64) (citypes.RangeUint64, 
 	return bnr, existed, nil
 }
 
-// ClosestEpochUpToBlock finds the nearest epoch with an ending block less than or equal to `blockNumber`.
+// ClosestEpochUpToBlock finds the nearest epoch with its ending block less than or equal to `blockNumber`.
 func (e2bms *epochBlockMapStore) ClosestEpochUpToBlock(blockNumber uint64) (uint64, bool, error) {
 	var result epochBlockMap
 	err := e2bms.db.
