@@ -1,8 +1,10 @@
 package store
 
 import (
+	"fmt"
 	"time"
 
+	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
@@ -20,17 +22,14 @@ const (
 )
 
 var ( // common errors
-	ErrGetLogsQuerySetTooLarge = errors.New(
-		"query set is too large, please narrow down your filter condition",
-	)
+	errMsgLogsQuerySetTooLarge = "the query set is too large, please narrow down your filter condition"
 
-	ErrGetLogsResultSetTooLarge = errors.Errorf(
-		"result set to be queried is too large with more than %v logs, %v",
-		MaxLogLimit, "please narrow down your filter condition",
+	errMsgLogsResultSetTooLarge = fmt.Sprintf(
+		"the result set exceeds the max limit of %v logs, please narrow down your filter conditions", MaxLogLimit,
 	)
 
 	ErrGetLogsTimeout = errors.Errorf(
-		"query timeout with duration exceeds %v(s)", TimeoutGetLogs,
+		"the query timed out after exceeding the maximum duration of %v seconds", TimeoutGetLogs,
 	)
 )
 
@@ -42,6 +41,39 @@ var ( // Log filter constants
 	MaxLogEpochRange uint64
 	MaxLogBlockRange uint64
 )
+
+type DataSetTooLargeError struct {
+	Msg            string
+	SuggestedRange *citypes.RangeUint64
+}
+
+var _ error = (*DataSetTooLargeError)(nil)
+
+func NewQuerySetTooLargeError(suggestions ...*citypes.RangeUint64) *DataSetTooLargeError {
+	return NewDataSetTooLargeError(errMsgLogsQuerySetTooLarge, suggestions...)
+}
+
+func NewResultSetTooLargeError(suggestions ...*citypes.RangeUint64) *DataSetTooLargeError {
+	return NewDataSetTooLargeError(errMsgLogsResultSetTooLarge, suggestions...)
+}
+
+func NewDataSetTooLargeError(msg string, suggestions ...*citypes.RangeUint64) *DataSetTooLargeError {
+	var suggestion *citypes.RangeUint64
+	if len(suggestions) > 0 && suggestions[0] != nil {
+		suggestion = suggestions[0]
+	}
+	return &DataSetTooLargeError{
+		Msg:            msg,
+		SuggestedRange: suggestion,
+	}
+}
+
+func (e *DataSetTooLargeError) Error() string {
+	if e.SuggestedRange == nil {
+		return e.Msg
+	}
+	return fmt.Sprintf("%v: suggested filter range is %s", e.Msg, *e.SuggestedRange)
+}
 
 func initLogFilter() {
 	var lfc struct {

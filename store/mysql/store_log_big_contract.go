@@ -410,7 +410,7 @@ func (bcls *bigContractLogStore) GetContractLogs(
 
 		// check log count
 		if len(result) > int(store.MaxLogLimit) {
-			return nil, store.ErrGetLogsResultSetTooLarge
+			return nil, store.NewResultSetTooLargeError()
 		}
 	}
 
