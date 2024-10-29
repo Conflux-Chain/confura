@@ -203,6 +203,11 @@ func (filter *LogFilter) validateCount(db *gorm.DB) error {
 		return nil
 	}
 
+	if blockNums[0] <= filter.BlockFrom {
+		return store.NewResultSetTooLargeError()
+	}
+
+	// suggest a narrower range if possible
 	return store.NewResultSetTooLargeError(&types.RangeUint64{
 		From: filter.BlockFrom,
 		To:   blockNums[0] - 1,
