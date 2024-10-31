@@ -8,6 +8,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
+	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -106,9 +107,11 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(len(dbFilters) > 0 && fnFilter != nil)
 
 		if blkRange, valid := calculateCfxBlockRange(fnFilter); valid {
-			metrics.Registry.RPC.LogFilterSplit(delegatedRpcMethod, "fullnode/blockRange").Update(blkRange)
+			numBlocks := int64(blkRange.To - blkRange.From + 1)
+			metrics.Registry.RPC.LogFilterSplit(delegatedRpcMethod, "fullnode/blockRange").Update(numBlocks)
 		} else if epochRange, valid := calculateEpochRange(fnFilter); valid {
-			metrics.Registry.RPC.LogFilterSplit(delegatedRpcMethod, "fullnode/epochRange").Update(epochRange)
+			numEpochs := int64(epochRange.To - epochRange.From + 1)
+			metrics.Registry.RPC.LogFilterSplit(delegatedRpcMethod, "fullnode/epochRange").Update(numEpochs)
 		}
 	}
 
@@ -141,6 +144,23 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 			}
 
 			continue
+		}
+
+		// convert block number back to epoch number for log filter with epoch range
+		if filter.FromEpoch != nil {
+			var valErr *store.DataSetTooLargeError
+			if errors.As(err, &valErr) && valErr.SuggestedRange != nil {
+				fromEpoch, _ := filter.FromEpoch.ToInt()
+				suggstedEpoch, ok, err := handler.ms.ClosestEpochUpToBlock(valErr.SuggestedRange.To)
+
+				if err == nil && ok && suggstedEpoch >= fromEpoch.Uint64() {
+					valErr.SuggestedRange.From = fromEpoch.Uint64()
+					valErr.SuggestedRange.To = suggstedEpoch
+				} else {
+					valErr.SuggestedRange = nil
+				}
+				return nil, false, valErr
+			}
 		}
 
 		if !errors.Is(err, store.ErrAlreadyPruned) {
@@ -205,7 +225,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 
 	// ensure result set never oversized
 	if len(logs) > int(store.MaxLogLimit) {
-		return nil, false, store.ErrGetLogsResultSetTooLarge
+		return nil, false, store.NewResultSetTooLargeError()
 	}
 
 	return logs, len(dbFilters) > 0, nil
@@ -412,15 +432,19 @@ func (handler *CfxLogsApiHandler) splitLogFilterByEpochRange(
 func (handler *CfxLogsApiHandler) checkFullnodeLogFilter(filter *types.LogFilter) error {
 	// Epoch range bound checking
 	if epochRange, valid := calculateEpochRange(filter); valid {
-		if epochRange > int64(store.MaxLogEpochRange) {
-			return store.ErrGetLogsQuerySetTooLarge
+		numEpochs := epochRange.To - epochRange.From + 1
+		if numEpochs > uint64(store.MaxLogEpochRange) {
+			epochRange.To = epochRange.From + uint64(store.MaxLogEpochRange) - 1
+			return store.NewQuerySetTooLargeError(&epochRange)
 		}
 	}
 
 	// Block range bound checking
 	if blockRange, valid := calculateCfxBlockRange(filter); valid {
-		if blockRange > int64(store.MaxLogBlockRange) {
-			return store.ErrGetLogsQuerySetTooLarge
+		numBlocks := blockRange.To - blockRange.From + 1
+		if numBlocks > uint64(store.MaxLogBlockRange) {
+			blockRange.To = blockRange.From + uint64(store.MaxLogBlockRange) - 1
+			return store.NewQuerySetTooLargeError(&blockRange)
 		}
 	}
 
@@ -439,29 +463,35 @@ func checkTimeout(ctx context.Context) error {
 }
 
 // calculateCfxBlockRange calculates the block range from the log filter.
-func calculateCfxBlockRange(filter *types.LogFilter) (int64, bool) {
+func calculateCfxBlockRange(filter *types.LogFilter) (blockRange citypes.RangeUint64, ok bool) {
 	if filter == nil || filter.FromBlock == nil || filter.ToBlock == nil {
-		return 0, false
+		return blockRange, false
 	}
 
 	bf := filter.FromBlock.ToInt()
 	bt := filter.ToBlock.ToInt()
-	blockFrom, blockTo := bf.Int64(), bt.Int64()
+	if bf.Uint64() > bt.Uint64() {
+		return blockRange, false
+	}
 
-	return blockTo - blockFrom + 1, true
+	blockRange.From, blockRange.To = bf.Uint64(), bt.Uint64()
+	return blockRange, true
 }
 
 // calculateEpochRange calculates the epoch range from the log filter.
-func calculateEpochRange(filter *types.LogFilter) (int64, bool) {
+func calculateEpochRange(filter *types.LogFilter) (epochRange citypes.RangeUint64, ok bool) {
 	if filter == nil || filter.FromEpoch == nil || filter.ToEpoch == nil {
-		return 0, false
+		return epochRange, false
 	}
 
 	ef, _ := filter.FromEpoch.ToInt()
 	et, _ := filter.ToEpoch.ToInt()
-	epochFrom, epochTo := ef.Int64(), et.Int64()
+	if ef.Uint64() > et.Uint64() {
+		return epochRange, false
+	}
 
-	return epochTo - epochFrom + 1, true
+	epochRange.From, epochRange.To = ef.Uint64(), et.Uint64()
+	return epochRange, true
 }
 
 // responseBodySizeAccumulator is a helper to check if the result body size exceeds the limit.

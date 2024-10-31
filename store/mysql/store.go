@@ -311,7 +311,7 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 
 			// check log count
 			if len(result) > int(store.MaxLogLimit) {
-				return nil, store.ErrGetLogsResultSetTooLarge
+				return nil, store.NewResultSetTooLargeError()
 			}
 
 			continue
@@ -342,7 +342,7 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 
 		// check log count
 		if len(result) > int(store.MaxLogLimit) {
-			return nil, store.ErrGetLogsResultSetTooLarge
+			return nil, store.NewResultSetTooLargeError()
 		}
 	}
 

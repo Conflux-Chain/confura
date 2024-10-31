@@ -8,6 +8,7 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/ethbridge"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
+	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
@@ -79,8 +80,9 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/allfullnode").Mark(dbFilter == nil)
 		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(dbFilter != nil && fnFilter != nil)
 
-		if blkRange, valid := calculateEthBlockRange(fnFilter); valid {
-			metrics.Registry.RPC.LogFilterSplit(delegatedRpcMethod, "fullnode/blockRange").Update(blkRange)
+		if blockRange, valid := calculateEthBlockRange(fnFilter); valid {
+			numBlocks := blockRange.To - blockRange.From + 1
+			metrics.Registry.RPC.LogFilterSplit(delegatedRpcMethod, "fullnode/blockRange").Update(int64(numBlocks))
 		}
 	}
 
@@ -136,7 +138,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	}
 
 	if len(logs) > int(store.MaxLogLimit) {
-		return nil, false, store.ErrGetLogsResultSetTooLarge
+		return nil, false, store.NewResultSetTooLargeError()
 	}
 
 	return logs, dbFilter != nil, nil
@@ -255,20 +257,27 @@ func (handler *EthLogsApiHandler) GetNetworkId(eth *client.RpcEthClient) (uint32
 //
 // Note this function assumes the log filter is valid and normalized.
 func (handler *EthLogsApiHandler) checkFnEthLogFilter(filter *types.FilterQuery) error {
-	blkRange, valid := calculateEthBlockRange(filter)
-	if valid && blkRange > int64(store.MaxLogEpochRange) {
-		return store.ErrGetLogsQuerySetTooLarge
+	if blockRange, valid := calculateEthBlockRange(filter); valid {
+		numBlocks := blockRange.To - blockRange.From + 1
+		if numBlocks > uint64(store.MaxLogBlockRange) {
+			blockRange.To = blockRange.From + uint64(store.MaxLogBlockRange) - 1
+			return store.NewQuerySetTooLargeError(&blockRange)
+		}
 	}
 
 	return nil
 }
 
 // calculateEthBlockRange calculates the block range of the log filter and returns the gap and a boolean indicating success.
-func calculateEthBlockRange(filter *types.FilterQuery) (int64, bool) {
+func calculateEthBlockRange(filter *types.FilterQuery) (blockRange citypes.RangeUint64, ok bool) {
 	if filter == nil || filter.FromBlock == nil || filter.ToBlock == nil {
-		return 0, false
+		return blockRange, false
 	}
 
-	blkRange := *filter.ToBlock - *filter.FromBlock + 1
-	return int64(blkRange), true
+	if *filter.FromBlock > *filter.ToBlock {
+		return blockRange, false
+	}
+
+	blockRange.From, blockRange.To = uint64(*filter.FromBlock), uint64(*filter.ToBlock)
+	return blockRange, true
 }
