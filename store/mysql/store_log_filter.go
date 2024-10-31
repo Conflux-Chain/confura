@@ -92,7 +92,7 @@ func (filter *LogFilter) calculateQuerySetSize(db *gorm.DB) (types.RangeUint64, 
 
 	// define main query to retrieve the auto-increment ID range within the filtered block range
 	mainQuery := db.
-		Select("MIN(t0.id) AS from, MAX(t0.id) AS to").
+		Select("MIN(t0.id) AS `from`, MAX(t0.id) AS `to`").
 		Table(fmt.Sprintf("`%v` AS t0, (?) AS t1", filter.TableName), subQuery).
 		Where("t0.bn IN (t1.minb, t1.maxb)")
 
