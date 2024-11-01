@@ -146,20 +146,21 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 			continue
 		}
 
-		// convert block number back to epoch number for log filter with epoch range
+		// convert block number range back to epoch number range for log filter with epoch range
 		if filter.FromEpoch != nil {
-			var valErr *store.DataSetTooLargeError
-			if errors.As(err, &valErr) && valErr.SuggestedRange != nil {
+			var valErr *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
+			if errors.As(err, &valErr) && valErr.SuggestedRange.MaxEndEpoch != 0 {
 				fromEpoch, _ := filter.FromEpoch.ToInt()
-				suggstedEpoch, ok, err := handler.ms.ClosestEpochUpToBlock(valErr.SuggestedRange.To)
+				maxPossibleEpochNum := valErr.SuggestedRange.MaxEndEpoch
+				endBlockNum := valErr.SuggestedRange.To
 
-				if err == nil && ok && suggstedEpoch >= fromEpoch.Uint64() {
-					valErr.SuggestedRange.From = fromEpoch.Uint64()
-					valErr.SuggestedRange.To = suggstedEpoch
-				} else {
-					valErr.SuggestedRange = nil
+				suggstedEndEpoch, ok, err := handler.ms.ClosestEpochUpToBlock(maxPossibleEpochNum, endBlockNum)
+				if err != nil || !ok || suggstedEndEpoch < fromEpoch.Uint64() {
+					return nil, false, valErr.Unwrap()
 				}
-				return nil, false, valErr
+
+				suggestedEpochRange := store.NewSuggestedEpochRange(fromEpoch.Uint64(), suggstedEndEpoch)
+				return nil, false, store.NewSuggestedFilterOversizeError(valErr.Unwrap(), suggestedEpochRange)
 			}
 		}
 
@@ -225,7 +226,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 
 	// ensure result set never oversized
 	if len(logs) > int(store.MaxLogLimit) {
-		return nil, false, store.NewResultSetTooLargeError()
+		return nil, false, store.ErrFilterResultSetTooLarge
 	}
 
 	return logs, len(dbFilters) > 0, nil
@@ -435,7 +436,8 @@ func (handler *CfxLogsApiHandler) checkFullnodeLogFilter(filter *types.LogFilter
 		numEpochs := epochRange.To - epochRange.From + 1
 		if numEpochs > uint64(store.MaxLogEpochRange) {
 			epochRange.To = epochRange.From + uint64(store.MaxLogEpochRange) - 1
-			return store.NewQuerySetTooLargeError(&epochRange)
+			suggestedRange := store.NewSuggestedEpochRange(epochRange.From, epochRange.To)
+			return store.NewSuggestedFilterQuerySetTooLargeError(&suggestedRange)
 		}
 	}
 
@@ -444,7 +446,8 @@ func (handler *CfxLogsApiHandler) checkFullnodeLogFilter(filter *types.LogFilter
 		numBlocks := blockRange.To - blockRange.From + 1
 		if numBlocks > uint64(store.MaxLogBlockRange) {
 			blockRange.To = blockRange.From + uint64(store.MaxLogBlockRange) - 1
-			return store.NewQuerySetTooLargeError(&blockRange)
+			suggestedRange := store.SuggestedBlockRange{RangeUint64: blockRange}
+			return store.NewSuggestedFilterQuerySetTooLargeError(&suggestedRange)
 		}
 	}
 

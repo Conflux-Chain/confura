@@ -22,9 +22,9 @@ const (
 )
 
 var ( // common errors
-	errMsgLogsQuerySetTooLarge = "the query set is too large, please narrow down your filter condition"
+	ErrFilterQuerySetTooLarge = errors.New("the query set is too large, please narrow down your filter condition")
 
-	errMsgLogsResultSetTooLarge = fmt.Sprintf(
+	ErrFilterResultSetTooLarge = errors.Errorf(
 		"the result set exceeds the max limit of %v logs, please narrow down your filter conditions", MaxLogLimit,
 	)
 
@@ -42,37 +42,78 @@ var ( // Log filter constants
 	MaxLogBlockRange uint64
 )
 
-type DataSetTooLargeError struct {
-	Msg            string
-	SuggestedRange *citypes.RangeUint64
+type SuggestedBlockRange struct {
+	citypes.RangeUint64
+	// the maximum possible epoch for suggesting an epoch range
+	// a value of 0 indicates that no maximum epoch is provided
+	MaxEndEpoch uint64
 }
 
-var _ error = (*DataSetTooLargeError)(nil)
-
-func NewQuerySetTooLargeError(suggestions ...*citypes.RangeUint64) *DataSetTooLargeError {
-	return NewDataSetTooLargeError(errMsgLogsQuerySetTooLarge, suggestions...)
-}
-
-func NewResultSetTooLargeError(suggestions ...*citypes.RangeUint64) *DataSetTooLargeError {
-	return NewDataSetTooLargeError(errMsgLogsResultSetTooLarge, suggestions...)
-}
-
-func NewDataSetTooLargeError(msg string, suggestions ...*citypes.RangeUint64) *DataSetTooLargeError {
-	var suggestion *citypes.RangeUint64
-	if len(suggestions) > 0 && suggestions[0] != nil {
-		suggestion = suggestions[0]
-	}
-	return &DataSetTooLargeError{
-		Msg:            msg,
-		SuggestedRange: suggestion,
+func NewSuggestedBlockRange(from, to, maxEndEpoch uint64) SuggestedBlockRange {
+	return SuggestedBlockRange{
+		RangeUint64: citypes.RangeUint64{From: from, To: to},
+		MaxEndEpoch: maxEndEpoch,
 	}
 }
 
-func (e *DataSetTooLargeError) Error() string {
-	if e.SuggestedRange == nil {
-		return e.Msg
+type SuggestedEpochRange struct {
+	citypes.RangeUint64
+}
+
+func NewSuggestedEpochRange(from, to uint64) SuggestedEpochRange {
+	return SuggestedEpochRange{RangeUint64: citypes.RangeUint64{From: from, To: to}}
+}
+
+type SuggestedFilterRange interface {
+	SuggestedBlockRange | SuggestedEpochRange
+}
+
+var (
+	_ error = (*SuggestedFilterOversizedError[SuggestedBlockRange])(nil)
+	_ error = (*SuggestedFilterOversizedError[SuggestedEpochRange])(nil)
+)
+
+type SuggestedFilterOversizedError[T SuggestedFilterRange] struct {
+	inner          error
+	SuggestedRange T
+}
+
+func NewSuggestedFilterQuerySetTooLargeError[T SuggestedFilterRange](suggestedRange *T) error {
+	if suggestedRange == nil {
+		return ErrFilterQuerySetTooLarge
 	}
-	return fmt.Sprintf("%v: suggested filter range is %s", e.Msg, *e.SuggestedRange)
+
+	return NewSuggestedFilterOversizeError(ErrFilterQuerySetTooLarge, *suggestedRange)
+}
+
+func NewSuggestedFilterResultSetTooLargeError[T SuggestedFilterRange](suggestedRange *T) error {
+	if suggestedRange == nil {
+		return ErrFilterResultSetTooLarge
+	}
+
+	return NewSuggestedFilterOversizeError(ErrFilterResultSetTooLarge, *suggestedRange)
+}
+
+func NewSuggestedFilterOversizeError[T SuggestedFilterRange](inner error, suggestedRange T) *SuggestedFilterOversizedError[T] {
+	return &SuggestedFilterOversizedError[T]{
+		inner:          inner,
+		SuggestedRange: suggestedRange,
+	}
+}
+
+func (e *SuggestedFilterOversizedError[T]) Error() string {
+	switch v := any(e.SuggestedRange).(type) {
+	case SuggestedBlockRange:
+		return fmt.Sprintf("%v: a suggested block range is %v", e.inner.Error(), v)
+	case SuggestedEpochRange:
+		return fmt.Sprintf("%v: a suggested epoch range is %v", e.inner.Error(), v)
+	default:
+		return e.inner.Error()
+	}
+}
+
+func (e *SuggestedFilterOversizedError[T]) Unwrap() error {
+	return e.inner
 }
 
 func initLogFilter() {

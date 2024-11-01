@@ -1,7 +1,6 @@
 package mysql
 
 import (
-	"database/sql"
 	"fmt"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -93,8 +92,8 @@ func (filter *LogFilter) calculateQuerySetSize(db *gorm.DB) (types.RangeUint64, 
 	// define main query to retrieve the auto-increment ID range within the filtered block range
 	mainQuery := db.
 		Select("MIN(t0.id) AS `from`, MAX(t0.id) AS `to`").
-		Table(fmt.Sprintf("`%v` AS t0, (?) AS t1", filter.TableName), subQuery).
-		Where("t0.bn IN (t1.minb, t1.maxb)")
+		Table(fmt.Sprintf("`%v` AS t0", filter.TableName)).
+		Joins("INNER JOIN (?) AS t1 ON t0.bn IN (t1.minb, t1.maxb)", subQuery)
 
 	// execute the main query to fetch the ID range
 	var pidRange types.RangeUint64
@@ -110,34 +109,38 @@ func (filter *LogFilter) calculateQuerySetSize(db *gorm.DB) (types.RangeUint64, 
 }
 
 // suggestBlockRange returns an adjusted block range that limits the query result size to be within `limitSize` records.
-// If the original filter conditions result in a query range exceeding `limitSize`, this function identifies the first block
-// that causes the result size to surpass the limit within `queryRange`. It then returns a range starting from `filter.BlockFrom`
-// up to (but not including) that block number, or nil if no valid range can be suggested (e.g., empty filter).
-func (filter *LogFilter) suggestBlockRange(
-	db *gorm.DB, queryRange types.RangeUint64, limitSize uint64) (*types.RangeUint64, error) {
+// If the original filter condition would produce more than `limitSize` records, this function identifies the first block
+// within `queryRange` where the result size exceeds the limit. It then returns a range from `filter.BlockFrom` up to
+// (but not including) that block. If no valid range can be suggested, it returns nil.
+//
+// It also includes the maximum possible epoch corresponding to the end of the suggested block range, which can be used by
+// the caller for further inference, such as deriving a suggested epoch range if needed.
+func (filter *LogFilter) suggestBlockRange(db *gorm.DB, queryRange types.RangeUint64, limitSize uint64) (*store.SuggestedBlockRange, error) {
 	// no possible block range to suggest
 	if filter.BlockFrom >= filter.BlockTo {
 		return nil, nil
 	}
 
-	// find the first block exceeding `limitSize` within `queryRange`
-	var firstExceedingBlock sql.NullInt64
+	// fetch info on the first block exceeding `limitSize` within `queryRange`
+	var exceedingBlock struct{ Bn, Epoch uint64 }
 	err := db.Table(filter.TableName).
-		Select("bn").
+		Select("bn, epoch").
 		Where("id >= ?", queryRange.From+limitSize).
 		Order("id ASC").
-		Limit(1).
-		Scan(&firstExceedingBlock).Error
-	if err != nil || !firstExceedingBlock.Valid {
+		Take(&exceedingBlock).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
-	// if a valid exceeding block is found, return the adjusted range
-	if bn := uint64(firstExceedingBlock.Int64); bn > filter.BlockFrom {
-		return &types.RangeUint64{
-			From: filter.BlockFrom,
-			To:   bn - 1,
-		}, nil
+	// suggest a narrower block range if possible
+	if exceedingBlock.Bn > filter.BlockFrom {
+		blockRange := store.NewSuggestedBlockRange(
+			filter.BlockFrom, exceedingBlock.Bn-1, exceedingBlock.Epoch,
+		)
+		return &blockRange, nil
 	}
 
 	// no available block range to suggest
@@ -160,7 +163,7 @@ func (filter *LogFilter) validateQuerySetSize(db *gorm.DB) error {
 			if err != nil {
 				return err
 			}
-			return store.NewQuerySetTooLargeError(suggestedRange)
+			return store.NewSuggestedFilterQuerySetTooLargeError(suggestedRange)
 		}
 		// otherwise defer to result set size validation
 	}
@@ -173,7 +176,7 @@ func (filter *LogFilter) validateQuerySetSize(db *gorm.DB) error {
 			if err != nil {
 				return err
 			}
-			return store.NewResultSetTooLargeError(suggestedRange)
+			return store.NewSuggestedFilterResultSetTooLargeError(suggestedRange)
 		}
 
 		// otherwise validate the count directly
@@ -185,33 +188,32 @@ func (filter *LogFilter) validateQuerySetSize(db *gorm.DB) error {
 
 // validateCount validates the result set count against the configured max limit.
 func (filter *LogFilter) validateCount(db *gorm.DB) error {
-	db = db.Select("bn").
+	db = db.Select("bn, epoch").
 		Table(filter.TableName).
 		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
 		Order("bn ASC").
-		Offset(int(store.MaxLogLimit)).
-		Limit(1)
-
+		Offset(int(store.MaxLogLimit))
 	db = applyTopicsFilter(db, filter.Topics)
 
-	var blockNums []uint64
-	if err := db.Find(&blockNums).Error; err != nil {
+	// fetch info on the first block exceeding `store.MaxLogLimit`
+	var exceedingBlock struct{ Bn, Epoch uint64 }
+	err := db.Take(&exceedingBlock).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
 		return err
 	}
 
-	if len(blockNums) == 0 {
-		return nil
+	// suggest a narrower block range if possible
+	if exceedingBlock.Bn > filter.BlockFrom {
+		blockRange := store.NewSuggestedBlockRange(
+			filter.BlockFrom, exceedingBlock.Bn-1, exceedingBlock.Epoch,
+		)
+		return store.NewSuggestedFilterResultSetTooLargeError(&blockRange)
 	}
 
-	if blockNums[0] <= filter.BlockFrom {
-		return store.NewResultSetTooLargeError()
-	}
-
-	// suggest a narrower range if possible
-	return store.NewResultSetTooLargeError(&types.RangeUint64{
-		From: filter.BlockFrom,
-		To:   blockNums[0] - 1,
-	})
+	return store.ErrFilterResultSetTooLarge
 }
 
 func (filter *LogFilter) hasTopicsFilter() bool {
@@ -245,7 +247,7 @@ func (filter *LogFilter) Find(db *gorm.DB) ([]int, error) {
 	}
 
 	if len(result) > int(store.MaxLogLimit) {
-		return nil, store.NewResultSetTooLargeError()
+		return nil, store.ErrFilterResultSetTooLarge
 	}
 
 	return result, nil
@@ -280,7 +282,7 @@ func (filter *AddressIndexedLogFilter) Find(db *gorm.DB) ([]*AddressIndexedLog, 
 	}
 
 	if len(result) > int(store.MaxLogLimit) {
-		return nil, store.NewResultSetTooLargeError()
+		return nil, store.ErrFilterResultSetTooLarge
 	}
 
 	return result, nil

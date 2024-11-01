@@ -25,7 +25,7 @@ type epochBlockMap struct {
 	// min block number
 	BnMin uint64 `gorm:"not null"`
 	// max block number
-	BnMax uint64 `gorm:"not null;index"`
+	BnMax uint64 `gorm:"not null"`
 	// pivot block hash used for parent hash checking
 	PivotHash string `gorm:"size:66;not null"`
 }
@@ -128,13 +128,15 @@ func (e2bms *epochBlockMapStore) BlockRange(epoch uint64) (citypes.RangeUint64, 
 	return bnr, existed, nil
 }
 
-// ClosestEpochUpToBlock finds the nearest epoch with its ending block less than or equal to `blockNumber`.
-func (e2bms *epochBlockMapStore) ClosestEpochUpToBlock(blockNumber uint64) (uint64, bool, error) {
+// ClosestEpochUpToBlock finds the nearest epoch whose ending block number is less than or equal to `blockNumber`.
+// It ensures that the epoch number does not exceed `maxEpochNumber`. The function returns the epoch number,
+// a boolean indicating whether a valid epoch was found, and an error if any occurred during the query.
+func (e2bms *epochBlockMapStore) ClosestEpochUpToBlock(maxEpochNumber, blockNumber uint64) (uint64, bool, error) {
 	var result epochBlockMap
 	err := e2bms.db.
 		Select("epoch").
-		Where("bn_max <= ?", blockNumber).
-		Order("bn_max DESC").
+		Where("epoch <= ? AND bn_max <= ?", maxEpochNumber, blockNumber).
+		Order("epoch DESC").
 		Take(&result).Error
 
 	if err != nil {
