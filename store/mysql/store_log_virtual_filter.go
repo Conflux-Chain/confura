@@ -86,7 +86,7 @@ func (filter *vfLogFilter) Find(db *gorm.DB) ([]VirtualFilterLog, error) {
 	}
 
 	if len(result) > int(store.MaxLogLimit) {
-		return nil, store.NewResultSetTooLargeError()
+		return nil, store.ErrFilterResultSetTooLarge
 	}
 
 	return result, nil
@@ -226,7 +226,7 @@ func (vfls *VirtualFilterLogStore) GetLogs(
 
 		// check log count
 		if len(result) > int(store.MaxLogLimit) {
-			return nil, store.NewResultSetTooLargeError()
+			return nil, store.ErrFilterResultSetTooLarge
 		}
 	}
 

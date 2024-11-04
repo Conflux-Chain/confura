@@ -138,7 +138,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	}
 
 	if len(logs) > int(store.MaxLogLimit) {
-		return nil, false, store.NewResultSetTooLargeError()
+		return nil, false, store.ErrFilterResultSetTooLarge
 	}
 
 	return logs, dbFilter != nil, nil
@@ -261,7 +261,8 @@ func (handler *EthLogsApiHandler) checkFnEthLogFilter(filter *types.FilterQuery)
 		numBlocks := blockRange.To - blockRange.From + 1
 		if numBlocks > uint64(store.MaxLogBlockRange) {
 			blockRange.To = blockRange.From + uint64(store.MaxLogBlockRange) - 1
-			return store.NewQuerySetTooLargeError(&blockRange)
+			suggestedRange := store.SuggestedBlockRange{RangeUint64: blockRange}
+			return store.NewSuggestedFilterQuerySetTooLargeError(&suggestedRange)
 		}
 	}
 
