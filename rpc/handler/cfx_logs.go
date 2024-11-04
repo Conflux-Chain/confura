@@ -149,7 +149,11 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		// convert block number range back to epoch number range for log filter with epoch range
 		if filter.FromEpoch != nil {
 			var valErr *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
-			if errors.As(err, &valErr) && valErr.SuggestedRange.MaxEndEpoch != 0 {
+			if errors.As(err, &valErr) {
+				if valErr.SuggestedRange.MaxEndEpoch == 0 {
+					return nil, false, valErr.Unwrap()
+				}
+
 				fromEpoch, _ := filter.FromEpoch.ToInt()
 				maxPossibleEpochNum := valErr.SuggestedRange.MaxEndEpoch
 				endBlockNum := valErr.SuggestedRange.To
