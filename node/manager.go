@@ -10,7 +10,7 @@ import (
 )
 
 // nodeFactory factory method to create node instance
-type nodeFactory func(group Group, name, url string, hm HealthMonitor) (Node, error)
+type nodeFactory func(group Group, name, url string) (Node, error)
 
 // Manager manages full node cluster, including:
 // 1. Monitor node health and disable/enable full node automatically.
@@ -23,8 +23,9 @@ type Manager struct {
 	resolver RepartitionResolver    // support repartition for hash ring
 	mu       sync.RWMutex
 
-	nodeName2Epochs map[string]uint64 // node name => epoch
-	midEpoch        uint64            // middle epoch of managed full nodes.
+	// health monitor
+	monitorStatuses map[string]monitorStatus // node name => monitor status
+	midEpoch        uint64                   // middle epoch of managed full nodes.
 }
 
 func NewManager(group Group) *Manager {
@@ -36,18 +37,8 @@ func NewManagerWithRepartition(group Group, resolver RepartitionResolver) *Manag
 		group:           group,
 		nodes:           make(map[string]Node),
 		resolver:        resolver,
-		nodeName2Epochs: make(map[string]uint64),
+		monitorStatuses: make(map[string]monitorStatus),
 		hashRing:        consistent.New(nil, cfg.HashRingRaw()),
-	}
-}
-
-// Close closes the manager to reclaim resources
-func (m *Manager) Close() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for _, node := range m.nodes {
-		node.Close()
 	}
 }
 
@@ -73,7 +64,7 @@ func (m *Manager) Remove(nodeNames ...string) {
 		if node, ok := m.nodes[nn]; ok {
 			node.Close()
 			delete(m.nodes, nn)
-			delete(m.nodeName2Epochs, nn)
+			delete(m.monitorStatuses, nn)
 			m.hashRing.Remove(nn)
 		}
 	}
