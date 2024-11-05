@@ -256,7 +256,12 @@ func (api *CfxAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	return ConvertReceipt(receipt, api.ethNetworkId), nil
 }
 
-func (api *CfxAPI) GetEpochReceipts(ctx context.Context, bnh EthBlockNumberOrHash) ([][]*types.TransactionReceipt, error) {
+func (api *CfxAPI) GetEpochReceipts(ctx context.Context, epochOrBh types.EpochOrBlockHash) ([][]*types.TransactionReceipt, error) {
+	bnh, err := NewEthBlockNumberOrHash(epochOrBh)
+	if err != nil {
+		return nil, err
+	}
+
 	receipts, err := store.QueryEthReceipt(ctx, api.w3c, *bnh.ToArg())
 	if err != nil {
 		return nil, err

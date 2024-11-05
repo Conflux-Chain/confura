@@ -69,8 +69,37 @@ func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 
 // EthBlockNumberOrHash accepts hex number, hash and epoch tag latest_state, other values are invalid, e.g. latest_confirmed.
 type EthBlockNumberOrHash struct {
-	number ethTypes.BlockNumber
-	hash   *common.Hash
+	number           ethTypes.BlockNumber
+	hash             *common.Hash
+	requireCanonical bool
+}
+
+func NewEthBlockNumberOrHash(epochOrBh types.EpochOrBlockHash) (ebnh EthBlockNumberOrHash, err error) {
+	if epoch, ok := epochOrBh.IsEpoch(); ok {
+		// Supports hex number
+		if num, ok := epoch.ToInt(); ok {
+			ebnh.number = ethTypes.BlockNumber(num.Int64())
+			return ebnh, nil
+		}
+
+		// Supports particular tags (latest_state and earliest) and hash
+		switch {
+		case types.EpochEarliest.Equals(epoch):
+			ebnh.number = ethTypes.EarliestBlockNumber
+		case types.EpochLatestState.Equals(epoch):
+			ebnh.number = ethTypes.LatestBlockNumber
+		default:
+			return ebnh, ErrEpochUnsupported
+		}
+	}
+
+	if blockHash, requirePivot, ok := epochOrBh.IsBlockHash(); ok {
+		ebnh.hash = blockHash
+		ebnh.requireCanonical = requirePivot
+		return ebnh, nil
+	}
+
+	return ebnh, errors.New("invalid epoch or block hash")
 }
 
 func (ebnh *EthBlockNumberOrHash) ToArg() *ethTypes.BlockNumberOrHash {
@@ -79,7 +108,7 @@ func (ebnh *EthBlockNumberOrHash) ToArg() *ethTypes.BlockNumberOrHash {
 		return &v
 	}
 
-	v := ethTypes.BlockNumberOrHashWithHash(*ebnh.hash, true)
+	v := ethTypes.BlockNumberOrHashWithHash(*ebnh.hash, ebnh.requireCanonical)
 	return &v
 }
 
