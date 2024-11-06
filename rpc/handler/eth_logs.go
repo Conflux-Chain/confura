@@ -87,7 +87,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	}
 
 	var logs []types.Log
-	var bodySizeAccumulator responseBodySizeAccumulator
+	var accumulator int
 
 	// query data from database
 	if dbFilter != nil {
@@ -103,7 +103,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for _, v := range dbLogs {
-			if err := bodySizeAccumulator.Add(len(v.Extra)); err != nil {
+			if accumulator, err = handler.accumulateBodySizeOfLogs(eth, filter, int(accumulator), v); err != nil {
 				return nil, false, err
 			}
 
@@ -130,7 +130,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for i := range fnLogs {
-			if err := bodySizeAccumulator.Add(len(fnLogs[i].Data)); err != nil {
+			if accumulator, err = handler.accumulateBodySizeOfEthLogs(eth, filter, int(accumulator), fnLogs[i]); err != nil {
 				return nil, false, err
 			}
 		}
@@ -267,6 +267,54 @@ func (handler *EthLogsApiHandler) checkFnEthLogFilter(filter *types.FilterQuery)
 	}
 
 	return nil
+}
+
+// Accumulate body size and suggest range if exceeded
+func (handler *EthLogsApiHandler) accumulateBodySizeOfLogs(eth *client.RpcEthClient, filter *types.FilterQuery, accumulator int, logs ...*store.Log) (int, error) {
+	for _, log := range logs {
+		accumulator += len(log.Extra)
+		if uint64(accumulator) > maxGetLogsResponseBytes {
+			return accumulator, newEthSuggestedBodyBytesOversizedError(eth, filter, *log)
+		}
+	}
+	return accumulator, nil
+}
+
+// Accumulate body size and suggest range if exceeded for CfxLogs
+func (handler *EthLogsApiHandler) accumulateBodySizeOfEthLogs(
+	eth *client.RpcEthClient, filter *types.FilterQuery, accumulator int, logs ...types.Log) (int, error) {
+
+	for _, log := range logs {
+		accumulator += len(log.Data)
+		if uint64(accumulator) > maxGetLogsResponseBytes {
+			return accumulator, newEthSuggestedBodyBytesOversizedError(eth, filter, log)
+		}
+	}
+	return accumulator, nil
+}
+
+func newEthSuggestedBodyBytesOversizedError[T types.Log | store.Log](eth *client.RpcEthClient, filter *types.FilterQuery, log T) error {
+	if filter.FromBlock == nil {
+		return errResponseBodySizeTooLarge
+	}
+
+	var logBlockNum uint64
+	switch v := any(log).(type) {
+	case store.Log:
+		logBlockNum = v.BlockNumber
+	case types.Log:
+		logBlockNum = v.BlockNumber
+	}
+
+	fromBlock := uint64(*filter.FromBlock)
+	if logBlockNum > fromBlock {
+		return store.NewSuggestedFilterOversizeError(
+			errResponseBodySizeTooLarge,
+			store.NewSuggestedBlockRange(fromBlock, logBlockNum-1, 0),
+		)
+	}
+
+	return errResponseBodySizeTooLarge
 }
 
 // calculateEthBlockRange calculates the block range of the log filter and returns the gap and a boolean indicating success.
