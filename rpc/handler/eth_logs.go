@@ -103,7 +103,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for _, v := range dbLogs {
-			if accumulator, err = handler.accumulateBodySizeOfLogs(eth, filter, int(accumulator), v); err != nil {
+			if accumulator, err = handler.accumulateBodySizeOfLogs(filter, accumulator, v); err != nil {
 				return nil, false, err
 			}
 
@@ -130,7 +130,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for i := range fnLogs {
-			if accumulator, err = handler.accumulateBodySizeOfEthLogs(eth, filter, int(accumulator), fnLogs[i]); err != nil {
+			if accumulator, err = handler.accumulateBodySizeOfEthLogs(filter, accumulator, fnLogs[i]); err != nil {
 				return nil, false, err
 			}
 		}
@@ -270,47 +270,38 @@ func (handler *EthLogsApiHandler) checkFnEthLogFilter(filter *types.FilterQuery)
 }
 
 // Accumulate body size and suggest range if exceeded
-func (handler *EthLogsApiHandler) accumulateBodySizeOfLogs(eth *client.RpcEthClient, filter *types.FilterQuery, accumulator int, logs ...*store.Log) (int, error) {
+func (handler *EthLogsApiHandler) accumulateBodySizeOfLogs(filter *types.FilterQuery, accumulator int, logs ...*store.Log) (int, error) {
 	for _, log := range logs {
 		accumulator += len(log.Extra)
 		if uint64(accumulator) > maxGetLogsResponseBytes {
-			return accumulator, newEthSuggestedBodyBytesOversizedError(eth, filter, *log)
+			return accumulator, newEthSuggestedBodyBytesOversizedError(filter, log.BlockNumber)
 		}
 	}
 	return accumulator, nil
 }
 
 // Accumulate body size and suggest range if exceeded for CfxLogs
-func (handler *EthLogsApiHandler) accumulateBodySizeOfEthLogs(
-	eth *client.RpcEthClient, filter *types.FilterQuery, accumulator int, logs ...types.Log) (int, error) {
+func (handler *EthLogsApiHandler) accumulateBodySizeOfEthLogs(filter *types.FilterQuery, accumulator int, logs ...types.Log) (int, error) {
 
 	for _, log := range logs {
 		accumulator += len(log.Data)
 		if uint64(accumulator) > maxGetLogsResponseBytes {
-			return accumulator, newEthSuggestedBodyBytesOversizedError(eth, filter, log)
+			return accumulator, newEthSuggestedBodyBytesOversizedError(filter, log.BlockNumber)
 		}
 	}
 	return accumulator, nil
 }
 
-func newEthSuggestedBodyBytesOversizedError[T types.Log | store.Log](eth *client.RpcEthClient, filter *types.FilterQuery, log T) error {
+func newEthSuggestedBodyBytesOversizedError(filter *types.FilterQuery, firstExceedingBlockNum uint64) error {
 	if filter.FromBlock == nil {
 		return errResponseBodySizeTooLarge
 	}
 
-	var logBlockNum uint64
-	switch v := any(log).(type) {
-	case store.Log:
-		logBlockNum = v.BlockNumber
-	case types.Log:
-		logBlockNum = v.BlockNumber
-	}
-
 	fromBlock := uint64(*filter.FromBlock)
-	if logBlockNum > fromBlock {
+	if firstExceedingBlockNum > fromBlock {
 		return store.NewSuggestedFilterOversizeError(
 			errResponseBodySizeTooLarge,
-			store.NewSuggestedBlockRange(fromBlock, logBlockNum-1, 0),
+			store.NewSuggestedBlockRange(fromBlock, firstExceedingBlockNum-1, 0),
 		)
 	}
 
