@@ -274,7 +274,7 @@ func (handler *EthLogsApiHandler) accumulateBodySizeOfLogs(filter *types.FilterQ
 	for _, log := range logs {
 		accumulator += len(log.Extra)
 		if uint64(accumulator) > maxGetLogsResponseBytes {
-			return accumulator, newEthSuggestedBodyBytesOversizedError(filter, log.BlockNumber)
+			return accumulator, handler.newSuggestedBodyBytesOversizedError(filter, log.BlockNumber)
 		}
 	}
 	return accumulator, nil
@@ -286,13 +286,13 @@ func (handler *EthLogsApiHandler) accumulateBodySizeOfEthLogs(filter *types.Filt
 	for _, log := range logs {
 		accumulator += len(log.Data)
 		if uint64(accumulator) > maxGetLogsResponseBytes {
-			return accumulator, newEthSuggestedBodyBytesOversizedError(filter, log.BlockNumber)
+			return accumulator, handler.newSuggestedBodyBytesOversizedError(filter, log.BlockNumber)
 		}
 	}
 	return accumulator, nil
 }
 
-func newEthSuggestedBodyBytesOversizedError(filter *types.FilterQuery, firstExceedingBlockNum uint64) error {
+func (handler *EthLogsApiHandler) newSuggestedBodyBytesOversizedError(filter *types.FilterQuery, firstExceedingBlockNum uint64) error {
 	if filter.FromBlock == nil {
 		return errResponseBodySizeTooLarge
 	}
