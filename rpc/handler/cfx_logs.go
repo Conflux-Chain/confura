@@ -491,10 +491,10 @@ func (handler *CfxLogsApiHandler) accumulateBodySizeOfCfxLogs(
 	return accumulator, nil
 }
 
-func newSuggestedBodyBytesOversizedError[T types.Log | store.Log](cfx sdk.ClientOperator, filter *types.LogFilter, log T) error {
+func newSuggestedBodyBytesOversizedError[T types.Log | store.Log](cfx sdk.ClientOperator, filter *types.LogFilter, firstExceedingLog T) error {
 	var logEpochNum, logBlockNum uint64
 
-	switch v := any(log).(type) {
+	switch v := any(firstExceedingLog).(type) {
 	case store.Log:
 		if filter.FromEpoch != nil {
 			logEpochNum = v.Epoch
