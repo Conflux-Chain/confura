@@ -60,13 +60,13 @@ An executable binary named *confura* will be generated in the project *bin* dire
 
 ## Running Confura
 
-Confura is comprised of serveral components as below:
+Confura is comprised of several components as below:
 
 * Blockchain Sync *(synchronizes blockchain data with persistent storage or cache)*
 * Node Management *(manages full node clusters including health monitoring and traffic routing etc.)*
 * Virtual Filter *(polls filter changes instantly into storage, also acts as a proxy to serves filter API requests)*
 * RPC Proxy *(optimizes certain RPC methods, particularly `cfx/eth_getLogs` to serve by responding directly from storage)*
-* Data Validator *(constantly scrapes blockchain data from both full node and RPC Proxy for validation comparision)*
+* Data Validator *(constantly scrapes blockchain data from both full node and RPC Proxy for validation comparison)*
 
 ### Blockchain Sync
 
