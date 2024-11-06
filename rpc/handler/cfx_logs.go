@@ -116,7 +116,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	}
 
 	var logs []types.Log
-	var bodySizeAccumulator responseBodySizeAccumulator
+	var accumulator int
 
 	if len(dbFilters) > 0 {
 		// add db query timeout
@@ -135,7 +135,8 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		// succeeded to get logs from database
 		if err == nil {
 			for _, v := range dbLogs {
-				if err := bodySizeAccumulator.Add(len(v.Extra)); err != nil {
+				accumulator, err = handler.accumulateBodySizeOfLogs(cfx, filter, accumulator, v)
+				if err != nil {
 					return nil, false, err
 				}
 
@@ -146,25 +147,12 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 			continue
 		}
 
-		// convert block number range back to epoch number range for log filter with epoch range
+		// convert suggested block range back to epoch range for log filter with epoch range
 		if filter.FromEpoch != nil {
 			var valErr *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
 			if errors.As(err, &valErr) {
-				if valErr.SuggestedRange.MaxEndEpoch == 0 {
-					return nil, false, valErr.Unwrap()
-				}
-
-				fromEpoch, _ := filter.FromEpoch.ToInt()
-				maxPossibleEpochNum := valErr.SuggestedRange.MaxEndEpoch
-				endBlockNum := valErr.SuggestedRange.To
-
-				suggstedEndEpoch, ok, err := handler.ms.ClosestEpochUpToBlock(maxPossibleEpochNum, endBlockNum)
-				if err != nil || !ok || suggstedEndEpoch < fromEpoch.Uint64() {
-					return nil, false, valErr.Unwrap()
-				}
-
-				suggestedEpochRange := store.NewSuggestedEpochRange(fromEpoch.Uint64(), suggstedEndEpoch)
-				return nil, false, store.NewSuggestedFilterOversizeError(valErr.Unwrap(), suggestedEpochRange)
+				oversizedErr := handler.convertSuggestedFilterOversizedError(filter, valErr)
+				return nil, false, oversizedErr
 			}
 		}
 
@@ -196,7 +184,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for i := range fnLogs {
-			if err := bodySizeAccumulator.Add(len(fnLogs[i].Data)); err != nil {
+			if accumulator, err = handler.accumulateBodySizeOfCfxLogs(cfx, filter, accumulator, fnLogs[i]); err != nil {
 				return nil, false, err
 			}
 		}
@@ -221,7 +209,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for i := range fnLogs {
-			if err := bodySizeAccumulator.Add(len(fnLogs[i].Data)); err != nil {
+			if accumulator, err = handler.accumulateBodySizeOfCfxLogs(cfx, filter, accumulator, fnLogs[i]); err != nil {
 				return nil, false, err
 			}
 		}
@@ -458,6 +446,98 @@ func (handler *CfxLogsApiHandler) checkFullnodeLogFilter(filter *types.LogFilter
 	return nil
 }
 
+// convert suggested block range back to epoch range if possible
+func (handler *CfxLogsApiHandler) convertSuggestedFilterOversizedError(
+	filter *types.LogFilter, oversizedErr *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]) error {
+
+	if oversizedErr.SuggestedRange.MaxEndEpoch == 0 {
+		return oversizedErr.Unwrap()
+	}
+
+	fromEpoch, _ := filter.FromEpoch.ToInt()
+	maxPossibleEpochNum := oversizedErr.SuggestedRange.MaxEndEpoch
+	endBlockNum := oversizedErr.SuggestedRange.To
+
+	suggstedEndEpoch, ok, err := handler.ms.ClosestEpochUpToBlock(maxPossibleEpochNum, endBlockNum)
+	if err != nil || !ok || suggstedEndEpoch < fromEpoch.Uint64() {
+		return oversizedErr.Unwrap()
+	}
+
+	suggestedEpochRange := store.NewSuggestedEpochRange(fromEpoch.Uint64(), suggstedEndEpoch)
+	return store.NewSuggestedFilterOversizeError(oversizedErr.Unwrap(), suggestedEpochRange)
+}
+
+// Accumulate body size and suggest range if exceeded
+func (handler *CfxLogsApiHandler) accumulateBodySizeOfLogs(cfx sdk.ClientOperator, filter *types.LogFilter, accumulator int, logs ...*store.Log) (int, error) {
+	for _, log := range logs {
+		accumulator += len(log.Extra)
+		if uint64(accumulator) > maxGetLogsResponseBytes {
+			return accumulator, newSuggestedBodyBytesOversizedError(cfx, filter, *log)
+		}
+	}
+	return accumulator, nil
+}
+
+// Accumulate body size and suggest range if exceeded for CfxLogs
+func (handler *CfxLogsApiHandler) accumulateBodySizeOfCfxLogs(
+	cfx sdk.ClientOperator, filter *types.LogFilter, accumulator int, logs ...types.Log) (int, error) {
+
+	for _, log := range logs {
+		accumulator += len(log.Data)
+		if uint64(accumulator) > maxGetLogsResponseBytes {
+			return accumulator, newSuggestedBodyBytesOversizedError(cfx, filter, log)
+		}
+	}
+	return accumulator, nil
+}
+
+func newSuggestedBodyBytesOversizedError[T types.Log | store.Log](cfx sdk.ClientOperator, filter *types.LogFilter, firstExceedingLog T) error {
+	var logEpochNum, logBlockNum uint64
+
+	switch v := any(firstExceedingLog).(type) {
+	case store.Log:
+		if filter.FromEpoch != nil {
+			logEpochNum = v.Epoch
+		} else if filter.FromBlock != nil {
+			logBlockNum = v.BlockNumber
+		}
+	case types.Log:
+		if filter.FromEpoch != nil {
+			logEpochNum = v.EpochNumber.ToInt().Uint64()
+		} else if filter.FromBlock != nil && v.BlockHash != nil {
+			if block, err := cfx.GetBlockSummaryByHash(*v.BlockHash); err == nil {
+				logBlockNum = block.BlockNumber.ToInt().Uint64()
+			}
+		}
+	}
+
+	// Return early if no valid `logEpochNum` or `logBlockNum` is found
+	if logEpochNum == 0 && logBlockNum == 0 {
+		return errResponseBodySizeTooLarge
+	}
+
+	// Suggest filter adjustments based on `FromEpoch` or `FromBlock`
+	if filter.FromEpoch != nil {
+		fromEpoch, _ := filter.FromEpoch.ToInt()
+		if logEpochNum > fromEpoch.Uint64() {
+			return store.NewSuggestedFilterOversizeError(
+				errResponseBodySizeTooLarge,
+				store.NewSuggestedEpochRange(fromEpoch.Uint64(), logEpochNum-1),
+			)
+		}
+	} else if filter.FromBlock != nil {
+		fromBlock := filter.FromBlock.ToInt()
+		if logBlockNum > fromBlock.Uint64() {
+			return store.NewSuggestedFilterOversizeError(
+				errResponseBodySizeTooLarge,
+				store.NewSuggestedBlockRange(fromBlock.Uint64(), logBlockNum-1, 0),
+			)
+		}
+	}
+
+	return errResponseBodySizeTooLarge
+}
+
 // checkTimeout checks if operation is timed out.
 func checkTimeout(ctx context.Context) error {
 	select {
@@ -499,22 +579,4 @@ func calculateEpochRange(filter *types.LogFilter) (epochRange citypes.RangeUint6
 
 	epochRange.From, epochRange.To = ef.Uint64(), et.Uint64()
 	return epochRange, true
-}
-
-// responseBodySizeAccumulator is a helper to check if the result body size exceeds the limit.
-type responseBodySizeAccumulator struct {
-	accumulator uint64
-}
-
-// Add adds the given size to the accumulator and checks if the result body size exceeds the limit.
-func (rb *responseBodySizeAccumulator) Add(size int) error {
-	// Add the new size to the accumulator.
-	rb.accumulator += uint64(size)
-
-	// If the accumulator exceeds the limit, return an error.
-	if rb.accumulator > maxGetLogsResponseBytes {
-		return errResponseBodySizeTooLarge
-	}
-
-	return nil
 }
