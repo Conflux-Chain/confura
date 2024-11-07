@@ -21,7 +21,7 @@ var (
 	wcfxTest = cfxaddress.MustNewFromBase32("cfxtest:achs3nehae0j6ksvy1bhrffsh1rtfrw1f6w1kzv46t")
 )
 
-// Please set the following enviroments to start:
+// Please set the following environments to start:
 // `TEST_CFX_FULL_NODE`: Core space full node endpoint as benchmarking data source.
 // `TEST_CFX_INFURA_NODE`: Core space infura service endpoint to be validated against.
 
