@@ -310,8 +310,8 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 			result = append(result, logs...)
 
 			// check log count
-			if len(result) > int(store.MaxLogLimit) {
-				return nil, store.ErrFilterResultSetTooLarge
+			if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
+				return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, true)
 			}
 
 			continue
@@ -330,7 +330,7 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 			ContractId: cid,
 		}
 
-		logs, err := ms.ails.GetAddressIndexedLogs(addrFilter, addr)
+		logs, err := ms.ails.GetAddressIndexedLogs(ctx, addrFilter, addr)
 		if err != nil {
 			return nil, err
 		}
@@ -341,8 +341,8 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 		}
 
 		// check log count
-		if len(result) > int(store.MaxLogLimit) {
-			return nil, store.ErrFilterResultSetTooLarge
+		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
+			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, false)
 		}
 	}
 
@@ -355,4 +355,27 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 // Prune prune data from db store.
 func (ms *MysqlStore) Prune() {
 	go ms.pruner.schedulePrune(ms.config)
+}
+
+// newSuggestedFilterResultSetTooLargeError returns an error indicating that the filter result set is too large.
+// It suggests a narrower block range to reduce the size of the result set if possible.
+//
+// Parameters:
+// - filter: the log filter used for querying logs.
+// - resultLogs: the list of logs retrieved from the query, make sure it is more than `store.MaxLogLimit` long.
+// - sorted: whether the logs are already sorted by block number.
+func newSuggestedFilterResultSetTooLargeError(filter *store.LogFilter, resultLogs []*store.Log, sorted bool) error {
+	// Ensure logs are sorted by block number if not already sorted.
+	if !sorted {
+		sort.Sort(store.LogSlice(resultLogs))
+	}
+
+	// Determine if we need to suggest a narrower block range based on the exceeding log entry
+	var suggestedBlockRange *store.SuggestedBlockRange
+	if exceedingLog := resultLogs[store.MaxLogLimit]; exceedingLog.BlockNumber > filter.BlockFrom {
+		blockRange := store.NewSuggestedBlockRange(filter.BlockFrom, exceedingLog.BlockNumber-1, exceedingLog.Epoch)
+		suggestedBlockRange = &blockRange
+	}
+
+	return store.NewSuggestedFilterResultSetTooLargeError(suggestedBlockRange)
 }

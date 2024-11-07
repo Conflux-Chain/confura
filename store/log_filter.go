@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -41,6 +42,22 @@ var ( // Log filter constants
 	MaxLogEpochRange uint64
 	MaxLogBlockRange uint64
 )
+
+// Custom type for the context key to avoid collisions
+type contextKey string
+
+const boundChecksDisabledKey contextKey = "Bound-Checks-Disabled"
+
+// NewContextWithBoundChecksDisabled returns a context that marks bound checks as disabled for getLogs
+func NewContextWithBoundChecksDisabled(ctx context.Context) context.Context {
+	return context.WithValue(ctx, boundChecksDisabledKey, struct{}{})
+}
+
+// IsBoundChecksEnabled checks if bound checks are enabled for getLogs
+// Defaults to true if not explicitly disabled
+func IsBoundChecksEnabled(ctx context.Context) bool {
+	return ctx.Value(boundChecksDisabledKey) == nil
+}
 
 type SuggestedBlockRange struct {
 	citypes.RangeUint64

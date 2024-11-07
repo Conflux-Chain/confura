@@ -12,6 +12,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
+	"github.com/sirupsen/logrus"
 )
 
 // EthLogsApiHandler RPC handler to get evm space event logs from store or fullnode.
@@ -89,13 +90,18 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	var logs []types.Log
 	var accumulator int
 
-	// query data from database
+	useBoundCheck := handler.RequiresBoundChecks(filter)
 	if dbFilter != nil {
-		// add db query timeout
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
-		defer cancel()
+		if useBoundCheck {
+			// add db query timeout
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
+			defer cancel()
+		} else {
+			ctx = store.NewContextWithBoundChecksDisabled(ctx)
+		}
 
+		// query data from database
 		dbLogs, err := handler.ms.GetLogs(ctx, *dbFilter)
 		if err != nil {
 			// TODO ErrPrunedAlready
@@ -103,8 +109,8 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for _, v := range dbLogs {
-			if accumulator, err = handler.accumulateBodySizeOfLogs(filter, accumulator, v); err != nil {
-				return nil, false, err
+			if accumulator += len(v.Extra); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
+				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, v.BlockNumber)
 			}
 
 			cfxLog, ext := v.ToCfxLog()
@@ -130,15 +136,29 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for i := range fnLogs {
-			if accumulator, err = handler.accumulateBodySizeOfEthLogs(filter, accumulator, fnLogs[i]); err != nil {
-				return nil, false, err
+			if accumulator += len(fnLogs[i].Data); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
+				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, fnLogs[i].BlockNumber)
 			}
 		}
 		logs = append(logs, fnLogs...)
 	}
 
-	if len(logs) > int(store.MaxLogLimit) {
-		return nil, false, store.ErrFilterResultSetTooLarge
+	// ensure result set never oversized
+	if useBoundCheck && uint64(len(logs)) > store.MaxLogLimit {
+		exceedingBlockNum := logs[store.MaxLogLimit].BlockNumber
+		return nil, false, handler.newSuggestedResultSetOversizedError(filter, exceedingBlockNum)
+	}
+
+	// Rare case: log context information for diagnostic purposes if the result exceeds limits.
+	if uint64(len(logs)) > store.MaxLogLimit || uint64(accumulator) > maxGetLogsResponseBytes {
+		logrus.WithFields(logrus.Fields{
+			"logFilter":         filter,
+			"databaseFilter":    dbFilter,
+			"functionFilter":    fnFilter,
+			"boundCheckEnabled": useBoundCheck,
+			"resultSetCount":    len(logs),
+			"responseSizeBytes": uint64(accumulator),
+		}).Info("Exceeded limits for getLogs response")
 	}
 
 	return logs, dbFilter != nil, nil
@@ -269,43 +289,31 @@ func (handler *EthLogsApiHandler) checkFnEthLogFilter(filter *types.FilterQuery)
 	return nil
 }
 
-// Accumulate body size and suggest range if exceeded
-func (handler *EthLogsApiHandler) accumulateBodySizeOfLogs(filter *types.FilterQuery, accumulator int, logs ...*store.Log) (int, error) {
-	for _, log := range logs {
-		accumulator += len(log.Extra)
-		if uint64(accumulator) > maxGetLogsResponseBytes {
-			return accumulator, handler.newSuggestedBodyBytesOversizedError(filter, log.BlockNumber)
-		}
+// RequiresBoundChecks determines if bound checks should be applied based on if there is any space to narrow down the log filter
+func (handler *EthLogsApiHandler) RequiresBoundChecks(filter *types.FilterQuery) bool {
+	if filter.FromBlock != nil && filter.ToBlock != nil {
+		return *filter.FromBlock < *filter.ToBlock
 	}
-	return accumulator, nil
+	return false
 }
 
-// Accumulate body size and suggest range if exceeded for CfxLogs
-func (handler *EthLogsApiHandler) accumulateBodySizeOfEthLogs(filter *types.FilterQuery, accumulator int, logs ...types.Log) (int, error) {
-
-	for _, log := range logs {
-		accumulator += len(log.Data)
-		if uint64(accumulator) > maxGetLogsResponseBytes {
-			return accumulator, handler.newSuggestedBodyBytesOversizedError(filter, log.BlockNumber)
-		}
-	}
-	return accumulator, nil
+func (handler *EthLogsApiHandler) newSuggestedResultSetOversizedError(filter *types.FilterQuery, exceedingBlockNum uint64) error {
+	return handler.newSuggestedFilterOversizedError(store.ErrFilterResultSetTooLarge, filter, exceedingBlockNum)
 }
 
-func (handler *EthLogsApiHandler) newSuggestedBodyBytesOversizedError(filter *types.FilterQuery, firstExceedingBlockNum uint64) error {
-	if filter.FromBlock == nil {
-		return errResponseBodySizeTooLarge
+func (handler *EthLogsApiHandler) newSuggestedBodyBytesOversizedError(filter *types.FilterQuery, exceedingBlockNum uint64) error {
+	return handler.newSuggestedFilterOversizedError(errResponseBodySizeTooLarge, filter, exceedingBlockNum)
+}
+
+func (handler *EthLogsApiHandler) newSuggestedFilterOversizedError(inner error, filter *types.FilterQuery, exceedingBlockNum uint64) error {
+	if filter.FromBlock != nil {
+		fromBlock := uint64(*filter.FromBlock)
+		if exceedingBlockNum > fromBlock {
+			return store.NewSuggestedFilterOversizeError(inner, store.NewSuggestedBlockRange(fromBlock, exceedingBlockNum-1, 0))
+		}
 	}
 
-	fromBlock := uint64(*filter.FromBlock)
-	if firstExceedingBlockNum > fromBlock {
-		return store.NewSuggestedFilterOversizeError(
-			errResponseBodySizeTooLarge,
-			store.NewSuggestedBlockRange(fromBlock, firstExceedingBlockNum-1, 0),
-		)
-	}
-
-	return errResponseBodySizeTooLarge
+	return inner
 }
 
 // calculateEthBlockRange calculates the block range of the log filter and returns the gap and a boolean indicating success.

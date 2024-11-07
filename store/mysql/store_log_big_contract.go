@@ -396,7 +396,7 @@ func (bcls *bigContractLogStore) GetContractLogs(
 		default:
 		}
 
-		logs, err := bcls.GetContractBnPartitionedLogs(cid, filter, *partition)
+		logs, err := bcls.GetContractBnPartitionedLogs(ctx, cid, filter, *partition)
 		if err != nil {
 			return nil, err
 		}
@@ -409,8 +409,8 @@ func (bcls *bigContractLogStore) GetContractLogs(
 		}
 
 		// check log count
-		if len(result) > int(store.MaxLogLimit) {
-			return nil, store.ErrFilterResultSetTooLarge
+		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
+			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, true)
 		}
 	}
 
@@ -420,13 +420,13 @@ func (bcls *bigContractLogStore) GetContractLogs(
 // GetContractBnPartitionedLogs returns contract event logs for the log filter from
 // specified table partition ranged by block number.
 func (bcls *bigContractLogStore) GetContractBnPartitionedLogs(
-	cid uint64, filter LogFilter, partition bnPartition,
+	ctx context.Context, cid uint64, filter LogFilter, partition bnPartition,
 ) ([]*contractLog, error) {
 	contractTabler := bcls.contractTabler(cid)
 	filter.TableName = bcls.getPartitionedTableName(contractTabler, partition.Index)
 
 	var res []*contractLog
-	err := filter.find(bcls.db, &res)
+	err := filter.find(ctx, bcls.db, &res)
 
 	return res, err
 }

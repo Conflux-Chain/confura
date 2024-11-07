@@ -195,7 +195,7 @@ func (ls *logStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([
 		default:
 		}
 
-		logs, err := ls.GetBnPartitionedLogs(filter, *partition)
+		logs, err := ls.GetBnPartitionedLogs(ctx, filter, *partition)
 		if err != nil {
 			return nil, err
 		}
@@ -206,8 +206,8 @@ func (ls *logStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([
 		}
 
 		// check log count
-		if len(result) > int(store.MaxLogLimit) {
-			return nil, store.ErrFilterResultSetTooLarge
+		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
+			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, true)
 		}
 	}
 
@@ -215,11 +215,11 @@ func (ls *logStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([
 }
 
 // GetBnPartitionedLogs returns event logs for the specified block number partitioned log filter.
-func (ls *logStore) GetBnPartitionedLogs(filter LogFilter, partition bnPartition) ([]*log, error) {
+func (ls *logStore) GetBnPartitionedLogs(ctx context.Context, filter LogFilter, partition bnPartition) ([]*log, error) {
 	filter.TableName = ls.getPartitionedTableName(&log{}, partition.Index)
 
 	var res []*log
-	err := filter.find(ls.db, &res)
+	err := filter.find(ctx, ls.db, &res)
 
 	return res, err
 }
