@@ -56,7 +56,7 @@ func NewContextWithBoundChecksDisabled(ctx context.Context) context.Context {
 // IsBoundChecksEnabled checks if bound checks are enabled for getLogs
 // Defaults to true if not explicitly disabled
 func IsBoundChecksEnabled(ctx context.Context) bool {
-	return ctx.Value(boundChecksDisabledKey) != nil
+	return ctx.Value(boundChecksDisabledKey) == nil
 }
 
 type SuggestedBlockRange struct {

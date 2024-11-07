@@ -144,7 +144,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	}
 
 	// ensure result set never oversized
-	if useBoundCheck && len(logs) > int(store.MaxLogLimit) {
+	if useBoundCheck && uint64(len(logs)) > store.MaxLogLimit {
 		exceedingBlockNum := logs[store.MaxLogLimit].BlockNumber
 		return nil, false, handler.newSuggestedResultSetOversizedError(filter, exceedingBlockNum)
 	}

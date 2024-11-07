@@ -410,7 +410,7 @@ func (bcls *bigContractLogStore) GetContractLogs(
 
 		// check log count
 		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, store.MaxLogLimit, true)
+			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, true)
 		}
 	}
 

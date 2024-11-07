@@ -311,7 +311,7 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 
 			// check log count
 			if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-				return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, store.MaxLogLimit, false)
+				return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, true)
 			}
 
 			continue
@@ -342,7 +342,7 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 
 		// check log count
 		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, store.MaxLogLimit, false)
+			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, false)
 		}
 	}
 
@@ -362,14 +362,9 @@ func (ms *MysqlStore) Prune() {
 //
 // Parameters:
 // - filter: the log filter used for querying logs.
-// - resultLogs: the list of logs retrieved from the query.
-// - limit: the maximum allowed size of the result set.
+// - resultLogs: the list of logs retrieved from the query, make sure it is more than `store.MaxLogLimit` long.
 // - sorted: whether the logs are already sorted by block number.
-func newSuggestedFilterResultSetTooLargeError(filter *store.LogFilter, resultLogs []*store.Log, limit uint64, sorted bool) error {
-	if len(resultLogs) <= int(limit) {
-		return nil
-	}
-
+func newSuggestedFilterResultSetTooLargeError(filter *store.LogFilter, resultLogs []*store.Log, sorted bool) error {
 	// Ensure logs are sorted by block number if not already sorted.
 	if !sorted {
 		sort.Sort(store.LogSlice(resultLogs))
@@ -377,8 +372,8 @@ func newSuggestedFilterResultSetTooLargeError(filter *store.LogFilter, resultLog
 
 	// Determine if we need to suggest a narrower block range based on the exceeding log entry
 	var suggestedBlockRange *store.SuggestedBlockRange
-	if exceedingLog := resultLogs[limit]; exceedingLog.BlockNumber > filter.BlockFrom {
-		blockRange := store.NewSuggestedBlockRange(filter.BlockFrom, exceedingLog.BlockNumber, filter.BlockTo)
+	if exceedingLog := resultLogs[store.MaxLogLimit]; exceedingLog.BlockNumber > filter.BlockFrom {
+		blockRange := store.NewSuggestedBlockRange(filter.BlockFrom, exceedingLog.BlockNumber-1, exceedingLog.Epoch)
 		suggestedBlockRange = &blockRange
 	}
 

@@ -223,7 +223,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	}
 
 	// ensure result set never oversized
-	if useBoundCheck && len(logs) > int(store.MaxLogLimit) {
+	if useBoundCheck && uint64(len(logs)) > store.MaxLogLimit {
 		return nil, false, newSuggestedResultSetOversizedError(cfx, filter, &logs[store.MaxLogLimit])
 	}
 

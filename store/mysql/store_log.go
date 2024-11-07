@@ -207,7 +207,7 @@ func (ls *logStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([
 
 		// check log count
 		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, store.MaxLogLimit, true)
+			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, true)
 		}
 	}
 
