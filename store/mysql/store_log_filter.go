@@ -243,20 +243,6 @@ func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr int
 	return db.Find(destSlicePtr).Error
 }
 
-// TODO add method FindXxx for type safety and double check the result set size <= max_limit.
-func (filter *LogFilter) Find(ctx context.Context, db *gorm.DB) ([]int, error) {
-	var result []int
-	if err := filter.find(ctx, db, &result); err != nil {
-		return nil, err
-	}
-
-	if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-		return nil, store.ErrFilterResultSetTooLarge
-	}
-
-	return result, nil
-}
-
 // AddressIndexedLogFilter is used to query event logs that indexed by contract id and block number.
 type AddressIndexedLogFilter struct {
 	LogFilter
@@ -286,10 +272,6 @@ func (filter *AddressIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([
 	var result []*AddressIndexedLog
 	if err := db.Find(&result).Error; err != nil {
 		return nil, err
-	}
-
-	if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-		return nil, store.ErrFilterResultSetTooLarge
 	}
 
 	return result, nil
