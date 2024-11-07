@@ -196,7 +196,7 @@ func (bcls *bigContractLogStore) contractEntity(cid uint64) string {
 	return contractLog{ContractID: cid}.TableName()
 }
 
-// contractEntity get partition tabler of contract logs
+// contractTabler get partition tabler of contract logs
 func (bcls *bigContractLogStore) contractTabler(cid uint64) *contractLog {
 	return &contractLog{ContractID: cid}
 }
