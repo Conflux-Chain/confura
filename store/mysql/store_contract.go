@@ -162,7 +162,7 @@ func (cs *ContractStore) AddContractByEpochData(slice ...*store.EpochData) (int,
 	return cs.AddContract(contracts)
 }
 
-// GetContractsByEpoch gets all contracts that have been updated since the specified epoch.
+// GetUpdatedContractsSinceEpoch gets all contracts that have been updated since the specified epoch.
 func (cs *ContractStore) GetUpdatedContractsSinceEpoch(epoch uint64) ([]*Contract, error) {
 	var contracts []*Contract
 	if err := cs.db.Where("latest_updated_epoch >= ?", epoch).Find(&contracts).Error; err != nil {
