@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 
@@ -178,11 +179,12 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 
 // GetAddressIndexedLogs returns event logs for the specified filter.
 func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(
+	ctx context.Context,
 	filter AddressIndexedLogFilter,
 	contract string,
 ) ([]*AddressIndexedLog, error) {
 	filter.TableName = ls.GetPartitionedTableName(contract)
-	return filter.Find(ls.db)
+	return filter.Find(ctx, ls.db)
 }
 
 // GetPartitionedTableName returns partitioned table name with specified

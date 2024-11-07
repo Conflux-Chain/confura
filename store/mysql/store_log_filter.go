@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -226,27 +227,30 @@ func (filter *LogFilter) hasTopicsFilter() bool {
 	return false
 }
 
-func (filter *LogFilter) find(db *gorm.DB, destSlicePtr interface{}) error {
-	if err := filter.validateQuerySetSize(db); err != nil {
-		return err
+func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr interface{}) error {
+	if store.IsBoundChecksEnabled(ctx) {
+		if err := filter.validateQuerySetSize(db); err != nil {
+			return err
+		}
 	}
 
 	db = db.Table(filter.TableName)
 	db = db.Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
 	db = applyTopicsFilter(db, filter.Topics)
+	db = db.Order("bn ASC")
 	db = db.Limit(int(store.MaxLogLimit) + 1)
 
 	return db.Find(destSlicePtr).Error
 }
 
 // TODO add method FindXxx for type safety and double check the result set size <= max_limit.
-func (filter *LogFilter) Find(db *gorm.DB) ([]int, error) {
+func (filter *LogFilter) Find(ctx context.Context, db *gorm.DB) ([]int, error) {
 	var result []int
-	if err := filter.find(db, &result); err != nil {
+	if err := filter.find(ctx, db, &result); err != nil {
 		return nil, err
 	}
 
-	if len(result) > int(store.MaxLogLimit) {
+	if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
 		return nil, store.ErrFilterResultSetTooLarge
 	}
 
@@ -265,14 +269,17 @@ func (filter *AddressIndexedLogFilter) validateCount(db *gorm.DB) error {
 	return filter.LogFilter.validateCount(db)
 }
 
-func (filter *AddressIndexedLogFilter) Find(db *gorm.DB) ([]*AddressIndexedLog, error) {
-	if err := filter.validateCount(db); err != nil {
-		return nil, err
+func (filter *AddressIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([]*AddressIndexedLog, error) {
+	if store.IsBoundChecksEnabled(ctx) {
+		if err := filter.validateCount(db); err != nil {
+			return nil, err
+		}
 	}
 
 	db = db.Table(filter.TableName).
 		Where("cid = ?", filter.ContractId).
 		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
+		Order("bn ASC").
 		Limit(int(store.MaxLogLimit) + 1)
 	db = applyTopicsFilter(db, filter.Topics)
 
@@ -281,7 +288,7 @@ func (filter *AddressIndexedLogFilter) Find(db *gorm.DB) ([]*AddressIndexedLog, 
 		return nil, err
 	}
 
-	if len(result) > int(store.MaxLogLimit) {
+	if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
 		return nil, store.ErrFilterResultSetTooLarge
 	}
 

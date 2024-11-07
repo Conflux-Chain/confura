@@ -211,7 +211,8 @@ func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange type
 // searchOverlapPartitions search entity partitions that overlap the search range regardless of the boundary.
 func (bnps *bnPartitionedStore) searchOverlapPartitions(entity string, searchRange types.RangeUint64) ([]*bnPartition, error) {
 	db := bnps.db.Where("entity = ?", entity).
-		Where("bn_min <= ? AND bn_max >= ?", searchRange.To, searchRange.From)
+		Where("bn_min <= ? AND bn_max >= ?", searchRange.To, searchRange.From).
+		Order("pi asc")
 
 	var partitions []*bnPartition
 	err := db.Find(&partitions).Error
