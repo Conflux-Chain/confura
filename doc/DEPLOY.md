@@ -18,12 +18,12 @@ Recommended:
 
 * Fast CPU with 4+ cores
 * 8GB+ RAM
-* High Performance SSD with at least 1TB free space
+* High Performance SSD with at least 1TB of free space
 * 25+ MBit/sec download Internet service
 
 ### Software Requirements
 
-Confura can even be run without any third party dependencies. But depending on what you plan to do with it, you will require the following:
+Confura can even be run without any third-party dependencies. But depending on what you plan to do with it, you will require the following:
 
 * MySQL Server v5.7+ *(used for off-chain persistent storage)*
 * Redis Server v6.2+ *(optional, used for off-chain cache)*
