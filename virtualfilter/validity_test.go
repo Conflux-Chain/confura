@@ -43,7 +43,7 @@ var (
 	}
 )
 
-// Please set the following enviroments before running the validity test:
+// Please set the following environments before running the validity test:
 // `TEST_CFX_CLIENT_ENDPOINT`: Core space JSON-RPC endpoint to construct sdk client.
 // `TEST_ETH_CLIENT_ENDPOINT`: EVM space JSON-RPC endpoint to construct sdk client.
 //

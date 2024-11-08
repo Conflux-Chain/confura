@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	// Minimun length for a valid access token
+	// Minimum length for a valid access token
 	minAccessTokenLength = 20
 )
 
