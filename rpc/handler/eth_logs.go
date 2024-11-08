@@ -154,7 +154,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		logrus.WithFields(logrus.Fields{
 			"logFilter":         filter,
 			"databaseFilter":    dbFilter,
-			"functionFilter":    fnFilter,
+			"fullnodeFilter":    fnFilter,
 			"boundCheckEnabled": useBoundCheck,
 			"resultSetCount":    len(logs),
 			"responseSizeBytes": uint64(accumulator),

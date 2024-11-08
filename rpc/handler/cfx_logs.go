@@ -232,7 +232,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		logrus.WithFields(logrus.Fields{
 			"logFilter":         filter,
 			"databaseFilters":   dbFilters,
-			"functionFilter":    fnFilter,
+			"fullnodeFilter":    fnFilter,
 			"boundCheckEnabled": useBoundCheck,
 			"resultSetCount":    len(logs),
 			"responseSizeBytes": uint64(accumulator),
