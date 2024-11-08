@@ -336,6 +336,14 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	return receipt, err
 }
 
+// Returns pending transactions for a given account.
+func (api *ethAPI) GetAccountPendingTransactions(
+	ctx context.Context, addr common.Address, startNonce *hexutil.Big, limit *hexutil.Uint64,
+) (*web3Types.AccountPendingTransactions, error) {
+	w3c := GetEthClientFromContext(ctx)
+	return w3c.Eth.AccountPendingTransactions(addr, startNonce.ToInt(), (*uint64)(limit))
+}
+
 // GetLogs returns an array of all logs matching a given filter object.
 func (api *ethAPI) GetLogs(ctx context.Context, fq web3Types.FilterQuery) ([]web3Types.Log, error) {
 	w3c := GetEthClientFromContext(ctx)
