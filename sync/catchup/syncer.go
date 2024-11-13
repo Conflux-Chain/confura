@@ -32,6 +32,8 @@ type Syncer struct {
 	minBatchDbRows int
 	// max num of db rows collected before persistence
 	maxDbRows int
+	// number of epochs to sync per batch
+	batchSize int
 	// benchmark catch-up sync performance
 	benchmark bool
 	// HA leader/follower election
@@ -52,6 +54,12 @@ func WithMinBatchDbRows(dbRows int) SyncOption {
 func WithMaxDbRows(dbRows int) SyncOption {
 	return func(s *Syncer) {
 		s.maxDbRows = dbRows
+	}
+}
+
+func WithBatchSize(batchSize int) SyncOption {
+	return func(s *Syncer) {
+		s.batchSize = batchSize
 	}
 }
 
@@ -86,6 +94,7 @@ func MustNewSyncer(
 	newOpts = append(newOpts,
 		WithMaxDbRows(conf.MaxDbRows),
 		WithMinBatchDbRows(conf.DbRowsThreshold),
+		WithBatchSize(conf.SyncBatchSize),
 		WithWorkers(workers),
 	)
 
@@ -175,17 +184,17 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 
 	for i, w := range s.workers {
 		wstart := start + uint64(i)
-		stepN := uint64(len(s.workers))
+		stepN := len(s.workers) * s.batchSize
 
 		wg.Add(1)
-		go w.Sync(ctx, &wg, wstart, end, stepN)
+		go w.Sync(ctx, &wg, wstart, end, s.batchSize, stepN)
 	}
 
 	wg.Wait()
 }
 
 func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *benchmarker) error {
-	var epochData *store.EpochData
+	var epochDatas []*store.EpochData
 	var state persistState
 
 	for eno := start; eno <= end; {
@@ -195,37 +204,37 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case epochData = <-w.Data():
+			case epochDatas = <-w.ResultChan():
 				if bmarker != nil {
-					bmarker.metricFetchPerEpochDuration(startTime)
+					bmarker.metricFetchDurationPerBatch(len(epochDatas), startTime)
 				}
 
 				// collect epoch data
-				eno++
+				eno += uint64(len(epochDatas))
 
 				s.monitor.Update(eno)
 			}
 
-			epochDbRows, storeDbRows := state.update(epochData)
+			for _, epochData := range epochDatas {
+				epochDbRows, storeDbRows := state.update(epochData)
 
-			logrus.WithFields(logrus.Fields{
-				"workerName":         w.name,
-				"epochNo":            epochData.Number,
-				"epochDbRows":        epochDbRows,
-				"storeDbRows":        storeDbRows,
-				"state.insertDbRows": state.insertDbRows,
-				"state.totalDbRows":  state.totalDbRows,
-			}).Debug("Catch-up syncer collects new epoch data from worker")
+				logrus.WithFields(logrus.Fields{
+					"workerName":         w.name,
+					"epochNo":            epochData.Number,
+					"epochDbRows":        epochDbRows,
+					"storeDbRows":        storeDbRows,
+					"state.insertDbRows": state.insertDbRows,
+					"state.totalDbRows":  state.totalDbRows,
+				}).Debug("Catch-up syncer collects new epoch data from worker")
 
-			// Batch insert into db if enough db rows collected, also use total db rows here to
-			// restrict memory usage.
-			if state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
-				err := s.persist(ctx, &state, bmarker)
-				if err != nil {
-					return err
+				// Batch insert into db if enough db rows collected, also use total db rows here to
+				// restrict memory usage.
+				if state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
+					if err := s.persist(ctx, &state, bmarker); err != nil {
+						return err
+					}
+					state.reset()
 				}
-
-				state.reset()
 			}
 		}
 	}

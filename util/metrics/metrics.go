@@ -148,8 +148,16 @@ func (*SyncMetrics) QueryEpochData(space string) metrics.Timer {
 	return metricUtil.GetOrRegisterTimer("infura/sync/%v/fullnode", space)
 }
 
+func (*SyncMetrics) CatchupEpochData(space string) metrics.Timer {
+	return metricUtil.GetOrRegisterTimer("infura/catchup/%v/fullnode", space)
+}
+
 func (*SyncMetrics) QueryEpochDataAvailability(space string) metricUtil.Percentage {
 	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/sync/%v/fullnode/availability", space)
+}
+
+func (*SyncMetrics) CatchupEpochDataAvailability(space string) metricUtil.Percentage {
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/catchup/%v/fullnode/availability", space)
 }
 
 // Store metrics

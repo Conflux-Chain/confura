@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	citypes "github.com/Conflux-Chain/confura/types"
@@ -12,6 +13,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	sdkerr "github.com/Conflux-Chain/go-conflux-sdk/types/errors"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -336,4 +338,39 @@ func checkPivotSwitchWithError(err error) bool {
 	}
 
 	return false
+}
+
+// QueryEventLogs retrieves all logs within a specified epoch range using a binary search strategy.
+// The function attempts to fetch logs in the maximum possible range for best performance and adjusts the range only if necessary.
+// This minimizes the number of API calls, providing efficient log retrieval within large epoch ranges.
+func QueryEventLogs(cfx sdk.ClientOperator, fromEpoch, toEpoch uint64) (res []types.Log, err error) {
+	// Start with the largest range, [fromEpoch, toEpoch]
+	for midEpoch := toEpoch; fromEpoch <= toEpoch; {
+		logFilter := types.LogFilter{
+			FromEpoch: types.NewEpochNumberUint64(fromEpoch),
+			ToEpoch:   types.NewEpochNumberUint64(midEpoch),
+		}
+
+		// Attempt to retrieve logs within the current range [fromEpoch, midEpoch]
+		logs, err := cfx.GetLogs(logFilter)
+		if err == nil {
+			// Successfully retrieved logs; append results and move to the next range
+			res = append(res, logs...)
+			fromEpoch = midEpoch + 1 // Shift `fromEpoch` to start after the last successful `midEpoch`
+			midEpoch = toEpoch       // Reset `midEpoch` to the full range to retry maximum range
+			continue
+		}
+
+		// If error is due to filter constraints (e.g., range too large), reduce the range
+		if fromEpoch < midEpoch && utils.IsRPCJSONError(err) && strings.Contains(err.Error(), "Filter error") {
+			// Narrow the range by halving `midEpoch`
+			midEpoch = (fromEpoch + midEpoch) / 2
+			continue
+		}
+
+		// For any other error type, return immediately
+		return nil, err
+	}
+
+	return res, nil
 }
