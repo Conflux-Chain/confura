@@ -123,9 +123,12 @@ func (s *Syncer) Sync(ctx context.Context) {
 		logrus.Debug("Catch-up syncer skipped due to no workers configured")
 		return
 	}
+	s.batchSize = max(1, s.batchSize)
 
-	logrus.WithField("numWorkers", len(s.workers)).
-		Debug("Catch-up syncer starting to catch up latest epoch")
+	logrus.WithFields(logrus.Fields{
+		"numWorkers": len(s.workers),
+		"batchSize":  s.batchSize,
+	}).Debug("Catch-up syncer starting to catch up latest epoch")
 
 	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
 	for s.elm.Await(ctx) {
