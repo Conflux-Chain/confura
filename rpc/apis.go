@@ -133,8 +133,10 @@ func evmSpaceApis(
 		}, {
 			Namespace: "debug",
 			Version:   "1.0",
-			Service:   &ethDebugAPI{},
-			Public:    false,
+			Service: &ethDebugAPI{
+				stateHandler: handler.NewEthStateHandler(clientProvider),
+			},
+			Public: false,
 		}, {
 			Namespace: "gasstation",
 			Version:   "1.0",
