@@ -8,6 +8,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -425,6 +426,298 @@ func (h *CfxStateHandler) GetParamsFromVote(
 	}
 
 	return vote.(postypes.VoteParamsInfo), err
+}
+
+func (h *CfxStateHandler) PosGetAccount(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	address postypes.Address,
+	view ...hexutil.Uint64,
+) (postypes.Account, error) {
+	account, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Pos().GetAccount(address, view...)
+	})
+
+	metrics.Registry.RPC.Percentage("pos_getAccount", "fullState").Mark(usefs)
+
+	if err != nil {
+		return postypes.Account{}, err
+	}
+
+	return account.(postypes.Account), err
+}
+
+func (h *CfxStateHandler) PosGetAccountByPowAddress(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	address cfxaddress.Address,
+	blockNumber ...hexutil.Uint64,
+) (postypes.Account, error) {
+	account, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Pos().GetAccountByPowAddress(address, blockNumber...)
+	})
+
+	metrics.Registry.RPC.Percentage("pos_getAccountByPowAddress", "fullState").Mark(usefs)
+
+	if err != nil {
+		return postypes.Account{}, err
+	}
+
+	return account.(postypes.Account), err
+}
+
+func (h *CfxStateHandler) PosGetCommittee(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	view ...hexutil.Uint64,
+) (postypes.CommitteeState, error) {
+	committee, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Pos().GetCommittee(view...)
+	})
+
+	metrics.Registry.RPC.Percentage("pos_getCommittee", "fullState").Mark(usefs)
+
+	if err != nil {
+		return postypes.CommitteeState{}, err
+	}
+
+	return committee.(postypes.CommitteeState), err
+}
+
+func (h *CfxStateHandler) PosGetRewardsByEpoch(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	epochNumber hexutil.Uint64,
+) (postypes.EpochReward, error) {
+	reward, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Pos().GetRewardsByEpoch(epochNumber)
+	})
+
+	metrics.Registry.RPC.Percentage("pos_getRewardsByEpoch", "fullState").Mark(usefs)
+
+	if err != nil {
+		return postypes.EpochReward{}, err
+	}
+
+	return reward.(postypes.EpochReward), err
+}
+
+func (h *CfxStateHandler) PosGetEpochState(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	epochNumber hexutil.Uint64,
+) (*postypes.EpochState, error) {
+	state, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Pos().GetEpochState(epochNumber)
+	})
+
+	metrics.Registry.RPC.Percentage("pos_getEpochState", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return state.(*postypes.EpochState), err
+}
+
+func (h *CfxStateHandler) PosGetLedgerInfoByEpoch(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	epochNumber hexutil.Uint64,
+) (*postypes.LedgerInfoWithSignatures, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Pos().GetLedgerInfoByEpoch(epochNumber)
+	})
+
+	metrics.Registry.RPC.Percentage("pos_getLedgerInfoByEpoch", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return info.(*postypes.LedgerInfoWithSignatures), err
+}
+
+func (h *CfxStateHandler) PosGetLedgerInfosByEpoch(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	startEpoch hexutil.Uint64,
+	endEpoch hexutil.Uint64,
+) ([]*postypes.LedgerInfoWithSignatures, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Pos().GetLedgerInfosByEpoch(startEpoch, endEpoch)
+	})
+
+	metrics.Registry.RPC.Percentage("pos_getLedgerInfosByEpoch", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return info.([]*postypes.LedgerInfoWithSignatures), err
+}
+
+func (h *CfxStateHandler) PosGetLedgerInfoByBlockNumber(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	blockNumber postypes.BlockNumber,
+) (*postypes.LedgerInfoWithSignatures, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Pos().GetLedgerInfoByBlockNumber(blockNumber)
+	})
+
+	metrics.Registry.RPC.Percentage("pos_getLedgerInfoByBlockNumber", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return info.(*postypes.LedgerInfoWithSignatures), err
+}
+
+func (h *CfxStateHandler) PosGetLedgerInfoByEpochAndRound(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	epochNumber hexutil.Uint64,
+	round hexutil.Uint64,
+) (*postypes.LedgerInfoWithSignatures, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Pos().GetLedgerInfoByEpochAndRound(epochNumber, round)
+	})
+
+	metrics.Registry.RPC.Percentage("pos_getLedgerInfoByEpochAndRound", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return info.(*postypes.LedgerInfoWithSignatures), err
+}
+
+func (h *CfxStateHandler) DebugGetEpochReceiptProofByTransaction(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	txHash types.Hash,
+) (*types.EpochReceiptProof, error) {
+	epochRcpt, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Debug().GetEpochReceiptProofByTransaction(txHash)
+	})
+
+	metrics.Registry.RPC.Percentage("debug_getEpochReceiptProofByTransaction", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return epochRcpt.(*types.EpochReceiptProof), err
+}
+
+func (h *CfxStateHandler) DebugGetTransactionsByEpoch(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	epoch types.Epoch,
+) ([]types.WrapTransaction, error) {
+	txns, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Debug().GetTransactionsByEpoch(epoch)
+	})
+
+	metrics.Registry.RPC.Percentage("debug_getTransactionsByEpoch", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return txns.([]types.WrapTransaction), err
+}
+
+func (h *CfxStateHandler) DebugGetTransactionsByBlock(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	blockHash types.Hash,
+) ([]types.WrapTransaction, error) {
+	txns, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Debug().GetTransactionsByBlock(blockHash)
+	})
+
+	metrics.Registry.RPC.Percentage("debug_getTransactionsByBlock", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return txns.([]types.WrapTransaction), err
+}
+
+func (h *CfxStateHandler) TraceBlock(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	blockHash types.Hash,
+) (*types.LocalizedBlockTrace, error) {
+	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Trace().GetBlockTraces(blockHash)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_block", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return trace.(*types.LocalizedBlockTrace), err
+}
+
+func (h *CfxStateHandler) TraceFilter(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	filter types.TraceFilter,
+) ([]types.LocalizedTrace, error) {
+	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Trace().FilterTraces(filter)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_filter", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return trace.([]types.LocalizedTrace), err
+}
+
+func (h *CfxStateHandler) TraceTransaction(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	txHash types.Hash,
+) ([]types.LocalizedTrace, error) {
+	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Trace().GetTransactionTraces(txHash)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_transaction", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return trace.([]types.LocalizedTrace), err
+}
+
+func (h *CfxStateHandler) TraceEpoch(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	epoch types.Epoch,
+) (types.EpochTrace, error) {
+	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+		return cfx.Trace().GetEpochTraces(epoch)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_epoch", "fullState").Mark(usefs)
+
+	if err != nil {
+		return types.EpochTrace{}, err
+	}
+
+	return trace.(types.EpochTrace), err
 }
 
 func (h *CfxStateHandler) doRequest(

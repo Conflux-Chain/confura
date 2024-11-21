@@ -136,6 +136,137 @@ func (h *EthStateHandler) EstimateGas(
 	return est.(*big.Int), err
 }
 
+func (h *EthStateHandler) DebugTraceTransaction(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	txnHash common.Hash,
+	opts ...*types.GethDebugTracingOptions,
+) (*types.GethTrace, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+		return w3c.Debug.TraceTransaction(txnHash, opts...)
+	})
+
+	metrics.Registry.RPC.Percentage("debug_traceTransaction", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.(*types.GethTrace), err
+}
+
+func (h *EthStateHandler) DebugTraceBlockByHash(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	blockHash common.Hash,
+	opts ...*types.GethDebugTracingOptions,
+) ([]*types.GethTraceResult, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+		return w3c.Debug.TraceBlockByHash(blockHash, opts...)
+	})
+
+	metrics.Registry.RPC.Percentage("debug_traceBlockByHash", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.([]*types.GethTraceResult), err
+}
+
+func (h *EthStateHandler) DebugTraceBlockByNumber(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	blockNumber types.BlockNumber,
+	opts ...*types.GethDebugTracingOptions,
+) ([]*types.GethTraceResult, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+		return w3c.Debug.TraceBlockByNumber(blockNumber, opts...)
+	})
+
+	metrics.Registry.RPC.Percentage("debug_traceBlockByNumber", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.([]*types.GethTraceResult), err
+}
+
+func (h *EthStateHandler) DebugTraceCall(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	request types.CallRequest,
+	blockNumber *types.BlockNumber,
+	opts ...*types.GethDebugTracingOptions,
+) (*types.GethTrace, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+		return w3c.Debug.TraceCall(request, blockNumber, opts...)
+	})
+
+	metrics.Registry.RPC.Percentage("debug_traceCall", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.(*types.GethTrace), err
+}
+
+func (h *EthStateHandler) TraceBlock(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	blockNumOrHash types.BlockNumberOrHash,
+) ([]types.LocalizedTrace, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+		return w3c.Trace.Blocks(blockNumOrHash)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_block", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.([]types.LocalizedTrace), err
+}
+
+func (h *EthStateHandler) TraceTransaction(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	txHash common.Hash,
+) ([]types.LocalizedTrace, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+		return w3c.Trace.Transactions(txHash)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_transaction", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.([]types.LocalizedTrace), err
+}
+
+func (h *EthStateHandler) TraceFilter(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	filter types.TraceFilter,
+) ([]types.LocalizedTrace, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+		return w3c.Trace.Filter(filter)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_filter", "fullState").Mark(usefs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.([]types.LocalizedTrace), err
+}
+
 func (h *EthStateHandler) doRequest(
 	ctx context.Context,
 	initW3c *node.Web3goClient,
