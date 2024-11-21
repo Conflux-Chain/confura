@@ -59,6 +59,7 @@ func nativeSpaceApis(
 	gashandler *handler.CfxGasStationHandler,
 	option ...CfxAPIOption,
 ) []API {
+	stateHandler := handler.NewCfxStateHandler(clientProvider)
 	return []API{
 		{
 			Namespace: "cfx",
@@ -73,12 +74,12 @@ func nativeSpaceApis(
 		}, {
 			Namespace: "pos",
 			Version:   "1.0",
-			Service:   &posAPI{},
+			Service:   &posAPI{stateHandler},
 			Public:    true,
 		}, {
 			Namespace: "trace",
 			Version:   "1.0",
-			Service:   &traceAPI{},
+			Service:   &traceAPI{stateHandler},
 			Public:    false,
 		}, {
 			Namespace: service.Namespace,
@@ -93,7 +94,7 @@ func nativeSpaceApis(
 		}, {
 			Namespace: "debug",
 			Version:   "1.0",
-			Service:   &cfxDebugAPI{},
+			Service:   &cfxDebugAPI{stateHandler},
 			Public:    false,
 		},
 	}
@@ -104,6 +105,7 @@ func evmSpaceApis(
 	clientProvider *node.EthClientProvider,
 	gashandler *handler.EthGasStationHandler,
 	option ...EthAPIOption) ([]API, error) {
+	stateHandler := handler.NewEthStateHandler(clientProvider)
 	return []API{
 		{
 			Namespace: "eth",
@@ -123,7 +125,7 @@ func evmSpaceApis(
 		}, {
 			Namespace: "trace",
 			Version:   "1.0",
-			Service:   &ethTraceAPI{},
+			Service:   &ethTraceAPI{stateHandler},
 			Public:    false,
 		}, {
 			Namespace: "parity",
@@ -133,7 +135,7 @@ func evmSpaceApis(
 		}, {
 			Namespace: "debug",
 			Version:   "1.0",
-			Service:   &ethDebugAPI{},
+			Service:   &ethDebugAPI{stateHandler},
 			Public:    false,
 		}, {
 			Namespace: "gasstation",
