@@ -26,7 +26,7 @@ type EthClientProvider struct {
 }
 
 func newEthClient(url string) (interface{}, error) {
-	client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true))
+	client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true), rpcutil.WithClientHookCache(true))
 	if err != nil {
 		return nil, err
 	}
