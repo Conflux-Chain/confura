@@ -18,7 +18,7 @@ func newHTTPHandlerStack(srv http.Handler, cors []string, vhosts []string) http.
 	handler = newVHostHandler(vhosts, handler)
 
 	// Due to potential memory leak (https://github.com/gin-contrib/gzip/issues/26) under
-	// high throughtout requests, we disable Gzip compressing for more memory efficiency.
+	// high throughput requests, we disable Gzip compressing for more memory efficiency.
 	// handler = newGzipHandler(handler)
 
 	return handler
