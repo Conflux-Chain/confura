@@ -14,7 +14,7 @@ type benchmarker struct {
 	persistDbRowsMetrics gmetrics.Histogram
 	persistEpochsMetrics gmetrics.Histogram
 	persistTimer         gmetrics.Timer
-	fetchPerEpochTimer   gmetrics.Timer
+	fetchTimerPerBatch   gmetrics.Timer
 
 	avgPersistDurationPerDbRowMetrics gmetrics.Histogram
 	avgPersistDurationPerEpochMetrics gmetrics.Histogram
@@ -36,7 +36,7 @@ func newBenchmarker() *benchmarker {
 		avgPersistDurationPerEpochMetrics: gmetrics.NewHistogram(gmetrics.NewExpDecaySample(1024, 0.015)),
 
 		persistTimer:       gmetrics.NewTimer(),
-		fetchPerEpochTimer: gmetrics.NewTimer(),
+		fetchTimerPerBatch: gmetrics.NewTimer(),
 	}
 }
 
@@ -137,19 +137,19 @@ func (b *benchmarker) report(start, end uint64) {
 	fmt.Printf("  m5 tps: %v\n", b.persistTimer.Snapshot().Rate5())
 	fmt.Printf(" m15 tps: %v\n", b.persistTimer.Snapshot().Rate15())
 
-	fmt.Println("// ---------- epoch fetch duration ------------")
-	fmt.Printf("  total epochs: %v\n", b.fetchPerEpochTimer.Snapshot().Count())
-	fmt.Printf("  max duration: %.2f(ms)\n", float64(b.fetchPerEpochTimer.Snapshot().Max())/1e6)
-	fmt.Printf("  min duration: %.2f(ms)\n", float64(b.fetchPerEpochTimer.Snapshot().Min()/1e6))
-	fmt.Printf(" mean duration: %.2f(ms)\n", b.fetchPerEpochTimer.Snapshot().Mean()/1e6)
-	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(b.fetchPerEpochTimer.Snapshot().Percentile(99))/1e6)
-	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(b.fetchPerEpochTimer.Snapshot().Percentile(75))/1e6)
+	fmt.Println("// ---------- batch fetch duration ------------")
+	fmt.Printf("  total epochs: %v\n", b.fetchTimerPerBatch.Snapshot().Count())
+	fmt.Printf("  max duration: %.2f(ms)\n", float64(b.fetchTimerPerBatch.Snapshot().Max())/1e6)
+	fmt.Printf("  min duration: %.2f(ms)\n", float64(b.fetchTimerPerBatch.Snapshot().Min()/1e6))
+	fmt.Printf(" mean duration: %.2f(ms)\n", b.fetchTimerPerBatch.Snapshot().Mean()/1e6)
+	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(b.fetchTimerPerBatch.Snapshot().Percentile(99))/1e6)
+	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(b.fetchTimerPerBatch.Snapshot().Percentile(75))/1e6)
 
-	fmt.Println("// ------------- epoch fetch tps --------------")
-	fmt.Printf("mean tps: %v\n", b.fetchPerEpochTimer.Snapshot().RateMean())
-	fmt.Printf("  m1 tps: %v\n", b.fetchPerEpochTimer.Snapshot().Rate1())
-	fmt.Printf("  m5 tps: %v\n", b.fetchPerEpochTimer.Snapshot().Rate5())
-	fmt.Printf(" m15 tps: %v\n", b.fetchPerEpochTimer.Snapshot().Rate15())
+	fmt.Println("// ------------- batch fetch tps --------------")
+	fmt.Printf("mean tps: %v\n", b.fetchTimerPerBatch.Snapshot().RateMean())
+	fmt.Printf("  m1 tps: %v\n", b.fetchTimerPerBatch.Snapshot().Rate1())
+	fmt.Printf("  m5 tps: %v\n", b.fetchTimerPerBatch.Snapshot().Rate5())
+	fmt.Printf(" m15 tps: %v\n", b.fetchTimerPerBatch.Snapshot().Rate15())
 }
 
 func (b *benchmarker) metricPersistDb(start time.Time, state *persistState) {
@@ -190,10 +190,10 @@ func (b *benchmarker) metricPersistDuration(start time.Time) time.Duration {
 	return persistDuration
 }
 
-func (b *benchmarker) metricFetchPerEpochDuration(start time.Time) time.Duration {
-	b.fetchPerEpochTimer.UpdateSince(start)
+func (b *benchmarker) metricFetchDurationPerBatch(numEpochs int, start time.Time) time.Duration {
+	b.fetchTimerPerBatch.UpdateSince(start)
 
-	atomic.AddInt64(&b.totalFetchEpochs, 1)
+	atomic.AddInt64(&b.totalFetchEpochs, int64(numEpochs))
 
 	fetchDuration := time.Since(start)
 	atomic.AddInt64((*int64)(&b.totalFetchDuration), int64(fetchDuration))
