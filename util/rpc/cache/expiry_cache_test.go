@@ -37,7 +37,7 @@ func TestExpiryCacheGetOrUpdateWithError(t *testing.T) {
 
 	fooErr := errors.New("foo error")
 
-	val, err := cache.getOrUpdate(func() (interface{}, error) {
+	val, _, err := cache.getOrUpdate(func() (interface{}, error) {
 		return "data", fooErr
 	})
 
@@ -49,23 +49,26 @@ func TestExpiryCacheGetOrUpdate(t *testing.T) {
 	cache := newExpiryCache(time.Minute)
 
 	// cache data
-	val, err := cache.getOrUpdate(func() (interface{}, error) {
+	val, cached, err := cache.getOrUpdate(func() (interface{}, error) {
 		return "data", nil
 	})
 	assert.Equal(t, "data", val.(string))
 	assert.Nil(t, err)
+	assert.False(t, cached)
 
 	// get cached data
-	val, err = cache.getOrUpdate(func() (interface{}, error) {
+	val, cached, err = cache.getOrUpdate(func() (interface{}, error) {
 		return "data - 2", nil
 	})
 	assert.Equal(t, "data", val.(string))
 	assert.Nil(t, err)
+	assert.True(t, cached)
 
 	// timeout and get new cached data
-	val, err = cache.getOrUpdateAt(time.Now().Add(time.Minute+time.Nanosecond), func() (interface{}, error) {
+	val, cached, err = cache.getOrUpdateAt(time.Now().Add(time.Minute+time.Nanosecond), func() (interface{}, error) {
 		return "data - 2", nil
 	})
 	assert.Equal(t, "data - 2", val.(string))
 	assert.Nil(t, err)
+	assert.False(t, cached)
 }

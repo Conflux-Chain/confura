@@ -17,12 +17,13 @@ import (
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go"
+	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/valyala/fasthttp"
 )
 
-type CacheHandlerFunc[T any] func(client T, nodeName string, args ...interface{}) (interface{}, error)
+type CacheHandlerFunc[T any] func(client T, nodeName string, args ...interface{}) (interface{}, bool, error)
 
 var (
 	cacheFnClients   util.ConcurrentMap
@@ -39,40 +40,47 @@ var (
 
 func init() {
 	cfxCacheHandlers = map[string]CacheHandlerFunc[sdk.ClientOperator]{
-		"cfx_clientVersion": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
+		"cfx_clientVersion": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, bool, error) {
 			return cache.CfxDefault.GetClientVersion(cfx)
 		},
-		"cfx_gasPrice": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
+		"cfx_gasPrice": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, bool, error) {
 			return cache.CfxDefault.GetGasPrice(cfx)
 		},
-		"cfx_getStatus": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
+		"cfx_getStatus": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, bool, error) {
 			return cache.CfxDefault.GetStatus(nodeName, cfx)
 		},
-		"cfx_epochNumber": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
-			var epoch *types.Epoch
-			if len(args) > 0 {
-				epoch = args[0].(*types.Epoch)
+		"cfx_epochNumber": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, bool, error) {
+			epoch, err := parseCfxEpochNumberArgument(args...)
+			if err != nil {
+				return nil, false, err
 			}
 			return cache.CfxDefault.GetEpochNumber(nodeName, cfx, epoch)
 		},
-		"cfx_getBestBlockHash": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
+		"cfx_getBestBlockHash": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, bool, error) {
 			return cache.CfxDefault.GetBestBlockHash(nodeName, cfx)
 		},
 	}
 	ethCacheHandlers = map[string]CacheHandlerFunc[*web3go.Client]{
-		"eth_chainId": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+		"eth_chainId": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, bool, error) {
 			return cache.EthDefault.GetChainId(w3c)
 		},
-		"eth_gasPrice": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+		"eth_gasPrice": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, bool, error) {
 			return cache.EthDefault.GetGasPrice(w3c)
 		},
-		"eth_blockNumber": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+		"eth_blockNumber": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, bool, error) {
 			return cache.EthDefault.GetBlockNumber(nodeName, w3c)
 		},
-		"net_version": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+		"eth_call": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, bool, error) {
+			request, blockNumOrHash, err := parseEthCallArguments(args...)
+			if err != nil {
+				return nil, false, err
+			}
+			return cache.EthDefault.Call(nodeName, w3c, request, blockNumOrHash)
+		},
+		"net_version": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, bool, error) {
 			return cache.EthDefault.GetNetVersion(w3c)
 		},
-		"web3_clientVersion": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+		"web3_clientVersion": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, bool, error) {
 			return cache.EthDefault.GetClientVersion(w3c)
 		},
 	}
@@ -219,11 +227,12 @@ func cfxCacheMiddleware(url string) providers.CallContextMiddleware {
 			if err != nil {
 				return err
 			}
-			val, err := cacheHandler(cfx, nodeName, args...)
+			val, loaded, err := cacheHandler(cfx, nodeName, args...)
 			if err != nil {
 				return err
 			}
-			return setResult(result, val)
+			metrics.Registry.Client.CacheHit(method).Mark(loaded)
+			return processCacheResult(result, val)
 		}
 	}
 }
@@ -240,11 +249,12 @@ func ethCacheMiddleware(url string) providers.CallContextMiddleware {
 			if err != nil {
 				return err
 			}
-			val, err := cacheHandler(eth, nodeName, args...)
+			val, loaded, err := cacheHandler(eth, nodeName, args...)
 			if err != nil {
 				return err
 			}
-			return setResult(result, val)
+			metrics.Registry.Client.CacheHit(method).Mark(loaded)
+			return processCacheResult(result, val)
 		}
 	}
 }
@@ -271,6 +281,46 @@ func getEthClient(url string) (*web3go.Client, error) {
 	return val.(*web3go.Client), nil
 }
 
+func parseCfxEpochNumberArgument(args ...interface{}) (*types.Epoch, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	val, ok := args[0].(*types.Epoch)
+	if !ok {
+		return nil, errors.Errorf(
+			"invalid argument: expected type `*types.Epoch`, but received %T", args[0],
+		)
+	}
+	return val, nil
+}
+
+func parseEthCallArguments(args ...interface{}) (web3Types.CallRequest, *web3Types.BlockNumberOrHash, error) {
+	if len(args) == 0 {
+		return web3Types.CallRequest{}, nil, errors.New("invalid argument: expected at least one argument")
+	}
+
+	var request web3Types.CallRequest
+	var blockNumOrHash *web3Types.BlockNumberOrHash
+
+	// Validate and extract the first argument
+	request, ok := args[0].(web3Types.CallRequest)
+	if !ok {
+		return request, nil, errors.Errorf(
+			"invalid argument: the first argument must be of type `web3Types.CallRequest`, but received %T", args[0],
+		)
+	}
+	// Validate and extract the second argument
+	if len(args) > 1 {
+		blockNumOrHash, ok = args[1].(*web3Types.BlockNumberOrHash)
+		if !ok {
+			return request, nil, errors.Errorf(
+				"invalid argument: the second argument must be of type `*web3Types.BlockNumberOrHash`, but received %T", args[1],
+			)
+		}
+	}
+	return request, blockNumOrHash, nil
+}
+
 func setResult(result interface{}, val interface{}) error {
 	// Ensure result is a non-nil pointer
 	resultValue := reflect.ValueOf(result)
@@ -290,4 +340,15 @@ func setResult(result interface{}, val interface{}) error {
 	// Set the value
 	resultElem.Set(value)
 	return nil
+}
+
+func processCacheResult(result interface{}, val interface{}) error {
+	if rpcResult, isRPCResult := val.(cache.RPCResult); isRPCResult {
+		if rpcResult.RpcError != nil {
+			return rpcResult.RpcError
+		}
+		return setResult(result, rpcResult.Data)
+	}
+
+	return setResult(result, val)
 }

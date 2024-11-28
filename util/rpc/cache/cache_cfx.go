@@ -26,26 +26,26 @@ func NewCfx() *CfxCache {
 	}
 }
 
-func (cache *CfxCache) GetGasPrice(cfx sdk.ClientOperator) (*hexutil.Big, error) {
-	val, err := cache.priceCache.getOrUpdate(func() (interface{}, error) {
+func (cache *CfxCache) GetGasPrice(cfx sdk.ClientOperator) (*hexutil.Big, bool, error) {
+	val, loaded, err := cache.priceCache.getOrUpdate(func() (interface{}, error) {
 		return cfx.GetGasPrice()
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return val.(*hexutil.Big), nil
+	return val.(*hexutil.Big), loaded, nil
 }
 
-func (cache *CfxCache) GetClientVersion(cfx sdk.ClientOperator) (string, error) {
-	val, err := cache.versionCache.getOrUpdate(func() (interface{}, error) {
+func (cache *CfxCache) GetClientVersion(cfx sdk.ClientOperator) (string, bool, error) {
+	val, loaded, err := cache.versionCache.getOrUpdate(func() (interface{}, error) {
 		return cfx.GetClientVersion()
 	})
 
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	return val.(string), nil
+	return val.(string), loaded, nil
 }

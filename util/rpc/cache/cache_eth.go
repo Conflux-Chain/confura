@@ -10,8 +10,10 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/mcuadros/go-defaults"
+	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -64,69 +66,79 @@ func newEthCache(cfg EthCacheConfig) *EthCache {
 	}
 }
 
-func (cache *EthCache) GetNetVersion(client *web3go.Client) (string, error) {
-	val, err := cache.netVersionCache.getOrUpdate(func() (interface{}, error) {
+func (cache *EthCache) GetNetVersion(client *web3go.Client) (string, bool, error) {
+	val, loaded, err := cache.netVersionCache.getOrUpdate(func() (interface{}, error) {
 		return client.Eth.NetVersion()
 	})
 
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	return val.(string), nil
+	return val.(string), loaded, nil
 }
 
-func (cache *EthCache) GetClientVersion(client *web3go.Client) (string, error) {
-	val, err := cache.clientVersionCache.getOrUpdate(func() (interface{}, error) {
+func (cache *EthCache) GetClientVersion(client *web3go.Client) (string, bool, error) {
+	val, loaded, err := cache.clientVersionCache.getOrUpdate(func() (interface{}, error) {
 		return client.Eth.ClientVersion()
 	})
 
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	return val.(string), nil
+	return val.(string), loaded, nil
 }
 
-func (cache *EthCache) GetChainId(client *web3go.Client) (*hexutil.Uint64, error) {
-	val, err := cache.chainIdCache.getOrUpdate(func() (interface{}, error) {
+func (cache *EthCache) GetChainId(client *web3go.Client) (*hexutil.Uint64, bool, error) {
+	val, loaded, err := cache.chainIdCache.getOrUpdate(func() (interface{}, error) {
 		return client.Eth.ChainId()
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return (*hexutil.Uint64)(val.(*uint64)), nil
+	return (*hexutil.Uint64)(val.(*uint64)), loaded, nil
 }
 
-func (cache *EthCache) GetGasPrice(client *web3go.Client) (*hexutil.Big, error) {
-	val, err := cache.priceCache.getOrUpdate(func() (interface{}, error) {
+func (cache *EthCache) GetGasPrice(client *web3go.Client) (*hexutil.Big, bool, error) {
+	val, loaded, err := cache.priceCache.getOrUpdate(func() (interface{}, error) {
 		return client.Eth.GasPrice()
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return (*hexutil.Big)(val.(*big.Int)), nil
+	return (*hexutil.Big)(val.(*big.Int)), loaded, nil
 }
 
-func (cache *EthCache) GetBlockNumber(nodeName string, client *web3go.Client) (*hexutil.Big, error) {
-	val, err := cache.blockNumberCache.getOrUpdate(nodeName, func() (interface{}, error) {
+func (cache *EthCache) GetBlockNumber(nodeName string, client *web3go.Client) (*hexutil.Big, bool, error) {
+	val, loaded, err := cache.blockNumberCache.getOrUpdate(nodeName, func() (interface{}, error) {
 		return client.Eth.BlockNumber()
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return (*hexutil.Big)(val.(*big.Int)), nil
+	return (*hexutil.Big)(val.(*big.Int)), loaded, nil
+}
+
+// RPCResult represents the result of an RPC call,
+// containing the response data or a potential JSON-RPC error.
+type RPCResult struct {
+	Data     interface{}
+	RpcError error
 }
 
 func (cache *EthCache) Call(
-	nodeName string, client *web3go.Client, callRequest types.CallRequest, blockNum *types.BlockNumberOrHash) ([]byte, error) {
-
+	nodeName string,
+	client *web3go.Client,
+	callRequest types.CallRequest,
+	blockNum *types.BlockNumberOrHash,
+) (RPCResult, bool, error) {
 	cacheKey, err := generateCallCacheKey(nodeName, callRequest, blockNum)
 	if err != nil {
 		// This should rarely happen, but if it does, we don't want to fail the entire request due to cache error.
@@ -136,17 +148,37 @@ func (cache *EthCache) Call(
 			"callReq":  callRequest,
 			"blockNum": blockNum,
 		}).WithError(err).Error("Failed to generate cache key for `eth_call`")
-		return client.Eth.Call(callRequest, blockNum)
+		val, err := client.Eth.Call(callRequest, blockNum)
+		return RPCResult{Data: val}, false, err
 	}
 
-	val, err := cache.callCache.getOrUpdate(cacheKey, func() (interface{}, error) {
-		return client.Eth.Call(callRequest, blockNum)
+	val, loaded, err := cache.callCache.getOrUpdate(cacheKey, func() (interface{}, error) {
+		data, err := client.Eth.Call(callRequest, blockNum)
+		// Cache RPC JSON errors or successful results
+		if err == nil || utils.IsRPCJSONError(err) {
+			return RPCResult{Data: data, RpcError: err}, nil
+		}
+		// Propagate other non JSON-RPC errors
+		return nil, err
 	})
 	if err != nil {
-		return nil, err
+		return RPCResult{}, false, err
 	}
 
-	return val.([]byte), nil
+	// Return the cached result
+	cachedResult, ok := val.(RPCResult)
+	if !ok { // This should rarely happen, but just in case.
+		logrus.WithFields(logrus.Fields{
+			"nodeName": nodeName,
+			"callReq":  callRequest,
+			"blockNum": blockNum,
+			"cacheKey": cacheKey,
+			"cacheVal": val,
+		}).Error("Unexpected cache value type for `eth_call`")
+		return RPCResult{}, false, errors.Errorf("unexpected cache value type")
+	}
+
+	return cachedResult, loaded, nil
 }
 
 func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockNum *types.BlockNumberOrHash) (string, error) {
