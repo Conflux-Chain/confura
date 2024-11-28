@@ -132,7 +132,7 @@ func NormalizeEthBlockNumber(
 		return nil, errors.WithMessagef(err, "failed to get block (%v)", blockText)
 	}
 
-	// !!! eth rpc may return nil for `pending` and `earlist` block number
+	// !!! eth rpc may return nil for `pending` and `earliest` block number
 	if block == nil {
 		blockText, _ := blockNum.MarshalText()
 		return nil, errors.Errorf("unknown block number (%v)", string(blockText))
