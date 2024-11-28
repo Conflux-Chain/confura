@@ -5,8 +5,9 @@ import (
 	"math/big"
 
 	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/rpc/cache"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/Conflux-Chain/confura/util/rpc/cache"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go/types"
 )
@@ -105,7 +106,8 @@ func (h *EthStateHandler) Call(
 	blockNum *types.BlockNumberOrHash,
 ) ([]byte, error) {
 	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
-		return cache.EthDefault.Call(w3c, callRequest, blockNum)
+		nodeName := rpc.Url2NodeName(w3c.URL)
+		return cache.EthDefault.Call(nodeName, w3c.Client, callRequest, blockNum)
 	})
 
 	metrics.Registry.RPC.Percentage("eth_call", "fullState").Mark(usefs)

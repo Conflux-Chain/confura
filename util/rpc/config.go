@@ -33,15 +33,21 @@ type ClientOptioner interface {
 	SetRequestTimeout(reqTimeout time.Duration)
 	SetMaxConnsPerHost(maxConns int)
 	SetHookMetrics(hook bool)
+	SetHookCache(hook bool)
 	SetCircuitBreaker(maxFail int, failTimeWindow, openColdTime time.Duration)
 }
 
 type baseClientOption struct {
 	hookMetrics bool
+	hookCache   bool
 }
 
 func (o *baseClientOption) SetHookMetrics(hook bool) {
 	o.hookMetrics = hook
+}
+
+func (o *baseClientOption) SetHookCache(hook bool) {
+	o.hookCache = hook
 }
 
 type ClientOption func(opt ClientOptioner)
@@ -73,6 +79,12 @@ func WithClientMaxConnsPerHost(maxConns int) ClientOption {
 func WithClientHookMetrics(hook bool) ClientOption {
 	return func(opt ClientOptioner) {
 		opt.SetHookMetrics(hook)
+	}
+}
+
+func WithClientHookCache(hook bool) ClientOption {
+	return func(opt ClientOptioner) {
+		opt.SetHookCache(hook)
 	}
 }
 

@@ -2,23 +2,80 @@ package rpc
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/rpc/cache"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
+	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/openweb3/go-rpc-provider"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	"github.com/openweb3/go-rpc-provider/utils"
+	"github.com/openweb3/web3go"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/valyala/fasthttp"
 )
 
-var ctxKeyToHeaderKeys = map[handlers.CtxKey]string{
-	handlers.CtxKeyAccessToken: "Access-Token",
-	handlers.CtxKeyReqOrigin:   "Origin",
-	handlers.CtxKeyUserAgent:   "User-Agent",
-	handlers.CtxKeyRealIP:      "X-Real-Ip",
+type CacheHandlerFunc[T any] func(client T, nodeName string, args ...interface{}) (interface{}, error)
+
+var (
+	cacheFnClients   util.ConcurrentMap
+	cfxCacheHandlers map[string]CacheHandlerFunc[sdk.ClientOperator] // method => cache handler
+	ethCacheHandlers map[string]CacheHandlerFunc[*web3go.Client]     // method => cache handler
+
+	ctxKeyToHeaderKeys = map[handlers.CtxKey]string{
+		handlers.CtxKeyAccessToken: "Access-Token",
+		handlers.CtxKeyReqOrigin:   "Origin",
+		handlers.CtxKeyUserAgent:   "User-Agent",
+		handlers.CtxKeyRealIP:      "X-Real-Ip",
+	}
+)
+
+func init() {
+	cfxCacheHandlers = map[string]CacheHandlerFunc[sdk.ClientOperator]{
+		"cfx_clientVersion": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
+			return cache.CfxDefault.GetClientVersion(cfx)
+		},
+		"cfx_gasPrice": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
+			return cache.CfxDefault.GetGasPrice(cfx)
+		},
+		"cfx_getStatus": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
+			return cache.CfxDefault.GetStatus(nodeName, cfx)
+		},
+		"cfx_epochNumber": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
+			var epoch *types.Epoch
+			if len(args) > 0 {
+				epoch = args[0].(*types.Epoch)
+			}
+			return cache.CfxDefault.GetEpochNumber(nodeName, cfx, epoch)
+		},
+		"cfx_getBestBlockHash": func(cfx sdk.ClientOperator, nodeName string, args ...interface{}) (interface{}, error) {
+			return cache.CfxDefault.GetBestBlockHash(nodeName, cfx)
+		},
+	}
+	ethCacheHandlers = map[string]CacheHandlerFunc[*web3go.Client]{
+		"eth_chainId": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+			return cache.EthDefault.GetChainId(w3c)
+		},
+		"eth_gasPrice": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+			return cache.EthDefault.GetGasPrice(w3c)
+		},
+		"eth_blockNumber": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+			return cache.EthDefault.GetBlockNumber(nodeName, w3c)
+		},
+		"net_version": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+			return cache.EthDefault.GetNetVersion(w3c)
+		},
+		"web3_clientVersion": func(w3c *web3go.Client, nodeName string, args ...interface{}) (interface{}, error) {
+			return cache.EthDefault.GetClientVersion(w3c)
+		},
+	}
 }
 
 // HookRedirectHttpHeader registers an event handler before sending client HTTP request,
@@ -59,6 +116,9 @@ const (
 
 	// MiddlewareHookLogMetrics enables metrics logging middleware hook.
 	MiddlewareHookLogMetrics
+
+	// MiddlewareHookCache enables cache middleware hook.
+	MiddlewareHookCache
 )
 
 func HookMiddlewares(provider *providers.MiddlewarableProvider, url, space string, flags ...MiddlewareHookFlag) {
@@ -75,6 +135,10 @@ func HookMiddlewares(provider *providers.MiddlewarableProvider, url, space strin
 
 	if flag&MiddlewareHookLogMetrics != 0 {
 		provider.HookCallContext(middlewareMetrics(nodeName, space))
+	}
+
+	if flag&MiddlewareHookCache != 0 {
+		provider.HookCallContext(middlewareCache(url, space))
 	}
 }
 
@@ -130,4 +194,100 @@ func middlewareLog(fullnode, space string) providers.CallContextMiddleware {
 			return err
 		}
 	}
+}
+
+func middlewareCache(url, space string) providers.CallContextMiddleware {
+	switch space {
+	case "eth":
+		return ethCacheMiddleware(url)
+	case "cfx":
+		return cfxCacheMiddleware(url)
+	default:
+		panic(fmt.Sprintf("unsupported space: %v", space))
+	}
+}
+
+func cfxCacheMiddleware(url string) providers.CallContextMiddleware {
+	nodeName := Url2NodeName(url)
+	return func(handler providers.CallContextFunc) providers.CallContextFunc {
+		return func(ctx context.Context, result interface{}, method string, args ...interface{}) error {
+			cacheHandler, ok := cfxCacheHandlers[method]
+			if !ok {
+				return handler(ctx, result, method, args...)
+			}
+			cfx, err := getCfxClient(url)
+			if err != nil {
+				return err
+			}
+			val, err := cacheHandler(cfx, nodeName, args...)
+			if err != nil {
+				return err
+			}
+			return setResult(result, val)
+		}
+	}
+}
+
+func ethCacheMiddleware(url string) providers.CallContextMiddleware {
+	nodeName := Url2NodeName(url)
+	return func(handler providers.CallContextFunc) providers.CallContextFunc {
+		return func(ctx context.Context, result interface{}, method string, args ...interface{}) error {
+			cacheHandler, ok := ethCacheHandlers[method]
+			if !ok {
+				return handler(ctx, result, method, args...)
+			}
+			eth, err := getEthClient(url)
+			if err != nil {
+				return err
+			}
+			val, err := cacheHandler(eth, nodeName, args...)
+			if err != nil {
+				return err
+			}
+			return setResult(result, val)
+		}
+	}
+}
+
+func getCfxClient(url string) (sdk.ClientOperator, error) {
+	val, _, err := cacheFnClients.LoadOrStoreFnErr(url, func(k interface{}) (interface{}, error) {
+		return NewCfxClient(url)
+	})
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to create cfx client")
+	}
+
+	return val.(sdk.ClientOperator), nil
+}
+
+func getEthClient(url string) (*web3go.Client, error) {
+	val, _, err := cacheFnClients.LoadOrStoreFnErr(url, func(k interface{}) (interface{}, error) {
+		return NewEthClient(url)
+	})
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to create eth client")
+	}
+
+	return val.(*web3go.Client), nil
+}
+
+func setResult(result interface{}, val interface{}) error {
+	// Ensure result is a non-nil pointer
+	resultValue := reflect.ValueOf(result)
+	if resultValue.Kind() != reflect.Ptr || resultValue.IsNil() {
+		return fmt.Errorf("result must be a non-nil pointer, got: %T", result)
+	}
+
+	// Dereference the pointer
+	resultElem := resultValue.Elem()
+
+	// Check if the value can be assigned
+	value := reflect.ValueOf(val)
+	if !value.Type().AssignableTo(resultElem.Type()) {
+		return fmt.Errorf("type mismatch: cannot assign %v to %v", value.Type(), resultElem.Type())
+	}
+
+	// Set the value
+	resultElem.Set(value)
+	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/rpc/cache"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
@@ -75,13 +74,13 @@ func toEpochOrBlockHashSlice(epoch *types.EpochOrBlockHash) []*types.EpochOrBloc
 
 func (api *cfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	return cache.CfxDefault.GetGasPrice(cfx)
+	return cfx.GetGasPrice()
 }
 
 func (api *cfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(epoch, "cfx_epochNumber", cfx)
-	return cache.CfxDefault.GetEpochNumber(cfx, epoch)
+	return cfx.GetEpochNumber(epoch)
 }
 
 func (api *cfxAPI) GetBalance(ctx context.Context, address types.Address, epoch *types.EpochOrBlockHash) (*hexutil.Big, error) {
@@ -240,12 +239,10 @@ func (api *cfxAPI) GetBlockByBlockNumber(
 
 	return cfx.GetBlockSummaryByBlockNumber(blockNumer)
 }
-
 func (api *cfxAPI) GetBestBlockHash(ctx context.Context) (types.Hash, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	return cache.CfxDefault.GetBestBlockHash(cfx)
+	return cfx.GetBestBlockHash()
 }
-
 func (api *cfxAPI) GetNextNonce(ctx context.Context, address types.Address, epoch *types.EpochOrBlockHash) (*hexutil.Big, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update2(epoch, "cfx_getNextNonce", cfx)
@@ -416,7 +413,7 @@ func (api *cfxAPI) GetConfirmationRiskByHash(ctx context.Context, blockHash type
 
 func (api *cfxAPI) GetStatus(ctx context.Context) (types.Status, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	return cache.CfxDefault.GetStatus(cfx)
+	return cfx.GetStatus()
 }
 
 func (api *cfxAPI) GetBlockRewardInfo(ctx context.Context, epoch types.Epoch) ([]types.RewardInfo, error) {
@@ -427,7 +424,7 @@ func (api *cfxAPI) GetBlockRewardInfo(ctx context.Context, epoch types.Epoch) ([
 
 func (api *cfxAPI) ClientVersion(ctx context.Context) (string, error) {
 	cfx := GetCfxClientFromContext(ctx)
-	return cache.CfxDefault.GetClientVersion(cfx)
+	return cfx.GetClientVersion()
 }
 
 func (api *cfxAPI) GetSupplyInfo(ctx context.Context, epoch *types.Epoch) (types.TokenSupplyInfo, error) {

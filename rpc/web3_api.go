@@ -3,7 +3,6 @@ package rpc
 import (
 	"context"
 
-	"github.com/Conflux-Chain/confura/rpc/cache"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
@@ -13,7 +12,7 @@ type web3API struct{}
 // ClientVersion returns the current client version.
 func (api *web3API) ClientVersion(ctx context.Context) (string, error) {
 	w3c := GetEthClientFromContext(ctx)
-	return cache.EthDefault.GetClientVersion(w3c.Client)
+	return w3c.Eth.ClientVersion()
 }
 
 // Sha3 returns Keccak-256 (not the standardized SHA3-256) hash of the given data.

@@ -3,7 +3,6 @@ package cache
 import (
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -21,9 +20,7 @@ func NewStatusCache() *StatusCache {
 	}
 }
 
-func (c *StatusCache) GetStatus(cfx sdk.ClientOperator) (types.Status, error) {
-	nodeName := rpc.Url2NodeName(cfx.GetNodeURL())
-
+func (c *StatusCache) GetStatus(nodeName string, cfx sdk.ClientOperator) (types.Status, error) {
 	val, err := c.inner.getOrUpdate(nodeName, func() (interface{}, error) {
 		return cfx.GetStatus()
 	})
@@ -35,12 +32,12 @@ func (c *StatusCache) GetStatus(cfx sdk.ClientOperator) (types.Status, error) {
 	return val.(types.Status), nil
 }
 
-func (c *StatusCache) GetEpochNumber(cfx sdk.ClientOperator, epoch *types.Epoch) (*hexutil.Big, error) {
+func (c *StatusCache) GetEpochNumber(nodeName string, cfx sdk.ClientOperator, epoch *types.Epoch) (*hexutil.Big, error) {
 	if types.EpochEarliest.Equals(epoch) {
 		return types.NewBigInt(0), nil
 	}
 
-	status, err := c.GetStatus(cfx)
+	status, err := c.GetStatus(nodeName, cfx)
 	if err != nil {
 		return nil, err
 	}
@@ -74,8 +71,8 @@ func (c *StatusCache) GetEpochNumber(cfx sdk.ClientOperator, epoch *types.Epoch)
 	return cfx.GetEpochNumber(epoch)
 }
 
-func (c *StatusCache) GetBestBlockHash(cfx sdk.ClientOperator) (types.Hash, error) {
-	status, err := c.GetStatus(cfx)
+func (c *StatusCache) GetBestBlockHash(nodeName string, cfx sdk.ClientOperator) (types.Hash, error) {
+	status, err := c.GetStatus(nodeName, cfx)
 	if err != nil {
 		return "", err
 	}

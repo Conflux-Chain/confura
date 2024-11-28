@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/blacklist"
 	"github.com/Conflux-Chain/confura/util/pprof"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/Conflux-Chain/confura/util/rpc/cache"
 	"github.com/Conflux-Chain/go-conflux-util/config"
 	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -29,6 +30,7 @@ func Init() {
 	pprof.MustInit()
 
 	// init misc util
+	cache.MustInitFromViper()
 	rpcutil.MustInit()
 	blacklist.MustInit()
 

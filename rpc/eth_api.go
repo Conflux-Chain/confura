@@ -5,7 +5,6 @@ import (
 	"math/big"
 
 	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/rpc/cache"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
@@ -123,13 +122,15 @@ func (api *ethAPI) GetBlockByHash(
 // ChainId returns the chainID value for transaction replay protection.
 func (api *ethAPI) ChainId(ctx context.Context) (*hexutil.Uint64, error) {
 	w3c := GetEthClientFromContext(ctx)
-	return cache.EthDefault.GetChainId(w3c.Client)
+	chainId, err := w3c.Eth.ChainId()
+	return (*hexutil.Uint64)(chainId), err
 }
 
 // BlockNumber returns the block number of the chain head.
 func (api *ethAPI) BlockNumber(ctx context.Context) (*hexutil.Big, error) {
 	w3c := GetEthClientFromContext(ctx)
-	return cache.EthDefault.GetBlockNumber(w3c)
+	blockNum, err := w3c.Eth.BlockNumber()
+	return (*hexutil.Big)(blockNum), err
 }
 
 // GetBalance returns the amount of wei for the given address in the state of the
@@ -213,7 +214,8 @@ func (api *ethAPI) ProtocolVersion(ctx context.Context) (string, error) {
 // GasPrice returns the current gas price in wei.
 func (api *ethAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 	w3c := GetEthClientFromContext(ctx)
-	return cache.EthDefault.GetGasPrice(w3c.Client)
+	gasPrice, err := w3c.Eth.GasPrice()
+	return (*hexutil.Big)(gasPrice), err
 }
 
 // GetStorageAt returns the value from a storage position at a given address.

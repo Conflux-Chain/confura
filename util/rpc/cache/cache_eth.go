@@ -7,8 +7,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/mcuadros/go-defaults"
@@ -114,9 +112,7 @@ func (cache *EthCache) GetGasPrice(client *web3go.Client) (*hexutil.Big, error) 
 	return (*hexutil.Big)(val.(*big.Int)), nil
 }
 
-func (cache *EthCache) GetBlockNumber(client *node.Web3goClient) (*hexutil.Big, error) {
-	nodeName := rpc.Url2NodeName(client.URL)
-
+func (cache *EthCache) GetBlockNumber(nodeName string, client *web3go.Client) (*hexutil.Big, error) {
 	val, err := cache.blockNumberCache.getOrUpdate(nodeName, func() (interface{}, error) {
 		return client.Eth.BlockNumber()
 	})
@@ -128,8 +124,8 @@ func (cache *EthCache) GetBlockNumber(client *node.Web3goClient) (*hexutil.Big, 
 	return (*hexutil.Big)(val.(*big.Int)), nil
 }
 
-func (cache *EthCache) Call(client *node.Web3goClient, callRequest types.CallRequest, blockNum *types.BlockNumberOrHash) ([]byte, error) {
-	nodeName := rpc.Url2NodeName(client.URL)
+func (cache *EthCache) Call(
+	nodeName string, client *web3go.Client, callRequest types.CallRequest, blockNum *types.BlockNumberOrHash) ([]byte, error) {
 
 	cacheKey, err := generateCallCacheKey(nodeName, callRequest, blockNum)
 	if err != nil {
