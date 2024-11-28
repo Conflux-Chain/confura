@@ -19,6 +19,7 @@ type Metrics struct {
 	Store         StoreMetrics
 	Nodes         NodeManagerMetrics
 	VirtualFilter VirtualFilterMetrics
+	Client        ClientMetrics
 }
 
 // RPC metrics
@@ -223,4 +224,12 @@ func (*VirtualFilterMetrics) QueryFilterChanges(space, node, store string) metri
 func (*VirtualFilterMetrics) StoreQueryPercentage(space string, node, store string) metricUtil.Percentage {
 	metricName := fmt.Sprintf("infura/virtualFilter/%v/percentage/query/%v/filterChanges/%v", space, node, store)
 	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, metricName)
+}
+
+// Client metrics
+
+type ClientMetrics struct{}
+
+func (*ClientMetrics) CacheHit(method string) metricUtil.Percentage {
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/client/cache/hit/%v", method)
 }

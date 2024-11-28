@@ -45,14 +45,14 @@ func (cache *expiryCache) getAt(time time.Time) (interface{}, bool) {
 	return val.value, true
 }
 
-func (cache *expiryCache) getOrUpdate(updateFunc func() (interface{}, error)) (interface{}, error) {
+func (cache *expiryCache) getOrUpdate(updateFunc func() (interface{}, error)) (interface{}, bool, error) {
 	return cache.getOrUpdateAt(time.Now(), updateFunc)
 }
 
-func (cache *expiryCache) getOrUpdateAt(time time.Time, updateFunc func() (interface{}, error)) (interface{}, error) {
+func (cache *expiryCache) getOrUpdateAt(time time.Time, updateFunc func() (interface{}, error)) (interface{}, bool, error) {
 	// cache value not expired
 	if val, ok := cache.getAt(time); ok {
-		return val, nil
+		return val, true, nil
 	}
 
 	// otherwise, query from fullnode and cache
@@ -61,12 +61,12 @@ func (cache *expiryCache) getOrUpdateAt(time time.Time, updateFunc func() (inter
 
 	// double check for concurrency
 	if val, ok := cache.getAt(time); ok {
-		return val, nil
+		return val, true, nil
 	}
 
 	val, err := updateFunc()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// update cache
@@ -75,7 +75,7 @@ func (cache *expiryCache) getOrUpdateAt(time time.Time, updateFunc func() (inter
 		expireAt: time.Add(cache.timeout),
 	})
 
-	return val, nil
+	return val, false, nil
 }
 
 // nodeExpiryCaches is used for multiple nodes to cache data respectively.
@@ -90,7 +90,7 @@ func newNodeExpiryCaches(timeout time.Duration) *nodeExpiryCaches {
 	}
 }
 
-func (caches *nodeExpiryCaches) getOrUpdate(node string, updateFunc func() (interface{}, error)) (interface{}, error) {
+func (caches *nodeExpiryCaches) getOrUpdate(node string, updateFunc func() (interface{}, error)) (interface{}, bool, error) {
 	val, _ := caches.node2Caches.LoadOrStoreFn(node, func(interface{}) interface{} {
 		return newExpiryCache(caches.timeout)
 	})
@@ -111,7 +111,7 @@ func newKeyExpiryLruCaches(ttl time.Duration, size int) *keyExpiryLruCaches {
 	}
 }
 
-func (caches *keyExpiryLruCaches) getOrUpdate(cacheKey string, updateFunc func() (interface{}, error)) (interface{}, error) {
+func (caches *keyExpiryLruCaches) getOrUpdate(cacheKey string, updateFunc func() (interface{}, error)) (interface{}, bool, error) {
 	val, _ := caches.key2Caches.GetOrUpdate(cacheKey, func() (interface{}, error) {
 		return newExpiryCache(caches.ttl), nil
 	})
