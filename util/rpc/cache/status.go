@@ -56,8 +56,9 @@ func (c *StatusCache) GetEpochNumber(nodeName string, cfx sdk.ClientOperator, ep
 		return epochNum, loaded, nil
 	}
 
-	epochNun, err := cfx.GetEpochNumber(epoch)
-	return epochNun, false, err
+	return c.GetEpochNumberWithFunc(nodeName, func() (interface{}, error) {
+		return cfx.GetEpochNumber(epoch)
+	}, epoch)
 }
 
 func (c *StatusCache) GetEpochNumberWithFunc(

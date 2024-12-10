@@ -33,7 +33,7 @@ func (cache *CfxCache) GetGasPrice(cfx sdk.ClientOperator) (*hexutil.Big, bool, 
 }
 
 func (cache *CfxCache) GetGasPriceWithFunc(rawGetter func() (interface{}, error)) (*hexutil.Big, bool, error) {
-	val, loaded, err := cache.versionCache.getOrUpdate(func() (interface{}, error) {
+	val, loaded, err := cache.priceCache.getOrUpdate(func() (interface{}, error) {
 		return rawGetter()
 	})
 	if err != nil {
