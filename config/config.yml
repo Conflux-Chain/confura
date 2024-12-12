@@ -129,6 +129,8 @@ sync:
   #   maxDbRows: 7500
   #   # Capacity of channel per worker to buffer queried epoch data
   #   workerChanSize: 5
+  #   # Max memory usage allowed in bytes (0 for no limit).
+  #   memoryThreshold: 0
 
   # # EVM space sync configurations
   # eth:
