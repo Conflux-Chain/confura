@@ -203,6 +203,7 @@ func (w *PriorityFeeWindow) Remove(blockHashes ...string) {
 	for i := range blockHashes {
 		if e, ok := w.hashToFee[blockHashes[i]]; ok {
 			w.feeChain.Remove(e)
+			delete(w.hashToFee, blockHashes[i])
 		}
 	}
 }
