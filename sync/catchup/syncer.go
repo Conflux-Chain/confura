@@ -32,6 +32,8 @@ type Syncer struct {
 	minBatchDbRows int
 	// max num of db rows collected before persistence
 	maxDbRows int
+	// memory threshold (in bytes) for triggering backpressure control
+	memoryThreshold uint64
 	// benchmark catch-up sync performance
 	benchmark bool
 	// HA leader/follower election
@@ -52,6 +54,12 @@ func WithMinBatchDbRows(dbRows int) SyncOption {
 func WithMaxDbRows(dbRows int) SyncOption {
 	return func(s *Syncer) {
 		s.maxDbRows = dbRows
+	}
+}
+
+func WithMemoryThreshold(threshold uint64) SyncOption {
+	return func(s *Syncer) {
+		s.memoryThreshold = threshold
 	}
 }
 
@@ -87,6 +95,7 @@ func MustNewSyncer(
 		WithMaxDbRows(conf.MaxDbRows),
 		WithMinBatchDbRows(conf.DbRowsThreshold),
 		WithWorkers(workers),
+		WithMemoryThreshold(conf.MemoryThreshold),
 	)
 
 	return newSyncer(cfx, db, elm, append(newOpts, opts...)...)
@@ -148,6 +157,24 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 		}()
 	}
 
+	// Boost sync performance if all chain data types are disabled except event logs by using `getLogs` to synchronize
+	// blockchain data across wide epoch range, or using `epoch-by-epoch` sync mode if any of them are enabled.
+	if disabler := store.StoreConfig(); !disabler.IsChainLogDisabled() &&
+		disabler.IsChainBlockDisabled() && disabler.IsChainTxnDisabled() && disabler.IsChainReceiptDisabled() {
+		logrus.WithFields(logrus.Fields{
+			"start": start, "end": end,
+		}).Info("Catch-up syncer using boosted sync mode with getLogs optimization")
+		newBoostSyncer(s).doSync(ctx, bmarker, start, end)
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"start": start, "end": end,
+	}).Info("Catch-up syncer using standard epoch-by-epoch sync mode")
+	s.doSync(ctx, bmarker, start, end)
+}
+
+func (s *Syncer) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 
