@@ -9,4 +9,6 @@ type config struct {
 	MaxDbRows int `default:"7500"`
 	// capacity of channel per worker to buffer queried epoch data
 	WorkerChanSize int `default:"5"`
+	// number of epochs to sync per batch
+	SyncBatchSize int `default:"1"`
 }

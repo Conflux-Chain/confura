@@ -126,6 +126,10 @@ sync:
   #   maxDbRows: 7500
   #   # Capacity of channel per worker to buffer queried epoch data
   #   workerChanSize: 5
+  #   # Number of epochs to sync per batch for each worker.
+  #   # Increase this value to sync more epochs once to improve performance,
+  #   # but may increase the memory usage accordingly.
+  #   syncBatchSize: 1
 
   # # EVM space sync configurations
   # eth:
