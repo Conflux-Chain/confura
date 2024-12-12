@@ -103,7 +103,7 @@ func NewVirtualFilterLogStore(db *gorm.DB) *VirtualFilterLogStore {
 	}
 }
 
-// PreparePartitions createa new log partition for the virtual filter if necessary.
+// PreparePartition create a new log partition for the virtual filter if necessary.
 func (vfls *VirtualFilterLogStore) PreparePartition(fid string) (bnPartition, bool, error) {
 	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)
 	partition, newCreated, err := vfls.autoPartition(fentity, ftabler, bnPartitionedLogVolumeSize)
