@@ -23,26 +23,26 @@ import (
 
 const (
 	// Task queue sizes
-	pendingTaskQueueSize = 200
-	recallTaskQueueSize  = 100
+	pendingTaskQueueSize = 1000
+	recallTaskQueueSize  = 500
 
 	// Task result queue sizes
-	taskResultQueueSize = 200
+	taskResultQueueSize = 1000
 
 	// Result channel size
-	resultChanSize = 5000
+	resultChanSize = 2000
 
 	// Default task size and bounds
-	defaultTaskSize = 50
+	defaultTaskSize = 100
 	minTaskSize     = 1
-	maxTaskSize     = 3000
+	maxTaskSize     = 5000
 
 	// Task size adjustment ratios
 	incrementRatio = 0.2
 	decrementRatio = 0.5
 
 	// Maximum sample size for task size adjustment
-	maxSampleSize = 200
+	maxSampleSize = 20
 
 	// Memory check interval
 	memoryCheckInterval = 20 * time.Second
@@ -222,6 +222,7 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 						resultHistory = append(resultHistory, r)
 						// Collect epoch data
 						c.collectEpochData(r.epochData)
+						r.epochData = nil // free memory
 					} else if r.isInvalidFilterError() && r.task.From < r.task.To {
 						resultHistory = append(resultHistory, r)
 						// Invalid filter: try splitting and reassigning
