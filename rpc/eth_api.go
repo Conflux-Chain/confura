@@ -338,6 +338,14 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	return receipt, err
 }
 
+// GetBlockReceipts returns the receipts of a given block number or hash.
+func (api *ethAPI) GetBlockReceipts(
+	ctx context.Context, blockNrOrHash *web3Types.BlockNumberOrHash,
+) ([]*web3Types.Receipt, error) {
+	w3c := GetEthClientFromContext(ctx)
+	return w3c.Eth.BlockReceipts(blockNrOrHash)
+}
+
 // Returns pending transactions for a given account.
 func (api *ethAPI) GetAccountPendingTransactions(
 	ctx context.Context, addr common.Address, startNonce *hexutil.Big, limit *hexutil.Uint64,
