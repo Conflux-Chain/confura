@@ -14,9 +14,11 @@ import (
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/openweb3/go-rpc-provider"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -40,6 +42,8 @@ var (
 		"the number of blocks in the requested range exceeds the maximum allowed (%v)",
 		maxFeeHistoryBlockCnt,
 	)
+
+	errNoMatchingReceiptFound = errors.New("no matching receipts found: this may indicate potential data corruption")
 )
 
 type EthAPIOption struct {
@@ -313,29 +317,79 @@ func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (
 
 // TransactionReceipt returns the receipt of a transaction by transaction hash.
 // Note that the receipt is not available for pending transactions.
-func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error) {
-	logger := logrus.WithField("txHash", txHash.Hex())
+func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (receipt *web3Types.Receipt, err error) {
+	defer func() {
+		if err == nil {
+			metrics.Registry.RPC.Percentage("eth_getTransactionReceipt", "notfound").Mark(receipt == nil)
+		}
+	}()
 
 	if !store.EthStoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		tx, err := api.StoreHandler.GetTransactionReceipt(ctx, txHash)
+		receipt, err = api.StoreHandler.GetTransactionReceipt(ctx, txHash)
 		metrics.Registry.RPC.StoreHit("eth_getTransactionReceipt", "store").Mark(err == nil)
 		if err == nil {
-			logger.Debug("Loading eth data for eth_getTransactionReceipt hit in the ethstore")
-			return tx, nil
+			logrus.WithField("txHash", txHash.Hex()).
+				Debug("Loading eth data for eth_getTransactionReceipt hit in the ethstore")
+			return receipt, nil
 		}
 
-		logger.WithError(err).Debug("Loading eth data for eth_getTransactionReceipt missed from the ethstore")
+		logrus.WithField("txHash", txHash.Hex()).WithError(err).
+			Debug("Loading eth data for eth_getTransactionReceipt missed from the ethstore")
 	}
 
-	logger.Debug("Delegating eth_getTransactionReceipt rpc request to fullnode")
+	logrus.WithField("txHash", txHash.Hex()).Debug("Delegating eth_getTransactionReceipt rpc request to fullnode")
 
 	w3c := GetEthClientFromContext(ctx)
-	receipt, err := w3c.Eth.TransactionReceipt(txHash)
+	receipt, err = w3c.Eth.TransactionReceipt(txHash)
 	if err != nil {
-		metrics.Registry.RPC.Percentage("eth_getTransactionReceipt", "notfound").Mark(receipt == nil)
+		return nil, err
+	}
+	if !viper.GetBool("ethrpc.reValidation") {
+		return receipt, nil
 	}
 
-	return receipt, err
+	if receipt != nil && receipt.TransactionHash == txHash {
+		return receipt, nil
+	}
+
+	txn, err := w3c.Eth.TransactionByHash(txHash)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to retrieve transaction for data correctness validation")
+	}
+	if txn == nil || txn.BlockHash == nil {
+		// Transaction not found or not mined
+		return nil, nil
+	}
+
+	// If the initial receipt's block hash matches the transaction's block hash, it's considered valid
+	if receipt != nil && receipt.BlockHash == *txn.BlockHash {
+		// Receipt is valid
+		return receipt, nil
+	}
+
+	// Attempt to correlate with other clients if the initial receipt doesn't match.
+	clients, err := GetEthClientProviderFromContext(ctx).GetClientsByGroup(node.GroupEthHttp)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to retrieve node clients for data correctness validation")
+	}
+	for _, client := range clients {
+		if client.URL == w3c.URL {
+			// Skip the original client
+			continue
+		}
+		var err error
+		receipt, err = client.Eth.TransactionReceipt(txHash)
+		if err != nil {
+			continue
+		}
+		if receipt != nil && receipt.BlockHash == *txn.BlockHash {
+			return receipt, nil
+		}
+	}
+
+	// No matching receipt found after checking other clients
+	err = errNoMatchingReceiptFound
+	return nil, err
 }
 
 // GetBlockReceipts returns the receipts of a given block number or hash.
@@ -343,7 +397,60 @@ func (api *ethAPI) GetBlockReceipts(
 	ctx context.Context, blockNrOrHash *web3Types.BlockNumberOrHash,
 ) ([]*web3Types.Receipt, error) {
 	w3c := GetEthClientFromContext(ctx)
-	return w3c.Eth.BlockReceipts(blockNrOrHash)
+	receipts, err := w3c.Eth.BlockReceipts(blockNrOrHash)
+	if err != nil {
+		return nil, err
+	}
+	if !viper.GetBool("ethrpc.reValidation") {
+		return receipts, nil
+	}
+
+	var block *web3Types.Block
+	if blockNrOrHash == nil {
+		tmp := web3Types.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
+		blockNrOrHash = &tmp
+	}
+	if blockNum, ok := blockNrOrHash.Number(); ok {
+		block, err = w3c.Eth.BlockByNumber(blockNum, false)
+	} else {
+		blockHash, _ := blockNrOrHash.Hash()
+		block, err = w3c.Eth.BlockByHash(blockHash, false)
+	}
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to retrieve block for data correctness validation")
+	}
+	if block == nil || len(block.Transactions.Hashes()) == 0 {
+		// Block not found or no transactions included in block
+		return []*web3Types.Receipt{}, nil
+	}
+
+	numTxns := len(block.Transactions.Hashes())
+	if len(receipts) == numTxns && receipts[0].BlockHash == block.Hash {
+		// Receipts are valid
+		return receipts, nil
+	}
+
+	// Attempt to correlate with other clients if the initial receipt doesn't match.
+	clients, err := GetEthClientProviderFromContext(ctx).GetClientsByGroup(node.GroupEthHttp)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to retrieve node clients for data correctness validation")
+	}
+	for _, client := range clients {
+		if client.URL == w3c.URL {
+			// Skip the original client
+			continue
+		}
+		receipts, err := client.Eth.BlockReceipts(blockNrOrHash)
+		if err != nil {
+			continue
+		}
+		if len(receipts) == numTxns && receipts[0].BlockHash == block.Hash {
+			return receipts, nil
+		}
+	}
+
+	// No matching receipt found after checking other clients
+	return nil, errNoMatchingReceiptFound
 }
 
 // Returns pending transactions for a given account.

@@ -117,8 +117,16 @@ func clientMiddleware(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	}
 }
 
+func GetCfxClientProviderFromContext(ctx context.Context) *node.CfxClientProvider {
+	return ctx.Value(ctxKeyClientProvider).(*node.CfxClientProvider)
+}
+
 func GetCfxClientFromContext(ctx context.Context) sdk.ClientOperator {
 	return ctx.Value(ctxKeyClient).(sdk.ClientOperator)
+}
+
+func GetEthClientProviderFromContext(ctx context.Context) *node.EthClientProvider {
+	return ctx.Value(ctxKeyClientProvider).(*node.EthClientProvider)
 }
 
 func GetEthClientFromContext(ctx context.Context) *node.Web3goClient {

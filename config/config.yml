@@ -37,6 +37,9 @@ ethrpc:
   # debugEndpoint: ":28588"
   # Served websocket endpoint
   # wsEndpoint: ":28535"
+  # Enable or disable data correctness check by cross-referencing data among multiple nodes.
+  # Currently supports only `eth_getTransactionReceipt` and `eth_getBlockReceipts` rpc methods.
+  # reValidation: false
 
 # Core space SDK client configurations
 cfx:
