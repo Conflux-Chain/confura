@@ -348,6 +348,10 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 		return receipt, nil
 	}
 
+	if receipt != nil && receipt.TransactionHash == txHash {
+		return receipt, nil
+	}
+
 	txn, err := w3c.Eth.TransactionByHash(txHash)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to retrieve transaction for data correctness validation")
