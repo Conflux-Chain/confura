@@ -41,7 +41,7 @@ func init() {
 
 func startNodeManagerService(*cobra.Command, []string) {
 	if !nmOpt.cfxEnabled && !nmOpt.ethEnabled {
-		logrus.Fatal("No node mananger server specified")
+		logrus.Fatal("No node manager server specified")
 	}
 
 	storeCtx := util.MustInitStoreContext()
