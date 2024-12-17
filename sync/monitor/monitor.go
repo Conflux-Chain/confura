@@ -30,7 +30,7 @@ func NewConfig() (conf Config) {
 	return Config{
 		MaxAllowedLag:      200,
 		MaxStalledDuration: 5 * time.Minute,
-		Health:             health.CounterConfig{Remind: 5},
+		Health:             health.CounterConfig{Threshold: 2, Remind: 5},
 	}
 }
 
@@ -150,16 +150,21 @@ func (m *Monitor) onSuccess() {
 	if recovered {
 		logrus.WithFields(logrus.Fields{
 			"failures": failures,
-		}).Info("Sync monitor recovered after failures")
+		}).Warn("Sync process recovered after failures")
 	}
 }
 
 func (m *Monitor) onFailure(err error, heights ...uint64) {
-	_, unrecovered, failures := m.healthStatus.OnFailure(m.Health)
-	if unrecovered {
+	unhealthy, unrecovered, failures := m.healthStatus.OnFailure(m.Health)
+	if unhealthy {
 		logrus.WithFields(logrus.Fields{
 			"ctxHeights": heights,
 			"failures":   failures,
-		}).WithError(err).Error("Sync monitor not recovered after failures")
+		}).WithError(err).Error("Sync process becomes unhealthy")
+	} else if unrecovered {
+		logrus.WithFields(logrus.Fields{
+			"ctxHeights": heights,
+			"failures":   failures,
+		}).WithError(err).Error("Sync process not recovered after failures")
 	}
 }
