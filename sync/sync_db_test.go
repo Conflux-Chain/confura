@@ -56,7 +56,7 @@ func TestFindFirstRevertedEpochInRange(t *testing.T) {
 			}
 			return false, nil
 		}
-		res, err := findFirstRevertedEpochInRange(syncer.cfx, syncer.db, tc.epochRange, checker)
+		res, err := findFirstRevertedEpochInRange(nil, syncer.db, tc.epochRange, checker)
 		assert.Nil(t, err)
 		assert.Equal(t, tc.expected, res)
 	}
@@ -109,13 +109,13 @@ func TestEnsureEpochRangeNotRerverted(t *testing.T) {
 			return false, nil
 		}
 		searcher := func(cfx sdk.ClientOperator, s store.StackOperable, epochRange citypes.RangeUint64) (uint64, error) {
-			return findFirstRevertedEpochInRange(syncer.cfx, syncer.db, epochRange, checker)
+			return findFirstRevertedEpochInRange(nil, syncer.db, epochRange, checker)
 		}
 		pruner := func(s store.StackOperable, epochRange citypes.RangeUint64) error {
 			assert.Equal(t, tc.expectedPrunedEpochFrom, epochRange.From)
 			return nil
 		}
-		err := ensureEpochRangeNotRerverted(syncer.cfx, syncer.db, tc.epochRange, searcher, pruner)
+		err := ensureEpochRangeNotRerverted(nil, syncer.db, tc.epochRange, searcher, pruner)
 		assert.Nil(t, err)
 	}
 }

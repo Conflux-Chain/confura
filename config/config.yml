@@ -43,8 +43,8 @@ ethrpc:
 
 # Core space SDK client configurations
 cfx:
-  # Fullnode HTTP endpoint
-  http: http://test.confluxrpc.com
+  # Fullnode HTTP endpoints
+  http: [http://test.confluxrpc.com]
   # Retry times if failure, if 0 never
   retry: 0
   # Interval duration before each retry
@@ -67,8 +67,8 @@ cfx:
 
 # EVM space SDK client configurations
 eth:
-  # Fullnode HTTP endpoint
-  http: http://evmtestnet.confluxrpc.com
+  # Fullnode HTTP endpoints
+  http: [http://evmtestnet.confluxrpc.com]
   # Retry times if failure, if 0 never
   retry: 0
   # Interval duration before each retry

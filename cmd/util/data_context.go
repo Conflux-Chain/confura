@@ -74,19 +74,19 @@ func (ctx *StoreContext) GetMysqlStore(network string) (store *mysql.MysqlStore,
 type SyncContext struct {
 	StoreContext
 
-	SyncCfx *sdk.Client
-	SyncEth *web3go.Client
+	SyncCfxs []*sdk.Client
+	SyncEths []*web3go.Client
 }
 
 func MustInitSyncContext(storeCtx StoreContext) SyncContext {
 	sc := SyncContext{StoreContext: storeCtx}
 
 	if storeCtx.CfxDB != nil || storeCtx.CfxCache != nil {
-		sc.SyncCfx = rpc.MustNewCfxClientFromViper(rpc.WithClientHookMetrics(true))
+		sc.SyncCfxs = rpc.MustNewCfxClientsFromViper(rpc.WithClientHookMetrics(true))
 	}
 
 	if storeCtx.EthDB != nil {
-		sc.SyncEth = rpc.MustNewEthClientFromViper(rpc.WithClientHookMetrics(true))
+		sc.SyncEths = rpc.MustNewEthClientsFromViper(rpc.WithClientHookMetrics(true))
 	}
 
 	return sc
@@ -96,11 +96,11 @@ func (ctx *SyncContext) Close() {
 	// Usually, storeContext will be defer closed by itself
 	// ctx.storeContext.Close()
 
-	if ctx.SyncCfx != nil {
-		ctx.SyncCfx.Close()
+	for _, client := range ctx.SyncCfxs {
+		client.Close()
 	}
 
-	if ctx.SyncEth != nil {
-		ctx.SyncEth.Close()
+	for _, client := range ctx.SyncEths {
+		client.Close()
 	}
 }

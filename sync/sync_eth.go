@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
@@ -32,7 +33,9 @@ type syncEthConfig struct {
 type EthSyncer struct {
 	conf *syncEthConfig
 	// EVM space ETH client
-	w3c *web3go.Client
+	w3cs []*web3go.Client
+	// Selected web3go client index
+	w3cIdx atomic.Uint32
 	// EVM space chain id
 	chainId uint32
 	// db store
@@ -54,8 +57,12 @@ type EthSyncer struct {
 }
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
-func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
-	ethChainId, err := ethC.Eth.ChainId()
+func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.MysqlStore) *EthSyncer {
+	if len(ethClients) == 0 {
+		logrus.Fatal("No web3 client provided")
+	}
+
+	ethChainId, err := ethClients[0].Eth.ChainId()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get chain ID from eth space")
 	}
@@ -64,17 +71,24 @@ func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 	viperutil.MustUnmarshalKey("sync.eth", &ethConf)
 
 	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
-	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (uint64, error) {
-		block, err := ethC.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
-		if err != nil {
-			return 0, err
+	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (latestBlockNum uint64, retErr error) {
+		for _, ethC := range ethClients {
+			block, err := ethC.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
+			if err == nil {
+				latestBlockNum = max(latestBlockNum, block.Number.Uint64())
+			} else {
+				retErr = err
+			}
 		}
-		return block.Number.Uint64(), nil
+		if latestBlockNum > 0 {
+			return latestBlockNum, nil
+		}
+		return 0, retErr
 	})
 
 	syncer := &EthSyncer{
 		conf:                &ethConf,
-		w3c:                 ethC,
+		w3cs:                ethClients,
 		chainId:             uint32(*ethChainId),
 		db:                  db,
 		maxSyncBlocks:       ethConf.MaxBlocks,
@@ -84,6 +98,7 @@ func MustNewEthSyncer(ethC *web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.eth"),
 	}
+	monitor.SetObserver(syncer)
 
 	// Register leader election callbacks
 	syncer.elm.OnElected(func(ctx context.Context, lm election.LeaderManager) {
@@ -158,7 +173,9 @@ func (syncer *EthSyncer) nextBlockTo(maxBlockTo uint64) (uint64, uint64) {
 
 // Sync data once and return true if catch up to the most recent block, otherwise false.
 func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
-	latestBlock, err := syncer.w3c.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
+	w3c := syncer.w3cs[syncer.w3cIdx.Load()]
+
+	latestBlock, err := w3c.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
 	if err != nil {
 		return false, errors.WithMessage(err, "failed to query the latest block number")
 	}
@@ -196,7 +213,7 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 		blockNo := syncer.fromBlock + uint64(i)
 		blogger := logger.WithField("block", blockNo)
 
-		data, err := store.QueryEthData(ctx, syncer.w3c, blockNo)
+		data, err := store.QueryEthData(ctx, w3c, blockNo)
 
 		// If chain re-orged, stop the querying right now since it's pointless to query data
 		// that will be reverted late.
@@ -450,5 +467,19 @@ func (syncer *EthSyncer) onLeadershipChanged(
 	syncer.epochPivotWin.Reset()
 	if !gainedOrLost && ctx.Err() != context.Canceled {
 		logrus.WithField("leaderID", lm.Identity()).Warn("ETH syncer lost HA leadership")
+	}
+}
+
+func (syncer *EthSyncer) OnStateChange(state monitor.HealthState, details ...string) {
+	if len(syncer.w3cs) > 1 && state == monitor.Unhealthy {
+		// Switch to the next cfx client if the sync progress is not healthy
+		oldCfxIdx := syncer.w3cIdx.Load()
+		newCfxIdx := (oldCfxIdx + 1) % uint32(len(syncer.w3cs))
+		syncer.w3cIdx.Store(newCfxIdx)
+
+		logrus.WithFields(logrus.Fields{
+			"oldCfxIndex": oldCfxIdx,
+			"newCfxIndex": newCfxIdx,
+		}).Info("Switched to the next web3go client")
 	}
 }
