@@ -81,7 +81,7 @@ func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, syncCtx
 func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) *cisync.DatabaseSyncer {
 	logrus.Info("Start to sync core space blockchain data into database")
 
-	syncer := cisync.MustNewDatabaseSyncer(syncCtx.SyncCfx, syncCtx.CfxDB)
+	syncer := cisync.MustNewDatabaseSyncer(syncCtx.SyncCfxs, syncCtx.CfxDB)
 	go syncer.Sync(ctx, wg)
 
 	// start core space db prune
@@ -93,7 +93,7 @@ func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.
 func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
 	logrus.Info("Start to sync evm space blockchain data into database")
 
-	ethSyncer := cisync.MustNewEthSyncer(syncCtx.SyncEth, syncCtx.EthDB)
+	ethSyncer := cisync.MustNewEthSyncer(syncCtx.SyncEths, syncCtx.EthDB)
 	go ethSyncer.Sync(ctx, wg)
 
 	// start evm space db prune
