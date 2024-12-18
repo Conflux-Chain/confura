@@ -10,7 +10,6 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
-	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
@@ -24,7 +23,7 @@ import (
 type Syncer struct {
 	// goroutine workers to fetch epoch data concurrently
 	workers []*worker
-	// conflux sdk client delegated to get network status
+	// conflux sdk clients delegated to get network status
 	cfxs []*sdk.Client
 	// db store to persist epoch data
 	db *mysql.MysqlStore
@@ -300,8 +299,8 @@ func (s *Syncer) nextSyncRange() (uint64, uint64, error) {
 	for _, cfx := range s.cfxs {
 		status, err := cfx.GetStatus()
 		if err == nil {
-			end := util.MaxUint64(uint64(status.LatestFinalized), uint64(status.LatestCheckpoint))
-			return start, end, nil
+			end := max(status.LatestFinalized, status.LatestCheckpoint)
+			return start, uint64(end), nil
 		}
 		retErr = err
 	}

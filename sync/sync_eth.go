@@ -32,7 +32,7 @@ type syncEthConfig struct {
 // EthSyncer is used to synchronize evm space blockchain data into db store.
 type EthSyncer struct {
 	conf *syncEthConfig
-	// EVM space ETH client
+	// EVM space web3go clients
 	w3cs []*web3go.Client
 	// Selected web3go client index
 	w3cIdx atomic.Uint32
@@ -59,7 +59,7 @@ type EthSyncer struct {
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
 func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.MysqlStore) *EthSyncer {
 	if len(ethClients) == 0 {
-		logrus.Fatal("No web3 client provided")
+		logrus.Fatal("No web3go client provided")
 	}
 
 	ethChainId, err := ethClients[0].Eth.ChainId()
