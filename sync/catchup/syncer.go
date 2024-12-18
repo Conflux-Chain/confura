@@ -10,7 +10,6 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
-	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
@@ -24,8 +23,8 @@ import (
 type Syncer struct {
 	// goroutine workers to fetch epoch data concurrently
 	workers []*worker
-	// conflux sdk client delegated to get network status
-	cfx sdk.ClientOperator
+	// conflux sdk clients delegated to get network status
+	cfxs []*sdk.Client
 	// db store to persist epoch data
 	db *mysql.MysqlStore
 	// min num of db rows per batch persistence
@@ -68,7 +67,7 @@ func WithBenchmark(benchmark bool) SyncOption {
 }
 
 func MustNewSyncer(
-	cfx sdk.ClientOperator,
+	cfxClients []*sdk.Client,
 	db *mysql.MysqlStore,
 	elm election.LeaderManager,
 	opts ...SyncOption) *Syncer {
@@ -89,13 +88,13 @@ func MustNewSyncer(
 		WithWorkers(workers),
 	)
 
-	return newSyncer(cfx, db, elm, append(newOpts, opts...)...)
+	return newSyncer(cfxClients, db, elm, append(newOpts, opts...)...)
 }
 
 func newSyncer(
-	cfx sdk.ClientOperator, db *mysql.MysqlStore,
+	cfxClients []*sdk.Client, db *mysql.MysqlStore,
 	elm election.LeaderManager, opts ...SyncOption) *Syncer {
-	syncer := &Syncer{elm: elm, db: db, cfx: cfx, minBatchDbRows: 1500}
+	syncer := &Syncer{elm: elm, db: db, cfxs: cfxClients, minBatchDbRows: 1500}
 	for _, opt := range opts {
 		opt(syncer)
 	}
@@ -296,13 +295,16 @@ func (s *Syncer) nextSyncRange() (uint64, uint64, error) {
 		start = 0
 	}
 
-	status, err := s.cfx.GetStatus()
-	if err != nil {
-		return 0, 0, errors.WithMessage(err, "failed to get network status")
+	var retErr error
+	for _, cfx := range s.cfxs {
+		status, err := cfx.GetStatus()
+		if err == nil {
+			end := max(status.LatestFinalized, status.LatestCheckpoint)
+			return start, uint64(end), nil
+		}
+		retErr = err
 	}
-
-	end := util.MaxUint64(uint64(status.LatestFinalized), uint64(status.LatestCheckpoint))
-	return start, end, nil
+	return 0, 0, errors.WithMessage(retErr, "failed to get network status")
 }
 
 // countDbRows count total db rows and to be stored db row from epoch data.

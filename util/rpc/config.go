@@ -19,7 +19,7 @@ type circuitBreakerConfig struct {
 }
 
 type clientConfig struct {
-	Http            string
+	Http            []string
 	Retry           int
 	RetryInterval   time.Duration `default:"1s"`
 	RequestTimeout  time.Duration `default:"3s"`

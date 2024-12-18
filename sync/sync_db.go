@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -44,8 +45,10 @@ type syncSubConfig struct {
 // against the latest confirmed epoch.
 type DatabaseSyncer struct {
 	conf *syncConfig
-	// conflux sdk client
-	cfx sdk.ClientOperator
+	// conflux sdk clients
+	cfxs []*sdk.Client
+	// selected sdk client index
+	cfxIdx atomic.Uint32
 	// db store
 	db *mysql.MysqlStore
 	// epoch number to sync data from
@@ -65,22 +68,33 @@ type DatabaseSyncer struct {
 }
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
-func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *DatabaseSyncer {
+func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.MysqlStore) *DatabaseSyncer {
+	if len(cfxClients) == 0 {
+		logrus.Fatal("No sdk client provided")
+	}
+
 	var conf syncConfig
 	viperutil.MustUnmarshalKey("sync", &conf)
 
 	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
-	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (uint64, error) {
-		epoch, err := cfx.GetEpochNumber(types.EpochLatestConfirmed)
-		if err != nil {
-			return 0, err
+	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (latestEpochNum uint64, retErr error) {
+		for _, cfx := range cfxClients {
+			epoch, err := cfx.GetEpochNumber(types.EpochLatestConfirmed)
+			if err == nil {
+				latestEpochNum = max(latestEpochNum, epoch.ToInt().Uint64())
+			} else {
+				retErr = err
+			}
 		}
-		return epoch.ToInt().Uint64(), nil
+		if latestEpochNum > 0 {
+			return latestEpochNum, nil
+		}
+		return 0, retErr
 	})
 
 	syncer := &DatabaseSyncer{
 		conf:                &conf,
-		cfx:                 cfx,
+		cfxs:                cfxClients,
 		db:                  db,
 		epochFrom:           0,
 		maxSyncEpochs:       conf.MaxEpochs,
@@ -90,6 +104,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
 		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.cfx"),
 	}
+	monitor.SetObserver(syncer)
 
 	// Register leader election callbacks
 	syncer.elm.OnElected(func(ctx context.Context, lm election.LeaderManager) {
@@ -103,7 +118,7 @@ func MustNewDatabaseSyncer(cfx sdk.ClientOperator, db *mysql.MysqlStore) *Databa
 	})
 
 	// Ensure epoch data validity in database
-	if err := ensureStoreEpochDataOk(cfx, db); err != nil {
+	if err := ensureStoreEpochDataOk(cfxClients[0], db); err != nil {
 		logrus.WithError(err).Fatal("Db sync failed to ensure epoch data validity in db")
 	}
 
@@ -148,7 +163,7 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 // fast catch-up until the latest stable epoch
 // (maximum between the latest finalized and checkpoint epoch)
 func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
-	catchUpSyncer := catchup.MustNewSyncer(syncer.cfx, syncer.db, syncer.elm)
+	catchUpSyncer := catchup.MustNewSyncer(syncer.cfxs, syncer.db, syncer.elm)
 	defer catchUpSyncer.Close()
 
 	catchUpSyncer.Sync(ctx)
@@ -182,8 +197,10 @@ func (syncer *DatabaseSyncer) loadLastSyncEpoch() error {
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
 func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
+	cfx := syncer.cfxs[syncer.cfxIdx.Load()]
+
 	// Fetch latest confirmed epoch from blockchain
-	epoch, err := syncer.cfx.GetEpochNumber(types.EpochLatestConfirmed)
+	epoch, err := cfx.GetEpochNumber(types.EpochLatestConfirmed)
 	if err != nil {
 		return false, errors.WithMessage(
 			err, "failed to query the latest confirmed epoch number",
@@ -217,7 +234,7 @@ func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 		epochNo := syncer.epochFrom + uint64(i)
 		eplogger := logger.WithField("epoch", epochNo)
 
-		data, err := store.QueryEpochData(syncer.cfx, epochNo, syncer.conf.UseBatch)
+		data, err := store.QueryEpochData(cfx, epochNo, syncer.conf.UseBatch)
 
 		// If epoch pivot chain switched, stop the querying right now since it's pointless to query epoch data
 		// that will be reverted late.
@@ -426,5 +443,14 @@ func (syncer *DatabaseSyncer) onLeadershipChanged(
 	syncer.epochPivotWin.Reset()
 	if !gainedOrLost && ctx.Err() != context.Canceled {
 		logrus.WithField("leaderID", lm.Identity()).Warn("DB syncer lost HA leadership")
+	}
+}
+
+func (syncer *DatabaseSyncer) OnStateChange(state monitor.HealthState, details ...string) {
+	if len(syncer.cfxs) > 1 && state == monitor.Unhealthy {
+		// Switch to the next cfx client if the sync progress is not healthy
+		newCfxIdx := (syncer.cfxIdx.Load() + 1) % uint32(len(syncer.cfxs))
+		syncer.cfxIdx.Store(newCfxIdx)
+		logrus.WithField("cfxIndex", newCfxIdx).Info("Switched to the next cfx client")
 	}
 }

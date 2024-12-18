@@ -37,8 +37,11 @@ func (o *ethClientOption) SetCircuitBreaker(maxFail int, failTimeWindow, openCol
 	})
 }
 
-func MustNewEthClientFromViper(options ...ClientOption) *web3go.Client {
-	return MustNewEthClient(ethClientCfg.Http, options...)
+func MustNewEthClientsFromViper(options ...ClientOption) (clients []*web3go.Client) {
+	for _, url := range ethClientCfg.Http {
+		clients = append(clients, MustNewEthClient(url, options...))
+	}
+	return clients
 }
 
 func MustNewEthClient(url string, options ...ClientOption) *web3go.Client {

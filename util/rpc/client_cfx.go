@@ -37,8 +37,11 @@ func (o *cfxClientOption) SetCircuitBreaker(maxFail int, failTimeWindow, openCol
 	}
 }
 
-func MustNewCfxClientFromViper(options ...ClientOption) *sdk.Client {
-	return MustNewCfxClient(cfxClientCfg.Http, options...)
+func MustNewCfxClientsFromViper(options ...ClientOption) (clients []*sdk.Client) {
+	for _, url := range cfxClientCfg.Http {
+		clients = append(clients, MustNewCfxClient(url, options...))
+	}
+	return clients
 }
 
 func MustNewCfxClient(url string, options ...ClientOption) *sdk.Client {
