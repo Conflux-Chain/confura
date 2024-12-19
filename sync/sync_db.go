@@ -447,10 +447,14 @@ func (syncer *DatabaseSyncer) onLeadershipChanged(
 }
 
 func (syncer *DatabaseSyncer) OnStateChange(state monitor.HealthState, details ...string) {
-	if len(syncer.cfxs) > 1 && state == monitor.Unhealthy {
-		// Switch to the next cfx client if the sync progress is not healthy
+	if len(syncer.cfxs) > 1 && state != monitor.Healthy {
 		newCfxIdx := (syncer.cfxIdx.Load() + 1) % uint32(len(syncer.cfxs))
 		syncer.cfxIdx.Store(newCfxIdx)
-		logrus.WithField("cfxIndex", newCfxIdx).Info("Switched to the next cfx client")
+
+		logrus.WithFields(logrus.Fields{
+			"cfxIndex":    newCfxIdx,
+			"healthState": state,
+			"details":     details,
+		}).Info("Switched to the next CFX client due to degraded health status")
 	}
 }

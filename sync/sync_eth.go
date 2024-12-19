@@ -471,10 +471,14 @@ func (syncer *EthSyncer) onLeadershipChanged(
 }
 
 func (syncer *EthSyncer) OnStateChange(state monitor.HealthState, details ...string) {
-	if len(syncer.w3cs) > 1 && state == monitor.Unhealthy {
-		// Switch to the next cfx client if the sync progress is not healthy
+	if len(syncer.w3cs) > 1 && state != monitor.Healthy {
 		newW3cIdx := (syncer.w3cIdx.Load() + 1) % uint32(len(syncer.w3cs))
 		syncer.w3cIdx.Store(newW3cIdx)
-		logrus.WithField("w3cIndex", newW3cIdx).Info("Switched to the next web3go client")
+
+		logrus.WithFields(logrus.Fields{
+			"w3cIndex":    newW3cIdx,
+			"healthState": state,
+			"details":     details,
+		}).Info("Switched to the next web3go client due to degraded health status")
 	}
 }

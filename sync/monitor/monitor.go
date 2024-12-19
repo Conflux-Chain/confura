@@ -17,8 +17,9 @@ var (
 type HealthState string
 
 const (
-	Healthy   HealthState = "Healthy"
-	Unhealthy HealthState = "Unhealthy"
+	Healthy     HealthState = "Healthy"
+	Unhealthy   HealthState = "Unhealthy"
+	Unrecovered HealthState = "Unrecovered"
 )
 
 type HealthObserver interface {
@@ -167,26 +168,33 @@ func (m *Monitor) onSuccess() {
 		logrus.WithFields(logrus.Fields{
 			"failures": failures,
 		}).Warn("Sync process recovered from failures")
-		if m.observer != nil {
-			m.observer.OnStateChange(Healthy)
-		}
+		m.notifyStateChange(Healthy)
 	}
 }
 
 func (m *Monitor) onFailure(err error, heights ...uint64) {
 	unhealthy, unrecovered, failures := m.healthStatus.OnFailure(m.Health)
-	if unhealthy {
+
+	// Handle unhealthy or unrecovered states
+	switch {
+	case unhealthy:
 		logrus.WithFields(logrus.Fields{
 			"ctxHeights": heights,
 			"failures":   failures,
 		}).WithError(err).Error("Sync process becomes unhealthy")
-		if m.observer != nil {
-			m.observer.OnStateChange(Unhealthy)
-		}
-	} else if unrecovered {
+		m.notifyStateChange(Unhealthy)
+	case unrecovered:
 		logrus.WithFields(logrus.Fields{
 			"ctxHeights": heights,
 			"failures":   failures,
-		}).WithError(err).Error("Sync process still not recovered after failures")
+		}).WithError(err).Warn("Sync process still not recovered after failures")
+		m.notifyStateChange(Unrecovered)
+	}
+}
+
+// notifyStateChange encapsulates state change notification to observer
+func (m *Monitor) notifyStateChange(state HealthState) {
+	if m.observer != nil {
+		m.observer.OnStateChange(state)
 	}
 }
