@@ -455,6 +455,6 @@ func (syncer *DatabaseSyncer) OnStateChange(state monitor.HealthState, details .
 			"cfxIndex":    newCfxIdx,
 			"healthState": state,
 			"details":     details,
-		}).Info("Switched to the next CFX client due to degraded health")
+		}).Info("Switched to the next CFX client due to degraded health status")
 	}
 }

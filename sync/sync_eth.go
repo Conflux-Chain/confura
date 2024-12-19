@@ -479,6 +479,6 @@ func (syncer *EthSyncer) OnStateChange(state monitor.HealthState, details ...str
 			"w3cIndex":    newW3cIdx,
 			"healthState": state,
 			"details":     details,
-		}).Info("Switched to the next web3go client due to degraded health")
+		}).Info("Switched to the next web3go client due to degraded health status")
 	}
 }
