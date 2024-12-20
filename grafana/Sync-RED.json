@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -14,15 +17,17 @@
   },
   "description": "",
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 57,
-  "iteration": 1723105397367,
   "links": [],
   "panels": [
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -31,10 +36,22 @@
       },
       "id": 2,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "type": "row"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 3,
         "w": 24,
@@ -43,16 +60,33 @@
       },
       "id": 4,
       "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
         "content": "This dashboard follows the RED method (Rate of traffic, Errors, Duration/latency) to measure sync service from high level perspective. TODO: split by sync type (eg., db sync, kv sync)\n\n- The \"Network\" variable is the data source for the dashboard, and applies to the whole dashboard. ",
         "mode": "markdown"
       },
-      "pluginVersion": "8.0.3",
+      "pluginVersion": "11.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "README",
       "type": "text"
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -61,11 +95,22 @@
       },
       "id": 6,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Rate (aka Traffic)",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -73,9 +118,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -84,6 +133,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -128,15 +178,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -219,7 +274,9 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -227,9 +284,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -238,6 +299,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -282,15 +344,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -374,7 +441,10 @@
     },
     {
       "collapsed": true,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -384,7 +454,9 @@
       "id": 11,
       "panels": [
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -424,8 +496,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -447,7 +518,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -456,6 +528,9 @@
           "targets": [
             {
               "alias": "$col",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -538,7 +613,9 @@
           "type": "timeseries"
         },
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -578,8 +655,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -601,7 +677,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -610,6 +687,9 @@
           "targets": [
             {
               "alias": "$col",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -692,12 +772,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Errors",
       "type": "row"
     },
     {
       "collapsed": true,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -707,7 +799,9 @@
       "id": 26,
       "panels": [
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -747,8 +841,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -771,7 +864,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -780,6 +874,9 @@
           "targets": [
             {
               "alias": "$col",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -898,7 +995,9 @@
           "type": "timeseries"
         },
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -938,8 +1037,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -962,7 +1060,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -971,6 +1070,9 @@
           "targets": [
             {
               "alias": "$col",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -1089,7 +1191,9 @@
           "type": "timeseries"
         },
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -1129,8 +1233,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -1153,7 +1256,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -1162,6 +1266,9 @@
           "targets": [
             {
               "alias": "$col",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -1280,7 +1387,9 @@
           "type": "timeseries"
         },
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -1320,8 +1429,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -1344,7 +1452,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -1353,6 +1462,9 @@
           "targets": [
             {
               "alias": "$col",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -1471,12 +1583,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Duration (aka Latency)",
       "type": "row"
     },
     {
       "collapsed": true,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1486,7 +1610,9 @@
       "id": 45,
       "panels": [
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -1526,8 +1652,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -1550,7 +1675,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -1559,6 +1685,9 @@
           "targets": [
             {
               "alias": "$col",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -1677,7 +1806,9 @@
           "type": "timeseries"
         },
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -1717,8 +1848,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -1741,7 +1871,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -1750,6 +1881,9 @@
           "targets": [
             {
               "alias": "$col",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -1868,12 +2002,20 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Batch Size",
       "type": "row"
     }
   ],
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 39,
   "tags": [
     "sync",
     "RED"
@@ -1883,11 +2025,9 @@
       {
         "current": {
           "selected": false,
-          "text": "confura_mainnet",
-          "value": "confura_mainnet"
+          "text": "confura_mainet",
+          "value": "Hd0wTl6Gz"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Network",
@@ -1911,5 +2051,6 @@
   "timezone": "",
   "title": "Sync RED",
   "uid": "lJIFL337k",
-  "version": 24
+  "version": 24,
+  "weekStart": ""
 }

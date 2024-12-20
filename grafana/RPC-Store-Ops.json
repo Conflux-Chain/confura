@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -14,15 +17,17 @@
   },
   "description": "",
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 56,
-  "iteration": 1723105334538,
   "links": [],
   "panels": [
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -31,10 +36,22 @@
       },
       "id": 2,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "type": "row"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 4,
         "w": 24,
@@ -43,16 +60,33 @@
       },
       "id": 4,
       "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
         "content": "\n\nThis dashboard measures the rpc store such as hit ratio for some cached rpc methods of both space, and operation rate and latecy for getLogs. \nTODO: split space?\n\n\nThe variable filter rule:\n\n- The \"Network\" variable is the data source for the dashboard, and applies to the whole dashboard. \n\n\n\n",
         "mode": "markdown"
       },
-      "pluginVersion": "8.0.3",
+      "pluginVersion": "11.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "README",
       "type": "text"
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -61,11 +95,22 @@
       },
       "id": 6,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Hit Ratio",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -73,9 +118,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -84,6 +133,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -129,15 +179,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -188,7 +243,10 @@
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -197,11 +255,22 @@
       },
       "id": 26,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "GetLogs Ops",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -209,9 +278,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -220,6 +293,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -264,15 +338,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "single",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -355,7 +434,9 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -363,9 +444,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -374,6 +459,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -419,15 +505,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -546,8 +637,7 @@
       "type": "timeseries"
     }
   ],
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 39,
   "tags": [
     "rpc",
     "store",
@@ -558,11 +648,9 @@
       {
         "current": {
           "selected": false,
-          "text": "confura_mainnet",
-          "value": "confura_mainnet"
+          "text": "confura_mainet",
+          "value": "Hd0wTl6Gz"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Network",
@@ -577,19 +665,18 @@
         "type": "datasource"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
-        "label": null,
         "multi": true,
         "name": "cacheType",
         "options": [],
@@ -610,5 +697,6 @@
   "timezone": "",
   "title": "RPC Store Ops",
   "uid": "tAfDC9q7k",
-  "version": 9
+  "version": 9,
+  "weekStart": ""
 }

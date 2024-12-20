@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -14,15 +17,17 @@
   },
   "description": "",
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 53,
-  "iteration": 1723105048485,
   "links": [],
   "panels": [
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -31,10 +36,22 @@
       },
       "id": 2,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "type": "row"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 2,
         "w": 24,
@@ -43,16 +60,33 @@
       },
       "id": 4,
       "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
         "content": "This dashboard measures number of requests and request latency per batch.",
         "mode": "markdown"
       },
-      "pluginVersion": "8.0.3",
+      "pluginVersion": "11.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "README",
       "type": "text"
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -61,20 +95,35 @@
       },
       "id": 6,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Size",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -83,6 +132,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -127,15 +177,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -255,7 +310,10 @@
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -264,20 +322,35 @@
       },
       "id": 26,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Duration (aka Latency)",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -286,6 +359,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -332,15 +406,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -459,8 +538,7 @@
       "type": "timeseries"
     }
   ],
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 39,
   "tags": [
     "batch",
     "rpc",
@@ -471,11 +549,9 @@
       {
         "current": {
           "selected": false,
-          "text": "confura_mainnet",
-          "value": "confura_mainnet"
+          "text": "confura_mainet",
+          "value": "Hd0wTl6Gz"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Network",
@@ -499,5 +575,6 @@
   "timezone": "",
   "title": "RPC Batch",
   "uid": "z6KGk9q7z",
-  "version": 6
+  "version": 6,
+  "weekStart": ""
 }

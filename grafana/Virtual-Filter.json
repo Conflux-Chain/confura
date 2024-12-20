@@ -1,1697 +1,1800 @@
 {
-    "annotations": {
-      "list": [
-        {
-          "builtIn": 1,
-          "datasource": "-- Grafana --",
-          "enable": true,
-          "hide": true,
-          "iconColor": "rgba(0, 211, 255, 1)",
-          "name": "Annotations & Alerts",
-          "type": "dashboard"
-        }
-      ]
-    },
-    "editable": true,
-    "gnetId": null,
-    "graphTooltip": 0,
-    "id": 71,
-    "iteration": 1723105478844,
-    "links": [],
-    "panels": [
+  "annotations": {
+    "list": [
       {
-        "datasource": null,
-        "description": "",
-        "gridPos": {
-          "h": 3,
-          "w": 24,
-          "x": 0,
-          "y": 0
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
         },
-        "id": 4,
-        "options": {
-          "content": "This dashboard measures the virtual filter sessions delegated to some specific fullnode. It also measures the QPS/latency/size for filter change polling or performance metrics on store operations.",
-          "mode": "markdown"
-        },
-        "pluginVersion": "8.0.3",
-        "title": "README",
-        "type": "text"
-      },
-      {
-        "collapsed": false,
-        "datasource": null,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 3
-        },
-        "id": 8,
-        "panels": [],
-        "title": "Sessions",
-        "type": "row"
-      },
-      {
-        "datasource": "${network}",
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
-            "custom": {
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "drawStyle": "line",
-              "fillOpacity": 0,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
-              },
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
-              "showPoints": "auto",
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
-              ]
-            }
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 9,
-          "w": 24,
-          "x": 0,
-          "y": 4
-        },
-        "id": 2,
-        "options": {
-          "legend": {
-            "calcs": [],
-            "displayMode": "list",
-            "placement": "bottom"
-          },
-          "tooltip": {
-            "mode": "multi"
-          }
-        },
-        "targets": [
-          {
-            "alias": "$m",
-            "groupBy": [
-              {
-                "params": [
-                  "$__interval"
-                ],
-                "type": "time"
-              },
-              {
-                "params": [
-                  "null"
-                ],
-                "type": "fill"
-              }
-            ],
-            "measurement": "/^$sessionMetrics$/",
-            "orderByTime": "ASC",
-            "policy": "default",
-            "query": "SELECT mean(\"value\") FROM /^$sessionMetrics$/ WHERE $timeFilter GROUP BY time($__interval) fill(null)",
-            "rawQuery": false,
-            "refId": "A",
-            "resultFormat": "time_series",
-            "select": [
-              [
-                {
-                  "params": [
-                    "value"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                }
-              ]
-            ],
-            "tags": []
-          }
-        ],
-        "title": " Filter API Sessions to  node (${node})",
-        "transformations": [
-          {
-            "id": "renameByRegex",
-            "options": {
-              "regex": "infura/virtualFilter/(.+)/sessions/(.*).gauge",
-              "renamePattern": "$1"
-            }
-          }
-        ],
-        "type": "timeseries"
-      },
-      {
-        "collapsed": false,
-        "datasource": null,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 13
-        },
-        "id": 10,
-        "panels": [],
-        "title": "Polling",
-        "type": "row"
-      },
-      {
-        "datasource": "${network}",
-        "description": "",
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
-            "custom": {
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "drawStyle": "line",
-              "fillOpacity": 0,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
-              },
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
-              "showPoints": "auto",
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
-              ]
-            }
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 0,
-          "y": 14
-        },
-        "id": 12,
-        "options": {
-          "legend": {
-            "calcs": [],
-            "displayMode": "list",
-            "placement": "bottom"
-          },
-          "tooltip": {
-            "mode": "multi"
-          }
-        },
-        "targets": [
-          {
-            "alias": "$col",
-            "groupBy": [
-              {
-                "params": [
-                  "$__interval"
-                ],
-                "type": "time"
-              },
-              {
-                "params": [
-                  "null"
-                ],
-                "type": "fill"
-              }
-            ],
-            "measurement": "/^$pollQpsMetrics$/",
-            "orderByTime": "ASC",
-            "policy": "default",
-            "refId": "A",
-            "resultFormat": "time_series",
-            "select": [
-              [
-                {
-                  "params": [
-                    "m1"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "m1"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "m5"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "m5"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "m15"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "m15"
-                  ],
-                  "type": "alias"
-                }
-              ]
-            ],
-            "tags": []
-          }
-        ],
-        "title": "Poll QPS from node (${node})",
-        "type": "timeseries"
-      },
-      {
-        "datasource": "${network}",
-        "description": "",
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
-            "custom": {
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "drawStyle": "line",
-              "fillOpacity": 0,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
-              },
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
-              "showPoints": "auto",
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
-              ]
-            },
-            "unit": "ns"
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 12,
-          "y": 14
-        },
-        "id": 18,
-        "options": {
-          "legend": {
-            "calcs": [],
-            "displayMode": "list",
-            "placement": "bottom"
-          },
-          "tooltip": {
-            "mode": "multi"
-          }
-        },
-        "targets": [
-          {
-            "alias": "$col",
-            "groupBy": [
-              {
-                "params": [
-                  "$__interval"
-                ],
-                "type": "time"
-              },
-              {
-                "params": [
-                  "null"
-                ],
-                "type": "fill"
-              }
-            ],
-            "measurement": "/^$pollQpsMetrics$/",
-            "orderByTime": "ASC",
-            "policy": "default",
-            "refId": "A",
-            "resultFormat": "time_series",
-            "select": [
-              [
-                {
-                  "params": [
-                    "mean"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "mean"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p75"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p75"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p95"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p95"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p99"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p99"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "max"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "max"
-                  ],
-                  "type": "alias"
-                }
-              ]
-            ],
-            "tags": []
-          }
-        ],
-        "title": "Poll latency for node (${node})",
-        "type": "timeseries"
-      },
-      {
-        "datasource": "${network}",
-        "description": "",
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
-            "custom": {
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "drawStyle": "line",
-              "fillOpacity": 0,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
-              },
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
-              "showPoints": "auto",
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
-              ]
-            },
-            "unit": "none"
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 0,
-          "y": 22
-        },
-        "id": 14,
-        "options": {
-          "legend": {
-            "calcs": [],
-            "displayMode": "list",
-            "placement": "bottom"
-          },
-          "tooltip": {
-            "mode": "multi"
-          }
-        },
-        "targets": [
-          {
-            "alias": "$col",
-            "groupBy": [
-              {
-                "params": [
-                  "$__interval"
-                ],
-                "type": "time"
-              },
-              {
-                "params": [
-                  "null"
-                ],
-                "type": "fill"
-              }
-            ],
-            "measurement": "/^$pollSizeMetrics$/",
-            "orderByTime": "ASC",
-            "policy": "default",
-            "refId": "A",
-            "resultFormat": "time_series",
-            "select": [
-              [
-                {
-                  "params": [
-                    "mean"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "mean"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p75"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p75"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p95"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p95"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p99"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p99"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "max"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "max"
-                  ],
-                  "type": "alias"
-                }
-              ]
-            ],
-            "tags": []
-          }
-        ],
-        "title": "Batch logs size polled from node (${node})",
-        "type": "timeseries"
-      },
-      {
-        "collapsed": false,
-        "datasource": null,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 30
-        },
-        "id": 16,
-        "panels": [],
-        "title": "Store",
-        "type": "row"
-      },
-      {
-        "datasource": "${network}",
-        "description": "",
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
-            "custom": {
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "drawStyle": "line",
-              "fillOpacity": 0,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
-              },
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
-              "showPoints": "auto",
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
-              ]
-            }
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 0,
-          "y": 31
-        },
-        "id": 20,
-        "options": {
-          "legend": {
-            "calcs": [],
-            "displayMode": "list",
-            "placement": "bottom"
-          },
-          "tooltip": {
-            "mode": "multi"
-          }
-        },
-        "targets": [
-          {
-            "alias": "$col",
-            "groupBy": [
-              {
-                "params": [
-                  "$__interval"
-                ],
-                "type": "time"
-              },
-              {
-                "params": [
-                  "null"
-                ],
-                "type": "fill"
-              }
-            ],
-            "measurement": "/^$persistQpsMetrics$/",
-            "orderByTime": "ASC",
-            "policy": "default",
-            "refId": "A",
-            "resultFormat": "time_series",
-            "select": [
-              [
-                {
-                  "params": [
-                    "m1"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "m1"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "m5"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "m5"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "m15"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "m15"
-                  ],
-                  "type": "alias"
-                }
-              ]
-            ],
-            "tags": []
-          }
-        ],
-        "title": "Persistence QPS  to ${store} for node (${node})",
-        "type": "timeseries"
-      },
-      {
-        "datasource": "${network}",
-        "description": "",
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
-            "custom": {
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "drawStyle": "line",
-              "fillOpacity": 0,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
-              },
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
-              "showPoints": "auto",
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
-              ]
-            },
-            "unit": "ns"
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 12,
-          "y": 31
-        },
-        "id": 23,
-        "options": {
-          "legend": {
-            "calcs": [],
-            "displayMode": "list",
-            "placement": "bottom"
-          },
-          "tooltip": {
-            "mode": "multi"
-          }
-        },
-        "targets": [
-          {
-            "alias": "$col",
-            "groupBy": [
-              {
-                "params": [
-                  "$__interval"
-                ],
-                "type": "time"
-              },
-              {
-                "params": [
-                  "null"
-                ],
-                "type": "fill"
-              }
-            ],
-            "measurement": "/^$persistQpsMetrics$/",
-            "orderByTime": "ASC",
-            "policy": "default",
-            "refId": "A",
-            "resultFormat": "time_series",
-            "select": [
-              [
-                {
-                  "params": [
-                    "mean"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "mean"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p75"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p75"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p95"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p95"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p99"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p99"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "max"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "max"
-                  ],
-                  "type": "alias"
-                }
-              ]
-            ],
-            "tags": []
-          }
-        ],
-        "title": "Persistence latency  to ${store} for node (${node})",
-        "type": "timeseries"
-      },
-      {
-        "datasource": "${network}",
-        "description": "",
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
-            "custom": {
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "drawStyle": "line",
-              "fillOpacity": 0,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
-              },
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
-              "showPoints": "auto",
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
-              ]
-            }
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 0,
-          "y": 39
-        },
-        "id": 21,
-        "options": {
-          "legend": {
-            "calcs": [],
-            "displayMode": "list",
-            "placement": "bottom"
-          },
-          "tooltip": {
-            "mode": "multi"
-          }
-        },
-        "targets": [
-          {
-            "alias": "$col",
-            "groupBy": [
-              {
-                "params": [
-                  "$__interval"
-                ],
-                "type": "time"
-              },
-              {
-                "params": [
-                  "null"
-                ],
-                "type": "fill"
-              }
-            ],
-            "measurement": "/^$queryQpsMetrics$/",
-            "orderByTime": "ASC",
-            "policy": "default",
-            "refId": "A",
-            "resultFormat": "time_series",
-            "select": [
-              [
-                {
-                  "params": [
-                    "m1"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "m1"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "m5"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "m5"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "m15"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "m15"
-                  ],
-                  "type": "alias"
-                }
-              ]
-            ],
-            "tags": []
-          }
-        ],
-        "title": "Query QPS  from ${store} for node (${node})",
-        "type": "timeseries"
-      },
-      {
-        "datasource": "${network}",
-        "description": "",
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
-            "custom": {
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "drawStyle": "line",
-              "fillOpacity": 0,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
-              },
-              "lineInterpolation": "linear",
-              "lineWidth": 1,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
-              "showPoints": "auto",
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
-              ]
-            },
-            "unit": "ns"
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 12,
-          "y": 39
-        },
-        "id": 22,
-        "options": {
-          "legend": {
-            "calcs": [],
-            "displayMode": "list",
-            "placement": "bottom"
-          },
-          "tooltip": {
-            "mode": "multi"
-          }
-        },
-        "targets": [
-          {
-            "alias": "$col",
-            "groupBy": [
-              {
-                "params": [
-                  "$__interval"
-                ],
-                "type": "time"
-              },
-              {
-                "params": [
-                  "null"
-                ],
-                "type": "fill"
-              }
-            ],
-            "measurement": "/^$queryQpsMetrics$/",
-            "orderByTime": "ASC",
-            "policy": "default",
-            "refId": "A",
-            "resultFormat": "time_series",
-            "select": [
-              [
-                {
-                  "params": [
-                    "mean"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "mean"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p75"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p75"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p95"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p95"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "p99"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "p99"
-                  ],
-                  "type": "alias"
-                }
-              ],
-              [
-                {
-                  "params": [
-                    "max"
-                  ],
-                  "type": "field"
-                },
-                {
-                  "params": [],
-                  "type": "mean"
-                },
-                {
-                  "params": [
-                    "max"
-                  ],
-                  "type": "alias"
-                }
-              ]
-            ],
-            "tags": []
-          }
-        ],
-        "title": "Query latency  from ${store} for node (${node})",
-        "type": "timeseries"
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
       }
-    ],
-    "refresh": false,
-    "schemaVersion": 30,
-    "style": "dark",
-    "tags": [
-      "filter API"
-    ],
-    "templating": {
-      "list": [
-        {
-          "current": {
-            "selected": true,
-            "text": "confura_testnet",
-            "value": "confura_testnet"
-          },
-          "description": null,
-          "error": null,
-          "hide": 0,
-          "includeAll": false,
-          "label": "Network",
-          "multi": false,
-          "name": "network",
-          "options": [],
-          "query": "influxdb",
-          "queryValue": "",
-          "refresh": 1,
-          "regex": "/.*confura_*./",
-          "skipUrlSync": false,
-          "type": "datasource"
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 71,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
+      "description": "",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
         },
+        "content": "This dashboard measures the virtual filter sessions delegated to some specific fullnode. It also measures the QPS/latency/size for filter change polling or performance metrics on store operations.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.2.2",
+      "targets": [
         {
-          "allValue": null,
-          "current": {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "README",
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 8,
+      "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "Sessions",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "uid": "${network}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "measurement": "/^$sessionMetrics$/",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "query": "SELECT mean(\"value\") FROM /^$sessionMetrics$/ WHERE $timeFilter GROUP BY time($__interval) fill(null)",
+          "rawQuery": false,
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "value"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              }
+            ]
+          ],
+          "tags": []
+        }
+      ],
+      "title": " Filter API Sessions to  node (${node})",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "infura/virtualFilter/(.+)/sessions/(.*).gauge",
+            "renamePattern": "$1"
+          }
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 10,
+      "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "Polling",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "uid": "${network}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "measurement": "/^$pollQpsMetrics$/",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "m1"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "m1"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "m5"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "m5"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "m15"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "m15"
+                ],
+                "type": "alias"
+              }
+            ]
+          ],
+          "tags": []
+        }
+      ],
+      "title": "Poll QPS from node (${node})",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "${network}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ns"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "measurement": "/^$pollQpsMetrics$/",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "mean"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "mean"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p75"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p75"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p95"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p95"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p99"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p99"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "max"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "max"
+                ],
+                "type": "alias"
+              }
+            ]
+          ],
+          "tags": []
+        }
+      ],
+      "title": "Poll latency for node (${node})",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "${network}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "id": 14,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "measurement": "/^$pollSizeMetrics$/",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "mean"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "mean"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p75"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p75"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p95"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p95"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p99"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p99"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "max"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "max"
+                ],
+                "type": "alias"
+              }
+            ]
+          ],
+          "tags": []
+        }
+      ],
+      "title": "Batch logs size polled from node (${node})",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "id": 16,
+      "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
+      "title": "Store",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "uid": "${network}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 31
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "measurement": "/^$persistQpsMetrics$/",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "m1"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "m1"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "m5"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "m5"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "m15"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "m15"
+                ],
+                "type": "alias"
+              }
+            ]
+          ],
+          "tags": []
+        }
+      ],
+      "title": "Persistence QPS  to ${store} for node (${node})",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "${network}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ns"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 31
+      },
+      "id": 23,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "measurement": "/^$persistQpsMetrics$/",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "mean"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "mean"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p75"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p75"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p95"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p95"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p99"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p99"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "max"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "max"
+                ],
+                "type": "alias"
+              }
+            ]
+          ],
+          "tags": []
+        }
+      ],
+      "title": "Persistence latency  to ${store} for node (${node})",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "${network}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "id": 21,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "measurement": "/^$queryQpsMetrics$/",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "m1"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "m1"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "m5"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "m5"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "m15"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "m15"
+                ],
+                "type": "alias"
+              }
+            ]
+          ],
+          "tags": []
+        }
+      ],
+      "title": "Query QPS  from ${store} for node (${node})",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "uid": "${network}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ns"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 39
+      },
+      "id": 22,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "alias": "$col",
+          "datasource": {
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "measurement": "/^$queryQpsMetrics$/",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "mean"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "mean"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p75"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p75"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p95"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p95"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "p99"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "p99"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "max"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              },
+              {
+                "params": [
+                  "max"
+                ],
+                "type": "alias"
+              }
+            ]
+          ],
+          "tags": []
+        }
+      ],
+      "title": "Query latency  from ${store} for node (${node})",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": false,
+  "schemaVersion": 39,
+  "tags": [
+    "filter API"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "confura_mainet",
+          "value": "Hd0wTl6Gz"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Network",
+        "multi": false,
+        "name": "network",
+        "options": [],
+        "query": "influxdb",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "/.*confura_*./",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "eth",
+          "value": "eth"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Space",
+        "multi": false,
+        "name": "space",
+        "options": [
+          {
+            "selected": false,
+            "text": "cfx",
+            "value": "cfx"
+          },
+          {
             "selected": true,
             "text": "eth",
             "value": "eth"
-          },
-          "description": null,
-          "error": null,
-          "hide": 0,
-          "includeAll": false,
-          "label": "Space",
-          "multi": false,
-          "name": "space",
-          "options": [
-            {
-              "selected": false,
-              "text": "cfx",
-              "value": "cfx"
-            },
-            {
-              "selected": true,
-              "text": "eth",
-              "value": "eth"
-            }
-          ],
-          "query": "cfx,eth",
-          "queryValue": "",
-          "skipUrlSync": false,
-          "type": "custom"
+          }
+        ],
+        "query": "cfx,eth",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "private-gateway:5452",
+          "value": "private-gateway:5452"
         },
-        {
-          "allValue": null,
-          "current": {
-            "selected": false,
-            "text": "192.168.12.203:5452",
-            "value": "192.168.12.203:5452"
-          },
-          "datasource": "${network}",
-          "definition": "show measurements",
-          "description": null,
-          "error": null,
-          "hide": 0,
-          "includeAll": false,
-          "label": "Node",
-          "multi": false,
-          "name": "node",
-          "options": [],
-          "query": "show measurements",
-          "refresh": 1,
-          "regex": "/^infura/virtualFilter/${space}/.+/sessions/(.+)\\.gauge$/",
-          "skipUrlSync": false,
-          "sort": 0,
-          "type": "query"
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
         },
-        {
-          "allValue": null,
-          "current": {
+        "definition": "show measurements",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Node",
+        "multi": false,
+        "name": "node",
+        "options": [],
+        "query": "show measurements",
+        "refresh": 1,
+        "regex": "/^infura/virtualFilter/${space}/.+/sessions/(.+)\\.gauge$/",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "memory",
+          "value": "memory"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Store",
+        "multi": false,
+        "name": "store",
+        "options": [
+          {
             "selected": true,
             "text": "memory",
             "value": "memory"
           },
-          "description": null,
-          "error": null,
-          "hide": 0,
-          "includeAll": false,
-          "label": "Store",
-          "multi": false,
-          "name": "store",
-          "options": [
-            {
-              "selected": true,
-              "text": "memory",
-              "value": "memory"
-            },
-            {
-              "selected": false,
-              "text": "mysql",
-              "value": "mysql"
-            }
+          {
+            "selected": false,
+            "text": "mysql",
+            "value": "mysql"
+          }
+        ],
+        "query": "memory,mysql",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
           ],
-          "query": "memory,mysql",
-          "queryValue": "",
-          "skipUrlSync": false,
-          "type": "custom"
+          "value": [
+            "$__all"
+          ]
         },
-        {
-          "allValue": null,
-          "current": {
-            "selected": true,
-            "text": [
-              "All"
-            ],
-            "value": [
-              "$__all"
-            ]
-          },
-          "datasource": "${network}",
-          "definition": "show measurements",
-          "description": null,
-          "error": null,
-          "hide": 2,
-          "includeAll": true,
-          "label": null,
-          "multi": true,
-          "name": "sessionMetrics",
-          "options": [],
-          "query": "show measurements",
-          "refresh": 1,
-          "regex": "/^infura/virtualFilter/${space}/.+/sessions/${node}\\.gauge$/",
-          "skipUrlSync": false,
-          "sort": 0,
-          "type": "query"
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
         },
-        {
-          "allValue": null,
-          "current": {
-            "selected": true,
-            "text": [
-              "All"
-            ],
-            "value": [
-              "$__all"
-            ]
-          },
-          "datasource": "${network}",
-          "definition": "show measurements",
-          "description": null,
-          "error": null,
-          "hide": 2,
-          "includeAll": true,
-          "label": null,
-          "multi": true,
-          "name": "persistQpsMetrics",
-          "options": [],
-          "query": "show measurements",
-          "refresh": 1,
-          "regex": "/^infura/virtualFilter/${space}/persist/${node}/filterChanges/${store}.timer$/",
-          "skipUrlSync": false,
-          "sort": 0,
-          "type": "query"
+        "definition": "show measurements",
+        "hide": 2,
+        "includeAll": true,
+        "multi": true,
+        "name": "sessionMetrics",
+        "options": [],
+        "query": "show measurements",
+        "refresh": 1,
+        "regex": "/^infura/virtualFilter/${space}/.+/sessions/${node}\\.gauge$/",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
-        {
-          "allValue": null,
-          "current": {
-            "selected": true,
-            "text": [
-              "All"
-            ],
-            "value": [
-              "$__all"
-            ]
-          },
-          "datasource": "${network}",
-          "definition": "show measurements",
-          "description": null,
-          "error": null,
-          "hide": 2,
-          "includeAll": true,
-          "label": null,
-          "multi": true,
-          "name": "queryQpsMetrics",
-          "options": [],
-          "query": "show measurements",
-          "refresh": 1,
-          "regex": "/^infura/virtualFilter/${space}/query/${node}/filterChanges/${store}.timer$/",
-          "skipUrlSync": false,
-          "sort": 0,
-          "type": "query"
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
         },
-        {
-          "allValue": null,
-          "current": {
-            "selected": true,
-            "text": [
-              "All"
-            ],
-            "value": [
-              "$__all"
-            ]
-          },
-          "datasource": "${network}",
-          "definition": "show measurements",
-          "description": null,
-          "error": null,
-          "hide": 2,
-          "includeAll": true,
-          "label": null,
-          "multi": true,
-          "name": "pollQpsMetrics",
-          "options": [],
-          "query": "show measurements",
-          "refresh": 1,
-          "regex": "/^infura/virtualFilter/${space}/poll/${node}/once/success.timer$/",
-          "skipUrlSync": false,
-          "sort": 0,
-          "type": "query"
+        "definition": "show measurements",
+        "hide": 2,
+        "includeAll": true,
+        "multi": true,
+        "name": "persistQpsMetrics",
+        "options": [],
+        "query": "show measurements",
+        "refresh": 1,
+        "regex": "/^infura/virtualFilter/${space}/persist/${node}/filterChanges/${store}.timer$/",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
-        {
-          "allValue": null,
-          "current": {
-            "selected": true,
-            "text": [
-              "All"
-            ],
-            "value": [
-              "$__all"
-            ]
-          },
-          "datasource": "${network}",
-          "definition": "show measurements",
-          "description": null,
-          "error": null,
-          "hide": 2,
-          "includeAll": true,
-          "label": null,
-          "multi": true,
-          "name": "pollSizeMetrics",
-          "options": [],
-          "query": "show measurements",
-          "refresh": 1,
-          "regex": "/^infura/virtualFilter/${space}/poll/${node}/once/size.histogram$/",
-          "skipUrlSync": false,
-          "sort": 0,
-          "type": "query"
-        }
-      ]
-    },
-    "time": {
-      "from": "now-24h",
-      "to": "now"
-    },
-    "timepicker": {},
-    "timezone": "",
-    "title": "Virtual Filter",
-    "uid": "9M4igcp4k",
-    "version": 12
-  }
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
+        "definition": "show measurements",
+        "hide": 2,
+        "includeAll": true,
+        "multi": true,
+        "name": "queryQpsMetrics",
+        "options": [],
+        "query": "show measurements",
+        "refresh": 1,
+        "regex": "/^infura/virtualFilter/${space}/query/${node}/filterChanges/${store}.timer$/",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
+        "definition": "show measurements",
+        "hide": 2,
+        "includeAll": true,
+        "multi": true,
+        "name": "pollQpsMetrics",
+        "options": [],
+        "query": "show measurements",
+        "refresh": 1,
+        "regex": "/^infura/virtualFilter/${space}/poll/${node}/once/success.timer$/",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
+        "definition": "show measurements",
+        "hide": 2,
+        "includeAll": true,
+        "multi": true,
+        "name": "pollSizeMetrics",
+        "options": [],
+        "query": "show measurements",
+        "refresh": 1,
+        "regex": "/^infura/virtualFilter/${space}/poll/${node}/once/size.histogram$/",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Virtual Filter",
+  "uid": "9M4igcp4k",
+  "version": 12,
+  "weekStart": ""
+}
