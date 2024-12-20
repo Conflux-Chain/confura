@@ -66,10 +66,14 @@ func MustInit() {
 }
 
 // Inject values into context for static RPC call middlewares, e.g. rate limit
-func httpMiddleware(registry *rate.Registry, clientProvider interface{}) handlers.Middleware {
+func httpMiddleware(namespace string, registry *rate.Registry, clientProvider interface{}) handlers.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
+
+			if len(namespace) > 0 {
+				ctx = context.WithValue(ctx, handlers.CtxKeyNamespace, namespace)
+			}
 
 			if token := handlers.GetAccessToken(r); len(token) > 0 { // optional
 				ctx = context.WithValue(ctx, handlers.CtxKeyAccessToken, token)

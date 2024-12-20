@@ -39,27 +39,27 @@ func (*RpcMetrics) BatchLatency() metrics.Histogram {
 	return metricUtil.GetOrRegisterHistogram("infura/rpc/batch/latency")
 }
 
-func (*RpcMetrics) UpdateDuration(method string, err error, start time.Time) {
+func (*RpcMetrics) UpdateDuration(space, method string, err error, start time.Time) {
 	var isNilErr, isRpcErr bool
 	if isNilErr = util.IsInterfaceValNil(err); !isNilErr {
 		isRpcErr = utils.IsRPCJSONError(err)
 	}
 
 	// Overall rate statistics
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault(100, "infura/rpc/rate/success").Mark(isNilErr)
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/rpcErr").Mark(isRpcErr)
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/nonRpcErr").Mark(!isNilErr && !isRpcErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(100, "infura/rpc/rate/success/%v", space).Mark(isNilErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/rpcErr/%v", space).Mark(isRpcErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/nonRpcErr/%v", space).Mark(!isNilErr && !isRpcErr)
 
 	// RPC rate statistics
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault(100, "infura/rpc/rate/success/%v", method).Mark(isNilErr)
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/rpcErr/%v", method).Mark(isRpcErr)
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/nonRpcErr/%v", method).Mark(!isNilErr && !isRpcErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(100, "infura/rpc/rate/success/%v/%v", space, method).Mark(isNilErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/rpcErr/%v/%v", space, method).Mark(isRpcErr)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/rpc/rate/nonRpcErr/%v/%v", space, method).Mark(!isNilErr && !isRpcErr)
 
 	// Only update QPS & Latency if success or rpc error. Because, io error usually takes long time
 	// and impact the average latency.
 	if isNilErr || isRpcErr {
-		metricUtil.GetOrRegisterTimer("infura/rpc/duration/all").UpdateSince(start)
-		metricUtil.GetOrRegisterTimer("infura/rpc/duration/%v", method).UpdateSince(start)
+		metricUtil.GetOrRegisterTimer("infura/rpc/duration/all/%v", space).UpdateSince(start)
+		metricUtil.GetOrRegisterTimer("infura/rpc/duration/%v/%v", space, method).UpdateSince(start)
 	}
 }
 

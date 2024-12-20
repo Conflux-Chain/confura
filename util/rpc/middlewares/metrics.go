@@ -34,7 +34,8 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		}
 
 		// collect rpc QPS/latency etc.
-		metrics.Registry.RPC.UpdateDuration(metricMethod, unwrapJsonError(resp.Error), start)
+		space, _ := handlers.GetNamespaceFromContext(ctx)
+		metrics.Registry.RPC.UpdateDuration(space, metricMethod, unwrapJsonError(resp.Error), start)
 		// collect traffic hits
 		metrics.DefaultTrafficCollector().MarkHit(getTrafficSourceFromContext(ctx))
 
