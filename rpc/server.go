@@ -38,7 +38,7 @@ func MustNewNativeSpaceServer(
 		)
 	}
 
-	middleware := httpMiddleware(registry, clientProvider)
+	middleware := httpMiddleware("cfx", registry, clientProvider)
 
 	return rpc.MustNewServer(nativeSpaceRpcServerName, exposedApis, middleware)
 }
@@ -66,7 +66,7 @@ func MustNewEvmSpaceServer(
 		)
 	}
 
-	middleware := httpMiddleware(registry, clientProvider)
+	middleware := httpMiddleware("eth", registry, clientProvider)
 
 	return rpc.MustNewServer(evmSpaceRpcServerName, exposedApis, middleware)
 }
@@ -89,7 +89,7 @@ func MustNewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeSe
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server with bad exposed modules")
 	}
 
-	middleware := httpMiddleware(registry, nil)
+	middleware := httpMiddleware("cfxBridge", registry, nil)
 	return rpc.MustNewServer(nativeSpaceBridgeRpcServerName, exposedApis, middleware)
 }
 
