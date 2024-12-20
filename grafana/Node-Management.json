@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -13,14 +16,16 @@
     ]
   },
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 60,
-  "iteration": 1723104850038,
   "links": [],
   "panels": [
     {
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "description": "",
       "gridPos": {
         "h": 5,
@@ -30,15 +35,32 @@
       },
       "id": 24,
       "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
         "content": "\nThis dashboard follows the RED method (Rate of traffic, Errors, Duration/latency) to measure node management service.\n\n- The \"Network\" variable is the data source for the dashboard, and it applies to the whole dashboard.\n- The \"Space\" variable is the network space and \"RouteGroup\" is the node goup, they are used to filter nodes to show.\n- The \"Rate\" variable only applies to the rate breakdown, and the \"Latency\" variable only applies to the duration breakdown.",
         "mode": "markdown"
       },
-      "pluginVersion": "8.0.3",
+      "pluginVersion": "11.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "README",
       "type": "text"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -46,11 +68,22 @@
         "y": 5
       },
       "id": 20,
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Rate (aka Traffic)",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -58,9 +91,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -69,6 +106,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -113,15 +151,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -172,7 +215,10 @@
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -181,20 +227,35 @@
       },
       "id": 26,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Error",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -203,6 +264,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -250,15 +312,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -309,7 +376,10 @@
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -318,11 +388,22 @@
       },
       "id": 30,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Duration (aka Latency)",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -361,8 +442,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -385,7 +465,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi"
@@ -394,6 +475,9 @@
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -444,8 +528,7 @@
     }
   ],
   "refresh": "",
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 39,
   "tags": [
     "red",
     "node",
@@ -457,11 +540,9 @@
       {
         "current": {
           "selected": false,
-          "text": "confura_mainnet",
-          "value": "confura_mainnet"
+          "text": "confura_mainet",
+          "value": "Hd0wTl6Gz"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Network",
@@ -471,19 +552,16 @@
         "query": "influxdb",
         "queryValue": "",
         "refresh": 1,
-        "regex": "/^infura_.*/",
+        "regex": "/^confura_.*/",
         "skipUrlSync": false,
         "type": "datasource"
       },
       {
-        "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "eth",
           "value": "eth"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Space",
@@ -517,10 +595,11 @@
             "$__all"
           ]
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": true,
         "label": "RouteGroup",
@@ -535,7 +614,6 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": true,
           "text": [
@@ -545,10 +623,11 @@
             "$__all"
           ]
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -563,7 +642,6 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": true,
           "text": [
@@ -573,10 +651,11 @@
             "$__all"
           ]
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -591,14 +670,11 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "m1",
           "value": "m1"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Rate",
@@ -627,14 +703,11 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "mean",
           "value": "mean"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Latency",
@@ -678,16 +751,16 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -711,5 +784,6 @@
   "timezone": "",
   "title": "Node Management RED",
   "uid": "dt5bqq3nk",
-  "version": 14
+  "version": 14,
+  "weekStart": ""
 }

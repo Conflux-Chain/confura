@@ -1,6 +1,6 @@
 # Grafana Dashboard
 
-This folder contains all dashboard JSON models which can be imported into Grafana.
+This folder contains all the dashboard JSON models, which are compatible with Grafana version 11.2.2 (the version we use). They may also work with other versions, but compatibility is not guaranteed.
 | Json Model          	| Description                               	|
 |---------------------	|-------------------------------------------	|
 | RPC-RED-Overview    	| `RED` metrics overview for RPC proxy        	|

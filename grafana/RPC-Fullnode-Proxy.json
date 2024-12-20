@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -14,15 +17,17 @@
   },
   "description": "",
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 72,
-  "iteration": 1723105236160,
   "links": [],
   "panels": [
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -31,10 +36,22 @@
       },
       "id": 2,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "type": "row"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 4,
         "w": 24,
@@ -43,16 +60,33 @@
       },
       "id": 4,
       "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
         "content": "This dashboard follows the RED method (Rate of traffic, Errors, Duration/latency) to measure fullnode proxy status. \n\n- The \"Network\" variable is the data source for the dashboard, and \"Space\" variable is the network space, both apply to the whole dashboard. \n- The \"QPS\" variable only applies to the rate breakdown, and the \"Latency\" variable only applies to the duration breakdown.",
         "mode": "markdown"
       },
-      "pluginVersion": "8.0.3",
+      "pluginVersion": "11.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "README",
       "type": "text"
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -61,20 +95,35 @@
       },
       "id": 6,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Rate (aka Traffic)",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -83,6 +132,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -127,15 +177,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "single",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -186,16 +241,22 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -204,6 +265,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -249,15 +311,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -309,7 +376,10 @@
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -318,11 +388,22 @@
       },
       "id": 11,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Errors",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -364,8 +445,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -388,7 +468,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi"
@@ -397,6 +478,9 @@
       "targets": [
         {
           "alias": "all",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -435,6 +519,9 @@
         },
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -485,7 +572,9 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -527,8 +616,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -551,7 +639,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi"
@@ -560,6 +649,9 @@
       "targets": [
         {
           "alias": "nonRPCErr",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -598,6 +690,9 @@
         },
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -649,7 +744,10 @@
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -658,11 +756,22 @@
       },
       "id": 19,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Duration (aka Latency)",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -703,8 +812,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -727,7 +835,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi"
@@ -736,6 +845,9 @@
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -786,7 +898,9 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -827,8 +941,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -851,7 +964,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi"
@@ -860,6 +974,9 @@
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -911,8 +1028,7 @@
     }
   ],
   "refresh": "",
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 39,
   "tags": [
     "RED",
     "RPC",
@@ -924,11 +1040,9 @@
       {
         "current": {
           "selected": false,
-          "text": "confura_mainnet",
-          "value": "confura_mainnet"
+          "text": "confura_mainet",
+          "value": "Hd0wTl6Gz"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Network",
@@ -943,14 +1057,11 @@
         "type": "datasource"
       },
       {
-        "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "cfx",
           "value": "cfx"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Space",
@@ -974,16 +1085,16 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
-          "text": "192.168.12.194:25372",
-          "value": "192.168.12.194:25372"
+          "text": "confura-main-internal.confluxrpc.com",
+          "value": "confura-main-internal.confluxrpc.com"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Node",
@@ -998,14 +1109,11 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "m1",
           "value": "m1"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "QPS",
@@ -1034,14 +1142,11 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "mean",
           "value": "mean"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Latency",
@@ -1080,7 +1185,6 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
           "selected": true,
           "text": [
@@ -1090,10 +1194,11 @@
             "$__all"
           ]
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1108,7 +1213,6 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": true,
           "text": [
@@ -1118,10 +1222,11 @@
             "$__all"
           ]
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1136,7 +1241,6 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": true,
           "text": [
@@ -1146,10 +1250,11 @@
             "$__all"
           ]
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1164,7 +1269,6 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": true,
           "text": [
@@ -1174,10 +1278,11 @@
             "$__all"
           ]
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1192,7 +1297,6 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": true,
           "text": [
@@ -1202,10 +1306,11 @@
             "$__all"
           ]
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1220,7 +1325,6 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": true,
           "text": [
@@ -1230,10 +1334,11 @@
             "$__all"
           ]
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1257,5 +1362,6 @@
   "timezone": "",
   "title": "RPC Fullnode Proxy",
   "uid": "z17fTko4k",
-  "version": 12
+  "version": 12,
+  "weekStart": ""
 }

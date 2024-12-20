@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -14,15 +17,17 @@
   },
   "description": "RED (rate, error, duration)  breakdown for RPC service ",
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 50,
-  "iteration": 1723105002607,
   "links": [],
   "panels": [
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -31,10 +36,22 @@
       },
       "id": 2,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "type": "row"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 4,
         "w": 24,
@@ -43,16 +60,33 @@
       },
       "id": 4,
       "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
         "content": "This dashboard follows the RED method (Rate of traffic, Errors, Duration/latency) to measure RPC service. \n\n- The \"Network\" variable is the data source for the dashboard, and \"Space\" variable is the network space, both apply to the whole dashboard. \n- The \"QPS\" variable only applies to the rate breakdown, and the \"Latency\" variable only applies to the duration breakdown.\n",
         "mode": "markdown"
       },
-      "pluginVersion": "8.0.3",
+      "pluginVersion": "11.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "README",
       "type": "text"
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -61,20 +95,37 @@
       },
       "id": 6,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Rate (aka Traffic)",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "default": false,
+        "type": "influxdb",
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -83,6 +134,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -127,15 +179,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
-          "alias": "$m",
+          "alias": "all",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -151,7 +208,7 @@
             }
           ],
           "hide": false,
-          "measurement": "infura/rpc/duration/all.timer",
+          "measurement": "infura/rpc/duration/all/${space}.timer",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -180,6 +237,9 @@
         },
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -222,7 +282,7 @@
         {
           "id": "renameByRegex",
           "options": {
-            "regex": "infura/rpc/duration/(.*)\\.timer",
+            "regex": "infura/rpc/duration/[a-zA-Z]+/(.*)\\.timer",
             "renamePattern": "$1"
           }
         }
@@ -231,7 +291,10 @@
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -240,11 +303,24 @@
       },
       "id": 11,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Errors",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "default": false,
+        "type": "influxdb",
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -252,9 +328,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -263,6 +343,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -308,15 +389,62 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
+          "alias": "all",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "hide": false,
+          "measurement": "infura/rpc/rate/success/${space}.gauge",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "B",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "value"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              }
+            ]
+          ],
+          "tags": []
+        },
+        {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -358,7 +486,7 @@
         {
           "id": "renameByRegex",
           "options": {
-            "regex": "infura/rpc/rate/success/(.*).gauge",
+            "regex": "infura/rpc/rate/success/[a-zA-Z]+/(.*).gauge",
             "renamePattern": "$1"
           }
         }
@@ -366,16 +494,24 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "default": false,
+        "type": "influxdb",
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -384,6 +520,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -416,32 +553,7 @@
           },
           "unit": "percent"
         },
-        "overrides": [
-          {
-            "__systemRef": "hideSeriesFrom",
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "exclude",
-                "names": [
-                  "cfx_getNextUsableNonce"
-                ],
-                "prefix": "All except:",
-                "readOnly": true
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": true
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 9,
@@ -454,15 +566,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "all",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -478,7 +595,7 @@
             }
           ],
           "hide": false,
-          "measurement": "infura/rpc/rate/rpcErr.gauge",
+          "measurement": "infura/rpc/rate/rpcErr/${space}.gauge",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "B",
@@ -501,6 +618,9 @@
         },
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -542,7 +662,7 @@
         {
           "id": "renameByRegex",
           "options": {
-            "regex": "infura/rpc/rate/rpcErr/(.*)\\.gauge",
+            "regex": "infura/rpc/rate/rpcErr/[a-zA-Z]+/(.*)\\.gauge",
             "renamePattern": "$1"
           }
         }
@@ -550,16 +670,24 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "default": false,
+        "type": "influxdb",
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -568,6 +696,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -613,15 +742,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "all",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -637,7 +771,7 @@
             }
           ],
           "hide": false,
-          "measurement": "infura/rpc/rate/nonRpcErr.gauge",
+          "measurement": "infura/rpc/rate/nonRpcErr/${space}.gauge",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "B",
@@ -660,6 +794,9 @@
         },
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -701,7 +838,7 @@
         {
           "id": "renameByRegex",
           "options": {
-            "regex": "infura/rpc/rate/nonRpcErr/(.*)\\.gauge",
+            "regex": "infura/rpc/rate/nonRpcErr/[a-zA-Z]+/(.*)\\.gauge",
             "renamePattern": "$1"
           }
         }
@@ -710,7 +847,10 @@
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -719,11 +859,24 @@
       },
       "id": 19,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Duration (aka Latency)",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "default": false,
+        "type": "influxdb",
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -731,9 +884,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "left",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -742,6 +899,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -788,15 +946,61 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
+          "alias": "all",
+          "datasource": {
+            "uid": "${network}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "$__interval"
+              ],
+              "type": "time"
+            },
+            {
+              "params": [
+                "null"
+              ],
+              "type": "fill"
+            }
+          ],
+          "hide": false,
+          "measurement": "infura/rpc/duration/all/${space}.timer",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "B",
+          "resultFormat": "time_series",
+          "select": [
+            [
+              {
+                "params": [
+                  "$latency"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "mean"
+              }
+            ]
+          ],
+          "tags": []
+        },
+        {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -839,7 +1043,7 @@
         {
           "id": "renameByRegex",
           "options": {
-            "regex": "infura/rpc/duration/(.*)\\.timer",
+            "regex": "infura/rpc/duration/[a-zA-Z]+/(.*)\\.timer",
             "renamePattern": "$1"
           }
         }
@@ -847,8 +1051,7 @@
       "type": "timeseries"
     }
   ],
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 39,
   "tags": [
     "RPC",
     "RED",
@@ -858,12 +1061,10 @@
     "list": [
       {
         "current": {
-          "selected": false,
-          "text": "confura_mainnet",
-          "value": "confura_mainnet"
+          "selected": true,
+          "text": "confura_mainet",
+          "value": "Hd0wTl6Gz"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Network",
@@ -878,14 +1079,11 @@
         "type": "datasource"
       },
       {
-        "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "cfx",
           "value": "cfx"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Space",
@@ -909,14 +1107,11 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "m1",
           "value": "m1"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "QPS",
@@ -945,14 +1140,11 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "mean",
           "value": "mean"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Latency",
@@ -991,16 +1183,16 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1009,22 +1201,22 @@
         "options": [],
         "query": "show measurements",
         "refresh": 1,
-        "regex": "/^infura/rpc/duration/${space}.+\\.timer$/",
+        "regex": "/^infura\\/rpc\\/duration\\/${space}\\/[a-zA-Z]+_[a-zA-Z]+\\.timer$/",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1033,22 +1225,22 @@
         "options": [],
         "query": "show measurements",
         "refresh": 1,
-        "regex": "/^infura/rpc/rate/success/${space}.+\\.gauge$/",
+        "regex": "/^infura/rpc/rate/success/${space}\\/[a-zA-Z]+_[a-zA-Z]+\\.gauge$/",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1057,22 +1249,22 @@
         "options": [],
         "query": "show measurements",
         "refresh": 1,
-        "regex": "/^infura/rpc/rate/rpcErr/${space}.+\\.gauge$/",
+        "regex": "/^infura\\/rpc\\/rate/rpcErr\\/${space}\\/[a-zA-Z]+_[a-zA-Z]+\\.gauge$/",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1081,22 +1273,22 @@
         "options": [],
         "query": "show measurements",
         "refresh": 1,
-        "regex": "/^infura/rpc/rate/nonRpcErr/${space}.+\\.gauge$/",
+        "regex": "/^infura\\/rpc\\/rate/nonRpcErr\\/${space}\\/[a-zA-Z]+_[a-zA-Z]+\\.gauge$/",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1105,7 +1297,7 @@
         "options": [],
         "query": "show measurements",
         "refresh": 1,
-        "regex": "/^infura/rpc/duration/${space}.+\\.timer$/",
+        "regex": "/^infura/rpc/duration/${space}\\/[a-zA-Z]+_[a-zA-Z]+\\.timer$/",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
@@ -1120,5 +1312,6 @@
   "timezone": "",
   "title": "RPC  RED Drilldown",
   "uid": "vjf32wq7k",
-  "version": 21
+  "version": 24,
+  "weekStart": ""
 }

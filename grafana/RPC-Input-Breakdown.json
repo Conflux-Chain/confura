@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -14,15 +17,17 @@
   },
   "description": "",
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 55,
-  "iteration": 1723105273131,
   "links": [],
   "panels": [
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -31,10 +36,22 @@
       },
       "id": 2,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "type": "row"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 7,
         "w": 24,
@@ -43,16 +60,33 @@
       },
       "id": 4,
       "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
         "content": "This dashboard measures the rpc input parameter behaviors such as:\n\n- input epoch/block type percent and input epoch/block gap to the latest mined epoch\n- percentage of behavior for retrieving detailed transaction while fetching block\n- log filter type percentage and log filter splitting behavior percentage\n\n\nThe variable filter rule:\n\n- The \"Network\" variable is the data source for the dashboard, and \"Space\" variable is the network space, both apply to the whole dashboard. \n- The \"inputMethod\" only applies to the input epoch/block type percent pannel, and \"Gap\" variable only applies to the input epoch/block gap pannel.",
         "mode": "markdown"
       },
-      "pluginVersion": "8.0.3",
+      "pluginVersion": "11.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "README",
       "type": "text"
     },
     {
       "collapsed": false,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -61,11 +95,22 @@
       },
       "id": 6,
       "panels": [],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Input Parameter",
       "type": "row"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -73,9 +118,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -84,6 +133,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -130,15 +180,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -188,16 +243,22 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -206,6 +267,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -251,15 +313,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -309,16 +376,22 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -327,6 +400,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -372,15 +446,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -430,7 +509,9 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -438,9 +519,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -449,6 +534,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -494,15 +580,20 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -552,7 +643,9 @@
       "type": "timeseries"
     },
     {
-      "datasource": "${network}",
+      "datasource": {
+        "uid": "${network}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -591,8 +684,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -615,7 +707,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi"
@@ -624,6 +717,9 @@
       "targets": [
         {
           "alias": "$m",
+          "datasource": {
+            "uid": "${network}"
+          },
           "groupBy": [
             {
               "params": [
@@ -674,7 +770,10 @@
     },
     {
       "collapsed": true,
-      "datasource": null,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "TpVPaHCGz"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -684,7 +783,9 @@
       "id": 26,
       "panels": [
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -723,8 +824,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -747,7 +847,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -756,6 +857,9 @@
           "targets": [
             {
               "alias": "$m",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -793,6 +897,9 @@
             },
             {
               "alias": "$m",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -831,6 +938,9 @@
             },
             {
               "alias": "$m",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -869,6 +979,9 @@
             },
             {
               "alias": "$m",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -919,7 +1032,9 @@
           "type": "timeseries"
         },
         {
-          "datasource": "${network}",
+          "datasource": {
+            "uid": "${network}"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -958,8 +1073,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -982,7 +1096,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -991,6 +1106,9 @@
           "targets": [
             {
               "alias": "$m",
+              "datasource": {
+                "uid": "${network}"
+              },
               "groupBy": [
                 {
                   "params": [
@@ -1040,13 +1158,21 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "TpVPaHCGz"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Log Filter",
       "type": "row"
     }
   ],
   "refresh": "",
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 39,
   "tags": [
     "rpc",
     "input",
@@ -1058,10 +1184,8 @@
         "current": {
           "selected": false,
           "text": "confura_testnet",
-          "value": "confura_testnet"
+          "value": "MHmjTl6Gz"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Network",
@@ -1076,14 +1200,11 @@
         "type": "datasource"
       },
       {
-        "allValue": null,
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "cfx",
           "value": "cfx"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Space",
@@ -1107,16 +1228,16 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "cfx_call",
           "value": "cfx_call"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "InputMethod",
@@ -1131,19 +1252,18 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
-        "label": null,
         "multi": true,
         "name": "inputType",
         "options": [],
@@ -1155,16 +1275,16 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "epoch",
           "value": "epoch"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": false,
         "label": "",
@@ -1179,16 +1299,16 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1203,19 +1323,18 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
-        "label": null,
         "multi": true,
         "name": "inputGap",
         "options": [],
@@ -1227,16 +1346,16 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1251,16 +1370,16 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1275,16 +1394,16 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1299,16 +1418,16 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1323,16 +1442,16 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1347,16 +1466,16 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1371,14 +1490,11 @@
         "type": "query"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "mean",
           "value": "mean"
         },
-        "description": null,
-        "error": null,
         "hide": 0,
         "includeAll": false,
         "label": "Gap",
@@ -1417,16 +1533,16 @@
         "type": "custom"
       },
       {
-        "allValue": null,
         "current": {
           "selected": false,
           "text": "All",
           "value": "$__all"
         },
-        "datasource": "${network}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${network}"
+        },
         "definition": "show measurements",
-        "description": null,
-        "error": null,
         "hide": 2,
         "includeAll": true,
         "label": "",
@@ -1450,5 +1566,6 @@
   "timezone": "",
   "title": "RPC Input Breakdown",
   "uid": "TNMAKrq7k",
-  "version": 23
+  "version": 23,
+  "weekStart": ""
 }
