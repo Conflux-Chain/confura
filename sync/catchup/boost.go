@@ -138,18 +138,23 @@ func (c *coordinator) backpressureChan() chan struct{} {
 }
 
 func (c *coordinator) run(ctx context.Context, wg *sync.WaitGroup) {
+	var innerWg sync.WaitGroup
+	defer wg.Done()
+
 	// Start boost workers to process assigned tasks
 	for _, w := range c.workers {
-		wg.Add(1)
-		go c.boostWorkerLoop(ctx, wg, w)
+		innerWg.Add(1)
+		go c.boostWorkerLoop(ctx, &innerWg, w)
 	}
+
+	// Start the result dispatch loop
+	innerWg.Add(1)
+	go c.dispatchLoop(ctx, &innerWg)
 
 	// Seeds the pending tasks queue with initial workload for workers.
 	c.assignTasks(defaultTaskSize)
 
-	// Start the result dispatch loop
-	wg.Add(1)
-	go c.dispatchLoop(ctx, wg)
+	innerWg.Wait()
 }
 
 // boostWorkerLoop continuously processes tasks assigned to the boostWorker.
@@ -362,6 +367,8 @@ func (s *boostSyncer) doSync(ctx context.Context, bmarker *benchmarker, start, e
 	// Start coordinator
 	fullEpochRange := types.RangeUint64{From: start, To: end}
 	coord := newCoordinator(s.workers, fullEpochRange, s.resultChan)
+
+	wg.Add(1)
 	go coord.run(ctx, &wg)
 
 	// Start memory monitor
@@ -533,8 +540,28 @@ func (w *boostWorker) fetchEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 			Receipts: make(map[cfxTypes.Hash]*cfxTypes.TransactionReceipt),
 		}
 
+		blockHashes, err := w.cfx.GetBlocksByEpoch(cfxTypes.NewEpochNumberUint64(epochNum))
+		if err != nil {
+			return nil, errors.WithMessagef(err, "failed to get blocks by epoch %v", epochNum)
+		}
+		if len(blockHashes) == 0 {
+			return nil, errors.Errorf("invalid epoch data (must have at least one block)")
+		}
+
 		// Cache to store blocks fetched by their hash to avoid repeated network calls
 		blockCache := make(map[cfxTypes.Hash]*cfxTypes.Block)
+
+		// Get the first and last block of the epoch
+		for _, bh := range []cfxTypes.Hash{blockHashes[0], blockHashes[len(blockHashes)-1]} {
+			if _, ok := blockCache[bh]; ok {
+				continue
+			}
+			block, err := w.cfx.GetBlockByHash(bh)
+			if err != nil {
+				return nil, errors.WithMessagef(err, "failed to get block by hash %v", bh)
+			}
+			blockCache[bh] = block
+		}
 
 		// Process logs that belong to the current epoch
 		for ; logCursor < len(logs); logCursor++ {
@@ -551,9 +578,6 @@ func (w *boostWorker) fetchEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 				if err != nil {
 					return nil, errors.WithMessagef(err, "failed to get block by hash %v", *blockHash)
 				}
-
-				// Add the block to the epoch data and cache
-				epochData.Blocks = append(epochData.Blocks, block)
 				blockCache[*blockHash] = block
 			}
 
@@ -572,6 +596,13 @@ func (w *boostWorker) fetchEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 
 			// Append the current log to the transaction receipt's logs
 			txnReceipt.Logs = append(txnReceipt.Logs, logs[logCursor])
+		}
+
+		// Append all necessary blocks for the epoch
+		for _, bh := range blockHashes {
+			if block, ok := blockCache[bh]; ok {
+				epochData.Blocks = append(epochData.Blocks, block)
+			}
 		}
 
 		// Append the constructed epoch data to the result list

@@ -78,6 +78,7 @@ func MustNewSyncer(
 	cfxClients []*sdk.Client,
 	db *mysql.MysqlStore,
 	elm election.LeaderManager,
+	monitor *monitor.Monitor,
 	opts ...SyncOption) *Syncer {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
@@ -95,15 +96,19 @@ func MustNewSyncer(
 		WithMinBatchDbRows(conf.DbRowsThreshold),
 		WithWorkers(workers),
 		WithMemoryThreshold(conf.MemoryThreshold),
+		WithBenchmark(conf.Benchmark),
 	)
 
-	return newSyncer(cfxClients, db, elm, append(newOpts, opts...)...)
+	return newSyncer(cfxClients, db, elm, monitor, append(newOpts, opts...)...)
 }
 
 func newSyncer(
 	cfxClients []*sdk.Client, db *mysql.MysqlStore,
-	elm election.LeaderManager, opts ...SyncOption) *Syncer {
-	syncer := &Syncer{elm: elm, db: db, cfxs: cfxClients, minBatchDbRows: 1500}
+	elm election.LeaderManager, monitor *monitor.Monitor, opts ...SyncOption) *Syncer {
+	syncer := &Syncer{
+		elm: elm, db: db, cfxs: cfxClients,
+		monitor: monitor, minBatchDbRows: 1500,
+	}
 	for _, opt := range opts {
 		opt(syncer)
 	}

@@ -11,4 +11,6 @@ type config struct {
 	WorkerChanSize int `default:"5"`
 	// max allowed memory usage (in bytes)
 	MemoryThreshold uint64
+	// benchmark mode
+	Benchmark bool
 }

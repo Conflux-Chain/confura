@@ -131,6 +131,9 @@ sync:
   #   workerChanSize: 5
   #   # Max memory usage allowed in bytes (0 for no limit).
   #   memoryThreshold: 0
+  #   # Whether to enable benchmark.
+  #   benchmark: false
+
 
   # # EVM space sync configurations
   # eth:
