@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/Conflux-Chain/go-conflux-sdk v1.5.11-0.20240913040447-d33c1c8903b2
-	github.com/Conflux-Chain/go-conflux-util v0.2.2-0.20241011103527-e8cea809b65b
+	github.com/Conflux-Chain/go-conflux-util v0.2.2-0.20241226065148-c0748b43def4
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20241012013327-2958dd644fcd
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
@@ -158,6 +158,7 @@ require (
 	golang.org/x/text v0.16.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
