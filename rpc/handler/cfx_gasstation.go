@@ -111,6 +111,10 @@ func (h *CfxGasStationHandler) trySync(cfx sdk.ClientOperator) (bool, error) {
 		return false, err
 	}
 
+	if latestEpoch == nil { // This shouldn't happen, but just in case...
+		return false, errors.New("latest epoch is nil")
+	}
+
 	latestEpochNo := latestEpoch.ToInt().Uint64()
 	if h.fromEpoch > latestEpochNo { // already catch-up?
 		return true, nil
@@ -121,6 +125,10 @@ func (h *CfxGasStationHandler) trySync(cfx sdk.ClientOperator) (bool, error) {
 	pivotBlock, err := cfx.GetBlockByEpoch(epoch)
 	if err != nil {
 		return false, err
+	}
+
+	if pivotBlock == nil { // This shouldn't happen, but just in case...
+		return false, errors.New("pivot block is nil")
 	}
 
 	prevEpochBh := h.prevEpochPivotBlockHash()

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"math/big"
 	"math/rand"
 
@@ -114,6 +115,10 @@ func (h *EthGasStationHandler) trySync(eth *node.Web3goClient) (bool, error) {
 	block, err := eth.Eth.BlockByNumber(ethtypes.BlockNumber(h.fromBlock), true)
 	if err != nil {
 		return false, err
+	}
+
+	if block == nil { // this shouldn't happen, but just in case...
+		return false, errors.New("invalid nil block")
 	}
 
 	prevBlockHash := h.prevBlockHash()
