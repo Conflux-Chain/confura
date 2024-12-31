@@ -44,13 +44,13 @@ ethrpc:
 # Core space SDK client configurations
 cfx:
   # Fullnode HTTP endpoints
-  http: [http://main-internal.confluxrpc.com]
+  http: [http://test.confluxrpc.com]
   # Retry times if failure, if 0 never
   retry: 0
   # Interval duration before each retry
   retryInterval: 1s
   # Request timeout duration
-  requestTimeout: 10s
+  requestTimeout: 3s
   # Max connections allowed per fullnode
   maxConnsPerHost: 1024
   # Circuit breaker configurations
@@ -109,7 +109,7 @@ sync:
   # # Whether to use `epoch_getEpochReceipts` to batch get receipts
   # useBatch: false
   # # The epoch number from which to sync core space
-  fromEpoch: 27516304
+  # fromEpoch: 0
   # # Maximum number of epochs to batch sync once
   # maxEpochs: 10
   # Blacklisted contract address(es) whose event logs will be ignored until some specific
@@ -118,21 +118,21 @@ sync:
     [
       {"address": "cfx:acav5v98np8t3m66uw7x61yer1ja1jm0dpzj1zyzxv", "epoch": 0}
     ]
-  # Fast cache-up sync configuration
-  catchup:
-    # Pool of fullnodes for catching up. There will be 1 goroutine per fullnode or
-    # the catch up will be disabled if none fullnode provided.
-    cfxPool: [http://main-internal.confluxrpc.com]
-    # Threshold for number of db rows per batch persistence
-    dbRowsThreshold: 1000
-    # Max number of db rows collected before persistence to restrict memory usage
-    maxDbRows: 3000
-    # Capacity of channel per worker to buffer queried epoch data
-    workerChanSize: 5
-    # Max memory usage allowed in bytes (0 for no limit).
-    memoryThreshold: 0
-    # Whether to enable benchmark.
-    benchmark: true
+  # # Fast cache-up sync configuration
+  # catchup:
+  #   # Pool of fullnodes for catching up. There will be 1 goroutine per fullnode or
+  #   # the catch up will be disabled if none fullnode provided.
+  #   cfxPool: [http://test.confluxrpc.com]
+  #   # Threshold for number of db rows per batch persistence
+  #   dbRowsThreshold: 2500
+  #   # Max number of db rows collected before persistence to restrict memory usage
+  #   maxDbRows: 7500
+  #   # Capacity of channel per worker to buffer queried epoch data
+  #   workerChanSize: 5
+  #   # Max memory usage allowed in bytes (0 for no limit).
+  #   memoryThreshold: 0
+  #   # Whether to enable benchmark.
+  #   benchmark: false
 
 
   # # EVM space sync configurations
@@ -193,27 +193,27 @@ sync:
 #       # Maximum timeout allowed to gracefully stop.
 #       StopTimeout: 5s
 
-# Core space store configurations
-store:
-  # MySQL database configurations
-  mysql:
-    # Whether to use MySQL store
-    enabled: true
-    host: 127.0.0.1:3306
-    username: root
-    password: root
-    database: confura
-    # Refer to gorm configurations
-    connMaxLifeTime: 3m
-    maxOpenConns: 10
-    maxIdleConns: 10
-    # Whether to use event log partitions hashed by contract address
-    addressIndexedLogEnabled: true
-    # Number of partitions for address indexed event log table, valid only if above option enabled
-    addressIndexedLogPartitions: 100
-    # Max number of archive log partitions ranged by block number to maintain. Once exceeded,
-    # partitions will be dropped one by one from the oldest to keep the max archive limit.
-    maxBnRangedArchiveLogPartitions: 5
+# # Core space store configurations
+# store:
+#   # MySQL database configurations
+#   mysql:
+#     # Whether to use MySQL store
+#     enabled: false
+#     host: 127.0.0.1:3306
+#     username: root
+#     password: root
+#     database: confura
+#     # Refer to gorm configurations
+#     connMaxLifeTime: 3m
+#     maxOpenConns: 10
+#     maxIdleConns: 10
+#     # Whether to use event log partitions hashed by contract address
+#     addressIndexedLogEnabled: true
+#     # Number of partitions for address indexed event log table, valid only if above option enabled
+#     addressIndexedLogPartitions: 100
+#     # Max number of archive log partitions ranged by block number to maintain. Once exceeded,
+#     # partitions will be dropped one by one from the oldest to keep the max archive limit.
+#     maxBnRangedArchiveLogPartitions: 5
 #   # Redis configurations
 #   redis:
 #      # Whether to use redis store
@@ -291,7 +291,7 @@ node:
   # Group `cfxarchives` fullnodes
   # archiveNodes: []
   # Group `ethhttp` fullnodes
-  ethurls: [http://evmtestnet-internal.confluxrpc.com]
+  ethurls: [http://evmtestnet.confluxrpc.com]
   # Group `ethfullstate` fullnodes
   # ethFullStateURLs: [http://evmtestnet.confluxrpc.com]
   # Group `ethlogs` fullnodes
