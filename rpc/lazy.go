@@ -5,21 +5,21 @@ import (
 	"sync/atomic"
 )
 
-type lazyJsonObject[T any] struct {
+type lazyDecodedJsonObject[T any] struct {
 	cachedBytes json.RawMessage
 	value       atomic.Value
 }
 
-func (obj *lazyJsonObject[T]) MarshalJSON() ([]byte, error) {
+func (obj *lazyDecodedJsonObject[T]) MarshalJSON() ([]byte, error) {
 	return obj.cachedBytes, nil
 }
 
-func (obj *lazyJsonObject[T]) UnmarshalJSON(b []byte) error {
+func (obj *lazyDecodedJsonObject[T]) UnmarshalJSON(b []byte) error {
 	obj.cachedBytes = b
 	return nil
 }
 
-func (obj *lazyJsonObject[T]) Load() (T, error) {
+func (obj *lazyDecodedJsonObject[T]) Load() (T, error) {
 	if v, ok := obj.value.Load().(T); ok {
 		return v, nil
 	}

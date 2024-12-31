@@ -178,7 +178,7 @@ func (api *ethAPI) GetBlockByNumber(
 
 	logger.Debug("Delegating eth_getBlockByNumber rpc request to fullnode")
 
-	var lazyBlock *lazyJsonObject[*web3Types.Block]
+	var lazyBlock *lazyDecodedJsonObject[*web3Types.Block]
 	if err := w3c.Eth.CallContext(ctx, &lazyBlock, "eth_getBlockByNumber", blockNum, fullTx); err != nil {
 		return nil, err
 	}
