@@ -155,7 +155,7 @@ func (api *ethAPI) GetBalance(
 //     only the transaction hash is returned.
 func (api *ethAPI) GetBlockByNumber(
 	ctx context.Context, blockNum web3Types.BlockNumber, fullTx bool,
-) (*web3Types.Block, error) {
+) (interface{}, error) {
 	metrics.Registry.RPC.Percentage("eth_getBlockByNumber", "fullTx").Mark(fullTx)
 
 	logger := logrus.WithFields(logrus.Fields{
@@ -178,7 +178,11 @@ func (api *ethAPI) GetBlockByNumber(
 
 	logger.Debug("Delegating eth_getBlockByNumber rpc request to fullnode")
 
-	return w3c.Eth.BlockByNumber(blockNum, fullTx)
+	var lazyBlock *lazyDecodedJsonObject[*web3Types.Block]
+	if err := w3c.Eth.CallContext(ctx, &lazyBlock, "eth_getBlockByNumber", blockNum, fullTx); err != nil {
+		return nil, err
+	}
+	return lazyBlock, nil
 }
 
 // GetUncleByBlockNumberAndIndex returns the uncle block for the given block hash and index.
