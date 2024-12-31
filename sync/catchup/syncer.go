@@ -39,6 +39,8 @@ type Syncer struct {
 	elm election.LeaderManager
 	// sync monitor
 	monitor *monitor.Monitor
+	// epoch to start sync
+	epochFrom uint64
 }
 
 // functional options for syncer
@@ -79,6 +81,7 @@ func MustNewSyncer(
 	db *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
+	epochFrom uint64,
 	opts ...SyncOption) *Syncer {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
@@ -99,15 +102,23 @@ func MustNewSyncer(
 		WithBenchmark(conf.Benchmark),
 	)
 
-	return newSyncer(cfxClients, db, elm, monitor, append(newOpts, opts...)...)
+	return newSyncer(cfxClients, db, elm, monitor, epochFrom, append(newOpts, opts...)...)
 }
 
 func newSyncer(
-	cfxClients []*sdk.Client, db *mysql.MysqlStore,
-	elm election.LeaderManager, monitor *monitor.Monitor, opts ...SyncOption) *Syncer {
+	cfxClients []*sdk.Client,
+	db *mysql.MysqlStore,
+	elm election.LeaderManager,
+	monitor *monitor.Monitor,
+	epochFrom uint64,
+	opts ...SyncOption) *Syncer {
 	syncer := &Syncer{
-		elm: elm, db: db, cfxs: cfxClients,
-		monitor: monitor, minBatchDbRows: 1500,
+		elm:            elm,
+		db:             db,
+		cfxs:           cfxClients,
+		monitor:        monitor,
+		epochFrom:      epochFrom,
+		minBatchDbRows: 1500,
 	}
 	for _, opt := range opts {
 		opt(syncer)
@@ -324,7 +335,7 @@ func (s *Syncer) nextSyncRange() (uint64, uint64, error) {
 	if ok {
 		start++
 	} else {
-		start = 0
+		start = s.epochFrom
 	}
 
 	var retErr error

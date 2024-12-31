@@ -163,7 +163,9 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 // fast catch-up until the latest stable epoch
 // (maximum between the latest finalized and checkpoint epoch)
 func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
-	catchUpSyncer := catchup.MustNewSyncer(syncer.cfxs, syncer.db, syncer.elm, syncer.monitor)
+	catchUpSyncer := catchup.MustNewSyncer(
+		syncer.cfxs, syncer.db, syncer.elm, syncer.monitor, syncer.epochFrom,
+	)
 	defer catchUpSyncer.Close()
 
 	catchUpSyncer.Sync(ctx)

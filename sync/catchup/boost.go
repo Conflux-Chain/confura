@@ -1,11 +1,11 @@
 package catchup
 
 import (
+	"container/heap"
 	"context"
 	"math"
 	"runtime"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,7 +16,6 @@ import (
 	cfxTypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/health"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -24,18 +23,17 @@ import (
 const (
 	// Task queue sizes
 	pendingTaskQueueSize = 1000
-	recallTaskQueueSize  = 500
 
 	// Task result queue sizes
 	taskResultQueueSize = 1000
 
 	// Result channel size
-	resultChanSize = 2000
+	resultChanSize = 1000
 
 	// Default task size and bounds
 	defaultTaskSize = 100
 	minTaskSize     = 1
-	maxTaskSize     = 5000
+	maxTaskSize     = 2000
 
 	// Task size adjustment ratios
 	incrementRatio = 0.2
@@ -48,7 +46,10 @@ const (
 	memoryCheckInterval = 20 * time.Second
 
 	// Force persistence interval
-	forcePersistenceInterval = 30 * time.Second
+	forcePersistenceInterval = 45 * time.Second
+
+	// Min priority queue capacity for shrink
+	minPqShrinkCapacity = 100
 )
 
 var (
@@ -68,20 +69,61 @@ func newSyncTask(start, end uint64) syncTask {
 	return syncTask{RangeUint64: types.RangeUint64{From: start, To: end}}
 }
 
+// syncTaskItem is a heap item
+type syncTaskItem struct {
+	syncTask
+	index int
+}
+
+// syncTaskPriorityQueue implements heap.Interface and is a min-heap.
+type syncTaskPriorityQueue []*syncTaskItem
+
+func (pq syncTaskPriorityQueue) Len() int { return len(pq) }
+
+func (pq syncTaskPriorityQueue) Less(i, j int) bool {
+	return pq[i].From < pq[j].From
+}
+
+func (pq syncTaskPriorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].index = i
+	pq[j].index = j
+}
+
+func (pq *syncTaskPriorityQueue) Push(x interface{}) {
+	n := len(*pq)
+	item := x.(*syncTaskItem)
+	item.index = n
+	*pq = append(*pq, item)
+}
+
+func (pq *syncTaskPriorityQueue) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	if n == 0 {
+		return nil
+	}
+
+	item := old[n-1]
+	old[n-1] = nil  // avoid memory leak
+	item.index = -1 // for safety
+	*pq = old[0 : n-1]
+
+	// Check if we need to shrink the underlying array to reduce memory usage
+	if oldCap := cap(*pq); oldCap > minPqShrinkCapacity && len(*pq) < cap(*pq)/4 {
+		newCap := 2 * len(*pq)
+		newPq := make(syncTaskPriorityQueue, len(*pq), newCap)
+		copy(newPq, *pq)
+		*pq = newPq
+	}
+	return item
+}
+
 // syncTaskResult holds the result of a completed syncTask.
 type syncTaskResult struct {
 	task      syncTask
 	err       error
 	epochData []*store.EpochData
-}
-
-func (res syncTaskResult) isSuccess() bool {
-	return res.err == nil
-}
-
-func (res syncTaskResult) isInvalidFilterError() bool {
-	return utils.IsRPCJSONError(res.err) &&
-		strings.Contains(strings.ToLower(res.err.Error()), "filter error")
 }
 
 // coordinator orchestrates the synchronization process by:
@@ -98,7 +140,9 @@ type coordinator struct {
 
 	// Task queues
 	pendingTaskQueue chan syncTask
-	recallTaskQueue  chan syncTask
+
+	// Recall task priority queue
+	recallTaskPq syncTaskPriorityQueue
 
 	// Task result queue
 	taskResultQueue chan syncTaskResult
@@ -126,7 +170,6 @@ func newCoordinator(workers []*boostWorker, fullRange types.RangeUint64, resultC
 		epochResultChan:     resultChan,
 		epochDataStore:      make(map[uint64]*store.EpochData),
 		pendingTaskQueue:    make(chan syncTask, pendingTaskQueueSize),
-		recallTaskQueue:     make(chan syncTask, recallTaskQueueSize),
 		taskResultQueue:     make(chan syncTaskResult, taskResultQueueSize),
 		backpressureControl: backpressureControl,
 	}
@@ -181,10 +224,11 @@ func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w
 				epochData, err := w.fetchEpochData(task.From, task.To)
 				if logrus.IsLevelEnabled(logrus.DebugLevel) {
 					logrus.WithFields(logrus.Fields{
-						"worker":       w.name,
-						"task":         task,
-						"numEpochData": len(epochData),
-					}).WithError(err).Debug("Boost worker processed task")
+						"worker":          w.name,
+						"task":            task,
+						"numEpochData":    len(epochData),
+						"numPendingTasks": len(c.pendingTaskQueue),
+					}).WithError(err).Info("Boost worker processed task")
 				}
 				c.taskResultQueue <- syncTaskResult{
 					task:      task,
@@ -198,9 +242,11 @@ func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w
 
 // dispatchLoop collects results from workers, adjusts task sizes, and dispatches new tasks.
 func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
+	logrus.Info("Coordinator dispatch loop started")
+	defer logrus.Info("Coordinator dispatch loop stopped")
 
 	var resultHistory []syncTaskResult
+	defer wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
@@ -223,18 +269,15 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				}
 				// Process the batch of results
 				for _, r := range taskResults {
-					if r.isSuccess() {
+					if r.err == nil {
 						resultHistory = append(resultHistory, r)
 						// Collect epoch data
 						c.collectEpochData(r.epochData)
 						r.epochData = nil // free memory
-					} else if r.isInvalidFilterError() {
-						resultHistory = append(resultHistory, r)
-						// Invalid filter: try splitting and reassigning
-						c.recallTaskQueue <- r.task
 					} else {
-						// Other errors: retry the same task
-						c.pendingTaskQueue <- r.task
+						resultHistory = append(resultHistory, r)
+						// Recall the task by splitting and re-assigning
+						heap.Push(&c.recallTaskPq, &syncTaskItem{syncTask: r.task})
 					}
 				}
 				// Sort the task result history
@@ -268,7 +311,7 @@ func (c *coordinator) estimateTaskSize(results []syncTaskResult) uint64 {
 		weight := math.Pow(2, float64(1+i-len(results)))
 		taskSize := float64(r.task.To - r.task.From + 1)
 		var estSize float64
-		if r.isSuccess() {
+		if r.err == nil {
 			estSize = taskSize * (1 + incrementRatio) * weight
 		} else {
 			estSize = taskSize * (1 - decrementRatio) * weight
@@ -276,7 +319,8 @@ func (c *coordinator) estimateTaskSize(results []syncTaskResult) uint64 {
 		totalEstSize += estSize
 		totalWeight += weight
 	}
-	newTaskSize := uint64(totalEstSize / totalWeight)
+
+	newTaskSize := uint64(math.Ceil(totalEstSize / totalWeight))
 	newTaskSize = min(max(minTaskSize, newTaskSize), maxTaskSize)
 	return newTaskSize
 }
@@ -285,9 +329,12 @@ func (c *coordinator) estimateTaskSize(results []syncTaskResult) uint64 {
 func (c *coordinator) collectEpochData(result []*store.EpochData) {
 	for _, data := range result {
 		if c.nextWriteEpoch == data.Number {
-			c.epochResultChan <- data
-			c.nextWriteEpoch++
-			continue
+			select {
+			case c.epochResultChan <- data:
+				c.nextWriteEpoch++
+				continue
+			default: // Write buffer is full
+			}
 		}
 		c.epochDataStore[data.Number] = data
 	}
@@ -298,9 +345,14 @@ func (c *coordinator) collectEpochData(result []*store.EpochData) {
 		if !ok {
 			break
 		}
-		c.epochResultChan <- data
-		delete(c.epochDataStore, data.Number)
-		c.nextWriteEpoch++
+
+		select {
+		case c.epochResultChan <- data:
+			delete(c.epochDataStore, data.Number)
+			c.nextWriteEpoch++
+		default: // Write buffer is full
+			return
+		}
 	}
 }
 
@@ -308,8 +360,8 @@ func (c *coordinator) collectEpochData(result []*store.EpochData) {
 func (c *coordinator) assignTasks(taskSize uint64) {
 	for len(c.workers) > len(c.pendingTaskQueue) {
 		// Handle recall tasks by splitting them into sub-tasks if possible
-		if len(c.recallTaskQueue) > 0 {
-			recallTask := <-c.recallTaskQueue
+		if len(c.recallTaskPq) > 0 {
+			recallTask := heap.Pop(&c.recallTaskPq).(*syncTaskItem).syncTask
 			midEpoch := (recallTask.From + recallTask.To) / 2
 			c.pendingTaskQueue <- newSyncTask(recallTask.From, midEpoch)
 			if midEpoch+1 <= recallTask.To {
@@ -421,7 +473,6 @@ func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
 				"memory":    memStats.Alloc,
 				"threshold": s.memoryThreshold,
 			})
-			logger.Debug("Memory usage checked for catch-up sync")
 
 			// Backpressure control according to memory usage
 			if memStats.Alloc < s.memoryThreshold {
@@ -451,7 +502,9 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 
 	var state persistState
 	for eno := start; eno <= end; {
+		forcePersist := false
 		startTime := time.Now()
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -469,23 +522,17 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 			epochDbRows, storeDbRows := state.update(epochData)
 			if logrus.IsLevelEnabled(logrus.DebugLevel) {
 				logrus.WithFields(logrus.Fields{
+					"resultBufLen":       len(s.resultChan),
 					"epochNo":            epochData.Number,
 					"epochDbRows":        epochDbRows,
 					"storeDbRows":        storeDbRows,
 					"state.insertDbRows": state.insertDbRows,
 					"state.totalDbRows":  state.totalDbRows,
-				}).Debug("Catch-up syncer collected new epoch data")
+				}).Info("Catch-up syncer collected new epoch data")
 			}
 		case <-timer.C:
 			// Force persist if timer expires
-		}
-
-		// Check if we need to persist now (due to timer expiration)
-		forcePersist := false
-		select {
-		case <-timer.C:
 			forcePersist = true
-		default:
 		}
 
 		// Batch insert into db if `forcePersist` is true or enough db rows collected, also use total db rows here to
