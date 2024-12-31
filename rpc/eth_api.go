@@ -9,7 +9,6 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
@@ -156,7 +155,7 @@ func (api *ethAPI) GetBalance(
 //     only the transaction hash is returned.
 func (api *ethAPI) GetBlockByNumber(
 	ctx context.Context, blockNum web3Types.BlockNumber, fullTx bool,
-) (*rpcutil.LazyJSON[*web3Types.Block], error) {
+) (interface{}, error) {
 	metrics.Registry.RPC.Percentage("eth_getBlockByNumber", "fullTx").Mark(fullTx)
 
 	logger := logrus.WithFields(logrus.Fields{
@@ -171,7 +170,7 @@ func (api *ethAPI) GetBlockByNumber(
 		metrics.Registry.RPC.StoreHit("eth_getBlockByNumber", "store").Mark(err == nil)
 		if err == nil {
 			logger.Debug("Loading eth data for eth_getBlockByNumber hit in the store")
-			return rpcutil.NewLazyJSON(block), nil
+			return block, nil
 		}
 
 		logger.WithError(err).Debug("Loading eth data for eth_getBlockByNumber missed from the ethstore")
@@ -179,14 +178,11 @@ func (api *ethAPI) GetBlockByNumber(
 
 	logger.Debug("Delegating eth_getBlockByNumber rpc request to fullnode")
 
-	block := &web3Types.Block{}
-	block.Transactions = *web3Types.NewTxOrHashList(fullTx)
-	lazyJsonObj := rpcutil.NewLazyJSON(block)
-
-	if err := w3c.Eth.CallContext(ctx, &lazyJsonObj, "eth_getBlockByNumber", blockNum, fullTx); err != nil {
+	var lazyBlock *lazyJsonObject[*web3Types.Block]
+	if err := w3c.Eth.CallContext(ctx, &lazyBlock, "eth_getBlockByNumber", blockNum, fullTx); err != nil {
 		return nil, err
 	}
-	return lazyJsonObj, nil
+	return lazyBlock, nil
 }
 
 // GetUncleByBlockNumberAndIndex returns the uncle block for the given block hash and index.
