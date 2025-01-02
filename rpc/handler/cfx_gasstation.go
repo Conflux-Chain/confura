@@ -111,7 +111,7 @@ func (h *CfxGasStationHandler) trySync(cfx sdk.ClientOperator) (bool, error) {
 		return false, err
 	}
 
-	if latestEpoch == nil { // This shouldn't happen, but just in case...
+	if latestEpoch == nil {
 		return false, errors.New("latest epoch is nil")
 	}
 
@@ -127,7 +127,7 @@ func (h *CfxGasStationHandler) trySync(cfx sdk.ClientOperator) (bool, error) {
 		return false, err
 	}
 
-	if pivotBlock == nil { // This shouldn't happen, but just in case...
+	if pivotBlock == nil {
 		return false, errors.New("pivot block is nil")
 	}
 
@@ -172,6 +172,10 @@ func (h *CfxGasStationHandler) fetchBlocks(
 		return nil, nil, err
 	}
 
+	if len(blockHashes) == 0 {
+		return nil, nil, errors.New("empty block hashes")
+	}
+
 	pivotHash := blockHashes[len(blockHashes)-1]
 	if pivotBlock.Hash != pivotHash { // abandon this epoch due to pivot switched
 		return nil, nil, errors.New("pivot switched")
@@ -182,6 +186,9 @@ func (h *CfxGasStationHandler) fetchBlocks(
 		block, err := cfx.GetBlockByHashWithPivotAssumption(blockHashes[i], pivotHash, hexutil.Uint64(h.fromEpoch))
 		if err != nil {
 			return nil, nil, err
+		}
+		if block.GasUsed == nil {
+			return nil, nil, errors.New("unexecuted block")
 		}
 		blocks = append(blocks, &block)
 	}
@@ -204,6 +211,10 @@ func (h *CfxGasStationHandler) handleReorg() {
 }
 
 func (h *CfxGasStationHandler) handleBlock(block *cfxtypes.Block) {
+	if block.GasLimit == nil || block.GasLimit.ToInt().Int64() == 0 {
+		return
+	}
+
 	ratio, _ := new(big.Rat).SetFrac(block.GasUsed.ToInt(), block.GasLimit.ToInt()).Float64()
 	blockFee := &BlockPriorityFee{
 		number:       block.BlockNumber.ToInt().Uint64(),

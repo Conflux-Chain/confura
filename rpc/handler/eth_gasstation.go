@@ -117,7 +117,7 @@ func (h *EthGasStationHandler) trySync(eth *node.Web3goClient) (bool, error) {
 		return false, err
 	}
 
-	if block == nil { // this shouldn't happen, but just in case...
+	if block == nil {
 		return false, errors.New("invalid nil block")
 	}
 
@@ -150,6 +150,10 @@ func (h *EthGasStationHandler) handleReorg() {
 }
 
 func (h *EthGasStationHandler) handleBlock(block *ethtypes.Block) {
+	if block.GasLimit == 0 {
+		return
+	}
+
 	ratio := float64(block.GasUsed) / float64(block.GasLimit)
 	blockFee := &BlockPriorityFee{
 		number:       block.Number.Uint64(),
