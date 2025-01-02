@@ -213,8 +213,9 @@ func (w *PriorityFeeWindow) Push(blockFee *BlockPriorityFee) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if _, ok := w.hashToFee[blockFee.hash]; ok { // Block already exists
-		return
+	if e, ok := w.hashToFee[blockFee.hash]; ok { // Block already exists?
+		delete(w.hashToFee, blockFee.hash)
+		w.feeChain.Remove(e)
 	}
 
 	w.insertBlock(blockFee)
@@ -223,7 +224,11 @@ func (w *PriorityFeeWindow) Push(blockFee *BlockPriorityFee) {
 
 	// If the window is full, prune the oldest block.
 	for w.feeChain.Len() > w.capacity {
-		w.feeChain.Remove(w.feeChain.Front())
+		e := w.feeChain.Front()
+		blockFee := e.Value.(*BlockPriorityFee)
+
+		delete(w.hashToFee, blockFee.hash)
+		w.feeChain.Remove(e)
 	}
 }
 
@@ -245,6 +250,10 @@ func (w *PriorityFeeWindow) insertBlock(blockFee *BlockPriorityFee) {
 }
 
 func (w *PriorityFeeWindow) updateHistoricalBaseFeeRange(blockFee *BlockPriorityFee) {
+	if blockFee.baseFee == nil {
+		return
+	}
+
 	// Update the historical base fee range
 	if w.historicalBaseFeeRanges == nil { // initial setup
 		w.historicalBaseFeeRanges = []*big.Int{
