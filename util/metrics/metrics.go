@@ -63,6 +63,10 @@ func (*RpcMetrics) UpdateDuration(space, method string, err error, start time.Ti
 	}
 }
 
+func (*RpcMetrics) ResponseSize(space, method string) metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/rpc/response/size/%v/%v", space, method)
+}
+
 // RPC metrics - inputs
 
 func (*RpcMetrics) InputEpoch(method, epoch string) metricUtil.Percentage {
