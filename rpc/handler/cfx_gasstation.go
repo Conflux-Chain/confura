@@ -187,6 +187,9 @@ func (h *CfxGasStationHandler) fetchBlocks(
 		if err != nil {
 			return nil, nil, err
 		}
+		if block.GasUsed == nil {
+			return nil, nil, errors.New("unexecuted block")
+		}
 		blocks = append(blocks, &block)
 	}
 
@@ -208,10 +211,11 @@ func (h *CfxGasStationHandler) handleReorg() {
 }
 
 func (h *CfxGasStationHandler) handleBlock(block *cfxtypes.Block) {
-	var ratio float64
-	if block.GasUsed != nil && block.GasLimit != nil {
-		ratio, _ = new(big.Rat).SetFrac(block.GasUsed.ToInt(), block.GasLimit.ToInt()).Float64()
+	if block.GasLimit == nil || block.GasLimit.ToInt().Int64() == 0 {
+		return
 	}
+
+	ratio, _ := new(big.Rat).SetFrac(block.GasUsed.ToInt(), block.GasLimit.ToInt()).Float64()
 	blockFee := &BlockPriorityFee{
 		number:       block.BlockNumber.ToInt().Uint64(),
 		hash:         block.Hash.String(),

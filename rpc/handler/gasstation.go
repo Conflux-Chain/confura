@@ -213,9 +213,8 @@ func (w *PriorityFeeWindow) Push(blockFee *BlockPriorityFee) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if e, ok := w.hashToFee[blockFee.hash]; ok { // Block already exists?
-		delete(w.hashToFee, blockFee.hash)
-		w.feeChain.Remove(e)
+	if _, ok := w.hashToFee[blockFee.hash]; ok { // Block already exists?
+		return
 	}
 
 	w.insertBlock(blockFee)

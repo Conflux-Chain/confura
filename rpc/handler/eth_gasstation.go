@@ -150,10 +150,11 @@ func (h *EthGasStationHandler) handleReorg() {
 }
 
 func (h *EthGasStationHandler) handleBlock(block *ethtypes.Block) {
-	var ratio float64
-	if block.GasLimit != 0 {
-		ratio = float64(block.GasUsed) / float64(block.GasLimit)
+	if block.GasLimit == 0 {
+		return
 	}
+
+	ratio := float64(block.GasUsed) / float64(block.GasLimit)
 	blockFee := &BlockPriorityFee{
 		number:       block.Number.Uint64(),
 		hash:         block.Hash.String(),
