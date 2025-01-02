@@ -33,9 +33,13 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 			metricMethod = "method_not_found"
 		}
 
-		// collect rpc QPS/latency etc.
+		// collect rpc QPS/latency, response size etc.
 		space, _ := handlers.GetNamespaceFromContext(ctx)
 		metrics.Registry.RPC.UpdateDuration(space, metricMethod, unwrapJsonError(resp.Error), start)
+		if resp.Error == nil {
+			metrics.Registry.RPC.ResponseSize(space, metricMethod).Update(int64(len(resp.Result)))
+		}
+
 		// collect traffic hits
 		metrics.DefaultTrafficCollector().MarkHit(getTrafficSourceFromContext(ctx))
 
