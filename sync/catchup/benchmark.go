@@ -55,7 +55,7 @@ func (b *benchmarker) report(start, end uint64) {
 	}()
 
 	totalDuration := b.endTime.Sub(b.startTime)
-	totalEpochs := end - start
+	totalEpochs := end - start + 1
 
 	totalPersistDuration := atomic.LoadInt64((*int64)(&b.totalPersistDuration))
 	totalPersistDbRows := atomic.LoadInt64(&b.totalPersistDbRows)
