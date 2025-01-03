@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util"
@@ -149,11 +150,23 @@ func (*SyncMetrics) SyncOnceSize(space, storeName string) metrics.Histogram {
 	return metricUtil.GetOrRegisterHistogram("infura/sync/%v/%v/once/size", space, storeName)
 }
 
-func (*SyncMetrics) QueryEpochData(space string) metrics.Timer {
+func (*SyncMetrics) QueryEpochData(space string, tags ...string) metrics.Timer {
+	if len(tags) > 0 {
+		tagStr := strings.Join(tags, "/")
+		return metricUtil.GetOrRegisterTimer("infura/sync/%v/%v/fullnode", space, tagStr)
+	}
 	return metricUtil.GetOrRegisterTimer("infura/sync/%v/fullnode", space)
 }
 
-func (*SyncMetrics) QueryEpochDataAvailability(space string) metricUtil.Percentage {
+func (*SyncMetrics) QueryEpochRange() metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/sync/epoch/range")
+}
+
+func (*SyncMetrics) QueryEpochDataAvailability(space string, tags ...string) metricUtil.Percentage {
+	if len(tags) > 0 {
+		tagStr := strings.Join(tags, "/")
+		return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/sync/%v/%v/fullnode/availability", space, tagStr)
+	}
 	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/sync/%v/fullnode/availability", space)
 }
 

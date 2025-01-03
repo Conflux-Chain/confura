@@ -8,7 +8,6 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -84,11 +83,7 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(
 
 			receipt, ok := data.Receipts[tx.Hash]
 			if !ok {
-				// should never occur, just to ensure code robust
-				logrus.WithFields(logrus.Fields{
-					"epoch": data.Number,
-					"tx":    tx.Hash,
-				}).Error("Cannot find transaction receipt in epoch data")
+				// This could happen if there are no event logs for this transaction.
 				continue
 			}
 
