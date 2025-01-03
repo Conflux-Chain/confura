@@ -566,7 +566,7 @@ func (w *boostWorker) fetchEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 	defer func() {
 		metrics.Registry.Sync.QueryEpochData("cfx", "catchup", "boost").UpdateSince(startTime)
 		metrics.Registry.Sync.QueryEpochDataAvailability("cfx", "catchup", "boost").Mark(err == nil)
-		metrics.Registry.Sync.QueryEpochRange("cfx").Update(int64(toEpoch - fromEpoch + 1))
+		metrics.Registry.Sync.QueryEpochRange().Update(int64(toEpoch - fromEpoch + 1))
 	}()
 
 	// Retrieve event logs within the specified epoch range

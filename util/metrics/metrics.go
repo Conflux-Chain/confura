@@ -154,8 +154,8 @@ func (*SyncMetrics) QueryEpochData(space string, tags ...string) metrics.Timer {
 	return metricUtil.GetOrRegisterTimer("infura/sync/%v/fullnode", space)
 }
 
-func (*SyncMetrics) QueryEpochRange(space string) metrics.Histogram {
-	return metricUtil.GetOrRegisterHistogram("infura/sync/%v/epoch/range", space)
+func (*SyncMetrics) QueryEpochRange() metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/sync/epoch/range")
 }
 
 func (*SyncMetrics) QueryEpochDataAvailability(space string, tags ...string) metricUtil.Percentage {
