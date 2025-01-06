@@ -34,6 +34,7 @@ func GracefulShutdown(wg *sync.WaitGroup, cancel context.CancelFunc) {
 	wg.Wait()
 
 	logrus.Info("Shutdown gracefully")
+	logrus.Fatal("Bye!")
 }
 
 // StartAndGracefulShutdown starts to run the specified task in a goroutine and wait for termination
