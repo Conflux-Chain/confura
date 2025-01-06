@@ -136,12 +136,12 @@ func (s *Syncer) Close() {
 
 func (s *Syncer) Sync(ctx context.Context) {
 	if len(s.workers) == 0 { // no workers configured?
-		logrus.Debug("Catch-up syncer skipped due to no workers configured")
+		logrus.Info("Catch-up syncer skipped due to no workers configured")
 		return
 	}
 
 	logrus.WithField("numWorkers", len(s.workers)).
-		Debug("Catch-up syncer starting to catch up latest epoch")
+		Info("Catch-up syncer starting to catch up latest epoch")
 	s.syncOnce(ctx, s.epochFrom, s.epochFrom+100000-1)
 	logrus.Info("Catch-up sync done!")
 	return
@@ -178,7 +178,7 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 
 	// Boost sync performance if all chain data types are disabled except event logs by using `getLogs` to synchronize
 	// blockchain data across wide epoch range, or using `epoch-by-epoch` sync mode if any of them are enabled.
-	if disabler := store.StoreConfig(); false && !disabler.IsChainLogDisabled() &&
+	if disabler := store.StoreConfig(); true && !disabler.IsChainLogDisabled() &&
 		disabler.IsChainBlockDisabled() && disabler.IsChainTxnDisabled() && disabler.IsChainReceiptDisabled() {
 		logrus.WithFields(logrus.Fields{
 			"start": start, "end": end,

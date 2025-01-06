@@ -239,6 +239,7 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				time.Sleep(time.Second)
 				continue
 			case result := <-c.taskResultQueue:
+				logrus.WithField("task", result.task).Info("Coordinator received task result")
 				// Collect a batch of results
 				taskResults := []syncTaskResult{result}
 				for i := 0; i < len(c.taskResultQueue); i++ {
@@ -552,6 +553,11 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 		// Batch insert into db if `forcePersist` is true or enough db rows collected, also use total db rows here to
 		// check if we need to persist to restrict memory usage.
 		if forcePersist || state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
+			logrus.WithFields(logrus.Fields{
+				"state.insertDbRows": state.insertDbRows,
+				"state.totalDbRows":  state.totalDbRows,
+				"forcePersist":       forcePersist,
+			}).Info("Catch-up syncer persisting epoch data")
 			if err := s.persist(ctx, &state, bmarker); err != nil {
 				return err
 			}
