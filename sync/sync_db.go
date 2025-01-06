@@ -2,8 +2,10 @@ package sync
 
 import (
 	"context"
+	"os"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -139,6 +141,9 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	defer syncer.elm.Stop()
 
 	syncer.fastCatchup(ctx)
+	logrus.Info("DB sync done, killing self!")
+	syscall.Kill(os.Getpid(), syscall.SIGINT)
+	return
 
 	ticker := time.NewTimer(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()

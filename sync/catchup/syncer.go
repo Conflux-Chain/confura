@@ -10,6 +10,7 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
@@ -141,6 +142,9 @@ func (s *Syncer) Sync(ctx context.Context) {
 
 	logrus.WithField("numWorkers", len(s.workers)).
 		Debug("Catch-up syncer starting to catch up latest epoch")
+	s.syncOnce(ctx, s.epochFrom, s.epochFrom+100000-1)
+	logrus.Info("Catch-up sync done!")
+	return
 
 	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
 	for s.elm.Await(ctx) {
@@ -174,12 +178,44 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 
 	// Boost sync performance if all chain data types are disabled except event logs by using `getLogs` to synchronize
 	// blockchain data across wide epoch range, or using `epoch-by-epoch` sync mode if any of them are enabled.
-	if disabler := store.StoreConfig(); !disabler.IsChainLogDisabled() &&
+	if disabler := store.StoreConfig(); false && !disabler.IsChainLogDisabled() &&
 		disabler.IsChainBlockDisabled() && disabler.IsChainTxnDisabled() && disabler.IsChainReceiptDisabled() {
 		logrus.WithFields(logrus.Fields{
 			"start": start, "end": end,
 		}).Info("Catch-up syncer using boosted sync mode with getLogs optimization")
 		newBoostSyncer(s).doSync(ctx, bmarker, start, end)
+
+		boostQueryTimer := metrics.Registry.Sync.BoostQueryEpochData("cfx")
+		boostQueryRangeHistogram := metrics.Registry.Sync.BoostQueryEpochRange()
+		boostQueryRateGaugue := metrics.Registry.Sync.BoostQueryEpochDataAvailability("cfx")
+
+		fmt.Println("// ------------- boost query tps --------------")
+		fmt.Printf("mean tps: %v\n", boostQueryTimer.Snapshot().RateMean())
+		fmt.Printf("  m1 tps: %v\n", boostQueryTimer.Snapshot().Rate1())
+		fmt.Printf("  m5 tps: %v\n", boostQueryTimer.Snapshot().Rate5())
+		fmt.Printf(" m15 tps: %v\n", boostQueryTimer.Snapshot().Rate15())
+
+		fmt.Println("// ---------- boost query duration ------------")
+		fmt.Printf(" total queries: %v\n", boostQueryTimer.Snapshot().Count())
+		fmt.Printf("  max duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Max())/1e6)
+		fmt.Printf("  min duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Min()/1e6))
+		fmt.Printf(" mean duration: %.2f(ms)\n", boostQueryTimer.Snapshot().Mean()/1e6)
+		fmt.Printf("  p99 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(99))/1e6)
+		fmt.Printf("  p75 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(75))/1e6)
+
+		fmt.Println("// ---------- boost query epoch range ------------")
+		fmt.Printf("     total epochs: %v\n", boostQueryRangeHistogram.Snapshot().Sum())
+		fmt.Printf(" max batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Max())
+		fmt.Printf(" min batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Min())
+		fmt.Printf("mean batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Mean())
+		fmt.Printf(" p99 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(99))
+		fmt.Printf(" p75 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(75))
+
+		fmt.Println("// ---------- boost query success rate ------------")
+		fmt.Printf(" success ratio: %v\n", boostQueryRateGaugue.Snapshot().Value())
+
+		fmt.Println("// ------------------------------------------------")
+
 		return
 	}
 
@@ -187,6 +223,28 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 		"start": start, "end": end,
 	}).Info("Catch-up syncer using standard epoch-by-epoch sync mode")
 	s.doSync(ctx, bmarker, start, end)
+
+	queryTimer := metrics.Registry.Sync.QueryEpochData("cfx")
+	queryRateGaugue := metrics.Registry.Sync.QueryEpochDataAvailability("cfx")
+
+	fmt.Println("// ------------- epoch query tps --------------")
+	fmt.Printf("mean tps: %v\n", queryTimer.Snapshot().RateMean())
+	fmt.Printf("  m1 tps: %v\n", queryTimer.Snapshot().Rate1())
+	fmt.Printf("  m5 tps: %v\n", queryTimer.Snapshot().Rate5())
+	fmt.Printf(" m15 tps: %v\n", queryTimer.Snapshot().Rate15())
+
+	fmt.Println("// ---------- epoch query duration ------------")
+	fmt.Printf(" total queries: %v\n", queryTimer.Snapshot().Count())
+	fmt.Printf("  max duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Max())/1e6)
+	fmt.Printf("  min duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Min()/1e6))
+	fmt.Printf(" mean duration: %.2f(ms)\n", queryTimer.Snapshot().Mean()/1e6)
+	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(99))/1e6)
+	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(75))/1e6)
+
+	fmt.Println("// ---------- epoch query success rate ------------")
+	fmt.Printf(" success ratio: %v\n", queryRateGaugue.Snapshot().Value())
+
+	fmt.Println("// ------------------------------------------------")
 }
 
 func (s *Syncer) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
