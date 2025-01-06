@@ -221,14 +221,14 @@ func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w
 				time.Sleep(time.Second)
 				continue
 			case task := <-c.pendingTaskQueue:
-				epochData, err := w.fetchEpochData(task.From, task.To)
+				epochData, err := w.queryEpochData(task.From, task.To)
 				if logrus.IsLevelEnabled(logrus.DebugLevel) {
 					logrus.WithFields(logrus.Fields{
 						"worker":          w.name,
 						"task":            task,
 						"numEpochData":    len(epochData),
 						"numPendingTasks": len(c.pendingTaskQueue),
-					}).WithError(err).Info("Boost worker processed task")
+					}).WithError(err).Debug("Boost worker processed task")
 				}
 				c.taskResultQueue <- syncTaskResult{
 					task:      task,
@@ -270,15 +270,14 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				// Process the batch of results
 				for _, r := range taskResults {
 					if r.err == nil {
-						resultHistory = append(resultHistory, r)
 						// Collect epoch data
 						c.collectEpochData(r.epochData)
 						r.epochData = nil // free memory
 					} else {
-						resultHistory = append(resultHistory, r)
 						// Recall the task by splitting and re-assigning
 						heap.Push(&c.recallTaskPq, &syncTaskItem{syncTask: r.task})
 					}
+					resultHistory = append(resultHistory, r)
 				}
 				// Sort the task result history
 				sort.Slice(resultHistory, func(i, j int) bool {
@@ -555,18 +554,16 @@ type boostWorker struct {
 	*worker
 }
 
-// fetchEpochData fetches blocks and logs for a given epoch range to construct a minimal `EpochData`
+// queryEpochData fetches blocks and logs for a given epoch range to construct a minimal `EpochData`
 // using `cfx_getLogs` for best peformance.
-func (w *boostWorker) fetchEpochData(fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
-	if fromEpoch > toEpoch {
-		return nil, errors.Errorf("invalid epoch range: from %v to %v", fromEpoch, toEpoch)
-	}
-
+func (w *boostWorker) queryEpochData(fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
 	startTime := time.Now()
 	defer func() {
-		metrics.Registry.Sync.QueryEpochData("cfx", "catchup", "boost").UpdateSince(startTime)
-		metrics.Registry.Sync.QueryEpochDataAvailability("cfx", "catchup", "boost").Mark(err == nil)
-		metrics.Registry.Sync.QueryEpochRange().Update(int64(toEpoch - fromEpoch + 1))
+		metrics.Registry.Sync.BoostQueryEpochData("cfx").UpdateSince(startTime)
+		metrics.Registry.Sync.BoostQueryEpochDataAvailability("cfx").Mark(err == nil)
+		if err == nil {
+			metrics.Registry.Sync.BoostQueryEpochRange().Update(int64(toEpoch - fromEpoch + 1))
+		}
 	}()
 
 	// Retrieve event logs within the specified epoch range
@@ -587,12 +584,14 @@ func (w *boostWorker) fetchEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 			Receipts: make(map[cfxTypes.Hash]*cfxTypes.TransactionReceipt),
 		}
 
-		blockHashes, err := w.cfx.GetBlocksByEpoch(cfxTypes.NewEpochNumberUint64(epochNum))
+		var blockHashes []cfxTypes.Hash
+		blockHashes, err = w.cfx.GetBlocksByEpoch(cfxTypes.NewEpochNumberUint64(epochNum))
 		if err != nil {
 			return nil, errors.WithMessagef(err, "failed to get blocks by epoch %v", epochNum)
 		}
 		if len(blockHashes) == 0 {
-			return nil, errors.Errorf("invalid epoch data (must have at least one block)")
+			err = errors.Errorf("invalid epoch data (must have at least one block)")
+			return nil, err
 		}
 
 		// Cache to store blocks fetched by their hash to avoid repeated network calls
@@ -603,9 +602,15 @@ func (w *boostWorker) fetchEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 			if _, ok := blockCache[bh]; ok {
 				continue
 			}
-			block, err := w.cfx.GetBlockByHash(bh)
+
+			var block *cfxTypes.Block
+			block, err = w.cfx.GetBlockByHash(bh)
 			if err != nil {
 				return nil, errors.WithMessagef(err, "failed to get block by hash %v", bh)
+			}
+			if block == nil {
+				err = errors.Errorf("block %v not found", bh)
+				return nil, err
 			}
 			blockCache[bh] = block
 		}
@@ -624,6 +629,10 @@ func (w *boostWorker) fetchEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 				block, err = w.cfx.GetBlockByHash(*blockHash)
 				if err != nil {
 					return nil, errors.WithMessagef(err, "failed to get block by hash %v", *blockHash)
+				}
+				if block == nil {
+					err = errors.Errorf("block %v not found", *blockHash)
+					return nil, err
 				}
 				blockCache[*blockHash] = block
 			}
@@ -657,7 +666,8 @@ func (w *boostWorker) fetchEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 	}
 
 	if logCursor != len(logs) {
-		return nil, errors.Errorf("failed to process all logs: processed %v, total %v", logCursor, len(logs))
+		err = errors.Errorf("failed to process all logs: processed %v, total %v", logCursor, len(logs))
+		return nil, err
 	}
 
 	return res, nil
