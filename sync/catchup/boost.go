@@ -366,6 +366,10 @@ func (c *coordinator) assignTasks(ctx context.Context, taskSize uint64) error {
 
 		// The full epoch range has already been assigned
 		if c.nextAssignEpoch > c.fullEpochRange.To {
+			logrus.WithFields(logrus.Fields{
+				"nextAssignEpoch": c.nextAssignEpoch,
+				"fullEpochRange":  c.fullEpochRange,
+			}).Info("All epochs have been assigned")
 			break
 		}
 
