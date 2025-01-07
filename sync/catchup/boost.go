@@ -199,7 +199,7 @@ func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w
 				continue
 			case task := <-c.pendingTaskQueue:
 				epochData, err := w.queryEpochData(task.From, task.To)
-				if logrus.IsLevelEnabled(logrus.DebugLevel) {
+				if err != nil || logrus.IsLevelEnabled(logrus.DebugLevel) {
 					logrus.WithFields(logrus.Fields{
 						"worker":          w.name,
 						"task":            task,
@@ -239,17 +239,21 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				time.Sleep(time.Second)
 				continue
 			case result := <-c.taskResultQueue:
-				logrus.WithField("task", result.task).Info("Coordinator received task result")
+				var tasks []syncTask
 				// Collect a batch of results
+				tasks = append(tasks, result.task)
 				taskResults := []syncTaskResult{result}
 				for i := 0; i < len(c.taskResultQueue); i++ {
-					taskResults = append(taskResults, <-c.taskResultQueue)
+					taskResult := <-c.taskResultQueue
+					taskResults = append(taskResults, taskResult)
+					tasks = append(tasks, taskResult.task)
 				}
 				// Sort the task result
 				sort.Slice(taskResults, func(i, j int) bool {
 					r0, r1 := taskResults[i], taskResults[j]
 					return r0.task.From < r1.task.From
 				})
+				logrus.WithField("tasks", tasks).Info("Coordinator received task results")
 				// Process the batch of results
 				for _, r := range taskResults {
 					if r.err != nil {
@@ -361,7 +365,13 @@ func (c *coordinator) assignTasks(ctx context.Context, taskSize uint64) error {
 					return err
 				}
 			}
-			continue
+			if midEpoch+1 <= recallTask.To {
+				numPendingTasks++
+				if err := c.addPendingTask(ctx, midEpoch+1, recallTask.To); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 
 		// The full epoch range has already been assigned
@@ -370,7 +380,7 @@ func (c *coordinator) assignTasks(ctx context.Context, taskSize uint64) error {
 				"nextAssignEpoch": c.nextAssignEpoch,
 				"fullEpochRange":  c.fullEpochRange,
 			}).Info("All epochs have been assigned")
-			break
+			return nil
 		}
 
 		end := min(c.nextAssignEpoch+taskSize-1, c.fullEpochRange.To)
@@ -397,6 +407,7 @@ func (c *coordinator) addPendingTask(ctx context.Context, start, end uint64) err
 	case c.pendingTaskQueue <- task:
 		return nil
 	}
+	return nil
 }
 
 // enableBackpressure toggles backpressure by closing or resetting the control channel.
