@@ -31,8 +31,6 @@ type Syncer struct {
 	minBatchDbRows int
 	// max num of db rows collected before persistence
 	maxDbRows int
-	// memory threshold (in bytes) for triggering backpressure control
-	memoryThreshold uint64
 	// benchmark catch-up sync performance
 	benchmark bool
 	// HA leader/follower election
@@ -41,6 +39,8 @@ type Syncer struct {
 	monitor *monitor.Monitor
 	// epoch to start sync
 	epochFrom uint64
+	// configuration for boost mode
+	boostConf boostConfig
 }
 
 // functional options for syncer
@@ -58,12 +58,6 @@ func WithMaxDbRows(dbRows int) SyncOption {
 	}
 }
 
-func WithMemoryThreshold(threshold uint64) SyncOption {
-	return func(s *Syncer) {
-		s.memoryThreshold = threshold
-	}
-}
-
 func WithWorkers(workers []*worker) SyncOption {
 	return func(s *Syncer) {
 		s.workers = workers
@@ -73,6 +67,12 @@ func WithWorkers(workers []*worker) SyncOption {
 func WithBenchmark(benchmark bool) SyncOption {
 	return func(s *Syncer) {
 		s.benchmark = benchmark
+	}
+}
+
+func WithBoostConfig(config boostConfig) SyncOption {
+	return func(s *Syncer) {
+		s.boostConf = config
 	}
 }
 
@@ -98,8 +98,8 @@ func MustNewSyncer(
 		WithMaxDbRows(conf.MaxDbRows),
 		WithMinBatchDbRows(conf.DbRowsThreshold),
 		WithWorkers(workers),
-		WithMemoryThreshold(conf.MemoryThreshold),
 		WithBenchmark(conf.Benchmark),
+		WithBoostConfig(conf.Boost),
 	)
 
 	return newSyncer(cfxClients, db, elm, monitor, epochFrom, append(newOpts, opts...)...)

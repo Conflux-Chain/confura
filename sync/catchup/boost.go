@@ -21,33 +21,6 @@ import (
 )
 
 const (
-	// Task queue sizes
-	pendingTaskQueueSize = 1000
-
-	// Task result queue sizes
-	taskResultQueueSize = 1000
-
-	// Result channel size
-	resultChanSize = 3000
-
-	// Default task size and bounds
-	defaultTaskSize = 100
-	minTaskSize     = 1
-	maxTaskSize     = 1000
-
-	// Task size adjustment ratios
-	incrementRatio = 0.2
-	decrementRatio = 0.5
-
-	// Maximum sample size for task size adjustment
-	maxSampleSize = 20
-
-	// Memory check interval
-	memoryCheckInterval = 20 * time.Second
-
-	// Force persistence interval
-	forcePersistenceInterval = 45 * time.Second
-
 	// Min priority queue capacity for shrink
 	minPqShrinkCapacity = 100
 )
@@ -132,6 +105,9 @@ type syncTaskResult struct {
 //   - Handling backpressure based on memory usage
 //   - Collecting and ordering results for final persistence
 type coordinator struct {
+	// Configuration
+	boostConfig
+
 	// List of workers
 	workers []*boostWorker
 
@@ -159,18 +135,19 @@ type coordinator struct {
 	backpressureControl *atomic.Value
 }
 
-func newCoordinator(workers []*boostWorker, fullRange types.RangeUint64, resultChan chan<- *store.EpochData) *coordinator {
+func newCoordinator(cfg boostConfig, workers []*boostWorker, fullRange types.RangeUint64, resultChan chan<- *store.EpochData) *coordinator {
 	backpressureControl := new(atomic.Value)
 	backpressureControl.Store(make(chan struct{}))
 	return &coordinator{
+		boostConfig:         cfg,
 		workers:             workers,
 		fullEpochRange:      fullRange,
 		nextAssignEpoch:     fullRange.From,
 		nextWriteEpoch:      fullRange.From,
 		epochResultChan:     resultChan,
 		epochDataStore:      make(map[uint64]*store.EpochData),
-		pendingTaskQueue:    make(chan syncTask, pendingTaskQueueSize),
-		taskResultQueue:     make(chan syncTaskResult, taskResultQueueSize),
+		pendingTaskQueue:    make(chan syncTask, cfg.TaskQueueSize),
+		taskResultQueue:     make(chan syncTaskResult, cfg.ResultQueueSize),
 		backpressureControl: backpressureControl,
 	}
 }
@@ -195,7 +172,7 @@ func (c *coordinator) run(ctx context.Context, wg *sync.WaitGroup) {
 	go c.dispatchLoop(ctx, &innerWg)
 
 	// Seeds the pending tasks queue with initial workload for workers.
-	c.assignTasks(ctx, defaultTaskSize)
+	c.assignTasks(ctx, c.DefaultTaskSize)
 
 	innerWg.Wait()
 }
@@ -292,8 +269,8 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 					return r0.task.From < r1.task.From
 				})
 				// Retain the recent result history for estimation
-				if len(resultHistory) > maxSampleSize {
-					resultHistory = resultHistory[len(resultHistory)-maxSampleSize:]
+				if len(resultHistory) > c.MaxSampleSize {
+					resultHistory = resultHistory[len(resultHistory)-c.MaxSampleSize:]
 				}
 				// Estimate next task size and assign new tasks
 				nextTaskSize := c.estimateTaskSize(resultHistory)
@@ -308,7 +285,7 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 // estimateTaskSize dynamically adjusts task size based on recent history.
 func (c *coordinator) estimateTaskSize(results []syncTaskResult) uint64 {
 	if len(results) == 0 {
-		return defaultTaskSize
+		return c.DefaultTaskSize
 	}
 
 	var totalEstSize, totalWeight float64
@@ -317,16 +294,16 @@ func (c *coordinator) estimateTaskSize(results []syncTaskResult) uint64 {
 		taskSize := float64(r.task.To - r.task.From + 1)
 		var estSize float64
 		if r.err == nil {
-			estSize = taskSize * (1 + incrementRatio) * weight
+			estSize = taskSize * (1 + c.IncrementRatio) * weight
 		} else {
-			estSize = taskSize * (1 - decrementRatio) * weight
+			estSize = taskSize * (1 - c.DecrementRatio) * weight
 		}
 		totalEstSize += estSize
 		totalWeight += weight
 	}
 
 	newTaskSize := uint64(math.Ceil(totalEstSize / totalWeight))
-	newTaskSize = min(max(minTaskSize, newTaskSize), maxTaskSize)
+	newTaskSize = min(max(c.MinTaskSize, newTaskSize), c.MaxTaskSize)
 	return newTaskSize
 }
 
@@ -344,7 +321,7 @@ func (c *coordinator) collectEpochData(ctx context.Context, result []*store.Epoc
 			break
 		}
 
-		if len(c.epochResultChan) >= resultChanSize {
+		if len(c.epochResultChan) >= c.WriteBufferSize {
 			logrus.WithField("nextWriteEpoch", c.nextWriteEpoch).Warn("Catch-up boost sync write buffer is full")
 		}
 
@@ -394,7 +371,7 @@ func (c *coordinator) assignTasks(ctx context.Context, taskSize uint64) error {
 
 func (c *coordinator) addPendingTask(ctx context.Context, start, end uint64) error {
 	task := newSyncTask(start, end)
-	if len(c.pendingTaskQueue) >= pendingTaskQueueSize {
+	if len(c.pendingTaskQueue) >= c.TaskQueueSize {
 		logrus.WithField("task", task).Warn("Catch-up boost pending task queue is full")
 	}
 
@@ -433,7 +410,7 @@ func newBoostSyncer(s *Syncer) *boostSyncer {
 	return &boostSyncer{
 		Syncer:     s,
 		workers:    workers,
-		resultChan: make(chan *store.EpochData, resultChanSize),
+		resultChan: make(chan *store.EpochData, s.boostConf.WriteBufferSize),
 	}
 }
 
@@ -443,13 +420,13 @@ func (s *boostSyncer) doSync(ctx context.Context, bmarker *benchmarker, start, e
 
 	// Start coordinator
 	fullEpochRange := types.RangeUint64{From: start, To: end}
-	coord := newCoordinator(s.workers, fullEpochRange, s.resultChan)
+	coord := newCoordinator(s.boostConf, s.workers, fullEpochRange, s.resultChan)
 
 	wg.Add(1)
 	go coord.run(ctx, &wg)
 
 	// Start memory monitor
-	if s.memoryThreshold > 0 {
+	if s.boostConf.MemoryThreshold > 0 {
 		go s.memoryMonitorLoop(ctx, coord)
 	}
 
@@ -481,7 +458,7 @@ func (s *boostSyncer) doSync(ctx context.Context, bmarker *benchmarker, start, e
 
 // memoryMonitorLoop checks memory periodically and applies backpressure when memory is high.
 func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
-	ticker := time.NewTicker(memoryCheckInterval)
+	ticker := time.NewTicker(s.boostConf.MemoryCheckInterval)
 	defer ticker.Stop()
 
 	// Counter to track memory health status
@@ -496,11 +473,11 @@ func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
 
 			logger := logrus.WithFields(logrus.Fields{
 				"memory":    memStats.Alloc,
-				"threshold": s.memoryThreshold,
+				"threshold": s.boostConf.MemoryThreshold,
 			})
 
 			// Backpressure control according to memory usage
-			if memStats.Alloc < s.memoryThreshold {
+			if memStats.Alloc < s.boostConf.MemoryThreshold {
 				// Memory usage is below the threshold, try to lift backpressure.
 				if recovered, _ := healthStatus.OnSuccess(memoryHealthCfg); recovered {
 					logger.Warn("Catch-up boost sync memory usage has recovered below threshold")
@@ -522,7 +499,8 @@ func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
 
 // fetchAndPersistResults retrieves completed epoch data and persists them into the database.
 func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uint64, bmarker *benchmarker) error {
-	timer := time.NewTimer(forcePersistenceInterval)
+	forceInterval := s.boostConf.ForcePersistenceInterval
+	timer := time.NewTimer(forceInterval)
 	defer timer.Stop()
 
 	var state persistState
@@ -568,7 +546,7 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 			}
 
 			state.reset()
-			timer.Reset(forcePersistenceInterval)
+			timer.Reset(forceInterval)
 		}
 	}
 
