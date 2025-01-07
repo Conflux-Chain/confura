@@ -3,6 +3,8 @@ package catchup
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -176,9 +178,11 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 		}()
 	}
 
+	useBoost := strings.EqualFold(os.Getenv("USE_BOOST"), "true")
+
 	// Boost sync performance if all chain data types are disabled except event logs by using `getLogs` to synchronize
 	// blockchain data across wide epoch range, or using `epoch-by-epoch` sync mode if any of them are enabled.
-	if disabler := store.StoreConfig(); true && !disabler.IsChainLogDisabled() &&
+	if disabler := store.StoreConfig(); useBoost && !disabler.IsChainLogDisabled() &&
 		disabler.IsChainBlockDisabled() && disabler.IsChainTxnDisabled() && disabler.IsChainReceiptDisabled() {
 		logrus.WithFields(logrus.Fields{
 			"start": start, "end": end,

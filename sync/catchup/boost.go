@@ -4,8 +4,10 @@ import (
 	"container/heap"
 	"context"
 	"math"
+	"os"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -239,21 +241,38 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				time.Sleep(time.Second)
 				continue
 			case result := <-c.taskResultQueue:
-				var tasks []syncTask
+				var tasks []struct {
+					Task syncTask
+					Err  error
+				}
 				// Collect a batch of results
-				tasks = append(tasks, result.task)
+				tasks = append(tasks, struct {
+					Task syncTask
+					Err  error
+				}{
+					Task: result.task,
+					Err:  result.err,
+				})
 				taskResults := []syncTaskResult{result}
 				for i := 0; i < len(c.taskResultQueue); i++ {
 					taskResult := <-c.taskResultQueue
 					taskResults = append(taskResults, taskResult)
-					tasks = append(tasks, taskResult.task)
+					tasks = append(tasks, struct {
+						Task syncTask
+						Err  error
+					}{
+						Task: taskResult.task,
+						Err:  taskResult.err,
+					})
 				}
 				// Sort the task result
 				sort.Slice(taskResults, func(i, j int) bool {
 					r0, r1 := taskResults[i], taskResults[j]
 					return r0.task.From < r1.task.From
 				})
-				logrus.WithField("tasks", tasks).Info("Coordinator received task results")
+				if strings.EqualFold(os.Getenv("BOOST_VERBOSE"), "true") {
+					logrus.WithField("tasks", tasks).Info("Coordinator received task results")
+				}
 				// Process the batch of results
 				for _, r := range taskResults {
 					if r.err != nil {
@@ -345,6 +364,13 @@ func (c *coordinator) collectEpochData(ctx context.Context, result []*store.Epoc
 			delete(c.epochDataStore, data.Number)
 			c.nextWriteEpoch++
 		}
+	}
+
+	if strings.EqualFold(os.Getenv("BOOST_VERBOSE"), "true") {
+		logrus.WithFields(logrus.Fields{
+			"nextWriteEpoch":  c.nextWriteEpoch,
+			"nextAssignEpoch": c.nextAssignEpoch,
+		}).Info("Epoch data collected")
 	}
 	return nil
 }
