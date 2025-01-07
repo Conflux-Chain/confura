@@ -98,6 +98,7 @@ func (b *benchmarker) report(start, end uint64) {
 	fmt.Printf("mean batch db rows: %v\n", b.persistDbRowsMetrics.Snapshot().Mean())
 	fmt.Printf(" p99 batch db rows: %v\n", b.persistDbRowsMetrics.Snapshot().Percentile(99))
 	fmt.Printf(" p75 batch db rows: %v\n", b.persistDbRowsMetrics.Snapshot().Percentile(75))
+	fmt.Printf(" p50 batch db rows: %v\n", b.persistDbRowsMetrics.Snapshot().Percentile(50))
 
 	fmt.Println("// --------- batch persisted epochs -----------")
 	fmt.Printf("     total epochs: %v\n", b.persistEpochsMetrics.Snapshot().Sum())
@@ -106,6 +107,7 @@ func (b *benchmarker) report(start, end uint64) {
 	fmt.Printf("mean batch epochs: %v\n", b.persistEpochsMetrics.Snapshot().Mean())
 	fmt.Printf(" p99 batch epochs: %v\n", b.persistEpochsMetrics.Snapshot().Percentile(99))
 	fmt.Printf(" p75 batch epochs: %v\n", b.persistEpochsMetrics.Snapshot().Percentile(75))
+	fmt.Printf(" p50 batch epochs: %v\n", b.persistEpochsMetrics.Snapshot().Percentile(50))
 
 	fmt.Println("// ------ batch persisted db durations --------")
 	fmt.Printf("total duration: %.2f(ms)\n", float64(b.persistTimer.Snapshot().Sum())/1e6)
@@ -114,6 +116,7 @@ func (b *benchmarker) report(start, end uint64) {
 	fmt.Printf(" mean duration: %.2f(ms)\n", b.persistTimer.Snapshot().Mean()/1e6)
 	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(b.persistTimer.Snapshot().Percentile(99))/1e6)
 	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(b.persistTimer.Snapshot().Percentile(75))/1e6)
+	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(b.persistTimer.Snapshot().Percentile(50))/1e6)
 
 	fmt.Println("// ------ avg persist duration/db row ---------")
 	fmt.Printf("total duration: %.2f(ms)\n", float64(b.avgPersistDurationPerDbRowMetrics.Snapshot().Sum())/1e6)
@@ -122,6 +125,7 @@ func (b *benchmarker) report(start, end uint64) {
 	fmt.Printf(" mean duration: %.2f(ms)\n", float64(b.avgPersistDurationPerDbRowMetrics.Snapshot().Mean())/1e6)
 	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(b.avgPersistDurationPerDbRowMetrics.Snapshot().Percentile(99))/1e6)
 	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(b.avgPersistDurationPerDbRowMetrics.Snapshot().Percentile(75))/1e6)
+	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(b.avgPersistDurationPerDbRowMetrics.Snapshot().Percentile(50))/1e6)
 
 	fmt.Println("// ------ avg persist duration/epoch ----------")
 	fmt.Printf("total duration: %.2f(ms)\n", float64(b.avgPersistDurationPerEpochMetrics.Snapshot().Sum())/1e6)
@@ -130,6 +134,7 @@ func (b *benchmarker) report(start, end uint64) {
 	fmt.Printf(" mean duration: %.2f(ms)\n", float64(b.avgPersistDurationPerEpochMetrics.Snapshot().Mean())/1e6)
 	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(b.avgPersistDurationPerEpochMetrics.Snapshot().Percentile(99))/1e6)
 	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(b.avgPersistDurationPerEpochMetrics.Snapshot().Percentile(75))/1e6)
+	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(b.avgPersistDurationPerEpochMetrics.Snapshot().Percentile(50))/1e6)
 
 	fmt.Println("// --------- batch persisted db tps -----------")
 	fmt.Printf("mean tps: %v\n", b.persistTimer.Snapshot().RateMean())
@@ -144,6 +149,7 @@ func (b *benchmarker) report(start, end uint64) {
 	fmt.Printf(" mean duration: %.2f(ms)\n", b.fetchPerEpochTimer.Snapshot().Mean()/1e6)
 	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(b.fetchPerEpochTimer.Snapshot().Percentile(99))/1e6)
 	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(b.fetchPerEpochTimer.Snapshot().Percentile(75))/1e6)
+	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(b.fetchPerEpochTimer.Snapshot().Percentile(50))/1e6)
 
 	fmt.Println("// ------------- epoch fetch tps --------------")
 	fmt.Printf("mean tps: %v\n", b.fetchPerEpochTimer.Snapshot().RateMean())

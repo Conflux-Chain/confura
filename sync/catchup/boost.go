@@ -28,12 +28,12 @@ const (
 	taskResultQueueSize = 1000
 
 	// Result channel size
-	resultChanSize = 1000
+	resultChanSize = 3000
 
 	// Default task size and bounds
 	defaultTaskSize = 100
 	minTaskSize     = 1
-	maxTaskSize     = 2000
+	maxTaskSize     = 1000
 
 	// Task size adjustment ratios
 	incrementRatio = 0.2
@@ -195,15 +195,15 @@ func (c *coordinator) run(ctx context.Context, wg *sync.WaitGroup) {
 	go c.dispatchLoop(ctx, &innerWg)
 
 	// Seeds the pending tasks queue with initial workload for workers.
-	c.assignTasks(defaultTaskSize)
+	c.assignTasks(ctx, defaultTaskSize)
 
 	innerWg.Wait()
 }
 
 // boostWorkerLoop continuously processes tasks assigned to the boostWorker.
 func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w *boostWorker) {
-	logrus.WithField("worker", w.name).Info("Boost worker started")
-	defer logrus.WithField("worker", w.name).Info("Boost worker stopped")
+	logrus.WithField("worker", w.name).Info("Catch-up boost worker started")
+	defer logrus.WithField("worker", w.name).Info("Catch-up boost worker stopped")
 
 	defer wg.Done()
 	for {
@@ -228,7 +228,7 @@ func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w
 						"task":            task,
 						"numEpochData":    len(epochData),
 						"numPendingTasks": len(c.pendingTaskQueue),
-					}).WithError(err).Debug("Boost worker processed task")
+					}).WithError(err).Debug("Catch-up boost worker processed task")
 				}
 				c.taskResultQueue <- syncTaskResult{
 					task:      task,
@@ -242,8 +242,8 @@ func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w
 
 // dispatchLoop collects results from workers, adjusts task sizes, and dispatches new tasks.
 func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
-	logrus.Info("Coordinator dispatch loop started")
-	defer logrus.Info("Coordinator dispatch loop stopped")
+	logrus.Info("Catch-up boost coordinator dispatch loop started")
+	defer logrus.Info("Catch-up boost coordinator dispatch loop stopped")
 
 	var resultHistory []syncTaskResult
 	defer wg.Done()
@@ -269,15 +269,19 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				}
 				// Process the batch of results
 				for _, r := range taskResults {
-					if r.err == nil {
-						// Collect epoch data
-						c.collectEpochData(r.epochData)
-						r.epochData = nil // free memory
-					} else {
+					if r.err != nil {
 						// Recall the task by splitting and re-assigning
 						heap.Push(&c.recallTaskPq, &syncTaskItem{syncTask: r.task})
+						resultHistory = append(resultHistory, r)
+						continue
+					}
+
+					// Collect epoch data
+					if err := c.collectEpochData(ctx, r.epochData); err != nil {
+						return
 					}
 					resultHistory = append(resultHistory, r)
+					r.epochData = nil // free memory
 				}
 				// Sort the task result history
 				sort.Slice(resultHistory, func(i, j int) bool {
@@ -293,7 +297,9 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				}
 				// Estimate next task size and assign new tasks
 				nextTaskSize := c.estimateTaskSize(resultHistory)
-				c.assignTasks(nextTaskSize)
+				if err := c.assignTasks(ctx, nextTaskSize); err != nil {
+					return
+				}
 			}
 		}
 	}
@@ -325,16 +331,9 @@ func (c *coordinator) estimateTaskSize(results []syncTaskResult) uint64 {
 }
 
 // collectEpochData accumulates epoch data in memory until contiguous and flushes them in order.
-func (c *coordinator) collectEpochData(result []*store.EpochData) {
+func (c *coordinator) collectEpochData(ctx context.Context, result []*store.EpochData) error {
+	// Cache store epoch data
 	for _, data := range result {
-		if c.nextWriteEpoch == data.Number {
-			select {
-			case c.epochResultChan <- data:
-				c.nextWriteEpoch++
-				continue
-			default: // Write buffer is full
-			}
-		}
 		c.epochDataStore[data.Number] = data
 	}
 
@@ -345,38 +344,65 @@ func (c *coordinator) collectEpochData(result []*store.EpochData) {
 			break
 		}
 
+		if len(c.epochResultChan) >= resultChanSize {
+			logrus.WithField("nextWriteEpoch", c.nextWriteEpoch).Warn("Catch-up boost sync write buffer is full")
+		}
+
 		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case c.epochResultChan <- data:
 			delete(c.epochDataStore, data.Number)
 			c.nextWriteEpoch++
-		default: // Write buffer is full
-			return
 		}
 	}
+	return nil
 }
 
 // assignTasks schedules tasks for workers, handling recall tasks first if any.
-func (c *coordinator) assignTasks(taskSize uint64) {
-	for len(c.workers) > len(c.pendingTaskQueue) {
+func (c *coordinator) assignTasks(ctx context.Context, taskSize uint64) error {
+	for numPendingTasks := len(c.pendingTaskQueue); numPendingTasks < len(c.workers); numPendingTasks++ {
 		// Handle recall tasks by splitting them into sub-tasks if possible
 		if len(c.recallTaskPq) > 0 {
 			recallTask := heap.Pop(&c.recallTaskPq).(*syncTaskItem).syncTask
 			midEpoch := (recallTask.From + recallTask.To) / 2
-			c.pendingTaskQueue <- newSyncTask(recallTask.From, midEpoch)
+			if err := c.addPendingTask(ctx, recallTask.From, midEpoch); err != nil {
+				return err
+			}
 			if midEpoch+1 <= recallTask.To {
-				c.pendingTaskQueue <- newSyncTask(midEpoch+1, recallTask.To)
+				numPendingTasks++
+				if err := c.addPendingTask(ctx, midEpoch+1, recallTask.To); err != nil {
+					return err
+				}
 			}
 			continue
 		}
 
-		// The full epoch range has been assigned
+		// The full epoch range has already been assigned
 		if c.nextAssignEpoch > c.fullEpochRange.To {
 			break
 		}
 
 		end := min(c.nextAssignEpoch+taskSize-1, c.fullEpochRange.To)
-		c.pendingTaskQueue <- newSyncTask(c.nextAssignEpoch, end)
+		if err := c.addPendingTask(ctx, c.nextAssignEpoch, end); err != nil {
+			return err
+		}
 		c.nextAssignEpoch = end + 1
+	}
+	return nil
+}
+
+func (c *coordinator) addPendingTask(ctx context.Context, start, end uint64) error {
+	task := newSyncTask(start, end)
+	if len(c.pendingTaskQueue) >= pendingTaskQueueSize {
+		logrus.WithField("task", task).Warn("Catch-up boost pending task queue is full")
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case c.pendingTaskQueue <- task:
+		return nil
 	}
 }
 
@@ -440,12 +466,12 @@ func (s *boostSyncer) doSync(ctx context.Context, bmarker *benchmarker, start, e
 					"start":          start,
 					"end":            end,
 					"leaderIdentity": s.elm.Identity(),
-				}).Info("Catch-up syncer failed to renew leadership on fetching result")
+				}).Info("Catch-up boost syncer failed to renew leadership on fetching result")
 			} else {
 				logrus.WithFields(logrus.Fields{
 					"start": start,
 					"end":   end,
-				}).WithError(err).Error("Catch-up syncer failed to fetch result")
+				}).WithError(err).Error("Catch-up boost syncer failed to fetch result")
 			}
 		}
 	}()
@@ -477,17 +503,17 @@ func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
 			if memStats.Alloc < s.memoryThreshold {
 				// Memory usage is below the threshold, try to lift backpressure.
 				if recovered, _ := healthStatus.OnSuccess(memoryHealthCfg); recovered {
-					logger.Warn("Catch-up sync memory usage has recovered below threshold")
+					logger.Warn("Catch-up boost sync memory usage has recovered below threshold")
 					c.enableBackpressure(false)
 				}
 			} else {
 				// Memory usage exceeds the threshold, check for health degradation.
 				unhealthy, unrecovered, _ := healthStatus.OnFailure(memoryHealthCfg)
 				if unhealthy {
-					logger.Warn("Catch-up sync memory usage exceeded threshold")
+					logger.Warn("Catch-up boost sync memory usage exceeded threshold")
 					c.enableBackpressure(true)
 				} else if unrecovered {
-					logger.Warn("Catch-up sync memory usage remains above threshold")
+					logger.Warn("Catch-up boost sync memory usage remains above threshold")
 				}
 			}
 		}
@@ -527,7 +553,7 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 					"storeDbRows":        storeDbRows,
 					"state.insertDbRows": state.insertDbRows,
 					"state.totalDbRows":  state.totalDbRows,
-				}).Info("Catch-up syncer collected new epoch data")
+				}).Debug("Catch-up boost syncer collected new epoch data")
 			}
 		case <-timer.C:
 			// Force persist if timer expires
