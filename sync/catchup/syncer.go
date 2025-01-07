@@ -202,6 +202,7 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 		fmt.Printf(" mean duration: %.2f(ms)\n", boostQueryTimer.Snapshot().Mean()/1e6)
 		fmt.Printf("  p99 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(99))/1e6)
 		fmt.Printf("  p75 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(75))/1e6)
+		fmt.Printf("  p50 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(50))/1e6)
 
 		fmt.Println("// ---------- boost query epoch range ------------")
 		fmt.Printf("     total epochs: %v\n", boostQueryRangeHistogram.Snapshot().Sum())
@@ -210,6 +211,7 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 		fmt.Printf("mean batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Mean())
 		fmt.Printf(" p99 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(99))
 		fmt.Printf(" p75 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(75))
+		fmt.Printf(" p50 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(50))
 
 		fmt.Println("// ---------- boost query success rate ------------")
 		fmt.Printf(" success ratio: %v\n", boostQueryRateGaugue.Snapshot().Value())
@@ -240,6 +242,7 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 	fmt.Printf(" mean duration: %.2f(ms)\n", queryTimer.Snapshot().Mean()/1e6)
 	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(99))/1e6)
 	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(75))/1e6)
+	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(50))/1e6)
 
 	fmt.Println("// ---------- epoch query success rate ------------")
 	fmt.Printf(" success ratio: %v\n", queryRateGaugue.Snapshot().Value())
