@@ -37,59 +37,90 @@ func doTest(workerCount int, round int, epoch uint64, sameEpoch bool) {
 	start := time.Now()
 
 	jobs := make(chan uint64, round)
-	results := make(chan uint64, round)
+	results := make(chan *EpochResult, round)
 
 	for w := 1; w <= workerCount; w++ {
 		go worker(w, jobs, results)
 	}
 
 	for j := 0; j < round; j++ {
-		jobs <- uint64(epoch)
+		jobs <- epoch
 		if !sameEpoch {
 			epoch += 1
 		}
 	}
 	close(jobs)
 
+	totalInfo := &EpochResult{}
 	for a := 1; a <= round; a++ {
-		<-results
+		ret := <-results
+		totalInfo.blockCount += ret.blockCount
+		totalInfo.txCount += ret.txCount
+		totalInfo.eventCount += ret.eventCount
+		totalInfo.traceCount += ret.traceCount
 	}
 
 	elapsed := time.Since(start)
-	log.Printf("it tooks %s , average %s per epoch", elapsed, elapsed/time.Duration(round))
+	log.Printf("it took %s , average %s per epoch "+
+		"block %d tx %d event %d trace %d", elapsed, elapsed/time.Duration(round),
+		totalInfo.blockCount, totalInfo.txCount, totalInfo.eventCount, totalInfo.traceCount)
 
 	logrus.Info("done")
 }
 
-func worker(id int, jobs <-chan uint64, results chan<- uint64) {
+type EpochResult struct {
+	blockCount int
+	txCount    int
+	traceCount int
+	eventCount int
+}
+
+func worker(id int, jobs <-chan uint64, results chan<- *EpochResult) {
 	for j := range jobs {
-		e := doRequest(j)
+		ret, e := doRequest(j)
 		if e != nil {
 			logrus.WithError(e).Errorf("worker %d , error for epoch %d\n", id, j)
 			break
 		}
-		results <- j
+		results <- ret
 	}
 }
 
-func doRequest(epoch uint64) error {
+func doRequest(epoch uint64) (*EpochResult, error) {
+	ret := &EpochResult{}
 	arr, e := cfxClient.GetBlocksByEpoch(types.NewEpochNumberUint64(epoch))
 	if e != nil {
-		return e
+		return nil, e
 	}
+	ret.blockCount += len(arr)
 	p := arr[len(arr)-1]
 	for _, h := range arr {
 		_, e = cfxClient.GetBlockByHashWithPivotAssumption(h, p, hexutil.Uint64(epoch))
 		if e != nil {
-			return e
+			return nil, e
 		}
-		_, e = cfxClient.GetBlockTraces(h)
+		blkTrace, e := cfxClient.GetBlockTraces(h)
 		if e != nil {
-			return e
+			return nil, e
+		}
+		for _, tt := range blkTrace.TransactionTraces {
+			ret.traceCount += len(tt.Traces)
 		}
 	}
-	_, e = cfxClient.GetEpochReceipts(*types.NewEpochOrBlockHashWithEpoch(types.NewEpochNumberUint64(epoch)), false)
-	return e
+	receipts, e := cfxClient.GetEpochReceipts(*types.NewEpochOrBlockHashWithEpoch(types.NewEpochNumberUint64(epoch)), false)
+	if e != nil {
+		return nil, e
+	}
+	for _, rr2 := range receipts {
+		for _, r := range rr2 {
+			if r.OutcomeStatus == 1 || r.OutcomeStatus == 0 {
+				ret.txCount++
+				ret.eventCount += len(r.Logs)
+			}
+		}
+	}
+
+	return ret, e
 }
 
 func init() {
