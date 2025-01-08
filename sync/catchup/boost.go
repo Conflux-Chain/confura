@@ -402,10 +402,12 @@ func (c *coordinator) assignTasks(ctx context.Context, taskSize uint64) error {
 
 		// The full epoch range has already been assigned
 		if c.nextAssignEpoch > c.fullEpochRange.To {
-			logrus.WithFields(logrus.Fields{
-				"nextAssignEpoch": c.nextAssignEpoch,
-				"fullEpochRange":  c.fullEpochRange,
-			}).Info("All epochs have been assigned")
+			if strings.EqualFold(os.Getenv("BOOST_VERBOSE"), "true") {
+				logrus.WithFields(logrus.Fields{
+					"nextAssignEpoch": c.nextAssignEpoch,
+					"fullEpochRange":  c.fullEpochRange,
+				}).Info("All epochs have been assigned")
+			}
 			return nil
 		}
 
@@ -433,7 +435,6 @@ func (c *coordinator) addPendingTask(ctx context.Context, start, end uint64) err
 	case c.pendingTaskQueue <- task:
 		return nil
 	}
-	return nil
 }
 
 // enableBackpressure toggles backpressure by closing or resetting the control channel.
@@ -594,11 +595,14 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 		// Batch insert into db if `forcePersist` is true or enough db rows collected, also use total db rows here to
 		// check if we need to persist to restrict memory usage.
 		if forcePersist || state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
-			logrus.WithFields(logrus.Fields{
-				"state.insertDbRows": state.insertDbRows,
-				"state.totalDbRows":  state.totalDbRows,
-				"forcePersist":       forcePersist,
-			}).Info("Catch-up syncer persisting epoch data")
+			if strings.EqualFold(os.Getenv("BOOST_VERBOSE"), "true") {
+				logrus.WithFields(logrus.Fields{
+					"state.insertDbRows": state.insertDbRows,
+					"state.totalDbRows":  state.totalDbRows,
+					"forcePersist":       forcePersist,
+				}).Info("Catch-up syncer persisting epoch data")
+			}
+
 			if err := s.persist(ctx, &state, bmarker); err != nil {
 				return err
 			}
