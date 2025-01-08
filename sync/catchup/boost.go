@@ -244,6 +244,11 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				for i := 0; i < len(c.taskResultQueue); i++ {
 					taskResults = append(taskResults, <-c.taskResultQueue)
 				}
+				// Sort the task result
+				sort.Slice(taskResults, func(i, j int) bool {
+					r0, r1 := taskResults[i], taskResults[j]
+					return r0.task.From < r1.task.From
+				})
 				// Process the batch of results
 				for _, r := range taskResults {
 					if r.err != nil {
