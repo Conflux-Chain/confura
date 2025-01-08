@@ -327,7 +327,10 @@ func (c *coordinator) collectEpochData(ctx context.Context, result []*store.Epoc
 		}
 
 		if len(c.epochResultChan) >= c.WriteBufferSize {
-			logrus.WithField("nextWriteEpoch", c.nextWriteEpoch).Warn("Catch-up boost sync write buffer is full")
+			logrus.WithFields(logrus.Fields{
+				"nextWriteEpoch": c.nextWriteEpoch,
+				"numCacheEpochs": len(c.epochDataStore),
+			}).Info("Catch-up boost sync write buffer is full")
 		}
 
 		select {
@@ -377,7 +380,10 @@ func (c *coordinator) assignTasks(ctx context.Context, taskSize uint64) error {
 func (c *coordinator) addPendingTask(ctx context.Context, start, end uint64) error {
 	task := newSyncTask(start, end)
 	if len(c.pendingTaskQueue) >= c.TaskQueueSize {
-		logrus.WithField("task", task).Warn("Catch-up boost pending task queue is full")
+		logrus.WithFields(logrus.Fields{
+			"toAddTask":       task,
+			"nextAssignEpoch": c.nextAssignEpoch,
+		}).Info("Catch-up boost pending task queue is full")
 	}
 
 	select {
