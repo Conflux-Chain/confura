@@ -28,8 +28,9 @@ type benchmarker struct {
 }
 
 func newBenchmarker() *benchmarker {
-	// Enable Geth metrics for accurate data.
-	gmetrics.Enabled = true
+	if !gmetrics.Enabled {
+		logrus.Warn("Geth metrics are not enabled, which will prevent performance metrics from being collected.")
+	}
 	return &benchmarker{
 		persistDbRowsMetrics: gmetrics.NewHistogram(gmetrics.NewExpDecaySample(1024, 0.015)),
 		persistEpochsMetrics: gmetrics.NewHistogram(gmetrics.NewExpDecaySample(1024, 0.015)),
