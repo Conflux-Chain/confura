@@ -24,7 +24,8 @@ type filterCursor struct {
 type filterChainIterator func(node *filterNode, forkPoint bool) bool
 
 type filterChain interface {
-	// snapshots filter cursor of the latest node
+	// snapshotLatestCursor returns the filter cursor
+	// of the latest node in the filter chain
 	snapshotLatestCursor() filterCursor
 	// check if node is on the chain
 	hasNode(node *filterNode) bool

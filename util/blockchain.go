@@ -60,7 +60,7 @@ func GetSummaryOfBlock(block *types.Block) *types.BlockSummary {
 	return &summary
 }
 
-// StripLogExtraFields strips extra unnecessary fields from logs to comply with fullnode rpc
+// StripLogExtraFieldsForRPC strips extra unnecessary fields from logs to comply with fullnode rpc
 func StripLogExtraFieldsForRPC(logs []types.Log) {
 	for i := 0; i < len(logs); i++ {
 		log := &logs[i]
