@@ -114,7 +114,7 @@ func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
 	return uint64(maxEpoch.Int64), true, nil
 }
 
-// blockRange returns the spanning block range for the give epoch.
+// BlockRange returns the spanning block range for the give epoch.
 func (e2bms *epochBlockMapStore) BlockRange(epoch uint64) (citypes.RangeUint64, bool, error) {
 	var e2bmap epochBlockMap
 	var bnr citypes.RangeUint64
