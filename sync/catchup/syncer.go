@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -142,9 +143,17 @@ func (s *Syncer) Sync(ctx context.Context) {
 		return
 	}
 
-	logrus.WithField("numWorkers", len(s.workers)).
-		Info("Catch-up syncer starting to catch up latest epoch")
-	s.syncOnce(ctx, s.epochFrom, s.epochFrom+100000-1)
+	numEpochs := uint64(100_000)
+	if numEpochStr := os.Getenv("BOOST_EPOCHS"); len(numEpochStr) > 0 {
+		if v, err := strconv.Atoi(numEpochStr); err == nil {
+			numEpochs = max(1, uint64(v))
+		}
+	}
+	logrus.WithFields(logrus.Fields{
+		"numWorkers": len(s.workers),
+		"numEpochs":  numEpochs,
+	}).Info("Catch-up syncer starting to catch up latest epoch")
+	s.syncOnce(ctx, s.epochFrom, s.epochFrom+numEpochs-1)
 	logrus.Info("Catch-up sync done!")
 	return
 
@@ -204,18 +213,18 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 		fmt.Printf("  max duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Max())/1e6)
 		fmt.Printf("  min duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Min()/1e6))
 		fmt.Printf(" mean duration: %.2f(ms)\n", boostQueryTimer.Snapshot().Mean()/1e6)
-		fmt.Printf("  p99 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(99))/1e6)
-		fmt.Printf("  p75 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(75))/1e6)
-		fmt.Printf("  p50 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(50))/1e6)
+		fmt.Printf("  p99 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(0.99))/1e6)
+		fmt.Printf("  p75 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(0.75))/1e6)
+		fmt.Printf("  p50 duration: %.2f(ms)\n", float64(boostQueryTimer.Snapshot().Percentile(0.50))/1e6)
 
 		fmt.Println("// ---------- boost query epoch range ------------")
 		fmt.Printf("     total epochs: %v\n", boostQueryRangeHistogram.Snapshot().Sum())
 		fmt.Printf(" max batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Max())
 		fmt.Printf(" min batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Min())
 		fmt.Printf("mean batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Mean())
-		fmt.Printf(" p99 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(99))
-		fmt.Printf(" p75 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(75))
-		fmt.Printf(" p50 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(50))
+		fmt.Printf(" p99 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(0.99))
+		fmt.Printf(" p75 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(0.75))
+		fmt.Printf(" p50 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(0.50))
 
 		fmt.Println("// ---------- boost query success rate ------------")
 		fmt.Printf(" success ratio: %v\n", boostQueryRateGaugue.Snapshot().Value())
@@ -244,9 +253,9 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 	fmt.Printf("  max duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Max())/1e6)
 	fmt.Printf("  min duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Min()/1e6))
 	fmt.Printf(" mean duration: %.2f(ms)\n", queryTimer.Snapshot().Mean()/1e6)
-	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(99))/1e6)
-	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(75))/1e6)
-	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(50))/1e6)
+	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(0.99))/1e6)
+	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(0.75))/1e6)
+	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(0.50))/1e6)
 
 	fmt.Println("// ---------- epoch query success rate ------------")
 	fmt.Printf(" success ratio: %v\n", queryRateGaugue.Snapshot().Value())
