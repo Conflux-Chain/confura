@@ -267,7 +267,7 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 }
 
 func validateBlock(block *types.Block, epochNumber uint64, hash types.Hash) error {
-	if block.GasUsed == nil { // block is not executed yet?
+	if epochNumber != 0 && block.GasUsed == nil { // block is not executed yet?
 		return errors.WithMessage(errBlockValidationFailed, "gas used is nil")
 	}
 

@@ -363,8 +363,16 @@ type noopLeaderManager struct {
 
 func (l *noopLeaderManager) Identity() string                 { return "noop" }
 func (l *noopLeaderManager) Extend(ctx context.Context) error { return nil }
-func (l *noopLeaderManager) Await(ctx context.Context) bool   { return true }
 func (l *noopLeaderManager) OnError(cb ErrorCallback)         { /* do nothing */ }
+
+func (l *noopLeaderManager) Await(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	default:
+		return true
+	}
+}
 
 func (l *noopLeaderManager) Stop() error {
 	if v := l.cancel.Load(); v != nil {

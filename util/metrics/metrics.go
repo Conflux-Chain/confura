@@ -153,8 +153,20 @@ func (*SyncMetrics) QueryEpochData(space string) metrics.Timer {
 	return metricUtil.GetOrRegisterTimer("infura/sync/%v/fullnode", space)
 }
 
+func (*SyncMetrics) BoostQueryEpochData(space string) metrics.Timer {
+	return metricUtil.GetOrRegisterTimer("infura/sync/boost/%v/fullnode", space)
+}
+
+func (*SyncMetrics) BoostQueryEpochRange() metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/sync/boost/epoch/range")
+}
+
 func (*SyncMetrics) QueryEpochDataAvailability(space string) metricUtil.Percentage {
 	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/sync/%v/fullnode/availability", space)
+}
+
+func (*SyncMetrics) BoostQueryEpochDataAvailability(space string) metricUtil.Percentage {
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/sync/boost/%v/fullnode/availability", space)
 }
 
 // Store metrics

@@ -37,6 +37,10 @@ type Syncer struct {
 	elm election.LeaderManager
 	// sync monitor
 	monitor *monitor.Monitor
+	// epoch to start sync
+	epochFrom uint64
+	// configuration for boost mode
+	boostConf boostConfig
 }
 
 // functional options for syncer
@@ -66,10 +70,18 @@ func WithBenchmark(benchmark bool) SyncOption {
 	}
 }
 
+func WithBoostConfig(config boostConfig) SyncOption {
+	return func(s *Syncer) {
+		s.boostConf = config
+	}
+}
+
 func MustNewSyncer(
 	cfxClients []*sdk.Client,
 	db *mysql.MysqlStore,
 	elm election.LeaderManager,
+	monitor *monitor.Monitor,
+	epochFrom uint64,
 	opts ...SyncOption) *Syncer {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
@@ -86,15 +98,28 @@ func MustNewSyncer(
 		WithMaxDbRows(conf.MaxDbRows),
 		WithMinBatchDbRows(conf.DbRowsThreshold),
 		WithWorkers(workers),
+		WithBenchmark(conf.Benchmark),
+		WithBoostConfig(conf.Boost),
 	)
 
-	return newSyncer(cfxClients, db, elm, append(newOpts, opts...)...)
+	return newSyncer(cfxClients, db, elm, monitor, epochFrom, append(newOpts, opts...)...)
 }
 
 func newSyncer(
-	cfxClients []*sdk.Client, db *mysql.MysqlStore,
-	elm election.LeaderManager, opts ...SyncOption) *Syncer {
-	syncer := &Syncer{elm: elm, db: db, cfxs: cfxClients, minBatchDbRows: 1500}
+	cfxClients []*sdk.Client,
+	db *mysql.MysqlStore,
+	elm election.LeaderManager,
+	monitor *monitor.Monitor,
+	epochFrom uint64,
+	opts ...SyncOption) *Syncer {
+	syncer := &Syncer{
+		elm:            elm,
+		db:             db,
+		cfxs:           cfxClients,
+		monitor:        monitor,
+		epochFrom:      epochFrom,
+		minBatchDbRows: 1500,
+	}
 	for _, opt := range opts {
 		opt(syncer)
 	}
@@ -147,6 +172,24 @@ func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
 		}()
 	}
 
+	// Boost sync performance if all chain data types are disabled except event logs by using `getLogs` to synchronize
+	// blockchain data across wide epoch range, or using `epoch-by-epoch` sync mode if any of them are enabled.
+	if disabler := store.StoreConfig(); !disabler.IsChainLogDisabled() &&
+		disabler.IsChainBlockDisabled() && disabler.IsChainTxnDisabled() && disabler.IsChainReceiptDisabled() {
+		logrus.WithFields(logrus.Fields{
+			"start": start, "end": end,
+		}).Info("Catch-up syncer using boosted sync mode with getLogs optimization")
+		newBoostSyncer(s).doSync(ctx, bmarker, start, end)
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"start": start, "end": end,
+	}).Info("Catch-up syncer using standard epoch-by-epoch sync mode")
+	s.doSync(ctx, bmarker, start, end)
+}
+
+func (s *Syncer) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -292,7 +335,7 @@ func (s *Syncer) nextSyncRange() (uint64, uint64, error) {
 	if ok {
 		start++
 	} else {
-		start = 0
+		start = s.epochFrom
 	}
 
 	var retErr error
