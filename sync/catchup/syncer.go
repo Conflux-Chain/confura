@@ -183,12 +183,19 @@ func (s *Syncer) SyncByRange(ctx context.Context, start, end uint64, useBoostMod
 		}()
 	}
 
-	logger := logrus.WithFields(logrus.Fields{"start": start, "end": end})
-	if len(useBoostMode) > 0 && useBoostMode[0] {
-		logger.Info("Catch-up syncer using boost sync mode with getLogs optimization")
+	useBoost := len(useBoostMode) > 0 && useBoostMode[0]
+
+	if logrus.IsLevelEnabled(logrus.DebugLevel) {
+		logrus.WithFields(logrus.Fields{
+			"rangeStart":   start,
+			"rangeEnd":     end,
+			"boostEnabled": useBoost,
+		}).Debug("Catch-up syncer is synchronizing by range...")
+	}
+
+	if useBoost {
 		newBoostSyncer(s).doSync(ctx, bmarker, start, end)
 	} else {
-		logger.Info("Catch-up syncer using classic epoch-by-epoch sync mode")
 		s.doSync(ctx, bmarker, start, end)
 	}
 }
