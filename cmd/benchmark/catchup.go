@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/sync/catchup"
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	gmetrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -22,9 +22,6 @@ type CatchUpMode string
 const (
 	ModeClassic CatchUpMode = "classic"
 	ModeBoost   CatchUpMode = "boost"
-
-	defaultMode  = "classic" // default catch-up mode
-	defaultCount = 10000     // default number of epochs/blocks to sync
 )
 
 type CatchUpCmdConfig struct {
@@ -40,10 +37,19 @@ var (
 		Use:   "catchup",
 		Short: "Start catch-up benchmark testing",
 		Run:   runCatchUpBenchmark,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if mode := catchUpConfig.Mode; !isValidCatchUpMode(mode) {
+				return fmt.Errorf("invalid mode '%s', allowed values are 'classic' or 'boost'", mode)
+			}
+			return nil
+		},
 	}
 )
 
 func init() {
+	// Ensure metrics are enabled
+	gmetrics.Enabled = true
+
 	Cmd.AddCommand(catchUpCmd)
 	hookCatchUpCmdFlags(catchUpCmd)
 }
@@ -51,7 +57,7 @@ func init() {
 // hookCatchUpCmdFlags configures the command-line flags for the catch-up command.
 func hookCatchUpCmdFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(
-		&catchUpConfig.Mode, "mode", "m", defaultMode, "catch-up mode ('classic' or 'boost')",
+		&catchUpConfig.Mode, "mode", "m", "", "catch-up mode ('classic' or 'boost')",
 	)
 	cmd.MarkFlagRequired("mode")
 
@@ -59,7 +65,7 @@ func hookCatchUpCmdFlags(cmd *cobra.Command) {
 		&catchUpConfig.Start, "start", "s", 0, "start epoch or block number to sync from",
 	)
 	cmd.Flags().Uint64VarP(
-		&catchUpConfig.Count, "count", "c", defaultCount, "number of epochs or blocks to sync",
+		&catchUpConfig.Count, "count", "c", 10_000, "number of epochs or blocks to sync",
 	)
 }
 
@@ -75,29 +81,22 @@ func runCatchUpBenchmark(cmd *cobra.Command, args []string) {
 	defer syncCtx.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
+	defer cancel()
+
+	// Initialize the catch-up syncer.
+	catchUpSyncer := createCatchUpSyncer(syncCtx, storeCtx)
+	defer catchUpSyncer.Close()
 
 	// Determine sync range and mode
 	start := catchUpConfig.Start
 	end := catchUpConfig.Start + max(catchUpConfig.Count, 1) - 1
 	useBoost := strings.EqualFold(catchUpConfig.Mode, string(ModeBoost))
 
-	// Initialize the catch-up syncer.
-	catchUpSyncer := createCatchUpSyncer(syncCtx, storeCtx, start)
-	defer catchUpSyncer.Close()
+	// Start the catch-up sync process
+	catchUpSyncer.SyncByRange(ctx, start, end, useBoost)
 
-	// Start the sync process in a separate goroutine.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		catchUpSyncer.SyncOnce(ctx, start, end, useBoost)
-	}()
-
-	// Ensure RPC metrics are reported after sync completes.
-	defer reportRpcMetrics(useBoost)
-
-	// Handle graceful shutdown
-	util.GracefulShutdown(&wg, cancel)
+	// Also report RPC metrics after sync completes.
+	reportRpcMetrics(useBoost)
 }
 
 // initializeContexts sets up and returns the required store and sync contexts.
@@ -112,10 +111,25 @@ func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
 }
 
 // createCatchUpSyncer initializes the catch-up syncer with the necessary dependencies.
-func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext, start uint64) *catchup.Syncer {
+func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext) *catchup.Syncer {
 	return catchup.MustNewSyncer(
-		syncCtx.SyncCfxs, storeCtx.CfxDB, election.NewNoopLeaderManager(), &monitor.Monitor{}, start,
+		syncCtx.SyncCfxs,
+		storeCtx.CfxDB,
+		election.NewNoopLeaderManager(),
+		&monitor.Monitor{},
+		catchUpConfig.Start,
+		catchup.WithBenchmark(true),
 	)
+}
+
+// isValidCatchUpMode checks if the provided mode is valid.
+func isValidCatchUpMode(mode string) bool {
+	switch mode {
+	case string(ModeClassic), string(ModeBoost):
+		return true
+	default:
+		return false
+	}
 }
 
 // reportRpcMetrics outputs RPC-related metrics based on the sync mode.
@@ -183,8 +197,8 @@ func reportClassicMetrics() {
 	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(0.75))/1e6)
 	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(0.50))/1e6)
 
-	fmt.Println("// ---------- epoch query success rate ------------")
+	fmt.Println("// -------- epoch query success rate ----------")
 	fmt.Printf(" success ratio: %v\n", queryRateGaugue.Snapshot().Value())
 
-	fmt.Println("// ------------------------------------------------")
+	fmt.Println("// --------------------------------------------")
 }

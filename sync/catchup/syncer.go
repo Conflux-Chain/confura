@@ -157,11 +157,22 @@ func (s *Syncer) Sync(ctx context.Context) {
 			break
 		}
 
-		s.SyncOnce(ctx, start, end)
+		s.syncOnce(ctx, start, end)
 	}
 }
 
-func (s *Syncer) SyncOnce(ctx context.Context, start, end uint64, enableBoost ...bool) {
+func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
+	// Boost sync performance if all chain data types are disabled except event logs by using `getLogs` to synchronize
+	// blockchain data across wide epoch range, or using `epoch-by-epoch` sync mode if any of them are enabled.
+	if disabler := store.StoreConfig(); !disabler.IsChainLogDisabled() &&
+		disabler.IsChainBlockDisabled() && disabler.IsChainTxnDisabled() && disabler.IsChainReceiptDisabled() {
+		s.SyncByRange(ctx, start, end, true)
+	} else {
+		s.SyncByRange(ctx, start, end, false)
+	}
+}
+
+func (s *Syncer) SyncByRange(ctx context.Context, start, end uint64, useBoostMode ...bool) {
 	var bmarker *benchmarker
 	if s.benchmark {
 		bmarker = newBenchmarker()
@@ -172,26 +183,14 @@ func (s *Syncer) SyncOnce(ctx context.Context, start, end uint64, enableBoost ..
 		}()
 	}
 
-	var useBoost bool
-	if len(enableBoost) > 0 {
-		useBoost = enableBoost[0]
-	}
-
-	// Boost sync performance if all chain data types are disabled except event logs by using `getLogs` to synchronize
-	// blockchain data across wide epoch range, or using `epoch-by-epoch` sync mode if any of them are enabled.
-	if disabler := store.StoreConfig(); useBoost || (!disabler.IsChainLogDisabled() &&
-		disabler.IsChainBlockDisabled() && disabler.IsChainTxnDisabled() && disabler.IsChainReceiptDisabled()) {
-		logrus.WithFields(logrus.Fields{
-			"start": start, "end": end,
-		}).Info("Catch-up syncer using boosted sync mode with getLogs optimization")
+	logger := logrus.WithFields(logrus.Fields{"start": start, "end": end})
+	if len(useBoostMode) > 0 && useBoostMode[0] {
+		logger.Info("Catch-up syncer using boost sync mode with getLogs optimization")
 		newBoostSyncer(s).doSync(ctx, bmarker, start, end)
-		return
+	} else {
+		logger.Info("Catch-up syncer using classic epoch-by-epoch sync mode")
+		s.doSync(ctx, bmarker, start, end)
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"start": start, "end": end,
-	}).Info("Catch-up syncer using standard epoch-by-epoch sync mode")
-	s.doSync(ctx, bmarker, start, end)
 }
 
 func (s *Syncer) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
