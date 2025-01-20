@@ -361,6 +361,10 @@ type noopLeaderManager struct {
 	electedCallbacks []ElectedCallback // leader elected callback functions
 }
 
+func NewNoopLeaderManager() *noopLeaderManager {
+	return &noopLeaderManager{}
+}
+
 func (l *noopLeaderManager) Identity() string                 { return "noop" }
 func (l *noopLeaderManager) Extend(ctx context.Context) error { return nil }
 func (l *noopLeaderManager) OnError(cb ErrorCallback)         { /* do nothing */ }
