@@ -59,7 +59,7 @@ func newBigContractLogStore(
 	}
 }
 
-// preparePartition create new contract log partitions for the big contract if necessary.
+// preparePartitions create new contract log partitions for the big contract if necessary.
 // Also migrates event logs from address indexed table to separate contract specified log table
 // for the initial partitioning.
 func (bcls *bigContractLogStore) preparePartitions(dataSlice []*store.EpochData) (map[uint64]bnPartition, error) {

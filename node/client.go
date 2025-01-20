@@ -62,7 +62,7 @@ func (p *clientProvider) getOrRegisterGroup(group Group) *util.ConcurrentMap {
 	return v.(*util.ConcurrentMap)
 }
 
-// getRouteGroup get custom route group for specific route key
+// GetRouteGroup get custom route group for specific route key
 func (p *clientProvider) GetRouteGroup(key string) (grp Group, ok bool) {
 	if p.db == nil { // db not available
 		return grp, false
