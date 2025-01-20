@@ -29,22 +29,17 @@ const (
 	syncPivotInfoWinCapacity = 50
 )
 
-// db sync configuration
-type syncConfig struct {
+// core space sync configuration
+type cfxSyncConfig struct {
 	FromEpoch uint64 `default:"0"`
 	MaxEpochs uint64 `default:"10"`
 	UseBatch  bool   `default:"false"`
-	Sub       syncSubConfig
-}
-
-type syncSubConfig struct {
-	Buffer uint64 `default:"1000"`
 }
 
 // DatabaseSyncer is used to sync blockchain data into database
 // against the latest confirmed epoch.
 type DatabaseSyncer struct {
-	conf *syncConfig
+	conf *cfxSyncConfig
 	// conflux sdk clients
 	cfxs []*sdk.Client
 	// selected sdk client index
@@ -73,8 +68,8 @@ func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.MysqlStore) *Data
 		logrus.Fatal("No sdk client provided")
 	}
 
-	var conf syncConfig
-	viperutil.MustUnmarshalKey("sync", &conf)
+	var conf cfxSyncConfig
+	viperutil.MustUnmarshalKey("sync.cfx", &conf)
 
 	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
 	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (latestEpochNum uint64, retErr error) {
@@ -163,7 +158,7 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 // fast catch-up until the latest stable epoch
 // (maximum between the latest finalized and checkpoint epoch)
 func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
-	catchUpSyncer := catchup.MustNewSyncer(
+	catchUpSyncer := catchup.MustNewCfxSyncer(
 		syncer.cfxs, syncer.db, syncer.elm, syncer.monitor, syncer.epochFrom,
 	)
 	defer catchUpSyncer.Close()
