@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/util/rpc"
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/sirupsen/logrus"
 )
@@ -17,15 +15,15 @@ type worker struct {
 	name string
 	// result channel to collect queried epoch data
 	resultChan chan *store.EpochData
-	// conflux sdk client delegated to fetch epoch data
-	cfx sdk.ClientOperator
+	// RPC client delegated to fetch blockchain data
+	client AbstractRpcClient
 }
 
-func mustNewWorker(name, nodeUrl string, chanSize int) *worker {
+func mustNewWorker(name string, client AbstractRpcClient, chanSize int) *worker {
 	return &worker{
 		name:       name,
 		resultChan: make(chan *store.EpochData, chanSize),
-		cfx:        rpc.MustNewCfxClient(nodeUrl),
+		client:     client,
 	}
 }
 
@@ -62,7 +60,7 @@ func (w *worker) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epochT
 }
 
 func (w *worker) Close() {
-	w.cfx.Close()
+	w.client.Close()
 	close(w.resultChan)
 }
 
@@ -71,9 +69,9 @@ func (w *worker) Data() <-chan *store.EpochData {
 }
 
 func (w *worker) fetchEpoch(epochNo uint64) (*store.EpochData, error) {
-	epochData, err := store.QueryEpochData(w.cfx, epochNo, true)
+	epochData, err := w.client.QueryEpochData(context.Background(), epochNo, epochNo)
 	if err == nil {
-		return &epochData, nil
+		return epochData[0], nil
 	}
 
 	return nil, err

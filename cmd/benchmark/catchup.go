@@ -112,7 +112,7 @@ func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
 
 // createCatchUpSyncer initializes the catch-up syncer with the necessary dependencies.
 func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext) *catchup.Syncer {
-	return catchup.MustNewSyncer(
+	return catchup.MustNewCfxSyncer(
 		syncCtx.SyncCfxs,
 		storeCtx.CfxDB,
 		election.NewNoopLeaderManager(),
