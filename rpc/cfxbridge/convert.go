@@ -3,6 +3,7 @@ package cfxbridge
 import (
 	"math/big"
 
+	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cmptutil"
@@ -333,4 +334,44 @@ func ConvertLogFilter(fq *ethTypes.FilterQuery, ethNetworkId uint32) *types.LogF
 	}
 
 	return lf
+}
+
+// ConvertToEpochData converts evm space block data to core space epoch data. This is used to bridge
+// eth block data with epoch data to reuse code logic eg., db store logic.
+func ConvertToEpochData(ethData *store.EthData, chainId uint32) *store.EpochData {
+	epochData := &store.EpochData{
+		Number:      ethData.Number,
+		Receipts:    make(map[types.Hash]*types.TransactionReceipt),
+		ReceiptExts: make(map[types.Hash]*store.ReceiptExtra),
+	}
+
+	pivotBlock := ConvertBlock(ethData.Block, chainId)
+	epochData.Blocks = []*types.Block{pivotBlock}
+
+	blockExt := store.ExtractEthBlockExt(ethData.Block)
+	epochData.BlockExts = []*store.BlockExtra{blockExt}
+
+	for txh, rcpt := range ethData.Receipts {
+		txRcpt := ConvertReceipt(rcpt, chainId)
+		txHash := ConvertHash(txh)
+
+		epochData.Receipts[txHash] = txRcpt
+		epochData.ReceiptExts[txHash] = store.ExtractEthReceiptExt(rcpt)
+	}
+
+	// Transaction `status` field is not a standard field for evm-compatible chain, so we have
+	// to manually fill this field from their receipt.
+	for i := range pivotBlock.Transactions {
+		if pivotBlock.Transactions[i].Status != nil {
+			continue
+		}
+
+		txnHash := pivotBlock.Transactions[i].Hash
+		if rcpt, ok := epochData.Receipts[txnHash]; ok && rcpt != nil {
+			txnStatus := rcpt.OutcomeStatus
+			pivotBlock.Transactions[i].Status = &txnStatus
+		}
+	}
+
+	return epochData
 }
