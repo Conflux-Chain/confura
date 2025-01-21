@@ -27,7 +27,7 @@ const (
 	calibrationExpired
 
 	pubsubValidationChBufferSize = 200 // default size of pubsub validation channel buffer
-	ringBufferSize               = 200 // size of ring buffer to hold data for comparision
+	ringBufferSize               = 200 // size of ring buffer to hold data for comparison
 	minCommonSubArraySize        = 5   // required minimum size of common subarray for calibration
 	maxCalibrationTries          = 500 // max calibration tries in case of endless loop
 )
@@ -537,7 +537,7 @@ type pubsubValidationContext struct {
 	etype   reflect.Type  // channel type
 	channel reflect.Value // channel to receive result(s)
 	errCh   chan error    // channel to notify pubsub error
-	rBuf    *ring.Ring    // ring buffer to hold data for comparision
+	rBuf    *ring.Ring    // ring buffer to hold data for comparison
 }
 
 func newPubSubValidationContext(channel interface{}) *pubsubValidationContext {

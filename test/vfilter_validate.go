@@ -408,7 +408,7 @@ type vfValidationContext struct {
 	etype   reflect.Type  // channel type
 	channel reflect.Value // channel to receive result(s)
 	errCh   chan error    // channel to notify validation error
-	rBuf    *ring.Ring    // ring buffer to hold data for comparision
+	rBuf    *ring.Ring    // ring buffer to hold data for comparison
 }
 
 func newVFValidationContext(channel interface{}) *vfValidationContext {
