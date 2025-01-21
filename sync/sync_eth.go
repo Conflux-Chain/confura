@@ -74,10 +74,12 @@ func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.MysqlStore) *EthSyn
 	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (latestBlockNum uint64, retErr error) {
 		for _, ethC := range ethClients {
 			block, err := ethC.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
-			if err == nil {
-				latestBlockNum = max(latestBlockNum, block.Number.Uint64())
-			} else {
+			if err != nil {
 				retErr = err
+			} else if block == nil {
+				retErr = errors.New("invalid empty block")
+			} else {
+				latestBlockNum = max(latestBlockNum, block.Number.Uint64())
 			}
 		}
 		if latestBlockNum > 0 {
@@ -176,6 +178,9 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	w3c := syncer.w3cs[syncer.w3cIdx.Load()]
 
 	latestBlock, err := w3c.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
+	if err == nil && latestBlock == nil {
+		err = errors.New("invalid empty block")
+	}
 	if err != nil {
 		return false, errors.WithMessage(err, "failed to query the latest block number")
 	}
