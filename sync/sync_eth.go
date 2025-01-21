@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
+	"github.com/Conflux-Chain/confura/sync/catchup"
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	"github.com/Conflux-Chain/confura/util"
@@ -24,14 +25,14 @@ import (
 	"gorm.io/gorm"
 )
 
-type syncEthConfig struct {
+type ethSyncConfig struct {
 	FromBlock uint64 `default:"1"`
 	MaxBlocks uint64 `default:"10"`
 }
 
 // EthSyncer is used to synchronize evm space blockchain data into db store.
 type EthSyncer struct {
-	conf *syncEthConfig
+	conf *ethSyncConfig
 	// EVM space web3go clients
 	w3cs []*web3go.Client
 	// Selected web3go client index
@@ -67,7 +68,7 @@ func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.MysqlStore) *EthSyn
 		logrus.WithError(err).Fatal("Failed to get chain ID from eth space")
 	}
 
-	var ethConf syncEthConfig
+	var ethConf ethSyncConfig
 	viperutil.MustUnmarshalKey("sync.eth", &ethConf)
 
 	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
@@ -129,6 +130,8 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	go syncer.elm.Campaign(ctx)
 	defer syncer.elm.Stop()
 
+	syncer.fastCatchup(ctx)
+
 	ticker := time.NewTimer(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
 
@@ -147,6 +150,16 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 			)
 		}
 	}
+}
+
+// fast catch-up until the latest safe block
+func (syncer *EthSyncer) fastCatchup(ctx context.Context) {
+	catchUpSyncer := catchup.MustNewEthSyncer(
+		syncer.w3cs, syncer.db, syncer.elm, syncer.monitor, syncer.fromBlock,
+	)
+	defer catchUpSyncer.Close()
+
+	catchUpSyncer.Sync(ctx)
 }
 
 func (syncer *EthSyncer) doTicker(ctx context.Context, ticker *time.Timer) error {
@@ -289,7 +302,7 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	// reuse db store logic by converting eth data to epoch data
 	epochDataSlice := make([]*store.EpochData, 0, len(ethDataSlice))
 	for i := 0; i < len(ethDataSlice); i++ {
-		epochData := syncer.convertToEpochData(ethDataSlice[i])
+		epochData := cfxbridge.ConvertToEpochData(ethDataSlice[i], syncer.chainId)
 		epochDataSlice = append(epochDataSlice, epochData)
 	}
 
@@ -417,46 +430,6 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 
 	pivotHash, _, err := syncer.db.PivotHash(latestBlockNo)
 	return pivotHash, err
-}
-
-// convertToEpochData converts evm space block data to core space epoch data. This is used to bridge
-// eth block data with epoch data to reuse code logic eg., db store logic.
-func (syncer *EthSyncer) convertToEpochData(ethData *store.EthData) *store.EpochData {
-	epochData := &store.EpochData{
-		Number:      ethData.Number,
-		Receipts:    make(map[cfxtypes.Hash]*cfxtypes.TransactionReceipt),
-		ReceiptExts: make(map[cfxtypes.Hash]*store.ReceiptExtra),
-	}
-
-	pivotBlock := cfxbridge.ConvertBlock(ethData.Block, syncer.chainId)
-	epochData.Blocks = []*cfxtypes.Block{pivotBlock}
-
-	blockExt := store.ExtractEthBlockExt(ethData.Block)
-	epochData.BlockExts = []*store.BlockExtra{blockExt}
-
-	for txh, rcpt := range ethData.Receipts {
-		txRcpt := cfxbridge.ConvertReceipt(rcpt, syncer.chainId)
-		txHash := cfxbridge.ConvertHash(txh)
-
-		epochData.Receipts[txHash] = txRcpt
-		epochData.ReceiptExts[txHash] = store.ExtractEthReceiptExt(rcpt)
-	}
-
-	// Transaction `status` field is not a standard field for evm-compatible chain, so we have
-	// to manually fill this field from their receipt.
-	for i := range pivotBlock.Transactions {
-		if pivotBlock.Transactions[i].Status != nil {
-			continue
-		}
-
-		txnHash := pivotBlock.Transactions[i].Hash
-		if rcpt, ok := epochData.Receipts[txnHash]; ok && rcpt != nil {
-			txnStatus := rcpt.OutcomeStatus
-			pivotBlock.Transactions[i].Status = &txnStatus
-		}
-	}
-
-	return epochData
 }
 
 func (syncer *EthSyncer) latestStoreBlock() uint64 {

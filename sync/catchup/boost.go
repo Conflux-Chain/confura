@@ -13,9 +13,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	cfxTypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/health"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -572,118 +570,16 @@ type boostWorker struct {
 // queryEpochData fetches blocks and logs for a given epoch range to construct a minimal `EpochData`
 // using `cfx_getLogs` for best peformance.
 func (w *boostWorker) queryEpochData(fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
+	space := w.client.Space()
 	startTime := time.Now()
+
 	defer func() {
-		metrics.Registry.Sync.BoostQueryEpochData("cfx").UpdateSince(startTime)
-		metrics.Registry.Sync.BoostQueryEpochDataAvailability("cfx").Mark(err == nil)
+		metrics.Registry.Sync.BoostQueryEpochData(space).UpdateSince(startTime)
+		metrics.Registry.Sync.BoostQueryEpochDataAvailability(space).Mark(err == nil)
 		if err == nil {
 			metrics.Registry.Sync.BoostQueryEpochRange().Update(int64(toEpoch - fromEpoch + 1))
 		}
 	}()
 
-	// Retrieve event logs within the specified epoch range
-	logFilter := cfxTypes.LogFilter{
-		FromEpoch: cfxTypes.NewEpochNumberUint64(fromEpoch),
-		ToEpoch:   cfxTypes.NewEpochNumberUint64(toEpoch),
-	}
-	logs, err := w.cfx.GetLogs(logFilter)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to get event logs")
-	}
-
-	var logCursor int
-	for epochNum := fromEpoch; epochNum <= toEpoch; epochNum++ {
-		// Initialize epoch data for the current epoch
-		epochData := &store.EpochData{
-			Number:   epochNum,
-			Receipts: make(map[cfxTypes.Hash]*cfxTypes.TransactionReceipt),
-		}
-
-		var blockHashes []cfxTypes.Hash
-		blockHashes, err = w.cfx.GetBlocksByEpoch(cfxTypes.NewEpochNumberUint64(epochNum))
-		if err != nil {
-			return nil, errors.WithMessagef(err, "failed to get blocks by epoch %v", epochNum)
-		}
-		if len(blockHashes) == 0 {
-			err = errors.Errorf("invalid epoch data (must have at least one block)")
-			return nil, err
-		}
-
-		// Cache to store blocks fetched by their hash to avoid repeated network calls
-		blockCache := make(map[cfxTypes.Hash]*cfxTypes.Block)
-
-		// Get the first and last block of the epoch
-		for _, bh := range []cfxTypes.Hash{blockHashes[0], blockHashes[len(blockHashes)-1]} {
-			if _, ok := blockCache[bh]; ok {
-				continue
-			}
-
-			var block *cfxTypes.Block
-			block, err = w.cfx.GetBlockByHash(bh)
-			if err != nil {
-				return nil, errors.WithMessagef(err, "failed to get block by hash %v", bh)
-			}
-			if block == nil {
-				err = errors.Errorf("block %v not found", bh)
-				return nil, err
-			}
-			blockCache[bh] = block
-		}
-
-		// Process logs that belong to the current epoch
-		for ; logCursor < len(logs); logCursor++ {
-			if logs[logCursor].EpochNumber.ToInt().Uint64() != epochNum {
-				// Move to next epoch data construction if current log doesn't belong here
-				break
-			}
-
-			// Retrieve or fetch the block associated with the current log
-			blockHash := logs[logCursor].BlockHash
-			if _, ok := blockCache[*blockHash]; !ok {
-				var block *cfxTypes.Block
-				block, err = w.cfx.GetBlockByHash(*blockHash)
-				if err != nil {
-					return nil, errors.WithMessagef(err, "failed to get block by hash %v", *blockHash)
-				}
-				if block == nil {
-					err = errors.Errorf("block %v not found", *blockHash)
-					return nil, err
-				}
-				blockCache[*blockHash] = block
-			}
-
-			// Retrieve or initialize the transaction receipt associated with the current log
-			txnHash := logs[logCursor].TransactionHash
-			txnReceipt, ok := epochData.Receipts[*txnHash]
-			if !ok {
-				txnReceipt = &cfxTypes.TransactionReceipt{
-					EpochNumber:     (*hexutil.Uint64)(&epochNum),
-					BlockHash:       *blockHash,
-					TransactionHash: *txnHash,
-				}
-
-				epochData.Receipts[*txnHash] = txnReceipt
-			}
-
-			// Append the current log to the transaction receipt's logs
-			txnReceipt.Logs = append(txnReceipt.Logs, logs[logCursor])
-		}
-
-		// Append all necessary blocks for the epoch
-		for _, bh := range blockHashes {
-			if block, ok := blockCache[bh]; ok {
-				epochData.Blocks = append(epochData.Blocks, block)
-			}
-		}
-
-		// Append the constructed epoch data to the result list
-		res = append(res, epochData)
-	}
-
-	if logCursor != len(logs) {
-		err = errors.Errorf("failed to process all logs: processed %v, total %v", logCursor, len(logs))
-		return nil, err
-	}
-
-	return res, nil
+	return w.client.BoostQueryEpochData(context.Background(), fromEpoch, toEpoch)
 }
