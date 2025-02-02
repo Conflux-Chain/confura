@@ -127,7 +127,7 @@ func (validator *EthValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 	samplingTicker := time.NewTicker(validator.conf.SamplingInterval)
 	defer samplingTicker.Stop()
 
-	// Sequentially scaning blocks from specified blocks to latest block.
+	// Sequentially scanning blocks from specified blocks to latest block.
 	scanTicker := time.NewTicker(validator.conf.ScanInterval)
 	defer scanTicker.Stop()
 
@@ -221,7 +221,7 @@ func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
 		logrus.WithField("blockRange", citypes.RangeUint64{
 			From: validator.conf.ScanFromBlock,
 			To:   maxBlockTo,
-		}).Debug("ETH validator scaning skipped due to catched up already")
+		}).Debug("ETH validator scanning skipped due to catched up already")
 
 		return nil
 	}
@@ -234,7 +234,7 @@ func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
 
 	validator.conf.ScanFromBlock++
 
-	// periodly save the scaning progress per 1000 blocks in case of data lost
+	// periodly save the scanning progress per 1000 blocks in case of data lost
 	if validator.conf.ScanFromBlock%1000 == 0 {
 		validator.saveScanCursor()
 	}
@@ -676,6 +676,6 @@ func (validator *EthValidator) saveScanCursor() error {
 }
 
 func (validator *EthValidator) Destroy() {
-	// Save scaning cursor
+	// Save scanning cursor
 	validator.saveScanCursor()
 }
