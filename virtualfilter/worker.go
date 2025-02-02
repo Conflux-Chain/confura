@@ -67,7 +67,7 @@ type pollingObserver interface {
 	onClosed(nodeName string, fid rpc.ID) error
 }
 
-// filterWorker consistantly polls filter changes from full node and simulate
+// filterWorker consistently polls filter changes from full node and simulate
 // a virtual filter chain for late retrieval.
 type filterWorker struct {
 	mu          sync.Mutex
@@ -140,7 +140,7 @@ func (w *filterWorker) reject(f virtualFilter) (bool, error) {
 	return false, nil
 }
 
-// poll consistantly polls filter changes from full node and applies the polled data
+// poll consistently polls filter changes from full node and applies the polled data
 // to the current polling session.
 func (w *filterWorker) poll() {
 	ticker := time.NewTicker(pollingInterval)
