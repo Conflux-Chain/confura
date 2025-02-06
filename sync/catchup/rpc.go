@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	_ AbstractRpcClient = (*CoreRpcClient)(nil)
-	_ AbstractRpcClient = (*EvmRpcClient)(nil)
+	_ IRpcClient = (*CoreRpcClient)(nil)
+	_ IRpcClient = (*EvmRpcClient)(nil)
 )
 
 type FinalizationStatus struct {
@@ -26,7 +26,7 @@ type FinalizationStatus struct {
 	LatestCheckpoint uint64
 }
 
-type AbstractRpcClient interface {
+type IRpcClient interface {
 	GetFinalizationStatus(ctx context.Context) (*FinalizationStatus, error)
 	QueryEpochData(ctx context.Context, from, to uint64) ([]*store.EpochData, error)
 	BoostQueryEpochData(ctx context.Context, from, to uint64) ([]*store.EpochData, error)
@@ -38,7 +38,7 @@ type CoreRpcClient struct {
 	sdk.ClientOperator
 }
 
-func MustNewCoreRpcClient(nodeUrl string) AbstractRpcClient {
+func MustNewCoreRpcClient(nodeUrl string) IRpcClient {
 	return NewCoreRpcClient(rpc.MustNewCfxClient(nodeUrl))
 }
 
@@ -195,7 +195,7 @@ type EvmRpcClient struct {
 	chainId atomic.Value
 }
 
-func MustNewEvmRpcClient(nodeUrl string) AbstractRpcClient {
+func MustNewEvmRpcClient(nodeUrl string) IRpcClient {
 	return NewEvmRpcClient(rpc.MustNewEthClient(nodeUrl))
 }
 

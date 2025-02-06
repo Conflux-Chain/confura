@@ -16,10 +16,10 @@ type worker struct {
 	// result channel to collect queried epoch data
 	resultChan chan *store.EpochData
 	// RPC client delegated to fetch blockchain data
-	client AbstractRpcClient
+	client IRpcClient
 }
 
-func mustNewWorker(name string, client AbstractRpcClient, chanSize int) *worker {
+func mustNewWorker(name string, client IRpcClient, chanSize int) *worker {
 	return &worker{
 		name:       name,
 		resultChan: make(chan *store.EpochData, chanSize),

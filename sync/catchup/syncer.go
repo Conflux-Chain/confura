@@ -25,7 +25,7 @@ type Syncer struct {
 	// goroutine workers to fetch epoch data concurrently
 	workers []*worker
 	// rpc clients delegated to get network status
-	rpcClients []AbstractRpcClient
+	rpcClients []IRpcClient
 	// db store to persist epoch data
 	db *mysql.MysqlStore
 	// min num of db rows per batch persistence
@@ -88,7 +88,7 @@ func MustNewCfxSyncer(
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
-	var rpcClients []AbstractRpcClient
+	var rpcClients []IRpcClient
 	for _, cfx := range clients {
 		rpcClients = append(rpcClients, NewCoreRpcClient(cfx))
 	}
@@ -114,7 +114,7 @@ func MustNewEthSyncer(
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
-	var rpcClients []AbstractRpcClient
+	var rpcClients []IRpcClient
 	for _, w3c := range clients {
 		rpcClients = append(rpcClients, NewEvmRpcClient(w3c))
 	}
@@ -131,7 +131,7 @@ func MustNewEthSyncer(
 
 func newSyncer(
 	conf config,
-	clients []AbstractRpcClient,
+	clients []IRpcClient,
 	workers []*worker,
 	db *mysql.MysqlStore,
 	elm election.LeaderManager,
