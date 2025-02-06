@@ -17,7 +17,7 @@ var (
 	ethNetworkId *uint64
 )
 
-// Please set the following enviroment before start:
+// Please set the following environment before start:
 // `TEST_ETH_CLIENT_ENDPOINT`: EVM space JSON-RPC endpoint to construct sdk client.
 
 func TestMain(m *testing.M) {
