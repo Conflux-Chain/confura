@@ -25,9 +25,10 @@ const (
 )
 
 type CatchUpCmdConfig struct {
-	Mode  string // catch-up mode ("classic" or "boost")
-	Start uint64 // start epoch/block number
-	Count uint64 // number of epochs/blocks to sync
+	Network string // network space ("cfx" or "eth")
+	Mode    string // catch-up mode ("classic" or "boost")
+	Start   uint64 // start epoch/block number
+	Count   uint64 // number of epochs/blocks to sync
 }
 
 var (
@@ -38,6 +39,9 @@ var (
 		Short: "Start catch-up benchmark testing",
 		Run:   runCatchUpBenchmark,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if network := catchUpConfig.Network; !isValidNetwork(network) {
+				return fmt.Errorf("invalid network '%s', allowed values are 'cfx' or 'eth'", network)
+			}
 			if mode := catchUpConfig.Mode; !isValidCatchUpMode(mode) {
 				return fmt.Errorf("invalid mode '%s', allowed values are 'classic' or 'boost'", mode)
 			}
@@ -56,6 +60,11 @@ func init() {
 
 // hookCatchUpCmdFlags configures the command-line flags for the catch-up command.
 func hookCatchUpCmdFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(
+		&catchUpConfig.Network, "network", "n", "cfx", "network space ('cfx' or 'eth')",
+	)
+	cmd.MarkFlagRequired("network")
+
 	cmd.Flags().StringVarP(
 		&catchUpConfig.Mode, "mode", "m", "", "catch-up mode ('classic' or 'boost')",
 	)
@@ -102,7 +111,7 @@ func runCatchUpBenchmark(cmd *cobra.Command, args []string) {
 // initializeContexts sets up and returns the required store and sync contexts.
 func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
 	storeCtx := util.MustInitStoreContext()
-	if storeCtx.CfxDB == nil {
+	if storeCtx.CfxDB == nil || storeCtx.EthDB == nil {
 		return nil, nil, errors.New("database is not provided")
 	}
 
@@ -112,7 +121,18 @@ func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
 
 // createCatchUpSyncer initializes the catch-up syncer with the necessary dependencies.
 func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext) *catchup.Syncer {
-	return catchup.MustNewSyncer(
+	if catchUpConfig.Network == "eth" {
+		return catchup.MustNewEthSyncer(
+			syncCtx.SyncEths,
+			storeCtx.EthDB,
+			election.NewNoopLeaderManager(),
+			&monitor.Monitor{},
+			catchUpConfig.Start,
+			catchup.WithBenchmark(true),
+		)
+	}
+
+	return catchup.MustNewCfxSyncer(
 		syncCtx.SyncCfxs,
 		storeCtx.CfxDB,
 		election.NewNoopLeaderManager(),
@@ -124,12 +144,11 @@ func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext)
 
 // isValidCatchUpMode checks if the provided mode is valid.
 func isValidCatchUpMode(mode string) bool {
-	switch mode {
-	case string(ModeClassic), string(ModeBoost):
-		return true
-	default:
-		return false
-	}
+	return mode == string(ModeClassic) || mode == string(ModeBoost)
+}
+
+func isValidNetwork(network string) bool {
+	return network == "cfx" || network == "eth"
 }
 
 // reportRpcMetrics outputs RPC-related metrics based on the sync mode.
