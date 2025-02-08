@@ -156,7 +156,7 @@ func (cs *ContractStore) AddContract(contracts map[string]bool) (int, error) {
 	return len(newContracts), nil
 }
 
-// AddContract adds contract for the specified epoch data slice and returns the number of new added contracts.
+// AddContractByEpochData adds contract for the specified epoch data slice and returns the number of new added contracts.
 func (cs *ContractStore) AddContractByEpochData(slice ...*store.EpochData) (int, error) {
 	contracts := extractUniqueContractAddresses(slice...)
 	return cs.AddContract(contracts)

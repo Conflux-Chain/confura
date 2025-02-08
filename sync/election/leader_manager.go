@@ -329,7 +329,7 @@ func (l *DlockLeaderManager) onOusted(ctx context.Context) {
 	}
 }
 
-// OnOusted registers a callback function to be invoked on leader ousted.
+// OnError registers an election error callback function.
 func (l *DlockLeaderManager) OnError(cb ErrorCallback) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
