@@ -54,15 +54,17 @@ func doTest(workerCount int, round int, epoch uint64, sameEpoch bool) {
 	totalInfo := &EpochResult{}
 	for a := 1; a <= round; a++ {
 		ret := <-results
-		totalInfo.blockCount += ret.blockCount
-		totalInfo.txCount += ret.txCount
-		totalInfo.eventCount += ret.eventCount
-		totalInfo.traceCount += ret.traceCount
+		if ret != nil {
+			totalInfo.blockCount += ret.blockCount
+			totalInfo.txCount += ret.txCount
+			totalInfo.eventCount += ret.eventCount
+			totalInfo.traceCount += ret.traceCount
+		}
 	}
 
 	elapsed := time.Since(start)
 	log.Printf("it took %s , average %s per epoch "+
-		"block %d tx %d event %d trace %d", elapsed, elapsed/time.Duration(round),
+		"block %d TX %d event %d trace %d", elapsed, elapsed/time.Duration(round),
 		totalInfo.blockCount, totalInfo.txCount, totalInfo.eventCount, totalInfo.traceCount)
 
 	logrus.Info("done")
@@ -75,9 +77,11 @@ type EpochResult struct {
 	eventCount int
 }
 
+var requestFn = doRequest
+
 func worker(id int, jobs <-chan uint64, results chan<- *EpochResult) {
 	for j := range jobs {
-		ret, e := doRequest(j)
+		ret, e := requestFn(j)
 		if e != nil {
 			logrus.WithError(e).Errorf("worker %d , error for epoch %d\n", id, j)
 			break
@@ -107,7 +111,7 @@ func doRequest(epoch uint64) (*EpochResult, error) {
 			ret.traceCount += len(tt.Traces)
 		}
 	}
-	receipts, e := cfxClient.GetEpochReceipts(*types.NewEpochOrBlockHashWithEpoch(types.NewEpochNumberUint64(epoch)), false)
+	receipts, e := cfxClient.GetEpochReceiptsByPivotBlockHash(p)
 	if e != nil {
 		return nil, e
 	}
