@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/Conflux-Chain/confura/util/rpc"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	rpc2 "github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
@@ -27,6 +28,11 @@ func doBatchTest(cmd *cobra.Command) {
 	cfx := rpc.MustNewCfxClientsFromViper()
 	cfxClient = cfx[0]
 	logrus.Info("RPC at ", cfxClient.GetNodeURL())
+	cfxClient = sdk.MustNewClient(cfxClient.GetNodeURL(), sdk.ClientOption{
+		//Logger: os.Stderr,
+	})
+
+	showSummary = false
 
 	workerCount, _ := cmd.Flags().GetInt("worker")
 	round, _ := cmd.Flags().GetInt("round")
@@ -36,44 +42,48 @@ func doBatchTest(cmd *cobra.Command) {
 		_, e := cfxClient.GetEpochReceipts(*types.NewEpochOrBlockHashWithEpoch(types.NewEpochNumberUint64(ep)))
 		if e != nil {
 			logrus.WithError(e).Error("normal rpc failed")
+		} else {
+			//logrus.Info("result is ", v)
 		}
 		return nil, e
 	}
+
 	start := time.Now()
 	doTest(workerCount, round, epoch, false)
 	elapsed := time.Since(start)
 	log.Printf("threads   mod, took %s , average %s per request ", elapsed, elapsed/time.Duration(round))
 
-	start = time.Now()
 	reqArr := make([]rpc2.BatchElem, workerCount)
-	for r := 0; r < round; r += workerCount {
+	requestFn = func(seq uint64) (*EpochResult, error) {
+		base := int(seq)*workerCount + int(epoch)
+		var receipts [][]types.TransactionReceipt
 		for e := 0; e < workerCount; e++ {
-			wantE := int(epoch) + r + e
+			wantE := base + e
 			args := make([]interface{}, 1)
 			args[0] = types.NewEpochNumberUint64(uint64(wantE))
 			reqArr[e] = rpc2.BatchElem{
 				Method: "cfx_getEpochReceipts",
 				Args:   args,
+				Result: &receipts,
 			}
 		}
 		be := cfxClient.BatchCallRPC(reqArr)
 		if be != nil {
 			logrus.WithError(be).Error("batch call rpc failed.")
-			break
+			return nil, be
 		}
-		stop := false
 		for _, req := range reqArr {
 			if req.Error != nil {
 				logrus.WithError(req.Error).WithFields(logrus.Fields{
 					"method": req.Method, "args": req.Args, "result": req.Result,
 				}).Error("batch call rpc failed, in element.")
-				stop = true
+				return nil, req.Error
 			}
 		}
-		if stop {
-			break
-		}
+		return nil, nil
 	}
+	start = time.Now()
+	doTest(workerCount, round/workerCount, 0, false)
 	elapsed = time.Since(start)
 	log.Printf("batch RPC mod, took %s , average %s per request ", elapsed, elapsed/time.Duration(round))
 }

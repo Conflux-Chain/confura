@@ -63,11 +63,12 @@ func doTest(workerCount int, round int, epoch uint64, sameEpoch bool) {
 	}
 
 	elapsed := time.Since(start)
-	log.Printf("it took %s , average %s per epoch "+
-		"block %d TX %d event %d trace %d", elapsed, elapsed/time.Duration(round),
-		totalInfo.blockCount, totalInfo.txCount, totalInfo.eventCount, totalInfo.traceCount)
+	if showSummary {
+		log.Printf("it took %s , average %s per epoch "+
+			"block %d TX %d event %d trace %d", elapsed, elapsed/time.Duration(round),
+			totalInfo.blockCount, totalInfo.txCount, totalInfo.eventCount, totalInfo.traceCount)
+	}
 
-	logrus.Info("done")
 }
 
 type EpochResult struct {
@@ -78,6 +79,7 @@ type EpochResult struct {
 }
 
 var requestFn = doRequest
+var showSummary = true
 
 func worker(id int, jobs <-chan uint64, results chan<- *EpochResult) {
 	for j := range jobs {
