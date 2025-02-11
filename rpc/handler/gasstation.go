@@ -233,7 +233,7 @@ func (w *PriorityFeeWindow) Push(blockFee *BlockPriorityFee) {
 
 // insertBlock inserts a block to the linked list.
 func (w *PriorityFeeWindow) insertBlock(blockFee *BlockPriorityFee) {
-	// Locate the postion where this block should be inserted
+	// Locate the position where this block should be inserted
 	var e *list.Element
 	for e = w.feeChain.Back(); e != nil; e = e.Prev() {
 		if e.Value.(*BlockPriorityFee).number < blockFee.number {
