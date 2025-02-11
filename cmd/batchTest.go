@@ -26,6 +26,7 @@ var batchTestCmd = &cobra.Command{
 func doBatchTest(cmd *cobra.Command) {
 	cfx := rpc.MustNewCfxClientsFromViper()
 	cfxClient = cfx[0]
+	logrus.Info("RPC at ", cfxClient.GetNodeURL())
 
 	workerCount, _ := cmd.Flags().GetInt("worker")
 	round, _ := cmd.Flags().GetInt("round")
@@ -49,7 +50,7 @@ func doBatchTest(cmd *cobra.Command) {
 		for e := 0; e < workerCount; e++ {
 			wantE := int(epoch) + r + e
 			args := make([]interface{}, 1)
-			args[0] = wantE
+			args[0] = types.NewEpochNumberUint64(uint64(wantE))
 			reqArr[e] = rpc2.BatchElem{
 				Method: "cfx_getEpochReceipts",
 				Args:   args,
@@ -58,6 +59,18 @@ func doBatchTest(cmd *cobra.Command) {
 		be := cfxClient.BatchCallRPC(reqArr)
 		if be != nil {
 			logrus.WithError(be).Error("batch call rpc failed.")
+			break
+		}
+		stop := false
+		for _, req := range reqArr {
+			if req.Error != nil {
+				logrus.WithError(req.Error).WithFields(logrus.Fields{
+					"method": req.Method, "args": req.Args, "result": req.Result,
+				}).Error("batch call rpc failed, in element.")
+				stop = true
+			}
+		}
+		if stop {
 			break
 		}
 	}
