@@ -55,8 +55,8 @@ func doBatchTest(cmd *cobra.Command) {
 	elapsed := time.Since(start)
 	log.Printf("threads   mod, took %s , %s per request ", elapsed, elapsed/time.Duration(round))
 
-	reqArr := make([]rpc2.BatchElem, workerCount)
 	requestFn = func(seq uint64) (*EpochResult, error) {
+		reqArr := make([]rpc2.BatchElem, workerCount)
 		logrus.Debug(" batch sequence ", seq)
 		base := int(seq)*workerCount + int(epoch)
 		for e := 0; e < workerCount; e++ {
