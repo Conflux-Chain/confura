@@ -51,7 +51,7 @@ func doBatchTest(cmd *cobra.Command) {
 	start := time.Now()
 	doTest(workerCount, round, epoch, false)
 	elapsed := time.Since(start)
-	log.Printf("threads   mod, took %s , average %s per request ", elapsed, elapsed/time.Duration(round))
+	log.Printf("threads   mod, took %s , %s per request ", elapsed, elapsed/time.Duration(round))
 
 	reqArr := make([]rpc2.BatchElem, workerCount)
 	requestFn = func(seq uint64) (*EpochResult, error) {
@@ -85,7 +85,7 @@ func doBatchTest(cmd *cobra.Command) {
 	start = time.Now()
 	doTest(workerCount, round/workerCount, 0, false)
 	elapsed = time.Since(start)
-	log.Printf("batch RPC mod, took %s , average %s per request ", elapsed, elapsed/time.Duration(round))
+	log.Printf("batch RPC mod, took %s , %s per request ", elapsed, elapsed/time.Duration(round))
 }
 
 func init() {
