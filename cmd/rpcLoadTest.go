@@ -63,12 +63,9 @@ func doTest(workerCount int, round int, epoch uint64, sameEpoch bool) {
 	}
 
 	elapsed := time.Since(start)
-	if showSummary {
-		log.Printf("it took %s , average %s per epoch "+
-			"block %d TX %d event %d trace %d", elapsed, elapsed/time.Duration(round),
-			totalInfo.blockCount, totalInfo.txCount, totalInfo.eventCount, totalInfo.traceCount)
-	}
-
+	log.Printf("it took %s , average %s per epoch "+
+		"block %d TX %d event %d trace %d", elapsed, elapsed/time.Duration(round),
+		totalInfo.blockCount, totalInfo.txCount, totalInfo.eventCount, totalInfo.traceCount)
 }
 
 type EpochResult struct {
@@ -79,7 +76,6 @@ type EpochResult struct {
 }
 
 var requestFn = doRequest
-var showSummary = true
 
 func worker(id int, jobs <-chan uint64, results chan<- *EpochResult) {
 	for j := range jobs {
@@ -117,16 +113,21 @@ func doRequest(epoch uint64) (*EpochResult, error) {
 	if e != nil {
 		return nil, e
 	}
+	buildEpochResult(receipts, ret)
+
+	return ret, e
+}
+
+func buildEpochResult(receipts [][]types.TransactionReceipt, ret *EpochResult) {
 	for _, rr2 := range receipts {
 		for _, r := range rr2 {
 			if r.OutcomeStatus == 1 || r.OutcomeStatus == 0 {
+				logrus.Debug("tx at ", uint64(*r.EpochNumber), " hash ", r.TransactionHash)
 				ret.txCount++
 				ret.eventCount += len(r.Logs)
 			}
 		}
 	}
-
-	return ret, e
 }
 
 func init() {

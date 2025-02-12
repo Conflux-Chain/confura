@@ -32,20 +32,22 @@ func doBatchTest(cmd *cobra.Command) {
 		//Logger: os.Stderr,
 	})
 
-	showSummary = false
-
 	workerCount, _ := cmd.Flags().GetInt("worker")
 	round, _ := cmd.Flags().GetInt("round")
 	epoch, _ := cmd.Flags().GetUint64("epoch")
+	v, e := cfxClient.GetEpochReceipts(*types.NewEpochOrBlockHashWithEpoch(types.NewEpochNumberUint64(0)))
+	logrus.WithError(e).Info("epoch 0 receipts", v)
 
 	requestFn = func(ep uint64) (*EpochResult, error) {
-		_, e := cfxClient.GetEpochReceipts(*types.NewEpochOrBlockHashWithEpoch(types.NewEpochNumberUint64(ep)))
+		v, e := cfxClient.GetEpochReceipts(*types.NewEpochOrBlockHashWithEpoch(types.NewEpochNumberUint64(ep)))
 		if e != nil {
 			logrus.WithError(e).Error("normal rpc failed")
 		} else {
 			//logrus.Info("result is ", v)
 		}
-		return nil, e
+		ret := &EpochResult{}
+		buildEpochResult(v, ret)
+		return ret, e
 	}
 
 	start := time.Now()
@@ -55,10 +57,12 @@ func doBatchTest(cmd *cobra.Command) {
 
 	reqArr := make([]rpc2.BatchElem, workerCount)
 	requestFn = func(seq uint64) (*EpochResult, error) {
+		logrus.Debug(" batch sequence ", seq)
 		base := int(seq)*workerCount + int(epoch)
-		var receipts [][]types.TransactionReceipt
 		for e := 0; e < workerCount; e++ {
+			var receipts [][]types.TransactionReceipt
 			wantE := base + e
+			logrus.Debug("batch element , epoch ", wantE, " base ", base)
 			args := make([]interface{}, 1)
 			args[0] = types.NewEpochNumberUint64(uint64(wantE))
 			reqArr[e] = rpc2.BatchElem{
@@ -72,15 +76,22 @@ func doBatchTest(cmd *cobra.Command) {
 			logrus.WithError(be).Error("batch call rpc failed.")
 			return nil, be
 		}
+		retAll := &EpochResult{}
 		for _, req := range reqArr {
 			if req.Error != nil {
 				logrus.WithError(req.Error).WithFields(logrus.Fields{
 					"method": req.Method, "args": req.Args, "result": req.Result,
 				}).Error("batch call rpc failed, in element.")
 				return nil, req.Error
+			} else {
+				ret := &EpochResult{}
+				bi, _ := req.Args[0].(*types.Epoch).ToInt()
+				logrus.Debug("epoch ", bi.Uint64(), " receipts ", req.Result)
+				buildEpochResult(*(req.Result.(*[][]types.TransactionReceipt)), ret)
+				retAll.txCount += ret.txCount
 			}
 		}
-		return nil, nil
+		return retAll, nil
 	}
 	start = time.Now()
 	doTest(workerCount, round/workerCount, 0, false)
