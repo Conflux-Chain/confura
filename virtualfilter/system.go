@@ -19,7 +19,7 @@ const (
 )
 
 // filterSystemBase base struct for virtual filter system, which creates filter worker to
-// establish proxy log filter to full node, and consistantly polls event logs from the full node
+// establish proxy log filter to full node, and consistently polls event logs from the full node
 // to persist data in db/cache store for high performance and stable log filter data retrieval service.
 type filterSystemBase struct {
 	filterMgr *filterManager     // virtual filter manager

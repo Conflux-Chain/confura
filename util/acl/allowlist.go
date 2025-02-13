@@ -13,7 +13,7 @@ type AllowList struct {
 	// Any requests which query addresses that are not in the allowlist are rejected.
 	ContractAddresses []string
 
-	// The allowed methods list. If the list is empty, all methods will be accpeted.
+	// The allowed methods list. If the list is empty, all methods will be accepted.
 	AllowMethods []string
 
 	// The disallowed methods list. If the list is empty, no methods will be rejected.
