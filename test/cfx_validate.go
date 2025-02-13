@@ -194,7 +194,7 @@ func (validator *EpochValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 		case <-samplingTicker.C:
 			go func() { // randomly pick some nearhead epoch for validation test
 				if err := validator.doSampling(); err != nil {
-					logger.WithError(err).Error("Epoch validator failed to do samping for epoch validation")
+					logger.WithError(err).Error("Epoch validator failed to do sampling for epoch validation")
 				}
 			}()
 		case <-scanTicker.C:
