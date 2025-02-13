@@ -101,28 +101,38 @@ eth:
 # # Blockchain sync configurations
 # sync:
 #   # Core space sync configurations
-#   #
-#   # Pub/Sub configurations
-#   sub:
-#     # Channel size to buffer notified epoch response
-#     buffer: 1000
-#   # Whether to use `epoch_getEpochReceipts` to batch get receipts
-#   useBatch: false
-#   # The epoch number from which to sync core space
-#   fromEpoch: 0
-#   # Maximum number of epochs to batch sync once
-#   maxEpochs: 10
+#   cfx:
+#     # Whether to use `epoch_getEpochReceipts` to batch get receipts
+#     useBatch: false
+#     # The epoch number from which to sync core space
+#     fromEpoch: 0
+#     # Maximum number of epochs to batch sync once
+#     maxEpochs: 10
+
+#   # EVM space sync configurations
+#   eth:
+#     # The block number from which to sync evm space, better use the evm space hardfork point:
+#     # for mainnet it is 36935000, for testnet it is 61465000
+#     fromBlock: 61465000
+#     # Maximum number of blocks to batch sync ETH data once
+#     maxBlocks: 10
+
 #   # Blacklisted contract address(es) whose event logs will be ignored until some specific
 #   # epoch height, with 0 means always.
 #   blackListAddrs: >
 #     [
 #       {"address": "cfx:acav5v98np8t3m66uw7x61yer1ja1jm0dpzj1zyzxv", "epoch": 0}
 #     ]
+
 #   # Fast cache-up sync configuration
 #   catchup:
-#     # Pool of fullnodes for catching up. There will be 1 goroutine per fullnode or
-#     # the catch up will be disabled if none fullnode provided.
-#     cfxPool: [http://test.confluxrpc.com]
+#     # Node pool for catching up. Each full node will run in a separate goroutine.
+#     # Catch-up will be disabled if no full node is provided.
+#     nodePool:
+#       # For core space node pool
+#       cfx: [http://test.confluxrpc.com]
+#       # For Ethereum-compatible node pool
+#       eth: [http://evmtestnet.confluxrpc.com]
 #     # Threshold for number of db rows per batch persistence
 #     dbRowsThreshold: 2500
 #     # Max number of db rows collected before persistence to restrict memory usage
@@ -154,14 +164,6 @@ eth:
 #       memoryCheckInterval: 20s
 #       # Force persistence interval
 #       forcePersistenceInterval: 45s
-
-#   # EVM space sync configurations
-#   eth:
-#     # The block number from which to sync evm space, better use the evm space hardfork point:
-#     # for mainnet it is 36935000, for testnet it is 61465000
-#     fromBlock: 61465000
-#     # Maximum number of blocks to batch sync ETH data once
-#     maxBlocks: 10
 
 #   # HA leader/follower election.
 #   election:

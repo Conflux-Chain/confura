@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
-// Read system enviroment variables prefixed with "INFURA".
+// Read system environment variables prefixed with "INFURA".
 // eg., `INFURA_LOG_LEVEL` will override "log.level" config item from the config file.
 const viperEnvPrefix = "infura"
 
