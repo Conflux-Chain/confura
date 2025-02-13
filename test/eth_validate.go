@@ -221,7 +221,7 @@ func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
 		logrus.WithField("blockRange", citypes.RangeUint64{
 			From: validator.conf.ScanFromBlock,
 			To:   maxBlockTo,
-		}).Debug("ETH validator scanning skipped due to catched up already")
+		}).Debug("ETH validator scanning skipped due to caught up already")
 
 		return nil
 	}
