@@ -257,7 +257,7 @@ func (l *DlockLeaderManager) renewLock(ctx context.Context) error {
 	}
 }
 
-// acquireLock helper function to acquire a distrubted lock.
+// acquireLock helper function to acquire a distributed lock.
 func (l *DlockLeaderManager) acquireLock(ctx context.Context) error {
 	start := time.Now()
 	err := l.lockMan.Acquire(ctx, l.lockIntent())
@@ -329,7 +329,7 @@ func (l *DlockLeaderManager) onOusted(ctx context.Context) {
 	}
 }
 
-// OnOusted registers a callback function to be invoked on leader ousted.
+// OnError registers an election error callback function.
 func (l *DlockLeaderManager) OnError(cb ErrorCallback) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
