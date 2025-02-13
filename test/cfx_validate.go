@@ -172,7 +172,7 @@ func (validator *EpochValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 	})
 
 	// Randomly sampling nearhead epoch for validation. Nearhead epochs are very likely to be reverted
-	// due to pivot switch, it's acceptable to just trigger a warnning once the validation failed.
+	// due to pivot switch, it's acceptable to just trigger a warning once the validation failed.
 	samplingTicker := time.NewTicker(validator.conf.SamplingInterval)
 	defer samplingTicker.Stop()
 
