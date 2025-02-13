@@ -3,8 +3,11 @@ package catchup
 import "time"
 
 type config struct {
-	// list of Conflux fullnodes to accelerate catching up until the latest stable epoch
-	CfxPool []string
+	// Pool of full nodes to accelerate catching up until the latest stable epoch
+	NodePool struct {
+		Cfx []string // for core space
+		Eth []string // for evm space
+	}
 	// threshold for num of db rows per batch persistence
 	DbRowsThreshold int `default:"2500"`
 	// max number of db rows collected before persistence

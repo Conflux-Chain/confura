@@ -144,7 +144,7 @@ func (validator *EthValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 		case <-samplingTicker.C:
 			go func() { // randomly pick some nearhead block for validation test
 				if err := validator.doSampling(); err != nil {
-					logger.WithError(err).Error("ETH validator failed to do samping for block validation")
+					logger.WithError(err).Error("ETH validator failed to do sampling for block validation")
 				}
 			}()
 		case <-scanTicker.C:
@@ -221,7 +221,7 @@ func (validator *EthValidator) doScanning(ticker *time.Ticker) error {
 		logrus.WithField("blockRange", citypes.RangeUint64{
 			From: validator.conf.ScanFromBlock,
 			To:   maxBlockTo,
-		}).Debug("ETH validator scanning skipped due to catched up already")
+		}).Debug("ETH validator scanning skipped due to caught up already")
 
 		return nil
 	}

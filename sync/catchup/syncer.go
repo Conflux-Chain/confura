@@ -13,6 +13,7 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -23,8 +24,8 @@ import (
 type Syncer struct {
 	// goroutine workers to fetch epoch data concurrently
 	workers []*worker
-	// conflux sdk clients delegated to get network status
-	cfxs []*sdk.Client
+	// rpc clients delegated to get network status
+	rpcClients []IRpcClient
 	// db store to persist epoch data
 	db *mysql.MysqlStore
 	// min num of db rows per batch persistence
@@ -76,51 +77,87 @@ func WithBoostConfig(config boostConfig) SyncOption {
 	}
 }
 
-func MustNewSyncer(
-	cfxClients []*sdk.Client,
+func MustNewCfxSyncer(
+	clients []*sdk.Client,
 	db *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
 	opts ...SyncOption) *Syncer {
+
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
+	var rpcClients []IRpcClient
+	for _, cfx := range clients {
+		rpcClients = append(rpcClients, NewCoreRpcClient(cfx))
+	}
+
 	var workers []*worker
-	for i, nodeUrl := range conf.CfxPool { // initialize workers
+	for i, nodeUrl := range conf.NodePool.Cfx { // initialize workers
 		name := fmt.Sprintf("CUWorker#%v", i)
-		worker := mustNewWorker(name, nodeUrl, conf.WorkerChanSize)
+		worker := mustNewWorker(name, MustNewCoreRpcClient(nodeUrl), conf.WorkerChanSize)
 		workers = append(workers, worker)
 	}
 
-	var newOpts []SyncOption
-	newOpts = append(newOpts,
+	return newSyncer(conf, rpcClients, workers, db, elm, monitor, epochFrom, opts...)
+}
+
+func MustNewEthSyncer(
+	clients []*web3go.Client,
+	db *mysql.MysqlStore,
+	elm election.LeaderManager,
+	monitor *monitor.Monitor,
+	epochFrom uint64,
+	opts ...SyncOption) *Syncer {
+
+	var conf config
+	viperutil.MustUnmarshalKey("sync.catchup", &conf)
+
+	var rpcClients []IRpcClient
+	for _, w3c := range clients {
+		rpcClients = append(rpcClients, NewEvmRpcClient(w3c))
+	}
+
+	var workers []*worker
+	for i, nodeUrl := range conf.NodePool.Eth { // initialize workers
+		name := fmt.Sprintf("CUWorker#%v", i)
+		worker := mustNewWorker(name, MustNewEvmRpcClient(nodeUrl), conf.WorkerChanSize)
+		workers = append(workers, worker)
+	}
+
+	return newSyncer(conf, rpcClients, workers, db, elm, monitor, epochFrom, opts...)
+}
+
+func newSyncer(
+	conf config,
+	clients []IRpcClient,
+	workers []*worker,
+	db *mysql.MysqlStore,
+	elm election.LeaderManager,
+	monitor *monitor.Monitor,
+	epochFrom uint64,
+	opts ...SyncOption) *Syncer {
+
+	var cOpts []SyncOption
+	cOpts = append(cOpts,
 		WithMaxDbRows(conf.MaxDbRows),
 		WithMinBatchDbRows(conf.DbRowsThreshold),
 		WithWorkers(workers),
 		WithBenchmark(conf.Benchmark),
 		WithBoostConfig(conf.Boost),
 	)
+	cOpts = append(cOpts, opts...)
 
-	return newSyncer(cfxClients, db, elm, monitor, epochFrom, append(newOpts, opts...)...)
-}
-
-func newSyncer(
-	cfxClients []*sdk.Client,
-	db *mysql.MysqlStore,
-	elm election.LeaderManager,
-	monitor *monitor.Monitor,
-	epochFrom uint64,
-	opts ...SyncOption) *Syncer {
 	syncer := &Syncer{
 		elm:            elm,
 		db:             db,
-		cfxs:           cfxClients,
+		rpcClients:     clients,
 		monitor:        monitor,
 		epochFrom:      epochFrom,
 		minBatchDbRows: 1500,
 	}
-	for _, opt := range opts {
+	for _, opt := range cOpts {
 		opt(syncer)
 	}
 
@@ -350,8 +387,8 @@ func (s *Syncer) nextSyncRange() (uint64, uint64, error) {
 	}
 
 	var retErr error
-	for _, cfx := range s.cfxs {
-		status, err := cfx.GetStatus()
+	for _, cli := range s.rpcClients {
+		status, err := cli.GetFinalizationStatus(context.Background())
 		if err == nil {
 			end := max(status.LatestFinalized, status.LatestCheckpoint)
 			return start, uint64(end), nil
