@@ -581,5 +581,6 @@ func (w *boostWorker) queryEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 		}
 	}()
 
-	return w.client.BoostQueryEpochData(context.Background(), fromEpoch, toEpoch)
+	res, err = w.client.BoostQueryEpochData(context.Background(), fromEpoch, toEpoch)
+	return
 }

@@ -51,6 +51,7 @@ func RequireContinuous(slice []*EpochData, currentEpoch uint64) error {
 // EpochData wraps the blockchain data of an epoch.
 type EpochData struct {
 	Number   uint64         // epoch number
+	Hash     *types.Hash    // pivot hash
 	Blocks   []*types.Block // blocks in order and the last one is pivot block
 	Receipts map[types.Hash]*types.TransactionReceipt
 
@@ -262,7 +263,10 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 	}
 
 	return EpochData{
-		Number: epochNumber, Blocks: blocks, Receipts: receipts,
+		Number:   epochNumber,
+		Hash:     &pivotHash,
+		Blocks:   blocks,
+		Receipts: receipts,
 	}, nil
 }
 
