@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -204,11 +205,13 @@ func (bcls *bigContractLogStore) contractTabler(cid uint64) *contractLog {
 func (bcls *bigContractLogStore) Add(
 	dbTx *gorm.DB, dataSlice []*store.EpochData, contract2BnPartitions map[uint64]bnPartition,
 ) error {
+	bnMin, bnMax := uint64(math.MaxUint64), uint64(0)
 	contract2Logs := make(map[uint64][]*contractLog, len(contract2BnPartitions))
 
 	for _, data := range dataSlice {
 		for _, block := range data.Blocks {
 			bn := block.BlockNumber.ToInt().Uint64()
+			bnMin, bnMax = min(bnMin, bn), max(bnMax, bn)
 
 			for _, tx := range block.Transactions {
 				receipt := data.Receipts[tx.Hash]
@@ -245,9 +248,6 @@ func (bcls *bigContractLogStore) Add(
 			}
 		}
 	}
-
-	bnMin := dataSlice[0].Blocks[0].BlockNumber.ToInt().Uint64()
-	bnMax := dataSlice[len(dataSlice)-1].GetPivotBlock().BlockNumber.ToInt().Uint64()
 
 	for cid, partition := range contract2BnPartitions {
 		clEntity, clTabler := bcls.contractEntity(cid), bcls.contractTabler(cid)
