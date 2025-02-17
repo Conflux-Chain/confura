@@ -68,7 +68,7 @@ func applyTopicsFilter(db *gorm.DB, topics []store.VariadicValue) *gorm.DB {
 	return db
 }
 
-// logFilter is used to query event logs with specified table, block number range and topics.
+// LogFilter is used to query event logs with specified table, block number range and topics.
 type LogFilter struct {
 	TableName string
 
