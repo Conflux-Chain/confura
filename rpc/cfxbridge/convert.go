@@ -345,6 +345,13 @@ func ConvertToEpochData(ethData *store.EthData, chainId uint32) *store.EpochData
 		ReceiptExts: make(map[types.Hash]*store.ReceiptExtra),
 	}
 
+	if ethData.Block == nil {
+		return epochData
+	}
+
+	pivotHash := ConvertHash(ethData.Block.Hash)
+	epochData.Hash = &pivotHash
+
 	pivotBlock := ConvertBlock(ethData.Block, chainId)
 	epochData.Blocks = []*types.Block{pivotBlock}
 

@@ -166,12 +166,21 @@ func (e2bms *epochBlockMapStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData
 	var mappings []*epochBlockMap
 
 	for _, data := range dataSlice {
-		pivotBlock := data.GetPivotBlock()
+		if len(data.Blocks) == 0 {
+			continue
+		}
+
+		var pivotHash string
+		if data.Hash != nil {
+			pivotHash = string(*data.Hash)
+		}
+
+		firstBlock, endBlock := data.Blocks[0], data.Blocks[len(data.Blocks)-1]
 		mappings = append(mappings, &epochBlockMap{
 			Epoch:     data.Number,
-			BnMin:     data.Blocks[0].BlockNumber.ToInt().Uint64(),
-			BnMax:     pivotBlock.BlockNumber.ToInt().Uint64(),
-			PivotHash: pivotBlock.Hash.String(),
+			BnMin:     firstBlock.BlockNumber.ToInt().Uint64(),
+			BnMax:     endBlock.BlockNumber.ToInt().Uint64(),
+			PivotHash: pivotHash,
 		})
 	}
 

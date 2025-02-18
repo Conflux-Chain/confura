@@ -78,6 +78,35 @@ func (c *CoreRpcClient) QueryEpochData(ctx context.Context, fromEpoch, toEpoch u
 	return res, err
 }
 
+func (c *CoreRpcClient) getFirstBlockOfEpoch(epochNum uint64) (*cfxTypes.Block, error) {
+	blockHashes, err := c.GetBlocksByEpoch(cfxTypes.NewEpochNumberUint64(epochNum))
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get blocks by epoch")
+	}
+	if len(blockHashes) == 0 {
+		return nil, errors.Errorf("invalid epoch data (must have at least one block)")
+	}
+	block, err := c.GetBlockByHash(blockHashes[0])
+	if err != nil {
+		return nil, errors.WithMessagef(err, "failed to get block by hash %v", blockHashes[0])
+	}
+	if block == nil {
+		return nil, errors.Errorf("block %v not found", blockHashes[0])
+	}
+	return block, nil
+}
+
+func (c *CoreRpcClient) getPivotBlock(epochNum uint64) (*cfxTypes.Block, error) {
+	block, err := c.GetBlockByEpoch(cfxTypes.NewEpochNumberUint64(epochNum))
+	if err != nil {
+		return nil, err
+	}
+	if block == nil {
+		return nil, errors.New("block not found")
+	}
+	return block, nil
+}
+
 func (c *CoreRpcClient) BoostQueryEpochData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
 	if fromEpoch > toEpoch {
 		return nil, errors.New("invalid epoch range")
@@ -101,35 +130,17 @@ func (c *CoreRpcClient) BoostQueryEpochData(ctx context.Context, fromEpoch, toEp
 			Receipts: make(map[cfxTypes.Hash]*cfxTypes.TransactionReceipt),
 		}
 
-		var blockHashes []cfxTypes.Hash
-		blockHashes, err = c.GetBlocksByEpoch(cfxTypes.NewEpochNumberUint64(epochNum))
-		if err != nil {
-			return nil, errors.WithMessagef(err, "failed to get blocks by epoch %v", epochNum)
-		}
-		if len(blockHashes) == 0 {
-			err = errors.Errorf("invalid epoch data (must have at least one block)")
-			return nil, err
-		}
-
 		// Cache to store blocks fetched by their hash to avoid repeated network calls
 		blockCache := make(map[cfxTypes.Hash]*cfxTypes.Block)
 
-		// Get the first and last block of the epoch
-		for _, bh := range []cfxTypes.Hash{blockHashes[0], blockHashes[len(blockHashes)-1]} {
-			if _, ok := blockCache[bh]; ok {
-				continue
-			}
-
-			var block *cfxTypes.Block
-			block, err = c.GetBlockByHash(bh)
+		// Ensure to add the first block within the range
+		if epochNum == fromEpoch {
+			block, err := c.getFirstBlockOfEpoch(epochNum)
 			if err != nil {
-				return nil, errors.WithMessagef(err, "failed to get block by hash %v", bh)
+				return nil, errors.WithMessagef(err, "failed to get the first block of epoch #%v", epochNum)
 			}
-			if block == nil {
-				err = errors.Errorf("block %v not found", bh)
-				return nil, err
-			}
-			blockCache[bh] = block
+			blockCache[block.Hash] = block
+			epochData.Blocks = append(epochData.Blocks, block)
 		}
 
 		// Process logs that belong to the current epoch
@@ -142,16 +153,15 @@ func (c *CoreRpcClient) BoostQueryEpochData(ctx context.Context, fromEpoch, toEp
 			// Retrieve or fetch the block associated with the current log
 			blockHash := logs[logCursor].BlockHash
 			if _, ok := blockCache[*blockHash]; !ok {
-				var block *cfxTypes.Block
-				block, err = c.GetBlockByHash(*blockHash)
+				block, err := c.GetBlockByHash(*blockHash)
 				if err != nil {
 					return nil, errors.WithMessagef(err, "failed to get block by hash %v", *blockHash)
 				}
 				if block == nil {
-					err = errors.Errorf("block %v not found", *blockHash)
-					return nil, err
+					return nil, errors.Errorf("block %v not found", *blockHash)
 				}
 				blockCache[*blockHash] = block
+				epochData.Blocks = append(epochData.Blocks, block)
 			}
 
 			// Retrieve or initialize the transaction receipt associated with the current log
@@ -171,9 +181,14 @@ func (c *CoreRpcClient) BoostQueryEpochData(ctx context.Context, fromEpoch, toEp
 			txnReceipt.Logs = append(txnReceipt.Logs, logs[logCursor])
 		}
 
-		// Append all necessary blocks for the epoch
-		for _, bh := range blockHashes {
-			if block, ok := blockCache[bh]; ok {
+		// Ensure to add the last block within the range
+		if epochNum == toEpoch {
+			block, err := c.getPivotBlock(epochNum)
+			if err != nil {
+				return nil, errors.WithMessagef(err, "failed to get the pivot block of epoch #%v", epochNum)
+			}
+			epochData.Hash = &block.Hash
+			if _, ok := blockCache[block.Hash]; !ok {
 				epochData.Blocks = append(epochData.Blocks, block)
 			}
 		}
@@ -259,6 +274,17 @@ func (c *EvmRpcClient) QueryEpochData(ctx context.Context, fromBlock, toBlock ui
 	return epochDataSlice, nil
 }
 
+func (c *EvmRpcClient) getBlockByNumber(blockNum uint64) (*ethTypes.Block, error) {
+	block, err := c.Eth.BlockByNumber(ethTypes.BlockNumber(blockNum), true)
+	if err != nil {
+		return nil, err
+	}
+	if block == nil {
+		return nil, errors.New("block not found")
+	}
+	return block, nil
+}
+
 func (c *EvmRpcClient) BoostQueryEpochData(ctx context.Context, fromBlock, toBlock uint64) ([]*store.EpochData, error) {
 	if fromBlock > toBlock {
 		return nil, errors.New("invalid block range")
@@ -281,20 +307,19 @@ func (c *EvmRpcClient) BoostQueryEpochData(ctx context.Context, fromBlock, toBlo
 	ethDataSlice := make([]*store.EthData, 0, toBlock-fromBlock+1)
 
 	for blockNum := fromBlock; blockNum <= toBlock; blockNum++ {
-		// Retrieve the block by number
-		block, err := c.Eth.BlockByNumber(ethTypes.BlockNumber(blockNum), true)
-		if err != nil {
-			return nil, errors.WithMessagef(err, "failed to get block by number %v", blockNum)
-		}
-		if block == nil {
-			return nil, errors.New("empty block data")
-		}
-
 		// Initialize ETH data for the current block
 		ethData := &store.EthData{
 			Number:   blockNum,
-			Block:    block,
 			Receipts: make(map[common.Hash]*ethTypes.Receipt),
+		}
+
+		// Ensure to retrieve the first block within the range
+		if blockNum == fromBlock {
+			block, err := c.getBlockByNumber(blockNum)
+			if err != nil {
+				return nil, errors.WithMessagef(err, "failed to get block #%v", blockNum)
+			}
+			ethData.Block = block
 		}
 
 		// Process logs that belong to the current epoch
@@ -304,13 +329,22 @@ func (c *EvmRpcClient) BoostQueryEpochData(ctx context.Context, fromBlock, toBlo
 				break
 			}
 
+			if ethData.Block == nil {
+				// Retrieve the block by number
+				block, err := c.getBlockByNumber(blockNum)
+				if err != nil {
+					return nil, errors.WithMessagef(err, "failed to get block #%v", blockNum)
+				}
+				ethData.Block = block
+			}
+
 			// Retrieve or initialize the transaction receipt associated with the current log
 			txnHash := logs[logCursor].TxHash
 			txnReceipt, ok := ethData.Receipts[txnHash]
 			if !ok {
 				txnReceipt = &ethTypes.Receipt{
 					BlockNumber:     blockNum,
-					BlockHash:       block.Hash,
+					BlockHash:       ethData.Block.Hash,
 					TransactionHash: txnHash,
 				}
 				ethData.Receipts[txnHash] = txnReceipt
@@ -318,6 +352,15 @@ func (c *EvmRpcClient) BoostQueryEpochData(ctx context.Context, fromBlock, toBlo
 
 			// Append the current log to the transaction receipt's logs
 			txnReceipt.Logs = append(txnReceipt.Logs, &logs[logCursor])
+		}
+
+		// Ensure to retrieve the last block within the range
+		if blockNum == toBlock && ethData.Block == nil {
+			block, err := c.getBlockByNumber(blockNum)
+			if err != nil {
+				return nil, errors.WithMessagef(err, "failed to get block #%v", blockNum)
+			}
+			ethData.Block = block
 		}
 
 		// Append the constructed epoch data to the result list

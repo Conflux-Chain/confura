@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+	"math"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -64,10 +65,12 @@ func (ls *logStore) preparePartition(dataSlice []*store.EpochData) (bnPartition,
 func (ls *logStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartition bnPartition) error {
 	// containers to collect event logs for batch inserting
 	var logs []*log
+	bnMin, bnMax := uint64(math.MaxUint64), uint64(0)
 
 	for _, data := range dataSlice {
 		for _, block := range data.Blocks {
 			bn := block.BlockNumber.ToInt().Uint64()
+			bnMin, bnMax = min(bnMin, bn), max(bnMax, bn)
 
 			for _, tx := range block.Transactions {
 				receipt := data.Receipts[tx.Hash]
@@ -101,9 +104,6 @@ func (ls *logStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartitio
 	}
 
 	// update block range for log partition router
-	bnMin := dataSlice[0].Blocks[0].BlockNumber.ToInt().Uint64()
-	bnMax := dataSlice[len(dataSlice)-1].GetPivotBlock().BlockNumber.ToInt().Uint64()
-
 	err := ls.expandBnRange(dbTx, bnPartitionedLogEntity, int(logPartition.Index), bnMin, bnMax)
 	if err != nil {
 		return errors.WithMessage(err, "failed to expand partition bn range")
