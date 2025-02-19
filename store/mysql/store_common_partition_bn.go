@@ -239,7 +239,7 @@ func (bnps *bnPartitionedStore) deltaUpdateCount(dbTx *gorm.DB, entity string, p
 		return errors.WithMessage(err, "failed to get latest partition")
 	}
 
-	if !existed { // no availabe partition
+	if !existed { // no available partition
 		return store.ErrNotFound
 	}
 
@@ -267,7 +267,7 @@ func (bnps *bnPartitionedStore) expandBnRange(dbTx *gorm.DB, entity string, part
 		return errors.WithMessage(err, "failed to get latest partition")
 	}
 
-	if !existed { // no availabe partition to expand
+	if !existed { // no available partition to expand
 		return store.ErrNotFound
 	}
 
