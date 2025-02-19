@@ -23,7 +23,7 @@ type block struct {
 	Pivot       bool   `gorm:"not null"`
 	RawData     []byte `gorm:"type:MEDIUMBLOB;not null"`
 	RawDataLen  uint64 `gorm:"not null"`
-	Extra       []byte `gorm:"type:text"` // extention json field
+	Extra       []byte `gorm:"type:text"` // extension json field
 }
 
 func newBlock(data *types.Block, pivot bool, extra *store.BlockExtra) *block {
