@@ -166,7 +166,7 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []VirtualFilterLog, p
 
 		// batch insert new event logs
 		tblName := vfls.getPartitionedTableName(ftabler, partition.Index)
-		err = tx.Table(tblName).CreateInBatches(logs, defaultBatchSizeLogInsert).Error
+		err = tx.Table(tblName).Create(logs).Error
 		if err != nil {
 			return err
 		}

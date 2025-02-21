@@ -74,6 +74,15 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 	}
 }
 
+func (ms *MysqlStore) DeepCopy(sess *gorm.Session) *MysqlStore {
+	conf := *ms.config
+	if sess.CreateBatchSize != conf.CreateBatchSize {
+		conf.CreateBatchSize = sess.CreateBatchSize
+	}
+	newDb := ms.baseStore.db.Session(sess)
+	return mustNewStore(newDb, &conf, StoreOption{Disabler: ms.disabler})
+}
+
 func (ms *MysqlStore) Push(data *store.EpochData) error {
 	return ms.Pushn([]*store.EpochData{data})
 }

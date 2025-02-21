@@ -229,6 +229,7 @@ eth:
 #     connMaxLifeTime: 3m
 #     maxOpenConns: 10
 #     maxIdleConns: 10
+#     createBatchSize: 500
 #     # Whether to use event log partitions hashed by contract address
 #     addressIndexedLogEnabled: true
 #     # Number of partitions for address indexed event log table, valid only if above option enabled
@@ -256,6 +257,7 @@ eth:
 #     connMaxLifeTime: 3m
 #     maxOpenConns: 10
 #     maxIdleConns: 10
+#     createBatchSize: 500
 #     addressIndexedLogEnabled: true
 #     addressIndexedLogPartitions: 100
 #     maxBnRangedArchiveLogPartitions: 5
