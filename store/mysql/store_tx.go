@@ -11,8 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const defaultBatchSizeTxnInsert = 500
-
 type transaction struct {
 	ID                uint64
 	Epoch             uint64 `gorm:"not null;index"`
@@ -190,7 +188,7 @@ func (ts *txStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, skipTx, skip
 		return nil
 	}
 
-	return dbTx.CreateInBatches(txns, defaultBatchSizeTxnInsert).Error
+	return dbTx.Create(txns).Error
 }
 
 // Remove remove transactions of specific epoch range from db store.

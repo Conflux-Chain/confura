@@ -114,7 +114,7 @@ func (ls *logStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartitio
 	}
 
 	tblName := ls.getPartitionedTableName(&ls.model, logPartition.Index)
-	err = dbTx.Table(tblName).CreateInBatches(logs, defaultBatchSizeLogInsert).Error
+	err = dbTx.Table(tblName).Create(logs).Error
 	if err != nil {
 		return err
 	}

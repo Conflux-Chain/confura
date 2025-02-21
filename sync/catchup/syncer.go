@@ -79,7 +79,7 @@ func WithBoostConfig(config boostConfig) SyncOption {
 
 func MustNewCfxSyncer(
 	clients []*sdk.Client,
-	db *mysql.MysqlStore,
+	dbs *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
@@ -100,12 +100,12 @@ func MustNewCfxSyncer(
 		workers = append(workers, worker)
 	}
 
-	return newSyncer(conf, rpcClients, workers, db, elm, monitor, epochFrom, opts...)
+	return newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
 }
 
 func MustNewEthSyncer(
 	clients []*web3go.Client,
-	db *mysql.MysqlStore,
+	dbs *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
@@ -126,14 +126,14 @@ func MustNewEthSyncer(
 		workers = append(workers, worker)
 	}
 
-	return newSyncer(conf, rpcClients, workers, db, elm, monitor, epochFrom, opts...)
+	return newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
 }
 
 func newSyncer(
 	conf config,
 	clients []IRpcClient,
 	workers []*worker,
-	db *mysql.MysqlStore,
+	dbs *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
@@ -149,9 +149,11 @@ func newSyncer(
 	)
 	cOpts = append(cOpts, opts...)
 
+	// Deep copy db store to maximize txn batch size for catch-up sync
+	newDbs := dbs.DeepCopy(&gorm.Session{CreateBatchSize: 0, NewDB: true})
 	syncer := &Syncer{
 		elm:            elm,
-		db:             db,
+		db:             newDbs,
 		rpcClients:     clients,
 		monitor:        monitor,
 		epochFrom:      epochFrom,
