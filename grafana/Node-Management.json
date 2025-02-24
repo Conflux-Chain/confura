@@ -340,7 +340,7 @@
               "type": "fill"
             }
           ],
-          "measurement": "/^$nodeAvailabilty$/",
+          "measurement": "/^$nodeAvailability$/",
           "orderByTime": "ASC",
           "policy": "default",
           "refId": "A",
@@ -660,7 +660,7 @@
         "includeAll": true,
         "label": "",
         "multi": true,
-        "name": "nodeAvailabilty",
+        "name": "nodeAvailability",
         "options": [],
         "query": "show measurements",
         "refresh": 1,
