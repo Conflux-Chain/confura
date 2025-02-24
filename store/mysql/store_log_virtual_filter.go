@@ -174,7 +174,7 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []VirtualFilterLog, p
 		// expand partition block number range
 		err := vfls.expandPartitioBnRange(tx, fentity, partition.Index, bnMin, bnMax)
 		if err != nil {
-			return errors.WithMessage(err, "failed to expand partiton bn range")
+			return errors.WithMessage(err, "failed to expand partition bn range")
 		}
 
 		// update partition data count
@@ -234,7 +234,7 @@ func (vfls *VirtualFilterLogStore) GetLogs(
 }
 
 // GC garbage collects archive partitions exceeded the max archive partition limit
-// starting from the oldest partiton.
+// starting from the oldest partition.
 func (vfls *VirtualFilterLogStore) GC(fid string) error {
 	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)
 	_, err := vfls.pruneArchivePartitions(fentity, ftabler, maxArchiveVirtualFilterLogPartitions)
