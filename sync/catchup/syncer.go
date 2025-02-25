@@ -149,9 +149,9 @@ func newSyncer(
 	)
 	cOpts = append(cOpts, opts...)
 
-	// Deep copy db store to maximize txn batch size for catch-up sync
-	newDbs := dbs.DeepCopy()
-	newDbs.SetCreateBatchSize(0)
+	// Copy a new db store to maximize txn batch size for performance
+	newDbs := dbs.Copy()
+	newDbs.SetCreateBatchSize(conf.MaxDbRows)
 
 	syncer := &Syncer{
 		elm:            elm,
@@ -313,7 +313,8 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 
 			// Batch insert into db if enough db rows collected, also use total db rows here to
 			// restrict memory usage.
-			if state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
+			if state.insertDbRows >= s.minBatchDbRows ||
+				(state.totalDbRows > 0 && state.totalDbRows >= s.maxDbRows) {
 				err := s.persist(ctx, &state, bmarker)
 				if err != nil {
 					return err

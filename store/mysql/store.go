@@ -74,7 +74,14 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 	}
 }
 
-func (ms *MysqlStore) DeepCopy() *MysqlStore {
+// Copy creates a new store by copying the underlying gorm db instance.
+//
+// This method is useful when you want to create a new store that is
+// independent of the current store, but still shares the same underlying
+// database connection.
+//
+// The returned store will also have the same disabler as the current store.
+func (ms *MysqlStore) Copy() *MysqlStore {
 	conf := *ms.config
 	newDb := ms.baseStore.db.Session(&gorm.Session{NewDB: true})
 	return mustNewStore(newDb, &conf, StoreOption{Disabler: ms.disabler})
