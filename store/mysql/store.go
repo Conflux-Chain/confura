@@ -74,6 +74,22 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 	}
 }
 
+// Clone creates a new store with a deep copy of the underlying gorm db instance,
+// including a new, independent database connection.
+//
+// Closing the cloned store will only close its own connection and will not
+// affect the original store.
+//
+// The returned store will also have the same disabler as the current store.
+func (ms *MysqlStore) Clone() (*MysqlStore, error) {
+	newDb, err := gorm.Open(ms.DB().Dialector, ms.DB().Config)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "failed to open gorm db connection")
+	}
+	conf := *ms.config
+	return mustNewStore(newDb, &conf, StoreOption{Disabler: ms.disabler}), nil
+}
+
 func (ms *MysqlStore) Push(data *store.EpochData) error {
 	return ms.Pushn([]*store.EpochData{data})
 }
@@ -355,6 +371,12 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 // Prune prune data from db store.
 func (ms *MysqlStore) Prune() {
 	go ms.pruner.schedulePrune(ms.config)
+}
+
+// SetTxnBatchSize sets the transaction batch size for db insertion.
+func (ms *MysqlStore) SetTxnBatchSize(size int) {
+	ms.config.CreateBatchSize = size
+	ms.DB().CreateBatchSize = size
 }
 
 // newSuggestedFilterResultSetTooLargeError returns an error indicating that the filter result set is too large.

@@ -11,8 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const defaultBatchSizeLogInsert = 500
-
 // Address indexed logs are used to filter event logs by contract address and optional block number.
 // Generally, most contracts have limited event logs and need not to specify the epoch/block range filter.
 // For some active contracts, e.g. USDT, that have many event logs, could store in separate tables.
@@ -128,7 +126,7 @@ func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *sto
 	// Insert address indexed logs into different partitions.
 	for partition, logs := range partition2Logs {
 		tableName := ls.getPartitionedTableName(&ls.model, partition)
-		if err := dbTx.Table(tableName).CreateInBatches(&logs, defaultBatchSizeLogInsert).Error; err != nil {
+		if err := dbTx.Table(tableName).Create(&logs).Error; err != nil {
 			return err
 		}
 	}

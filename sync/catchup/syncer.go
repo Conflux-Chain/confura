@@ -79,7 +79,7 @@ func WithBoostConfig(config boostConfig) SyncOption {
 
 func MustNewCfxSyncer(
 	clients []*sdk.Client,
-	db *mysql.MysqlStore,
+	dbs *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
@@ -100,12 +100,16 @@ func MustNewCfxSyncer(
 		workers = append(workers, worker)
 	}
 
-	return newSyncer(conf, rpcClients, workers, db, elm, monitor, epochFrom, opts...)
+	syncer, err := newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize CFX catch-up syncer")
+	}
+	return syncer
 }
 
 func MustNewEthSyncer(
 	clients []*web3go.Client,
-	db *mysql.MysqlStore,
+	dbs *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
@@ -126,18 +130,22 @@ func MustNewEthSyncer(
 		workers = append(workers, worker)
 	}
 
-	return newSyncer(conf, rpcClients, workers, db, elm, monitor, epochFrom, opts...)
+	syncer, err := newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize ETH catch-up syncer")
+	}
+	return syncer
 }
 
 func newSyncer(
 	conf config,
 	clients []IRpcClient,
 	workers []*worker,
-	db *mysql.MysqlStore,
+	dbs *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
-	opts ...SyncOption) *Syncer {
+	opts ...SyncOption) (*Syncer, error) {
 
 	var cOpts []SyncOption
 	cOpts = append(cOpts,
@@ -149,9 +157,16 @@ func newSyncer(
 	)
 	cOpts = append(cOpts, opts...)
 
+	// Clone a new db store to maximize txn batch size
+	newDbs, err := dbs.Clone()
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to clone db store")
+	}
+	newDbs.SetTxnBatchSize(conf.MaxDbRows)
+
 	syncer := &Syncer{
 		elm:            elm,
-		db:             db,
+		db:             newDbs,
 		rpcClients:     clients,
 		monitor:        monitor,
 		epochFrom:      epochFrom,
@@ -161,13 +176,15 @@ func newSyncer(
 		opt(syncer)
 	}
 
-	return syncer
+	return syncer, nil
 }
 
-func (s *Syncer) Close() {
+func (s *Syncer) Close() error {
 	for _, w := range s.workers {
 		w.Close()
 	}
+
+	return s.db.Close()
 }
 
 func (s *Syncer) Sync(ctx context.Context) {
@@ -309,7 +326,7 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 
 			// Batch insert into db if enough db rows collected, also use total db rows here to
 			// restrict memory usage.
-			if state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
+			if state.insertDbRows >= s.minBatchDbRows || (s.maxDbRows > 0 && state.totalDbRows >= s.maxDbRows) {
 				err := s.persist(ctx, &state, bmarker)
 				if err != nil {
 					return err

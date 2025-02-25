@@ -43,6 +43,7 @@ type Config struct {
 	ConnMaxLifetime time.Duration `default:"3m"`
 	MaxOpenConns    int           `default:"10"`
 	MaxIdleConns    int           `default:"10"`
+	CreateBatchSize int           `default:"500"`
 
 	AddressIndexedLogEnabled    bool   `default:"true"`
 	AddressIndexedLogPartitions uint32 `default:"100"`
@@ -158,7 +159,8 @@ func (config *Config) mustNewDB(database string) *gorm.DB {
 	}
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: gLogger,
+		Logger:          gLogger,
+		CreateBatchSize: config.CreateBatchSize,
 	})
 
 	if err != nil {
