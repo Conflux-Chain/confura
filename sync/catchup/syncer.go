@@ -100,7 +100,11 @@ func MustNewCfxSyncer(
 		workers = append(workers, worker)
 	}
 
-	return newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	syncer, err := newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize CFX catch-up syncer")
+	}
+	return syncer
 }
 
 func MustNewEthSyncer(
@@ -126,7 +130,11 @@ func MustNewEthSyncer(
 		workers = append(workers, worker)
 	}
 
-	return newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	syncer, err := newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize ETH catch-up syncer")
+	}
+	return syncer
 }
 
 func newSyncer(
@@ -137,7 +145,7 @@ func newSyncer(
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
-	opts ...SyncOption) *Syncer {
+	opts ...SyncOption) (*Syncer, error) {
 
 	var cOpts []SyncOption
 	cOpts = append(cOpts,
@@ -149,9 +157,12 @@ func newSyncer(
 	)
 	cOpts = append(cOpts, opts...)
 
-	// Copy a new db store to maximize txn batch size for performance
-	newDbs := dbs.Copy()
-	newDbs.SetCreateBatchSize(conf.MaxDbRows)
+	// Clone a new db store to maximize txn batch size
+	newDbs, err := dbs.Clone()
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to clone db store")
+	}
+	newDbs.SetTxnBatchSize(conf.MaxDbRows)
 
 	syncer := &Syncer{
 		elm:            elm,
@@ -165,13 +176,15 @@ func newSyncer(
 		opt(syncer)
 	}
 
-	return syncer
+	return syncer, nil
 }
 
-func (s *Syncer) Close() {
+func (s *Syncer) Close() error {
 	for _, w := range s.workers {
 		w.Close()
 	}
+
+	return s.db.Close()
 }
 
 func (s *Syncer) Sync(ctx context.Context) {
@@ -313,8 +326,7 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 
 			// Batch insert into db if enough db rows collected, also use total db rows here to
 			// restrict memory usage.
-			if state.insertDbRows >= s.minBatchDbRows ||
-				(state.totalDbRows > 0 && state.totalDbRows >= s.maxDbRows) {
+			if state.insertDbRows >= s.minBatchDbRows || (s.maxDbRows > 0 && state.totalDbRows >= s.maxDbRows) {
 				err := s.persist(ctx, &state, bmarker)
 				if err != nil {
 					return err

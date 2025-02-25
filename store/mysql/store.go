@@ -74,17 +74,20 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 	}
 }
 
-// Copy creates a new store by copying the underlying gorm db instance.
+// Clone creates a new store with a deep copy of the underlying gorm db instance,
+// including a new, independent database connection.
 //
-// This method is useful when you want to create a new store that is
-// independent of the current store, but still shares the same underlying
-// database connection.
+// Closing the cloned store will only close its own connection and will not
+// affect the original store.
 //
 // The returned store will also have the same disabler as the current store.
-func (ms *MysqlStore) Copy() *MysqlStore {
+func (ms *MysqlStore) Clone() (*MysqlStore, error) {
+	newDb, err := gorm.Open(ms.DB().Dialector, ms.DB().Config)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "failed to open gorm db connection")
+	}
 	conf := *ms.config
-	newDb := ms.baseStore.db.Session(&gorm.Session{NewDB: true})
-	return mustNewStore(newDb, &conf, StoreOption{Disabler: ms.disabler})
+	return mustNewStore(newDb, &conf, StoreOption{Disabler: ms.disabler}), nil
 }
 
 func (ms *MysqlStore) Push(data *store.EpochData) error {
@@ -370,8 +373,8 @@ func (ms *MysqlStore) Prune() {
 	go ms.pruner.schedulePrune(ms.config)
 }
 
-// SetCreateBatchSize sets the batch size for inserting data into tables in the database.
-func (ms *MysqlStore) SetCreateBatchSize(size int) {
+// SetTxnBatchSize sets the transaction batch size for db insertion.
+func (ms *MysqlStore) SetTxnBatchSize(size int) {
 	ms.config.CreateBatchSize = size
 	ms.DB().CreateBatchSize = size
 }
