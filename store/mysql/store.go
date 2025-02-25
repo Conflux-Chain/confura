@@ -74,12 +74,9 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 	}
 }
 
-func (ms *MysqlStore) DeepCopy(sess *gorm.Session) *MysqlStore {
+func (ms *MysqlStore) DeepCopy() *MysqlStore {
 	conf := *ms.config
-	if sess.CreateBatchSize != conf.CreateBatchSize {
-		conf.CreateBatchSize = sess.CreateBatchSize
-	}
-	newDb := ms.baseStore.db.Session(sess)
+	newDb := ms.baseStore.db.Session(&gorm.Session{NewDB: true})
 	return mustNewStore(newDb, &conf, StoreOption{Disabler: ms.disabler})
 }
 
@@ -364,6 +361,12 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 // Prune prune data from db store.
 func (ms *MysqlStore) Prune() {
 	go ms.pruner.schedulePrune(ms.config)
+}
+
+// SetCreateBatchSize sets the batch size for inserting data into tables in the database.
+func (ms *MysqlStore) SetCreateBatchSize(size int) {
+	ms.config.CreateBatchSize = size
+	ms.DB().CreateBatchSize = size
 }
 
 // newSuggestedFilterResultSetTooLargeError returns an error indicating that the filter result set is too large.

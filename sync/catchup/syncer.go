@@ -150,7 +150,9 @@ func newSyncer(
 	cOpts = append(cOpts, opts...)
 
 	// Deep copy db store to maximize txn batch size for catch-up sync
-	newDbs := dbs.DeepCopy(&gorm.Session{CreateBatchSize: 0, NewDB: true})
+	newDbs := dbs.DeepCopy()
+	newDbs.SetCreateBatchSize(0)
+
 	syncer := &Syncer{
 		elm:            elm,
 		db:             newDbs,
