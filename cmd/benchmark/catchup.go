@@ -111,7 +111,8 @@ func runCatchUpBenchmark(cmd *cobra.Command, args []string) {
 // initializeContexts sets up and returns the required store and sync contexts.
 func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
 	storeCtx := util.MustInitStoreContext()
-	if storeCtx.CfxDB == nil || storeCtx.EthDB == nil {
+	if network := catchUpConfig.Network; (network == "eth" && storeCtx.EthDB == nil) ||
+		(network == "cfx" && storeCtx.CfxDB == nil) {
 		return nil, nil, errors.New("database is not provided")
 	}
 
