@@ -157,26 +157,41 @@ func newSyncer(
 	)
 	cOpts = append(cOpts, opts...)
 
+	syncer := &Syncer{
+		elm:            elm,
+		rpcClients:     clients,
+		monitor:        monitor,
+		epochFrom:      epochFrom,
+		minBatchDbRows: 1_500,
+	}
+	for _, opt := range cOpts {
+		opt(syncer)
+	}
+
+	// Check boost mode eligibility
+	if syncer.UseBoost() {
+		// Boost mode is an optimization focused solely on syncing event logs.
+		// To achieve this, it requires disabling the syncing of blocks, transactions, and receipts.
+		// This is because boost mode skips fetching these data types for faster event log processing.
+		disabler := store.StoreConfig()
+		if !disabler.IsChainBlockDisabled() || !disabler.IsChainTxnDisabled() || !disabler.IsChainReceiptDisabled() {
+			return nil, errors.New("boost mode is incompatible with syncing data types other than event logs")
+		}
+	}
+
 	// Clone a new db store to maximize txn batch size
 	newDbs, err := dbs.Clone()
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to clone db store")
 	}
 	newDbs.SetTxnBatchSize(conf.MaxDbRows)
-
-	syncer := &Syncer{
-		elm:            elm,
-		db:             newDbs,
-		rpcClients:     clients,
-		monitor:        monitor,
-		epochFrom:      epochFrom,
-		minBatchDbRows: 1500,
-	}
-	for _, opt := range cOpts {
-		opt(syncer)
-	}
+	syncer.db = newDbs
 
 	return syncer, nil
+}
+
+func (s *Syncer) UseBoost() bool {
+	return s.boostConf.Enabled
 }
 
 func (s *Syncer) Close() error {
@@ -211,22 +226,11 @@ func (s *Syncer) Sync(ctx context.Context) {
 			break
 		}
 
-		s.syncOnce(ctx, start, end)
+		s.SyncOnce(ctx, start, end)
 	}
 }
 
-func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
-	// Boost sync performance if all chain data types are disabled except event logs by using `getLogs` to synchronize
-	// blockchain data across wide epoch range, or using `epoch-by-epoch` sync mode if any of them are enabled.
-	if disabler := store.StoreConfig(); !disabler.IsChainLogDisabled() &&
-		disabler.IsChainBlockDisabled() && disabler.IsChainTxnDisabled() && disabler.IsChainReceiptDisabled() {
-		s.SyncByRange(ctx, start, end, true)
-	} else {
-		s.SyncByRange(ctx, start, end, false)
-	}
-}
-
-func (s *Syncer) SyncByRange(ctx context.Context, start, end uint64, useBoostMode ...bool) {
+func (s *Syncer) SyncOnce(ctx context.Context, start, end uint64) {
 	var bmarker *benchmarker
 	if s.benchmark {
 		bmarker = newBenchmarker()
@@ -237,17 +241,15 @@ func (s *Syncer) SyncByRange(ctx context.Context, start, end uint64, useBoostMod
 		}()
 	}
 
-	useBoost := len(useBoostMode) > 0 && useBoostMode[0]
-
 	if logrus.IsLevelEnabled(logrus.DebugLevel) {
 		logrus.WithFields(logrus.Fields{
 			"rangeStart":   start,
 			"rangeEnd":     end,
-			"boostEnabled": useBoost,
+			"boostEnabled": s.UseBoost(),
 		}).Debug("Catch-up syncer is synchronizing by range...")
 	}
 
-	if useBoost {
+	if s.UseBoost() {
 		newBoostSyncer(s).doSync(ctx, bmarker, start, end)
 	} else {
 		s.doSync(ctx, bmarker, start, end)

@@ -143,6 +143,9 @@ eth:
 #     benchmark: false
 #     # Boost mode configuration
 #     boost:
+#       # Whether to enable boost mode for faster event log synchronization.
+#       # This mode is effective only when syncing event logs exclusively (other data types like blocks must be disabled).
+#       enabled: false
 #       # Task queue sizes to schedule tasks
 #       taskQueueSize: 1000
 #       # Task result queue sizes to collect results
