@@ -37,7 +37,6 @@ type AddressIndexedLogStore struct {
 	partitionedStore
 	db         *gorm.DB
 	cs         *ContractStore
-	ebms       *epochBlockMapStore
 	model      AddressIndexedLog
 	partitions uint32
 }
@@ -116,7 +115,7 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(
 	return partition2Logs, contract2LogCount, nil
 }
 
-// Add adds event logs of specified epoch (with that of big contract ignored) into different partitioned tables.
+// Add inserts event logs from a batch of epochs into partitioned tables, while ignoring logs from big contracts.
 func (ls *AddressIndexedLogStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, bigContractIds map[uint64]bool) error {
 	var (
 		allContract2LogCount      = make(map[uint64]int)
