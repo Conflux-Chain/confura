@@ -299,7 +299,7 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 		return nil
 	}
 
-	bn, ok, err := bcls.ebms.BlockRange(epochUntil)
+	e2bmap, ok, err := bcls.ebms.CeilBlockMapping(epochUntil)
 	if err != nil {
 		return errors.WithMessagef(err, "failed to get block mapping for epoch %v", epochUntil)
 	}
@@ -313,7 +313,7 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 		contractEntity := bcls.contractEntity(contract.ID)
 		contractTabler := bcls.contractTabler(contract.ID)
 
-		partitions, existed, err := bcls.shrinkBnRange(dbTx, contractEntity, bn.From)
+		partitions, existed, err := bcls.shrinkBnRange(dbTx, contractEntity, e2bmap.BnMin)
 		if err != nil {
 			return errors.WithMessage(err, "failed to shrink partition bn range")
 		}
@@ -328,7 +328,7 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 			partition := partitions[i]
 			tblName := bcls.getPartitionedTableName(contractTabler, partition.Index)
 
-			res := dbTx.Table(tblName).Where("bn >= ?", bn.From).Delete(&contractLog{})
+			res := dbTx.Table(tblName).Where("bn >= ?", e2bmap.BnMin).Delete(&contractLog{})
 			if res.Error != nil {
 				return res.Error
 			}

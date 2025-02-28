@@ -255,7 +255,7 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 		return nil, filter, nil
 	}
 
-	blockRange, ok, err := handler.ms.BlockRange(maxEpoch)
+	e2bMap, ok, err := handler.ms.BlockMapping(maxEpoch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -269,10 +269,10 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 	}
 
 	if filter.FromBlock != nil && filter.ToBlock != nil {
-		return handler.splitLogFilterByBlockRange(cfx, filter, blockRange.To)
+		return handler.splitLogFilterByBlockRange(cfx, filter, e2bMap.BnMax)
 	}
 
-	return handler.splitLogFilterByEpochRange(cfx, filter, maxEpoch, blockRange.To)
+	return handler.splitLogFilterByEpochRange(cfx, filter, maxEpoch, e2bMap.BnMax)
 }
 
 func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
@@ -394,7 +394,7 @@ func (handler *CfxLogsApiHandler) splitLogFilterByEpochRange(
 	}
 
 	// convert epoch number to block number
-	blockRange, ok, err := handler.ms.BlockRange(epochFrom.Uint64())
+	e2bmap, ok, err := handler.ms.CeilBlockMapping(epochFrom.Uint64())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -403,11 +403,11 @@ func (handler *CfxLogsApiHandler) splitLogFilterByEpochRange(
 		return nil, filter, nil
 	}
 
-	blockFrom := blockRange.From
+	blockFrom := e2bmap.BnMin
 
 	// all data in database
 	if epochTo.Uint64() <= maxEpoch {
-		blockRange, ok, err = handler.ms.BlockRange(epochTo.Uint64())
+		e2bmap, ok, err = handler.ms.FloorBlockMapping(epochTo.Uint64())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -416,7 +416,7 @@ func (handler *CfxLogsApiHandler) splitLogFilterByEpochRange(
 			return nil, filter, nil
 		}
 
-		blockTo := blockRange.To
+		blockTo := e2bmap.BnMax
 
 		dbFilter := store.ParseCfxLogFilter(blockFrom, blockTo, filter)
 		return []store.LogFilter{dbFilter}, nil, nil
@@ -476,7 +476,7 @@ func (handler *CfxLogsApiHandler) convertSuggestedFilterOversizedError(
 	maxPossibleEpochNum := oversizedErr.SuggestedRange.MaxEndEpoch
 	endBlockNum := oversizedErr.SuggestedRange.To
 
-	suggstedEndEpoch, ok, err := handler.ms.ClosestEpochUpToBlock(maxPossibleEpochNum, endBlockNum)
+	suggstedEndEpoch, ok, err := handler.ms.LatestEpochBeforeBlock(maxPossibleEpochNum, endBlockNum)
 	if err != nil || !ok || suggstedEndEpoch < fromEpoch.Uint64() {
 		return oversizedErr.Unwrap()
 	}
