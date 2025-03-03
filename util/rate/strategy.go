@@ -86,7 +86,7 @@ func (fwo *FixedWindowOption) UnmarshalJSON(data []byte) error {
 	return err
 }
 
-// FixedWindowOption limit option for token bucket
+// TokenBucketOption limit option for token bucket
 type TokenBucketOption struct {
 	Rate  rate.Limit
 	Burst int
