@@ -177,10 +177,8 @@ func (ms *MysqlStore) PushnWithFinalizer(dataSlice []*store.EpochData, finalizer
 				}
 
 				// save address indexed event logs
-				for _, data := range dataSlice {
-					if err := ms.ails.AddAddressIndexedLogs(dbTx, data, bigContractIds); err != nil {
-						return errors.WithMessage(err, "failed to save address indexed event logs")
-					}
+				if err := ms.ails.Add(dbTx, dataSlice, bigContractIds); err != nil {
+					return errors.WithMessage(err, "failed to save address indexed event logs")
 				}
 
 				// save contract specified event logs
