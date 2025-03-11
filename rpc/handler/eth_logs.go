@@ -13,17 +13,22 @@ import (
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 // EthLogsApiHandler RPC handler to get evm space event logs from store or fullnode.
 type EthLogsApiHandler struct {
 	ms *mysql.MysqlStore
 
-	networkId atomic.Value
+	networkId          atomic.Value
+	maxSuggestAttempts int
 }
 
 func NewEthLogsApiHandler(ms *mysql.MysqlStore) *EthLogsApiHandler {
-	return &EthLogsApiHandler{ms: ms}
+	maxSuggestAttempts := viper.GetInt("requestControl.maxGetLogsSuggestionAttempts")
+	return &EthLogsApiHandler{
+		ms: ms, maxSuggestAttempts: maxSuggestAttempts,
+	}
 }
 
 func (handler *EthLogsApiHandler) GetLogs(
@@ -38,10 +43,27 @@ func (handler *EthLogsApiHandler) GetLogs(
 		return nil, false, err
 	}
 
+	var suggestErr *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
+	suggestCount := 0
+
 	for {
 		logs, hitStore, err := handler.getLogsReorgGuard(ctx, eth, filter, delegatedRpcMethod)
 		if err != nil {
+			if maxAttempts := handler.maxSuggestAttempts; maxAttempts > 0 && suggestCount < maxAttempts &&
+				filter.ToBlock != nil && errors.As(err, &suggestErr) {
+				*filter.ToBlock = types.BlockNumber(suggestErr.SuggestedRange.To)
+				suggestCount++
+				continue
+			}
+			if suggestErr != nil && !errors.Is(err, store.ErrGetLogsTimeout) {
+				return nil, false, suggestErr
+			}
 			return nil, false, err
+		}
+
+		// If for any reason a suggestion error was set, propagate it.
+		if suggestErr != nil {
+			return nil, false, suggestErr
 		}
 
 		// check the reorg version after query
