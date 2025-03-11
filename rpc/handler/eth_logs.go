@@ -52,13 +52,19 @@ func (handler *EthLogsApiHandler) GetLogs(
 			if maxAttempts := handler.maxSuggestAttempts; maxAttempts > 0 && suggestCount < maxAttempts &&
 				filter.ToBlock != nil && errors.As(err, &suggestErr) {
 				*filter.ToBlock = types.BlockNumber(suggestErr.SuggestedRange.To)
+
+				// check timeout before retry.
+				if err := checkTimeout(ctx); err != nil {
+					return nil, false, err
+				}
+
 				suggestCount++
 				continue
 			}
-			if suggestErr != nil && !errors.Is(err, store.ErrGetLogsTimeout) {
-				return nil, false, suggestErr
+
+			if suggestErr == nil {
+				return nil, false, err
 			}
-			return nil, false, err
 		}
 
 		// If for any reason a suggestion error was set, propagate it.
