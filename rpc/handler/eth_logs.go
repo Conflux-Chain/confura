@@ -19,11 +19,12 @@ import (
 type EthLogsApiHandler struct {
 	ms *mysql.MysqlStore
 
-	networkId atomic.Value
+	networkId          atomic.Value
+	maxSuggestAttempts int
 }
 
-func NewEthLogsApiHandler(ms *mysql.MysqlStore) *EthLogsApiHandler {
-	return &EthLogsApiHandler{ms: ms}
+func NewEthLogsApiHandler(ms *mysql.MysqlStore, maxAttempts int) *EthLogsApiHandler {
+	return &EthLogsApiHandler{ms: ms, maxSuggestAttempts: maxAttempts}
 }
 
 func (handler *EthLogsApiHandler) GetLogs(
@@ -38,10 +39,35 @@ func (handler *EthLogsApiHandler) GetLogs(
 		return nil, false, err
 	}
 
+	var (
+		suggestErr   *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
+		suggestCount int
+	)
+
 	for {
 		logs, hitStore, err := handler.getLogsReorgGuard(ctx, eth, filter, delegatedRpcMethod)
 		if err != nil {
-			return nil, false, err
+			if maxAttempts := handler.maxSuggestAttempts; maxAttempts > 0 && suggestCount < maxAttempts &&
+				filter.ToBlock != nil && errors.As(err, &suggestErr) {
+				*filter.ToBlock = types.BlockNumber(suggestErr.SuggestedRange.To)
+
+				// check timeout before retry.
+				if err := checkTimeout(ctx); err != nil {
+					return nil, false, err
+				}
+
+				suggestCount++
+				continue
+			}
+
+			if suggestErr == nil {
+				return nil, false, err
+			}
+		}
+
+		// If for any reason a suggestion error was set, propagate it.
+		if suggestErr != nil {
+			return nil, false, suggestErr
 		}
 
 		// check the reorg version after query
