@@ -13,7 +13,6 @@ import (
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 // EthLogsApiHandler RPC handler to get evm space event logs from store or fullnode.
@@ -24,11 +23,8 @@ type EthLogsApiHandler struct {
 	maxSuggestAttempts int
 }
 
-func NewEthLogsApiHandler(ms *mysql.MysqlStore) *EthLogsApiHandler {
-	maxSuggestAttempts := viper.GetInt("requestControl.maxGetLogsSuggestionAttempts")
-	return &EthLogsApiHandler{
-		ms: ms, maxSuggestAttempts: maxSuggestAttempts,
-	}
+func NewEthLogsApiHandler(ms *mysql.MysqlStore, maxAttempts int) *EthLogsApiHandler {
+	return &EthLogsApiHandler{ms: ms, maxSuggestAttempts: maxAttempts}
 }
 
 func (handler *EthLogsApiHandler) GetLogs(
@@ -43,8 +39,10 @@ func (handler *EthLogsApiHandler) GetLogs(
 		return nil, false, err
 	}
 
-	var suggestErr *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
-	suggestCount := 0
+	var (
+		suggestErr   *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
+		suggestCount int
+	)
 
 	for {
 		logs, hitStore, err := handler.getLogsReorgGuard(ctx, eth, filter, delegatedRpcMethod)
