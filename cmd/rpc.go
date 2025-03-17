@@ -130,7 +130,8 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 		}
 
 		// initialize logs api handler
-		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.CfxDB, prunedHandler)
+		maxAttempts := viper.GetInt("requestControl.maxGetLogsSuggestionAttempts")
+		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.CfxDB, prunedHandler, maxAttempts)
 	}
 
 	// initialize RPC server
@@ -177,7 +178,8 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 		// initialize store handler
 		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.EthDB, nil)
 		// initialize logs api handler
-		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB)
+		maxAttempts := viper.GetInt("requestControl.maxGetLogsSuggestionAttempts")
+		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB, maxAttempts)
 
 		rateKeyLoader := rate.NewKeyLoader(storeCtx.EthDB.LoadRateLimitKeyInfos)
 		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewEthValidator)
