@@ -40,7 +40,7 @@ func (sp *storePruner) observe() {
 	}
 }
 
-// schedulePrune periodically monitors and removes extra more than the max sepcified number of
+// schedulePrune periodically monitors and removes extra more than the max specified number of
 // archive bn partitions. Be noted this function will block caller thread.
 func (sp *storePruner) schedulePrune(config *Config) {
 	ticker := time.NewTicker(time.Minute * 15)
