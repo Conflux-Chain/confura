@@ -130,6 +130,9 @@ func (h *CfxGasStationHandler) trySync(cfx sdk.ClientOperator) (bool, error) {
 	if pivotBlock == nil {
 		return false, errors.New("pivot block is nil")
 	}
+	if pivotBlock.GasUsed == nil {
+		return false, errors.New("unexecuted pivot block")
+	}
 
 	prevEpochBh := h.prevEpochPivotBlockHash()
 	if len(prevEpochBh) > 0 && prevEpochBh != pivotBlock.ParentHash {
@@ -145,7 +148,7 @@ func (h *CfxGasStationHandler) trySync(cfx sdk.ClientOperator) (bool, error) {
 		return false, nil
 	}
 
-	blockHashes, blocks, err := h.fetchBlocks(cfx, epoch, pivotBlock)
+	blockHashes, blocks, err := h.fetchBlocks(cfx, pivotBlock)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"pivotBlockHash": pivotBlock.Hash,
@@ -164,8 +167,14 @@ func (h *CfxGasStationHandler) trySync(cfx sdk.ClientOperator) (bool, error) {
 }
 
 func (h *CfxGasStationHandler) fetchBlocks(
-	cfx sdk.ClientOperator, epoch *cfxtypes.Epoch, pivotBlock *cfxtypes.Block,
-) ([]cfxtypes.Hash, []*cfxtypes.Block, error) {
+	cfx sdk.ClientOperator, pivotBlock *cfxtypes.Block) ([]cfxtypes.Hash, []*cfxtypes.Block, error) {
+	if pivotBlock.EpochNumber == nil {
+		return nil, nil, errors.New("pivot block epoch number is nil")
+	}
+
+	epochNo := pivotBlock.EpochNumber.ToInt().Uint64()
+	epoch := cfxtypes.NewEpochNumberUint64(epochNo)
+
 	// Get epoch block hashes.
 	blockHashes, err := cfx.GetBlocksByEpoch(epoch)
 	if err != nil {
@@ -182,8 +191,8 @@ func (h *CfxGasStationHandler) fetchBlocks(
 	}
 
 	var blocks []*cfxtypes.Block
-	for i := 0; i < len(blockHashes)-1; i++ {
-		block, err := cfx.GetBlockByHashWithPivotAssumption(blockHashes[i], pivotHash, hexutil.Uint64(h.fromEpoch))
+	for i := range len(blockHashes) - 1 {
+		block, err := cfx.GetBlockByHashWithPivotAssumption(blockHashes[i], pivotHash, hexutil.Uint64(epochNo))
 		if err != nil {
 			return nil, nil, err
 		}
