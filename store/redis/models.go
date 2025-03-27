@@ -223,7 +223,7 @@ func loadEpochRange(ctx context.Context, rc redis.Cmdable, dt store.EpochDataTyp
 		}
 	}
 
-	epochRanges[0] = util.MinUint64(epochRanges[0], epochRanges[1])
+	epochRanges[0] = min(epochRanges[0], epochRanges[1])
 	if epochRanges[0] == citypes.EpochNumberNil { // both epoch number are uninitialized
 		return 0, 0, store.ErrNotFound
 	}

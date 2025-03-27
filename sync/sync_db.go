@@ -12,7 +12,6 @@ import (
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	citypes "github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -355,7 +354,7 @@ func (syncer *DatabaseSyncer) doTicker(ctx context.Context, ticker *time.Timer) 
 }
 
 func (syncer *DatabaseSyncer) nextEpochTo(maxEpochTo uint64) (uint64, uint64) {
-	epochTo := util.MinUint64(syncer.epochFrom+syncer.maxSyncEpochs-1, maxEpochTo)
+	epochTo := min(syncer.epochFrom+syncer.maxSyncEpochs-1, maxEpochTo)
 
 	if epochTo < syncer.epochFrom {
 		return epochTo, 0
