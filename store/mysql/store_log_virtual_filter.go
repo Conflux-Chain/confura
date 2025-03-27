@@ -7,7 +7,6 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -144,7 +143,7 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []VirtualFilterLog, p
 			blockHashes = append(blockHashes, bh)
 		}
 
-		bnMin, bnMax = util.MinUint64(bn, bnMin), util.MaxUint64(bn, bnMax)
+		bnMin, bnMax = min(bn, bnMin), max(bn, bnMax)
 	}
 
 	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)

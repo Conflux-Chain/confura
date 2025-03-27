@@ -6,7 +6,6 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	citypes "github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/pkg/errors"
@@ -89,7 +88,7 @@ func ensureEpochRangeNotRerverted(
 		winEnd = winStart - 1      // decrease winEnd to the left one of winStart
 		winStart = epochRange.From // set winStart to the first epoch of the epoch range
 		if winEnd >= winSize {     // if winEnd can cover winSize, calculate the winStart
-			winStart = util.MaxUint64(winEnd-winSize+1, epochRange.From) // also make sure winStart be within the epoch range
+			winStart = max(winEnd-winSize+1, epochRange.From) // also make sure winStart be within the epoch range
 		}
 	}
 

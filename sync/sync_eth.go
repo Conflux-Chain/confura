@@ -12,7 +12,6 @@ import (
 	"github.com/Conflux-Chain/confura/sync/catchup"
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
@@ -181,7 +180,7 @@ func (syncer *EthSyncer) doTicker(ctx context.Context, ticker *time.Timer) error
 }
 
 func (syncer *EthSyncer) nextBlockTo(maxBlockTo uint64) (uint64, uint64) {
-	toBlock := util.MinUint64(syncer.fromBlock+syncer.maxSyncBlocks-1, maxBlockTo)
+	toBlock := min(syncer.fromBlock+syncer.maxSyncBlocks-1, maxBlockTo)
 	syncSize := toBlock - syncer.fromBlock + 1
 	return toBlock, syncSize
 }
