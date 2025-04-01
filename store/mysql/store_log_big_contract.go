@@ -16,6 +16,9 @@ import (
 const (
 	// threshold count of event logs for contract to be regarded as big contract.
 	thresholdBigContractLogCount = 100_000
+
+	// default batch size for migrating logs from address indexed table to contract specified log table
+	defaultBatchSizeForLogMigrating = 1_000
 )
 
 // contractLog event logs for specified contract
@@ -131,7 +134,8 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 		var bnMin, bnMax uint64
 
 		aidb := dbTx.Table(aiTableName).Where("cid = ?", contract.ID)
-		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeLogInsert, func(tx *gorm.DB, batch int) error {
+
+		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeForLogMigrating, func(tx *gorm.DB, batch int) error {
 			deleteIds := make([]uint64, 0, len(aiLogs))
 			clLogs := make([]*contractLog, 0, len(aiLogs))
 
@@ -264,7 +268,7 @@ func (bcls *bigContractLogStore) Add(
 		}
 
 		tblName := bcls.getPartitionedTableName(clTabler, partition.Index)
-		err = dbTx.Table(tblName).CreateInBatches(logs, defaultBatchSizeLogInsert).Error
+		err = dbTx.Table(tblName).Create(logs).Error
 		if err != nil {
 			return err
 		}
@@ -295,7 +299,7 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 		return nil
 	}
 
-	bn, ok, err := bcls.ebms.BlockRange(epochUntil)
+	e2bmap, ok, err := bcls.ebms.CeilBlockMapping(epochUntil)
 	if err != nil {
 		return errors.WithMessagef(err, "failed to get block mapping for epoch %v", epochUntil)
 	}
@@ -309,7 +313,7 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 		contractEntity := bcls.contractEntity(contract.ID)
 		contractTabler := bcls.contractTabler(contract.ID)
 
-		partitions, existed, err := bcls.shrinkBnRange(dbTx, contractEntity, bn.From)
+		partitions, existed, err := bcls.shrinkBnRange(dbTx, contractEntity, e2bmap.BnMin)
 		if err != nil {
 			return errors.WithMessage(err, "failed to shrink partition bn range")
 		}
@@ -324,7 +328,7 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 			partition := partitions[i]
 			tblName := bcls.getPartitionedTableName(contractTabler, partition.Index)
 
-			res := dbTx.Table(tblName).Where("bn >= ?", bn.From).Delete(&contractLog{})
+			res := dbTx.Table(tblName).Where("bn >= ?", e2bmap.BnMin).Delete(&contractLog{})
 			if res.Error != nil {
 				return res.Error
 			}

@@ -4,15 +4,11 @@ import (
 	"database/sql"
 
 	"github.com/Conflux-Chain/confura/store"
-	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
 
 const (
-	// batch insert size for epoch to block mapping
-	defaultBatchSizeMappingInsert = 1000
-
 	// epoch to block mapping partition size
 	epochToBlockMappingPartitionSize = 50_000_000
 )
@@ -114,39 +110,46 @@ func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
 	return uint64(maxEpoch.Int64), true, nil
 }
 
-// BlockRange returns the spanning block range for the give epoch.
-func (e2bms *epochBlockMapStore) BlockRange(epoch uint64) (citypes.RangeUint64, bool, error) {
-	var e2bmap epochBlockMap
-	var bnr citypes.RangeUint64
+// findOneBlockMapping retrieves a single `epochBlockMap` record based on a condition and optional ordering.
+func (e2bms *epochBlockMapStore) findOneBlockMapping(
+	condition string, order string, args ...interface{}) (res epochBlockMap, existed bool, err error) {
 
-	existed, err := e2bms.exists(&e2bmap, "epoch = ?", epoch)
-	if err != nil {
-		return bnr, false, err
+	query := e2bms.db.Where(condition, args...)
+	if order != "" {
+		query = query.Order(order)
 	}
-
-	bnr.From, bnr.To = e2bmap.BnMin, e2bmap.BnMax
-	return bnr, existed, nil
+	err = query.Take(&res).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return res, false, nil
+	}
+	if err != nil {
+		return res, false, err
+	}
+	return res, true, nil
 }
 
-// ClosestEpochUpToBlock finds the nearest epoch whose ending block number is less than or equal to `blockNumber`.
-// It ensures that the epoch number does not exceed `maxEpochNumber`. The function returns the epoch number,
-// a boolean indicating whether a valid epoch was found, and an error if any occurred during the query.
-func (e2bms *epochBlockMapStore) ClosestEpochUpToBlock(maxEpochNumber, blockNumber uint64) (uint64, bool, error) {
-	var result epochBlockMap
-	err := e2bms.db.
-		Select("epoch").
-		Where("epoch <= ? AND bn_max <= ?", maxEpochNumber, blockNumber).
-		Order("epoch DESC").
-		Take(&result).Error
+// FloorBlockMapping finds the `epochBlockMap` for the largest epoch ≤ the given epoch.
+func (e2bms *epochBlockMapStore) FloorBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
+	return e2bms.findOneBlockMapping("epoch <= ?", "epoch DESC", epoch)
+}
 
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return 0, false, nil
-		}
+// CeilBlockMapping finds the `epochBlockMap` for the smallest epoch ≥ the given epoch.
+func (e2bms *epochBlockMapStore) CeilBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
+	return e2bms.findOneBlockMapping("epoch >= ?", "epoch ASC", epoch)
+}
+
+// BlockMapping retrieves the `epochBlockMap` for the exact given epoch.
+func (e2bms *epochBlockMapStore) BlockMapping(epoch uint64) (epochBlockMap, bool, error) {
+	return e2bms.findOneBlockMapping("epoch = ?", "", epoch)
+}
+
+// LatestEpochBeforeBlock finds the latest epoch ≤ maxEpochNumber where BnMax ≤ blockNumber.
+func (e2bms *epochBlockMapStore) LatestEpochBeforeBlock(maxEpochNumber, blockNumber uint64) (uint64, bool, error) {
+	res, existed, err := e2bms.findOneBlockMapping("epoch <= ? AND bn_max <= ?", "epoch DESC", maxEpochNumber, blockNumber)
+	if err != nil || !existed {
 		return 0, false, err
 	}
-
-	return result.Epoch, true, nil
+	return res.Epoch, true, nil
 }
 
 // pivotHash returns the pivot hash of the given epoch.
@@ -188,7 +191,7 @@ func (e2bms *epochBlockMapStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData
 		return nil
 	}
 
-	return dbTx.CreateInBatches(mappings, defaultBatchSizeMappingInsert).Error
+	return dbTx.Create(mappings).Error
 }
 
 // Remove remove epoch to block mappings of specific epoch range from db store.

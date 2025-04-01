@@ -11,8 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const defaultBatchSizeLogInsert = 500
-
 // Address indexed logs are used to filter event logs by contract address and optional block number.
 // Generally, most contracts have limited event logs and need not to specify the epoch/block range filter.
 // For some active contracts, e.g. USDT, that have many event logs, could store in separate tables.
@@ -117,25 +115,54 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(
 	return partition2Logs, contract2LogCount, nil
 }
 
-// AddAddressIndexedLogs adds event logs of specified epoch (with that of big contract ignored) into different partitioned tables.
-func (ls *AddressIndexedLogStore) AddAddressIndexedLogs(dbTx *gorm.DB, data *store.EpochData, bigContractIds map[uint64]bool) error {
-	// divide event logs into different partitions by address
-	partition2Logs, contract2LogCount, err := ls.convertToPartitionedLogs(data, bigContractIds)
-	if err != nil {
-		return err
+// Add inserts event logs from a batch of epochs into partitioned tables, while ignoring logs from big contracts.
+func (ls *AddressIndexedLogStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, bigContractIds map[uint64]bool) error {
+	var (
+		allContract2LogCount      = make(map[uint64]int)
+		allContract2UpdatedEpochs = make(map[uint64]uint64)
+		allPartition2Logs         = make(map[uint32][]*AddressIndexedLog)
+	)
+
+	// Merge all event logs of different epochs partitioned by contract address together for later bulk insert for performance.
+	//
+	// `allPartition2Logs` is used to store all event logs of different epochs partitioned by contract address.
+	// `allContract2LogCount` is used to store the total count of event logs for each contract.
+	// `allContract2UpdatedEpochs` is used to store the updated epoch for each contract.
+	for _, data := range dataSlice {
+		// Divides event logs into different partitions by address.
+		partition2Logs, contract2LogCount, err := ls.convertToPartitionedLogs(data, bigContractIds)
+		if err != nil {
+			return errors.WithMessage(err, "failed to convert to partitioned logs")
+		}
+
+		// Merge all event logs of different epochs partitioned by contract address into `allPartition2Logs`
+		for partition, logs := range partition2Logs {
+			allPartition2Logs[partition] = append(allPartition2Logs[partition], logs...)
+		}
+
+		// Merge all count of event logs for each contract into `allContract2LogCount`
+		for cid, logCount := range contract2LogCount {
+			allContract2LogCount[cid] += logCount
+		}
+
+		// Update the updated epoch for each contract into `allContract2UpdatedEpochs`
+		for cid := range contract2LogCount {
+			allContract2UpdatedEpochs[cid] = data.Number
+		}
 	}
 
 	// Insert address indexed logs into different partitions.
-	for partition, logs := range partition2Logs {
+	for partition, logs := range allPartition2Logs {
 		tableName := ls.getPartitionedTableName(&ls.model, partition)
-		if err := dbTx.Table(tableName).CreateInBatches(&logs, defaultBatchSizeLogInsert).Error; err != nil {
+		if err := dbTx.Table(tableName).Create(&logs).Error; err != nil {
 			return err
 		}
 	}
 
-	for cid, logCount := range contract2LogCount {
+	for cid, logCount := range allContract2LogCount {
 		// Update contract statistics (log count and lastest updated epoch).
-		if err := ls.cs.UpdateContractStats(dbTx, cid, logCount, data.Number); err != nil {
+		latestUpdatedEpoch := allContract2UpdatedEpochs[cid]
+		if err := ls.cs.UpdateContractStats(dbTx, cid, logCount, latestUpdatedEpoch); err != nil {
 			return errors.WithMessage(err, "failed to update contract statistics")
 		}
 	}
@@ -152,6 +179,10 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 		return errors.WithMessage(err, "failed to get updated contracts since start epoch")
 	}
 
+	if len(contracts) == 0 {
+		return nil
+	}
+
 	// Delete logs for all possible contracts in batches.
 	for _, contract := range contracts {
 		partition := ls.getPartitionByAddress(contract.Address)
@@ -164,6 +195,8 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 		}
 
 		// Update contract statistics (log count and lastest updated epoch).
+		// A rough estimation of the number of logs deleted from the contract, not accounting for other contracts in the same partition
+		// since the accuracy is not critical and it happens rarely.
 		if err := ls.cs.UpdateContractStats(dbTx, contract.ID, int(-res.RowsAffected), epochFrom); err != nil {
 			return errors.WithMessage(err, "failed to update contract statistics")
 		}

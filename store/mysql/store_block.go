@@ -10,10 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	defaultBatchSizeBlockInsert = 500
-)
-
 type block struct {
 	ID          uint64
 	Epoch       uint64 `gorm:"not null;index"`
@@ -164,7 +160,7 @@ func (bs *blockStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
 		return nil
 	}
 
-	return dbTx.CreateInBatches(blocks, defaultBatchSizeBlockInsert).Error
+	return dbTx.Create(blocks).Error
 }
 
 // Remove remove blocks of specific epoch range from db store.

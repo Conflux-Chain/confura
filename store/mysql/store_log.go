@@ -114,7 +114,7 @@ func (ls *logStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartitio
 	}
 
 	tblName := ls.getPartitionedTableName(&ls.model, logPartition.Index)
-	err = dbTx.Table(tblName).CreateInBatches(logs, defaultBatchSizeLogInsert).Error
+	err = dbTx.Table(tblName).Create(logs).Error
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (ls *logStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartitio
 
 // Popn pops event logs until the specific epoch from db store.
 func (ls *logStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
-	bn, ok, err := ls.ebms.BlockRange(epochUntil)
+	e2bmap, ok, err := ls.ebms.CeilBlockMapping(epochUntil)
 	if err != nil {
 		return errors.WithMessagef(err, "failed to get block mapping for epoch %v", epochUntil)
 	}
@@ -140,7 +140,7 @@ func (ls *logStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	}
 
 	// update block range for log partition router
-	partitions, existed, err := ls.shrinkBnRange(dbTx, bnPartitionedLogEntity, bn.From)
+	partitions, existed, err := ls.shrinkBnRange(dbTx, bnPartitionedLogEntity, e2bmap.BnMin)
 	if err != nil {
 		return errors.WithMessage(err, "failed to shrink partition bn range")
 	}
@@ -153,7 +153,7 @@ func (ls *logStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 		partition := partitions[i]
 		tblName := ls.getPartitionedTableName(&log{}, partition.Index)
 
-		res := dbTx.Table(tblName).Where("bn >= ?", bn.From).Delete(log{})
+		res := dbTx.Table(tblName).Where("bn >= ?", e2bmap.BnMin).Delete(log{})
 		if res.Error != nil {
 			return res.Error
 		}

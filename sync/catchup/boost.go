@@ -547,9 +547,8 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 			forcePersist = true
 		}
 
-		// Batch insert into db if `forcePersist` is true or enough db rows collected, also use total db rows here to
-		// check if we need to persist to restrict memory usage.
-		if forcePersist || state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
+		// Batch insert into db if `forcePersist` is true or enough db rows collected.
+		if forcePersist || state.insertDbRows >= s.minBatchDbRows {
 			if err := s.persist(ctx, &state, bmarker); err != nil {
 				return err
 			}

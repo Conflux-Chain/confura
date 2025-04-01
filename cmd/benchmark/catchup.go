@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/sync/catchup"
@@ -16,17 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// CatchUpMode defines the supported catch-up modes.
-type CatchUpMode string
-
-const (
-	ModeClassic CatchUpMode = "classic"
-	ModeBoost   CatchUpMode = "boost"
-)
-
 type CatchUpCmdConfig struct {
 	Network string // network space ("cfx" or "eth")
-	Mode    string // catch-up mode ("classic" or "boost")
 	Start   uint64 // start epoch/block number
 	Count   uint64 // number of epochs/blocks to sync
 }
@@ -41,9 +31,6 @@ var (
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if network := catchUpConfig.Network; !isValidNetwork(network) {
 				return fmt.Errorf("invalid network '%s', allowed values are 'cfx' or 'eth'", network)
-			}
-			if mode := catchUpConfig.Mode; !isValidCatchUpMode(mode) {
-				return fmt.Errorf("invalid mode '%s', allowed values are 'classic' or 'boost'", mode)
 			}
 			return nil
 		},
@@ -63,13 +50,6 @@ func hookCatchUpCmdFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(
 		&catchUpConfig.Network, "network", "n", "cfx", "network space ('cfx' or 'eth')",
 	)
-	cmd.MarkFlagRequired("network")
-
-	cmd.Flags().StringVarP(
-		&catchUpConfig.Mode, "mode", "m", "", "catch-up mode ('classic' or 'boost')",
-	)
-	cmd.MarkFlagRequired("mode")
-
 	cmd.Flags().Uint64VarP(
 		&catchUpConfig.Start, "start", "s", 0, "start epoch or block number to sync from",
 	)
@@ -96,22 +76,22 @@ func runCatchUpBenchmark(cmd *cobra.Command, args []string) {
 	catchUpSyncer := createCatchUpSyncer(syncCtx, storeCtx)
 	defer catchUpSyncer.Close()
 
-	// Determine sync range and mode
+	// Determine sync range
 	start := catchUpConfig.Start
 	end := catchUpConfig.Start + max(catchUpConfig.Count, 1) - 1
-	useBoost := strings.EqualFold(catchUpConfig.Mode, string(ModeBoost))
 
 	// Start the catch-up sync process
-	catchUpSyncer.SyncByRange(ctx, start, end, useBoost)
+	catchUpSyncer.SyncOnce(ctx, start, end)
 
 	// Also report RPC metrics after sync completes.
-	reportRpcMetrics(useBoost)
+	reportRpcMetrics(catchUpSyncer.UseBoost())
 }
 
 // initializeContexts sets up and returns the required store and sync contexts.
 func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
 	storeCtx := util.MustInitStoreContext()
-	if storeCtx.CfxDB == nil || storeCtx.EthDB == nil {
+	if network := catchUpConfig.Network; (network == "eth" && storeCtx.EthDB == nil) ||
+		(network == "cfx" && storeCtx.CfxDB == nil) {
 		return nil, nil, errors.New("database is not provided")
 	}
 
@@ -140,11 +120,6 @@ func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext)
 		catchUpConfig.Start,
 		catchup.WithBenchmark(true),
 	)
-}
-
-// isValidCatchUpMode checks if the provided mode is valid.
-func isValidCatchUpMode(mode string) bool {
-	return mode == string(ModeClassic) || mode == string(ModeBoost)
 }
 
 func isValidNetwork(network string) bool {
