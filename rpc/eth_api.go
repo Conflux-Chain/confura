@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/rpc/cache"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
@@ -178,7 +179,7 @@ func (api *ethAPI) GetBlockByNumber(
 
 	logger.Debug("Delegating eth_getBlockByNumber rpc request to fullnode")
 
-	var lazyBlock *lazyDecodedJsonObject[*web3Types.Block]
+	var lazyBlock *cache.LazyDecodedJsonObject[*web3Types.Block]
 	if err := w3c.Eth.CallContext(ctx, &lazyBlock, "eth_getBlockByNumber", blockNum, fullTx); err != nil {
 		return nil, err
 	}

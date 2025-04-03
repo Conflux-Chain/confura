@@ -74,6 +74,14 @@ func init() {
 			nodeName := ctx.Value(cacheHandlerCtxKey{}).(string)
 			return cache.EthDefault.GetBlockNumberWithFunc(nodeName, upstreamHandler)
 		},
+		"eth_getBlockByNumber": func(ctx context.Context, upstreamHandler func() (interface{}, error), args ...interface{}) (interface{}, bool, error) {
+			blockNum, includeTxs, err := parseEthBlockByNumberArguments(args...)
+			if err != nil {
+				return nil, false, err
+			}
+			nodeName := ctx.Value(cacheHandlerCtxKey{}).(string)
+			return cache.EthDefault.GetBlockByNumberWithFunc(nodeName, upstreamHandler, blockNum, includeTxs)
+		},
 		"eth_call": func(ctx context.Context, upstreamHandler func() (interface{}, error), args ...interface{}) (interface{}, bool, error) {
 			request, blockNumOrHash, err := parseEthCallArguments(args...)
 			if err != nil {
@@ -231,6 +239,16 @@ func middlewareCache(fullnode, space string) providers.CallContextMiddleware {
 			if err != nil {
 				return err
 			}
+
+			if logrus.IsLevelEnabled(logrus.DebugLevel) {
+				logrus.WithFields(logrus.Fields{
+					"fullnode": fullnode,
+					"space":    space,
+					"method":   method,
+					"args":     args,
+					"cacheHit": loaded,
+				}).Debug("RPC method cache loaded")
+			}
 			metrics.Registry.Client.CacheHit(method).Mark(loaded)
 			return processCacheResult(result, val)
 		}
@@ -275,6 +293,29 @@ func parseEthCallArguments(args ...interface{}) (web3Types.CallRequest, *web3Typ
 		}
 	}
 	return request, blockNumOrHash, nil
+}
+
+func parseEthBlockByNumberArguments(args ...interface{}) (blockNum web3Types.BlockNumber, includeTxs bool, err error) {
+	if len(args) != 2 {
+		return blockNum, false, errors.New("invalid argument: expected two arguments")
+	}
+
+	// Validate and extract the first argument
+	blockNum, ok := args[0].(web3Types.BlockNumber)
+	if !ok {
+		return blockNum, false, errors.Errorf(
+			"invalid argument: the first argument must be of type `web3Types.BlockNumber`, but received %T", args[0],
+		)
+	}
+	// Validate and extract the second argument
+	includeTxs, ok = args[1].(bool)
+	if !ok {
+		return blockNum, false, errors.Errorf(
+			"invalid argument: the second argument must be of type `bool`, but received %T", args[1],
+		)
+	}
+
+	return blockNum, includeTxs, nil
 }
 
 func setResult(result interface{}, val interface{}) error {

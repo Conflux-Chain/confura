@@ -78,6 +78,24 @@ func (cache *expiryCache) getOrUpdateAt(time time.Time, updateFunc func() (inter
 	return val, false, nil
 }
 
+func (cache *expiryCache) updateAt(time time.Time, updateFunc func() (interface{}, error)) (interface{}, error) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	val, err := updateFunc()
+	if err != nil {
+		return nil, err
+	}
+
+	// update cache
+	cache.value.Store(cacheValue{
+		value:    val,
+		expireAt: time.Add(cache.timeout),
+	})
+
+	return val, nil
+}
+
 // nodeExpiryCaches is used for multiple nodes to cache data respectively.
 type nodeExpiryCaches struct {
 	node2Caches util.ConcurrentMap // node name => expiryCache
@@ -117,4 +135,12 @@ func (caches *keyExpiryLruCaches) getOrUpdate(cacheKey string, updateFunc func()
 	})
 
 	return val.(*expiryCache).getOrUpdate(updateFunc)
+}
+
+func (caches *keyExpiryLruCaches) update(cacheKey string, updateFunc func() (interface{}, error)) (interface{}, error) {
+	val, _ := caches.key2Caches.GetOrUpdate(cacheKey, func() (interface{}, error) {
+		return newExpiryCache(caches.ttl), nil
+	})
+
+	return val.(*expiryCache).updateAt(time.Now(), updateFunc)
 }

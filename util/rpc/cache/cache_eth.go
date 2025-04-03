@@ -4,14 +4,17 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -27,6 +30,8 @@ type EthCacheConfig struct {
 	PriceExpiration         time.Duration `default:"3s"`
 	CallCacheExpiration     time.Duration `default:"1s"`
 	CallCacheSize           int           `default:"128"`
+	BlockByNumberExpiration time.Duration `default:"1s"`
+	BlockByNumberCacheSize  int           `default:"200"`
 }
 
 // newEthCacheConfig returns a EthCacheConfig with default values.
@@ -51,6 +56,7 @@ type EthCache struct {
 	priceCache         *expiryCache
 	blockNumberCache   *nodeExpiryCaches
 	callCache          *keyExpiryLruCaches
+	blockByNumberCache *keyExpiryLruCaches
 }
 
 func newEthCache(cfg EthCacheConfig) *EthCache {
@@ -61,6 +67,7 @@ func newEthCache(cfg EthCacheConfig) *EthCache {
 		priceCache:         newExpiryCache(cfg.PriceExpiration),
 		blockNumberCache:   newNodeExpiryCaches(cfg.BlockNumberExpiration),
 		callCache:          newKeyExpiryLruCaches(cfg.CallCacheExpiration, cfg.CallCacheSize),
+		blockByNumberCache: newKeyExpiryLruCaches(cfg.BlockByNumberExpiration, cfg.BlockByNumberCacheSize),
 	}
 }
 
@@ -154,6 +161,62 @@ func (cache *EthCache) GetBlockNumberWithFunc(nodeName string, rawGetter func() 
 		return nil, false, err
 	}
 	return val.(*hexutil.Big), loaded, nil
+}
+
+func (cache *EthCache) GetBlockByNumberWithFunc(
+	nodeName string, rawGetter func() (interface{}, error), blockNum types.BlockNumber, includeTxs bool) (interface{}, bool, error) {
+	blockNumStr, err := blockNum.MarshalText()
+	if err != nil {
+		return nil, false, errors.WithMessage(err, "failed to marshal block number as cache key")
+	}
+	cacheKey := fmt.Sprintf("%s-%s", nodeName, blockNumStr)
+
+	val, loaded, err := cache.blockByNumberCache.getOrUpdate(cacheKey, func() (interface{}, error) {
+		return rawGetter()
+	})
+	if err != nil || !loaded {
+		return val, false, err
+	}
+
+	var block *types.Block
+	switch v := val.(type) {
+	case *types.Block:
+		block = v
+	case *LazyDecodedJsonObject[*types.Block]:
+		if block, err = v.Load(); err != nil {
+			return nil, false, errors.WithMessage(err, "failed to load block from lazy decoded object")
+		}
+	default:
+		return nil, false, errors.Errorf("unexpected cache data type %T", val)
+	}
+
+	if includeTxs && block.Transactions.Type() == types.TXLIST_HASH {
+		val, err := cache.blockByNumberCache.update(cacheKey, func() (interface{}, error) {
+			return rawGetter()
+		})
+		return val, false, err
+	}
+
+	if !includeTxs && block.Transactions.Type() == types.TXLIST_TRANSACTION {
+		var txnHashes []common.Hash
+		for _, txn := range block.Transactions.Transactions() {
+			txnHashes = append(txnHashes, txn.Hash)
+		}
+
+		blockCopy := *block
+		blockCopy.Transactions = *types.NewTxOrHashListByHashes(txnHashes)
+		if _, ok := val.(*LazyDecodedJsonObject[*types.Block]); !ok {
+			return &blockCopy, true, nil
+		}
+
+		data, err := json.Marshal(&blockCopy)
+		if err != nil {
+			return nil, false, errors.WithMessage(err, "failed to marshal block data")
+		}
+		return NewLazyDecodedJsonObject[*types.Block](data), true, nil
+	}
+
+	return val, true, nil
 }
 
 // RPCResult represents the result of an RPC call,
