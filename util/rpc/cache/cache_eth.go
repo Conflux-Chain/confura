@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
@@ -27,6 +28,8 @@ type EthCacheConfig struct {
 	PriceExpiration         time.Duration `default:"3s"`
 	CallCacheExpiration     time.Duration `default:"1s"`
 	CallCacheSize           int           `default:"128"`
+	BlockCacheExpiration    time.Duration `default:"1s"`
+	BlockCacheSize          int           `default:"300"`
 }
 
 // newEthCacheConfig returns a EthCacheConfig with default values.
@@ -51,6 +54,7 @@ type EthCache struct {
 	priceCache         *expiryCache
 	blockNumberCache   *nodeExpiryCaches
 	callCache          *keyExpiryLruCaches
+	blockCache         *keyExpiryLruCaches
 }
 
 func newEthCache(cfg EthCacheConfig) *EthCache {
@@ -61,6 +65,7 @@ func newEthCache(cfg EthCacheConfig) *EthCache {
 		priceCache:         newExpiryCache(cfg.PriceExpiration),
 		blockNumberCache:   newNodeExpiryCaches(cfg.BlockNumberExpiration),
 		callCache:          newKeyExpiryLruCaches(cfg.CallCacheExpiration, cfg.CallCacheSize),
+		blockCache:         newKeyExpiryLruCaches(cfg.BlockCacheExpiration, cfg.BlockCacheSize),
 	}
 }
 
@@ -154,6 +159,18 @@ func (cache *EthCache) GetBlockNumberWithFunc(nodeName string, rawGetter func() 
 		return nil, false, err
 	}
 	return val.(*hexutil.Big), loaded, nil
+}
+
+func (cache *EthCache) GetBlockWithFunc(
+	nodeName string,
+	rawGetter func() (interface{}, error),
+	bnh types.BlockNumberOrHash,
+	includeTxn bool,
+) (interface{}, bool, error) {
+	cacheKey := fmt.Sprintf("%s::%s::%v", nodeName, &bnh, includeTxn)
+	return cache.blockCache.getOrUpdate(cacheKey, func() (interface{}, error) {
+		return rawGetter()
+	})
 }
 
 // RPCResult represents the result of an RPC call,

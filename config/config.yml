@@ -470,6 +470,9 @@ node:
 #     # LRU Cache size and expiration time duration for 'eth_call'
 #     callCacheExpiration: 1s
 #     callCacheSize: 128
+#     # LRU Cache size and expiration time duration for 'eth_getBlockBy{Number/Hash}'
+#     blockCacheExpiration: 1s
+#     blockCacheSize: 300
 #
 #   # ETH receipt retrieval configuration
 #   ethReceiptRetrieval:
