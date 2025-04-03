@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/rpc/cache"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	logutil "github.com/Conflux-Chain/go-conflux-util/log"
@@ -100,7 +101,7 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 // the block are returned in full detail, otherwise only the transaction hash is returned.
 func (api *ethAPI) GetBlockByHash(
 	ctx context.Context, blockHash common.Hash, fullTx bool,
-) (*web3Types.Block, error) {
+) (interface{}, error) {
 	metrics.Registry.RPC.Percentage("eth_getBlockByHash", "fullTx").Mark(fullTx)
 
 	logger := logrus.WithFields(logrus.Fields{
@@ -118,9 +119,24 @@ func (api *ethAPI) GetBlockByHash(
 		logger.WithError(err).Debug("Loading eth data for eth_getBlockByHash missed from the ethstore")
 	}
 
-	logger.Debug("Delegating eth_getBlockByHash rpc request to fullnode")
+	w3c := GetEthClientFromContext(ctx)
+	val, loaded, err := cache.EthDefault.GetBlockWithFunc(w3c.NodeName(), func() (interface{}, error) {
+		var lazyBlock *lazyDecodedJsonObject[*web3Types.Block]
+		err := w3c.Eth.CallContext(ctx, &lazyBlock, "eth_getBlockByHash", blockHash, fullTx)
+		return lazyBlock, err
+	}, web3Types.BlockNumberOrHashWithHash(blockHash, false), fullTx)
+	if err != nil {
+		return nil, err
+	}
 
-	return GetEthClientFromContext(ctx).Eth.BlockByHash(blockHash, fullTx)
+	if logrus.IsLevelEnabled(logrus.DebugLevel) {
+		logger.WithFields(logrus.Fields{
+			"nodeName": w3c.NodeName(),
+			"cacheHit": loaded,
+		}).Debug("`eth_getBlockByHash` rpc request handled")
+	}
+	metrics.Registry.Client.CacheHit("eth_getBlockByHash").Mark(loaded)
+	return val, err
 }
 
 // ChainId returns the chainID value for transaction replay protection.
@@ -176,13 +192,22 @@ func (api *ethAPI) GetBlockByNumber(
 		logger.WithError(err).Debug("Loading eth data for eth_getBlockByNumber missed from the ethstore")
 	}
 
-	logger.Debug("Delegating eth_getBlockByNumber rpc request to fullnode")
-
-	var lazyBlock *lazyDecodedJsonObject[*web3Types.Block]
-	if err := w3c.Eth.CallContext(ctx, &lazyBlock, "eth_getBlockByNumber", blockNum, fullTx); err != nil {
+	val, loaded, err := cache.EthDefault.GetBlockWithFunc(w3c.NodeName(), func() (interface{}, error) {
+		var lazyBlock *lazyDecodedJsonObject[*web3Types.Block]
+		err := w3c.Eth.CallContext(ctx, &lazyBlock, "eth_getBlockByNumber", blockNum, fullTx)
+		return lazyBlock, err
+	}, web3Types.BlockNumberOrHashWithNumber(blockNum), fullTx)
+	if err != nil {
 		return nil, err
 	}
-	return lazyBlock, nil
+	if logrus.IsLevelEnabled(logrus.DebugLevel) {
+		logger.WithFields(logrus.Fields{
+			"nodeName": w3c.NodeName(),
+			"cacheHit": loaded,
+		}).Debug("`eth_getBlockByNumber` rpc request handled")
+	}
+	metrics.Registry.Client.CacheHit("eth_getBlockByNumber").Mark(loaded)
+	return val, err
 }
 
 // GetUncleByBlockNumberAndIndex returns the uncle block for the given block hash and index.
