@@ -79,7 +79,7 @@ func WithBoostConfig(config boostConfig) SyncOption {
 
 func MustNewCfxSyncer(
 	clients []*sdk.Client,
-	db *mysql.MysqlStore,
+	dbs *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
@@ -100,12 +100,16 @@ func MustNewCfxSyncer(
 		workers = append(workers, worker)
 	}
 
-	return newSyncer(conf, rpcClients, workers, db, elm, monitor, epochFrom, opts...)
+	syncer, err := newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize CFX catch-up syncer")
+	}
+	return syncer
 }
 
 func MustNewEthSyncer(
 	clients []*web3go.Client,
-	db *mysql.MysqlStore,
+	dbs *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
@@ -126,18 +130,22 @@ func MustNewEthSyncer(
 		workers = append(workers, worker)
 	}
 
-	return newSyncer(conf, rpcClients, workers, db, elm, monitor, epochFrom, opts...)
+	syncer, err := newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize ETH catch-up syncer")
+	}
+	return syncer
 }
 
 func newSyncer(
 	conf config,
 	clients []IRpcClient,
 	workers []*worker,
-	db *mysql.MysqlStore,
+	dbs *mysql.MysqlStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
-	opts ...SyncOption) *Syncer {
+	opts ...SyncOption) (*Syncer, error) {
 
 	var cOpts []SyncOption
 	cOpts = append(cOpts,
@@ -151,23 +159,47 @@ func newSyncer(
 
 	syncer := &Syncer{
 		elm:            elm,
-		db:             db,
 		rpcClients:     clients,
 		monitor:        monitor,
 		epochFrom:      epochFrom,
-		minBatchDbRows: 1500,
+		minBatchDbRows: 1_500,
 	}
 	for _, opt := range cOpts {
 		opt(syncer)
 	}
 
-	return syncer
+	// Check boost mode eligibility
+	if syncer.UseBoost() {
+		// Boost mode is an optimization focused solely on syncing event logs.
+		// To achieve this, it requires disabling the syncing of blocks, transactions, and receipts.
+		// This is because boost mode skips fetching these data types for faster event log processing.
+		disabler := store.StoreConfig()
+		if !disabler.IsChainBlockDisabled() || !disabler.IsChainTxnDisabled() || !disabler.IsChainReceiptDisabled() {
+			return nil, errors.New("boost mode is incompatible with syncing data types other than event logs")
+		}
+	}
+
+	// Clone a new db store to maximize txn batch size
+	newDbs, err := dbs.Clone()
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to clone db store")
+	}
+	newDbs.SetTxnBatchSize(conf.MaxDbRows)
+	syncer.db = newDbs
+
+	return syncer, nil
 }
 
-func (s *Syncer) Close() {
+func (s *Syncer) UseBoost() bool {
+	return s.boostConf.Enabled
+}
+
+func (s *Syncer) Close() error {
 	for _, w := range s.workers {
 		w.Close()
 	}
+
+	return s.db.Close()
 }
 
 func (s *Syncer) Sync(ctx context.Context) {
@@ -194,22 +226,11 @@ func (s *Syncer) Sync(ctx context.Context) {
 			break
 		}
 
-		s.syncOnce(ctx, start, end)
+		s.SyncOnce(ctx, start, end)
 	}
 }
 
-func (s *Syncer) syncOnce(ctx context.Context, start, end uint64) {
-	// Boost sync performance if all chain data types are disabled except event logs by using `getLogs` to synchronize
-	// blockchain data across wide epoch range, or using `epoch-by-epoch` sync mode if any of them are enabled.
-	if disabler := store.StoreConfig(); !disabler.IsChainLogDisabled() &&
-		disabler.IsChainBlockDisabled() && disabler.IsChainTxnDisabled() && disabler.IsChainReceiptDisabled() {
-		s.SyncByRange(ctx, start, end, true)
-	} else {
-		s.SyncByRange(ctx, start, end, false)
-	}
-}
-
-func (s *Syncer) SyncByRange(ctx context.Context, start, end uint64, useBoostMode ...bool) {
+func (s *Syncer) SyncOnce(ctx context.Context, start, end uint64) {
 	var bmarker *benchmarker
 	if s.benchmark {
 		bmarker = newBenchmarker()
@@ -220,17 +241,15 @@ func (s *Syncer) SyncByRange(ctx context.Context, start, end uint64, useBoostMod
 		}()
 	}
 
-	useBoost := len(useBoostMode) > 0 && useBoostMode[0]
-
 	if logrus.IsLevelEnabled(logrus.DebugLevel) {
 		logrus.WithFields(logrus.Fields{
 			"rangeStart":   start,
 			"rangeEnd":     end,
-			"boostEnabled": useBoost,
+			"boostEnabled": s.UseBoost(),
 		}).Debug("Catch-up syncer is synchronizing by range...")
 	}
 
-	if useBoost {
+	if s.UseBoost() {
 		newBoostSyncer(s).doSync(ctx, bmarker, start, end)
 	} else {
 		s.doSync(ctx, bmarker, start, end)
@@ -309,7 +328,7 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 
 			// Batch insert into db if enough db rows collected, also use total db rows here to
 			// restrict memory usage.
-			if state.totalDbRows >= s.maxDbRows || state.insertDbRows >= s.minBatchDbRows {
+			if state.insertDbRows >= s.minBatchDbRows || (s.maxDbRows > 0 && state.totalDbRows >= s.maxDbRows) {
 				err := s.persist(ctx, &state, bmarker)
 				if err != nil {
 					return err

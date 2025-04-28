@@ -143,6 +143,9 @@ eth:
 #     benchmark: false
 #     # Boost mode configuration
 #     boost:
+#       # Whether to enable boost mode for faster event log synchronization.
+#       # This mode is effective only when syncing event logs exclusively (other data types like blocks must be disabled).
+#       enabled: false
 #       # Task queue sizes to schedule tasks
 #       taskQueueSize: 1000
 #       # Task result queue sizes to collect results
@@ -229,6 +232,7 @@ eth:
 #     connMaxLifeTime: 3m
 #     maxOpenConns: 10
 #     maxIdleConns: 10
+#     createBatchSize: 500
 #     # Whether to use event log partitions hashed by contract address
 #     addressIndexedLogEnabled: true
 #     # Number of partitions for address indexed event log table, valid only if above option enabled
@@ -256,6 +260,7 @@ eth:
 #     connMaxLifeTime: 3m
 #     maxOpenConns: 10
 #     maxIdleConns: 10
+#     createBatchSize: 500
 #     addressIndexedLogEnabled: true
 #     addressIndexedLogPartitions: 100
 #     maxBnRangedArchiveLogPartitions: 5

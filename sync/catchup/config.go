@@ -22,6 +22,8 @@ type config struct {
 
 // boostConfig holds the configuration parameters for boost catch-up mode.
 type boostConfig struct {
+	// enable boost mode
+	Enabled bool
 	// task queue sizes to schedule tasks
 	TaskQueueSize int `default:"1000"`
 	// task result queue sizes to collect results
