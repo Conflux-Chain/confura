@@ -4,7 +4,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/montanaflynn/stats"
@@ -257,7 +256,7 @@ func (e *GasPriceEstimater) collectStats() (bool, error) {
 	}
 
 	// collect tx sample statistics
-	startEpoch := util.MaxUint64(
+	startEpoch := max(
 		e.estimateWin.startEpoch, e.estimateWin.endEpoch-batchStatsEpochs+1,
 	)
 

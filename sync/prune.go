@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -147,7 +146,7 @@ func (pruner *Pruner) doPruneEpochData(dt store.EpochDataType) error {
 
 	// Calculate max epoch number until to which epoch data to be dequeued
 	epochUntil := minEpoch + pruner.pruneConfig.MaxPruneEpochs - 1
-	epochUntil = util.MinUint64(epochUntil, maxEpoch)
+	epochUntil = min(epochUntil, maxEpoch)
 
 	logrus.WithField("epochUntil", epochUntil).Infof("%v dequeue epoch %v data", pruner.name, dt.Name())
 

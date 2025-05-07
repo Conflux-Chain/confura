@@ -178,7 +178,7 @@ func TestCfxFilterDataValidity(t *testing.T) {
 			if len(fepoch.logs) == 0 { // pruned?
 				valStartEpochNum, valEndEpochNum = uint64(math.MaxUint64), uint64(0)
 			} else {
-				valStartEpochNum = util.MinUint64(valStartEpochNum, fepoch.epochNum)
+				valStartEpochNum = min(valStartEpochNum, fepoch.epochNum)
 				valEndEpochNum = fepoch.epochNum
 			}
 
@@ -320,7 +320,7 @@ func TestEthFilterDataValidity(t *testing.T) {
 			if len(fblock.logs) == 0 { // pruned?
 				valStartBlockNum, valEndBlockNum = uint64(math.MaxUint64), uint64(0)
 			} else {
-				valStartBlockNum = util.MinUint64(valStartBlockNum, fblock.blockNum)
+				valStartBlockNum = min(valStartBlockNum, fblock.blockNum)
 				valEndBlockNum = fblock.blockNum
 			}
 

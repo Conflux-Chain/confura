@@ -9,7 +9,6 @@ import (
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
@@ -121,7 +120,7 @@ func (f *ethLogFilter) fetch() (filterChanges, error) {
 	for _, fb := range pchanges.blocks {
 		if len(fb.logs) == 0 { // filter blocks missing of event logs
 			missingBlockhashes = append(missingBlockhashes, fb.blockHash.String())
-			bnMin, bnMax = util.MinUint64(fb.blockNum, bnMin), util.MaxUint64(fb.blockNum, bnMax)
+			bnMin, bnMax = min(fb.blockNum, bnMin), max(fb.blockNum, bnMax)
 		}
 	}
 

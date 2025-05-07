@@ -3,7 +3,6 @@ package sync
 import (
 	"testing"
 
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -94,7 +93,7 @@ func TestEpochWindowShrinkFrom(t *testing.T) {
 	ew.reset(23892, 24503)
 	sf, ss = ew.peekShrinkFrom(5000)
 	assert.Equal(t, ew.epochFrom, sf)
-	assert.Equal(t, util.MinUint32(ew.size(), 5000), ss)
+	assert.Equal(t, min(ew.size(), 5000), ss)
 
 	sf2, ss2 := ew.shrinkFrom(5000)
 	assert.Equal(t, sf, sf2)
