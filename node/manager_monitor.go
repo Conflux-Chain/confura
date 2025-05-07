@@ -102,6 +102,8 @@ func (m *Manager) updateUnhealthy(nodeName string) {
 
 // ReportHealthy reports healthy status of managed node to manager.
 func (m *Manager) ReportHealthy(nodeName string) {
+	m.updateHealthy(nodeName)
+
 	// alert
 	logrus.WithField("node", nodeName).Warn("Node became healthy now")
 
