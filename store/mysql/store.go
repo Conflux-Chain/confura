@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"io"
+	"slices"
 	"sort"
 	"time"
 
@@ -283,6 +284,7 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 	defer metrics.Registry.Store.GetLogs().UpdateSince(startTime)
 
 	contracts := storeFilter.Contracts.ToSlice()
+	slices.Sort(contracts)
 
 	// if address not specified, query from universal event log table partition
 	// ranged by block number.
@@ -325,7 +327,7 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 
 			// check log count
 			if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-				return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, true)
+				return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, false)
 			}
 
 			continue
