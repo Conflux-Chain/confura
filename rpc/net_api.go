@@ -25,6 +25,6 @@ func (api *netAPI) Listening(ctx context.Context) (res bool, err error) {
 // PeerCount Returns number of peers currently connected to the client.
 func (api *netAPI) PeerCount(ctx context.Context) (res hexutil.Uint64, err error) {
 	w3c := GetEthClientFromContext(ctx)
-	err = w3c.Client.CallContext(ctx, (*uint64)(&res), "net_peerCount")
+	err = w3c.Client.CallContext(ctx, &res, "net_peerCount")
 	return res, err
 }
