@@ -1,14 +1,13 @@
 package metrics
 
 import (
-	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
 )
 
 // InputBlockMetric is used to add metrics for input block parameter.
 type InputBlockMetric struct{}
 
-func (metric *InputBlockMetric) updateBlockNumberIgnoreDefault(blockNum *types.BlockNumber, method string, eth *client.RpcEthClient) {
+func (metric *InputBlockMetric) updateBlockNumberIgnoreDefault(blockNum *types.BlockNumber, method string, eth EthNodeMetricsReader) {
 	// mark percentage for most popular values
 	isLatest := (blockNum != nil && *blockNum == types.LatestBlockNumber)
 	Registry.RPC.InputBlock(method, "latest").Mark(isLatest)
@@ -34,12 +33,12 @@ func (metric *InputBlockMetric) updateBlockNumberIgnoreDefault(blockNum *types.B
 	}
 }
 
-func (metric *InputBlockMetric) Update1(blockNum *types.BlockNumber, method string, eth *client.RpcEthClient) {
+func (metric *InputBlockMetric) Update1(blockNum *types.BlockNumber, method string, eth EthNodeMetricsReader) {
 	Registry.RPC.InputBlock(method, "default").Mark(blockNum == nil)
 	metric.updateBlockNumberIgnoreDefault(blockNum, method, eth)
 }
 
-func (metric *InputBlockMetric) Update2(blockNumOrHash *types.BlockNumberOrHash, method string, eth *client.RpcEthClient) {
+func (metric *InputBlockMetric) Update2(blockNumOrHash *types.BlockNumberOrHash, method string, eth EthNodeMetricsReader) {
 	Registry.RPC.InputBlock(method, "default").Mark(blockNumOrHash == nil)
 	Registry.RPC.InputBlock(method, "hash").Mark(blockNumOrHash != nil && blockNumOrHash.BlockHash != nil)
 

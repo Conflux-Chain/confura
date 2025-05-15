@@ -10,10 +10,10 @@ import (
 
 // CfxClientProvider provides core space client by router.
 type CfxClientProvider struct {
-	*clientProvider
+	*clientProvider[sdk.ClientOperator]
 }
 
-func newCfxClient(url string) (interface{}, error) {
+func newCfxClient(url string) (sdk.ClientOperator, error) {
 	return rpc.NewCfxClient(url, rpc.WithClientHookMetrics(true), rpc.WithClientHookCache(true))
 }
 
@@ -25,23 +25,13 @@ func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvide
 
 // GetClient gets client of specific group (or use normal HTTP group as default).
 func (p *CfxClientProvider) GetClient(key string, groups ...Group) (sdk.ClientOperator, error) {
-	client, err := p.getClient(key, cfxNodeGroup(groups...))
-	if err != nil {
-		return nil, err
-	}
-
-	return client.(sdk.ClientOperator), nil
+	return p.getClient(key, cfxNodeGroup(groups...))
 }
 
 // GetClientByIP gets client of specific group (or use normal HTTP group as default) by remote IP address.
 func (p *CfxClientProvider) GetClientByIP(ctx context.Context, groups ...Group) (sdk.ClientOperator, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
-	client, err := p.getClient(remoteAddr, cfxNodeGroup(groups...))
-	if err != nil {
-		return nil, err
-	}
-
-	return client.(sdk.ClientOperator), nil
+	return p.getClient(remoteAddr, cfxNodeGroup(groups...))
 }
 
 // GetClientsByGroup gets all clients of specific group.
@@ -54,7 +44,7 @@ func (p *CfxClientProvider) GetClientsByGroup(grp Group) (clients []sdk.ClientOp
 	nodeUrls := np.ListNodesByGroup(grp)
 	for _, url := range nodeUrls {
 		if c, err := p.getOrRegisterClient(string(url), grp); err == nil {
-			clients = append(clients, c.(sdk.ClientOperator))
+			clients = append(clients, c)
 		} else {
 			return nil, err
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/big"
 
+	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/ethereum/go-ethereum/common"
@@ -216,18 +217,17 @@ func (h *EthStateHandler) TraceBlock(
 	ctx context.Context,
 	w3c *node.Web3goClient,
 	blockNumOrHash types.BlockNumberOrHash,
-) ([]types.LocalizedTrace, error) {
+) (res cacheTypes.Lazy[[]types.LocalizedTrace], err error) {
 	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
-		return w3c.Trace.Blocks(blockNumOrHash)
+		return w3c.Trace.LazyBlocks(blockNumOrHash)
 	})
 
 	metrics.Registry.RPC.Percentage("trace_block", "fullState").Mark(usefs)
-
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
-	return result.([]types.LocalizedTrace), err
+	return result.(cacheTypes.Lazy[[]types.LocalizedTrace]), err
 }
 
 func (h *EthStateHandler) TraceTransaction(

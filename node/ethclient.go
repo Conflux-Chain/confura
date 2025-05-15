@@ -5,62 +5,43 @@ import (
 	"fmt"
 	"math/rand"
 
+	cacheRpc "github.com/Conflux-Chain/confura-data-cache/rpc"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
-	"github.com/openweb3/web3go"
 )
 
-type Web3goClient struct {
-	*web3go.Client
-
-	URL string
-}
-
-func (w3c *Web3goClient) NodeName() string {
-	return rpcutil.Url2NodeName(w3c.URL)
-}
+type Web3goClient = rpcutil.Web3goClient
 
 // EthClientProvider provides evm space client by router.
 type EthClientProvider struct {
-	*clientProvider
+	*clientProvider[*Web3goClient]
 }
 
-func newEthClient(url string) (interface{}, error) {
-	client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true), rpcutil.WithClientHookCache(true))
-	if err != nil {
-		return nil, err
+func newEthClientCtor(dataCache cacheRpc.Interface) clientFactory[*Web3goClient] {
+	return func(url string) (*Web3goClient, error) {
+		client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true), rpcutil.WithClientHookCache(true))
+		if err != nil {
+			return nil, err
+		}
+		return rpcutil.NewWeb3goClient(client, dataCache), nil
 	}
-
-	return &Web3goClient{client, url}, nil
 }
 
-func NewEthClientProvider(db *mysql.MysqlStore, router Router) *EthClientProvider {
-	cp := &EthClientProvider{
-		clientProvider: newClientProvider(db, router, newEthClient),
+func NewEthClientProvider(dataCache cacheRpc.Interface, db *mysql.MysqlStore, router Router) *EthClientProvider {
+	return &EthClientProvider{
+		clientProvider: newClientProvider(db, router, newEthClientCtor(dataCache)),
 	}
-
-	return cp
 }
 
 // GetClient gets client of specific group (or use normal HTTP group as default).
 func (p *EthClientProvider) GetClient(key string, groups ...Group) (*Web3goClient, error) {
-	client, err := p.getClient(key, ethNodeGroup(groups...))
-	if err != nil {
-		return nil, err
-	}
-
-	return client.(*Web3goClient), nil
+	return p.getClient(key, ethNodeGroup(groups...))
 }
 
 // GetClientByIP gets client of specific group (or use normal HTTP group as default) by remote IP address.
 func (p *EthClientProvider) GetClientByIP(ctx context.Context, groups ...Group) (*Web3goClient, error) {
 	remoteAddr := remoteAddrFromContext(ctx)
-	client, err := p.getClient(remoteAddr, ethNodeGroup(groups...))
-	if err != nil {
-		return nil, err
-	}
-
-	return client.(*Web3goClient), nil
+	return p.getClient(remoteAddr, ethNodeGroup(groups...))
 }
 
 // GetClientsByGroup gets all clients of specific group.
@@ -73,7 +54,7 @@ func (p *EthClientProvider) GetClientsByGroup(grp Group) (clients []*Web3goClien
 	nodeUrls := np.ListNodesByGroup(grp)
 	for _, url := range nodeUrls {
 		if c, err := p.getOrRegisterClient(string(url), grp); err == nil {
-			clients = append(clients, c.(*Web3goClient))
+			clients = append(clients, c)
 		} else {
 			return nil, err
 		}
@@ -84,9 +65,7 @@ func (p *EthClientProvider) GetClientsByGroup(grp Group) (clients []*Web3goClien
 
 func (p *EthClientProvider) GetClientRandom() (*Web3goClient, error) {
 	key := fmt.Sprintf("random_key_%v", rand.Int())
-	client, err := p.getClient(key, GroupEthHttp)
-
-	return client.(*Web3goClient), err
+	return p.getClient(key, GroupEthHttp)
 }
 
 func ethNodeGroup(groups ...Group) Group {

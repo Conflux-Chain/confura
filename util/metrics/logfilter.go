@@ -1,13 +1,18 @@
 package metrics
 
 import (
+	"math/big"
+
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/openweb3/web3go/client"
 	w3types "github.com/openweb3/web3go/types"
 )
 
-func UpdateEthRpcLogFilter(method string, eth *client.RpcEthClient, filter *w3types.FilterQuery) {
+type EthNodeMetricsReader interface {
+	BlockNumber() (*big.Int, error)
+}
+
+func UpdateEthRpcLogFilter(method string, eth EthNodeMetricsReader, filter *w3types.FilterQuery) {
 	Registry.RPC.Percentage(method, "filter/hash").Mark(filter.BlockHash != nil)
 	Registry.RPC.Percentage(method, "filter/address/null").Mark(len(filter.Addresses) == 0)
 	Registry.RPC.Percentage(method, "address/single").Mark(len(filter.Addresses) == 1)

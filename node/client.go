@@ -24,14 +24,14 @@ var (
 )
 
 // clientFactory factory method to create RPC client for fullnode proxy.
-type clientFactory func(url string) (interface{}, error)
+type clientFactory[T any] func(url string) (T, error)
 
 // clientProvider provides different RPC client based on request IP to achieve load balance
 // or with node group for resource isolation. Generally, it is used by RPC server to delegate
 // RPC requests to full node cluster.
-type clientProvider struct {
+type clientProvider[T any] struct {
 	router  Router
-	factory clientFactory
+	factory clientFactory[T]
 	mu      sync.Mutex
 
 	// db store to load node route configs
@@ -43,8 +43,8 @@ type clientProvider struct {
 	clients *util.ConcurrentMap
 }
 
-func newClientProvider(db *mysql.MysqlStore, router Router, factory clientFactory) *clientProvider {
-	return &clientProvider{
+func newClientProvider[T any](db *mysql.MysqlStore, router Router, factory clientFactory[T]) *clientProvider[T] {
+	return &clientProvider[T]{
 		db:            db,
 		router:        router,
 		factory:       factory,
@@ -54,7 +54,7 @@ func newClientProvider(db *mysql.MysqlStore, router Router, factory clientFactor
 }
 
 // getOrRegisterGroup gets or registers node group
-func (p *clientProvider) getOrRegisterGroup(group Group) *util.ConcurrentMap {
+func (p *clientProvider[T]) getOrRegisterGroup(group Group) *util.ConcurrentMap {
 	v, _ := p.clients.LoadOrStoreFn(group, func(k interface{}) interface{} {
 		return &util.ConcurrentMap{}
 	})
@@ -63,7 +63,7 @@ func (p *clientProvider) getOrRegisterGroup(group Group) *util.ConcurrentMap {
 }
 
 // GetRouteGroup get custom route group for specific route key
-func (p *clientProvider) GetRouteGroup(key string) (grp Group, ok bool) {
+func (p *clientProvider[T]) GetRouteGroup(key string) (grp Group, ok bool) {
 	if p.db == nil { // db not available
 		return grp, false
 	}
@@ -77,7 +77,7 @@ func (p *clientProvider) GetRouteGroup(key string) (grp Group, ok bool) {
 	return p.populateCache(key)
 }
 
-func (p *clientProvider) cacheLoad(key string) (Group, bool) {
+func (p *clientProvider[T]) cacheLoad(key string) (Group, bool) {
 	v, expired, found := p.routeKeyCache.GetWithoutExp(key)
 	if found && !expired { // cache hit
 		return v.(Group), true
@@ -99,7 +99,7 @@ func (p *clientProvider) cacheLoad(key string) (Group, bool) {
 	return Group(""), false
 }
 
-func (p *clientProvider) populateCache(token string) (grp Group, ok bool) {
+func (p *clientProvider[T]) populateCache(token string) (grp Group, ok bool) {
 	// find node route by key from database
 	route, err := p.db.FindNodeRoute(token)
 
@@ -132,21 +132,21 @@ func (p *clientProvider) populateCache(token string) (grp Group, ok bool) {
 }
 
 // getClient gets client based on keyword and node group type.
-func (p *clientProvider) getClient(key string, group Group) (interface{}, error) {
+func (p *clientProvider[T]) getClient(key string, group Group) (res T, err error) {
 	url := p.router.Route(group, []byte(key))
 	if len(url) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"key":   key,
 			"group": group,
 		}).Error("No full node client available from router")
-		return nil, ErrClientUnavailable
+		return res, ErrClientUnavailable
 	}
 
 	return p.getOrRegisterClient(url, group)
 }
 
 // getOrRegisterClient gets or registers RPC client for fullnode proxy.
-func (p *clientProvider) getOrRegisterClient(url string, group Group) (interface{}, error) {
+func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T, err error) {
 	clients := p.getOrRegisterGroup(group)
 	nodeName := rpc.Url2NodeName(url)
 
@@ -168,14 +168,14 @@ func (p *clientProvider) getOrRegisterClient(url string, group Group) (interface
 		err := errors.WithMessage(err, "bad full node connection")
 		logger.WithError(err).Error("Failed to get full node client from provider")
 
-		return nil, err
+		return res, err
 	}
 
 	if !loaded {
 		logger.Info("Succeeded to connect to full node")
 	}
 
-	return client, nil
+	return client.(T), nil
 }
 
 func remoteAddrFromContext(ctx context.Context) string {

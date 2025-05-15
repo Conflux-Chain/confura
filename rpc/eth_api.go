@@ -100,27 +100,18 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 // the block are returned in full detail, otherwise only the transaction hash is returned.
 func (api *ethAPI) GetBlockByHash(
 	ctx context.Context, blockHash common.Hash, fullTx bool,
-) (*web3Types.Block, error) {
+) (interface{}, error) {
 	metrics.Registry.RPC.Percentage("eth_getBlockByHash", "fullTx").Mark(fullTx)
-
-	logger := logrus.WithFields(logrus.Fields{
-		"blockHash": blockHash.Hex(), "includeTxs": fullTx,
-	})
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		block, err := api.StoreHandler.GetBlockByHash(ctx, blockHash, fullTx)
 		metrics.Registry.RPC.StoreHit("eth_getBlockByHash", "store").Mark(err == nil)
 		if err == nil {
-			logger.Debug("Loading eth data for eth_getBlockByHash hit in the store")
 			return block, nil
 		}
-
-		logger.WithError(err).Debug("Loading eth data for eth_getBlockByHash missed from the ethstore")
 	}
 
-	logger.Debug("Delegating eth_getBlockByHash rpc request to fullnode")
-
-	return GetEthClientFromContext(ctx).Eth.BlockByHash(blockHash, fullTx)
+	return GetEthClientFromContext(ctx).Eth.LazyBlockByHash(blockHash, fullTx)
 }
 
 // ChainId returns the chainID value for transaction replay protection.
@@ -156,33 +147,19 @@ func (api *ethAPI) GetBalance(
 func (api *ethAPI) GetBlockByNumber(
 	ctx context.Context, blockNum web3Types.BlockNumber, fullTx bool,
 ) (interface{}, error) {
-	metrics.Registry.RPC.Percentage("eth_getBlockByNumber", "fullTx").Mark(fullTx)
-
-	logger := logrus.WithFields(logrus.Fields{
-		"blockNum": blockNum, "includeTxs": fullTx,
-	})
-
 	w3c := GetEthClientFromContext(ctx)
+	metrics.Registry.RPC.Percentage("eth_getBlockByNumber", "fullTx").Mark(fullTx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c.Eth)
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		block, err := api.StoreHandler.GetBlockByNumber(ctx, &blockNum, fullTx)
 		metrics.Registry.RPC.StoreHit("eth_getBlockByNumber", "store").Mark(err == nil)
 		if err == nil {
-			logger.Debug("Loading eth data for eth_getBlockByNumber hit in the store")
 			return block, nil
 		}
-
-		logger.WithError(err).Debug("Loading eth data for eth_getBlockByNumber missed from the ethstore")
 	}
 
-	logger.Debug("Delegating eth_getBlockByNumber rpc request to fullnode")
-
-	var lazyBlock *lazyDecodedJsonObject[*web3Types.Block]
-	if err := w3c.Eth.CallContext(ctx, &lazyBlock, "eth_getBlockByNumber", blockNum, fullTx); err != nil {
-		return nil, err
-	}
-	return lazyBlock, nil
+	return w3c.Eth.LazyBlockByNumber(blockNum, fullTx)
 }
 
 // GetUncleByBlockNumberAndIndex returns the uncle block for the given block hash and index.
@@ -300,20 +277,13 @@ func (api *ethAPI) EstimateGas(
 
 // TransactionByHash returns the transaction with the given hash.
 func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.TransactionDetail, error) {
-	logger := logrus.WithField("txHash", hash.Hex())
-
 	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		tx, err := api.StoreHandler.GetTransactionByHash(ctx, hash)
 		metrics.Registry.RPC.StoreHit("eth_getTransactionByHash", "store").Mark(err == nil)
 		if err == nil {
-			logger.Debug("Loading eth data for eth_getTransactionByHash hit in the store")
 			return tx, nil
 		}
-
-		logger.WithError(err).Debug("Loading eth data for eth_getTransactionByHash missed from the ethstore")
 	}
-
-	logger.Debug("Delegating eth_getTransactionByHash rpc request to fullnode")
 
 	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.TransactionByHash(hash)
@@ -332,16 +302,9 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 		receipt, err = api.StoreHandler.GetTransactionReceipt(ctx, txHash)
 		metrics.Registry.RPC.StoreHit("eth_getTransactionReceipt", "store").Mark(err == nil)
 		if err == nil {
-			logrus.WithField("txHash", txHash.Hex()).
-				Debug("Loading eth data for eth_getTransactionReceipt hit in the ethstore")
 			return receipt, nil
 		}
-
-		logrus.WithField("txHash", txHash.Hex()).WithError(err).
-			Debug("Loading eth data for eth_getTransactionReceipt missed from the ethstore")
 	}
-
-	logrus.WithField("txHash", txHash.Hex()).Debug("Delegating eth_getTransactionReceipt rpc request to fullnode")
 
 	w3c := GetEthClientFromContext(ctx)
 	receipt, err = w3c.Eth.TransactionReceipt(txHash)
@@ -399,14 +362,19 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 // GetBlockReceipts returns the receipts of a given block number or hash.
 func (api *ethAPI) GetBlockReceipts(
 	ctx context.Context, blockNrOrHash *web3Types.BlockNumberOrHash,
-) ([]*web3Types.Receipt, error) {
+) (interface{}, error) {
 	w3c := GetEthClientFromContext(ctx)
-	receipts, err := w3c.Eth.BlockReceipts(blockNrOrHash)
+	lazyReceipts, err := w3c.Eth.LazyBlockReceipts(blockNrOrHash)
 	if err != nil {
 		return nil, err
 	}
 	if !viper.GetBool("ethrpc.reValidation") {
-		return receipts, nil
+		return lazyReceipts, nil
+	}
+
+	receipts, err := lazyReceipts.Load()
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to load lazy receipts")
 	}
 
 	var block *web3Types.Block

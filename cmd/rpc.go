@@ -158,7 +158,8 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 	var rateReg *rate.Registry
 
 	router := node.EthFactory().CreateRouter()
-	clientProvider := node.NewEthClientProvider(storeCtx.EthDB, router)
+	dataCache := rpcutil.MustNewEthDataCacheClientFromViper()
+	clientProvider := node.NewEthClientProvider(dataCache, storeCtx.EthDB, router)
 	relayer := relay.MustNewEthTxnRelayerFromViper()
 
 	option := rpc.EthAPIOption{
