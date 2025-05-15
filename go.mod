@@ -3,9 +3,9 @@ module github.com/Conflux-Chain/confura
 go 1.22
 
 require (
-	github.com/Conflux-Chain/confura-data-cache v0.0.0-20250515103252-105b5c47cbed
+	github.com/Conflux-Chain/confura-data-cache v0.0.0-20250514100020-41d1c3d58f1e
 	github.com/Conflux-Chain/go-conflux-sdk v1.5.11-0.20240913040447-d33c1c8903b2
-	github.com/Conflux-Chain/go-conflux-util v0.4.0
+	github.com/Conflux-Chain/go-conflux-util v0.3.0
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20241012013327-2958dd644fcd
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
