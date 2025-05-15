@@ -78,7 +78,7 @@ func (c cachedRpcEthClient) BlockByHash(blockHash common.Hash, isFull bool) (*we
 func (c cachedRpcEthClient) LazyBlockByHash(blockHash common.Hash, isFull bool) (cacheTypes.Lazy[*web3Types.Block], error) {
 	if c.dataCache != nil {
 		lazyBlock, err := c.dataCache.GetBlock(cacheTypes.BlockHashOrNumberWithHash(blockHash), isFull)
-		if err == nil && !lazyBlock.IsEmptyOrNull() {
+		if err == nil && !lazyBlock.IsEmpty() {
 			return lazyBlock, nil
 		}
 	}
@@ -96,7 +96,7 @@ func (c cachedRpcEthClient) BlockByNumber(blockNumber web3Types.BlockNumber, isF
 func (c cachedRpcEthClient) LazyBlockByNumber(blockNumber web3Types.BlockNumber, isFull bool) (cacheTypes.Lazy[*web3Types.Block], error) {
 	if c.dataCache != nil {
 		lazyBlock, err := c.dataCache.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNumber)), isFull)
-		if err == nil && !lazyBlock.IsEmptyOrNull() {
+		if err == nil && !lazyBlock.IsEmpty() {
 			return lazyBlock, nil
 		}
 	}
@@ -181,7 +181,7 @@ func (c cachedRpcEthClient) BlockReceipts(blockNrOrHash *web3Types.BlockNumberOr
 func (c cachedRpcEthClient) LazyBlockReceipts(blockNrOrHash *web3Types.BlockNumberOrHash) (cacheTypes.Lazy[[]web3Types.Receipt], error) {
 	if c.dataCache != nil {
 		lazyReceipt, err := c.dataCache.GetBlockReceipts(convertBlockNumberOrHash(*blockNrOrHash))
-		if err == nil && !lazyReceipt.IsEmptyOrNull() {
+		if err == nil && !lazyReceipt.IsEmpty() {
 			return lazyReceipt, nil
 		}
 	}
@@ -214,7 +214,7 @@ func (c *cachedRpcTraceClient) Blocks(blockNumber web3Types.BlockNumberOrHash) (
 func (c *cachedRpcTraceClient) LazyBlocks(blockNumber web3Types.BlockNumberOrHash) (cacheTypes.Lazy[[]web3Types.LocalizedTrace], error) {
 	if c.dataCache != nil {
 		lazyTraces, err := c.dataCache.GetBlockTraces(convertBlockNumberOrHash(blockNumber))
-		if err == nil && !lazyTraces.IsEmptyOrNull() {
+		if err == nil && !lazyTraces.IsEmpty() {
 			return lazyTraces, nil
 		}
 	}
