@@ -44,7 +44,7 @@ func (h *CfxStateHandler) GetBalance(
 		return nil, err
 	}
 
-	return bal.(*hexutil.Big), err
+	return bal.(*hexutil.Big), nil
 }
 
 func (h *CfxStateHandler) GetNextNonce(
@@ -63,7 +63,7 @@ func (h *CfxStateHandler) GetNextNonce(
 		return nil, err
 	}
 
-	return nonce.(*hexutil.Big), err
+	return nonce.(*hexutil.Big), nil
 }
 
 func (h *CfxStateHandler) GetStorageAt(
@@ -83,7 +83,7 @@ func (h *CfxStateHandler) GetStorageAt(
 		return hexutil.Bytes{}, err
 	}
 
-	return storage.(hexutil.Bytes), err
+	return storage.(hexutil.Bytes), nil
 }
 
 func (h *CfxStateHandler) GetCode(
@@ -102,7 +102,7 @@ func (h *CfxStateHandler) GetCode(
 		return hexutil.Bytes{}, err
 	}
 
-	return code.(hexutil.Bytes), err
+	return code.(hexutil.Bytes), nil
 }
 
 func (h *CfxStateHandler) Call(
@@ -121,7 +121,7 @@ func (h *CfxStateHandler) Call(
 		return hexutil.Bytes{}, err
 	}
 
-	return result.(hexutil.Bytes), err
+	return result.(hexutil.Bytes), nil
 }
 
 func (h *CfxStateHandler) EstimateGasAndCollateral(
@@ -140,7 +140,7 @@ func (h *CfxStateHandler) EstimateGasAndCollateral(
 		return types.Estimate{}, err
 	}
 
-	return est.(types.Estimate), err
+	return est.(types.Estimate), nil
 }
 
 func (h *CfxStateHandler) GetAdmin(
@@ -159,7 +159,7 @@ func (h *CfxStateHandler) GetAdmin(
 		return nil, err
 	}
 
-	return admin.(*types.Address), err
+	return admin.(*types.Address), nil
 }
 
 func (h *CfxStateHandler) GetSponsorInfo(
@@ -178,7 +178,7 @@ func (h *CfxStateHandler) GetSponsorInfo(
 		return types.SponsorInfo{}, err
 	}
 
-	return info.(types.SponsorInfo), err
+	return info.(types.SponsorInfo), nil
 }
 
 func (h *CfxStateHandler) GetStakingBalance(
@@ -197,7 +197,7 @@ func (h *CfxStateHandler) GetStakingBalance(
 		return nil, err
 	}
 
-	return bal.(*hexutil.Big), err
+	return bal.(*hexutil.Big), nil
 }
 
 func (h *CfxStateHandler) GetDepositList(
@@ -216,7 +216,7 @@ func (h *CfxStateHandler) GetDepositList(
 		return []types.DepositInfo{}, err
 	}
 
-	return info.([]types.DepositInfo), err
+	return info.([]types.DepositInfo), nil
 }
 
 func (h *CfxStateHandler) GetVoteList(
@@ -235,7 +235,7 @@ func (h *CfxStateHandler) GetVoteList(
 		return []types.VoteStakeInfo{}, err
 	}
 
-	return info.([]types.VoteStakeInfo), err
+	return info.([]types.VoteStakeInfo), nil
 }
 
 func (h *CfxStateHandler) GetCollateralInfo(
@@ -253,7 +253,7 @@ func (h *CfxStateHandler) GetCollateralInfo(
 		return types.StorageCollateralInfo{}, err
 	}
 
-	return info.(types.StorageCollateralInfo), err
+	return info.(types.StorageCollateralInfo), nil
 }
 
 func (h *CfxStateHandler) GetCollateralForStorage(
@@ -272,7 +272,7 @@ func (h *CfxStateHandler) GetCollateralForStorage(
 		return nil, err
 	}
 
-	return storage.(*hexutil.Big), err
+	return storage.(*hexutil.Big), nil
 }
 
 func (h *CfxStateHandler) GetStorageRoot(
@@ -291,7 +291,7 @@ func (h *CfxStateHandler) GetStorageRoot(
 		return nil, err
 	}
 
-	return root.(*types.StorageRoot), err
+	return root.(*types.StorageRoot), nil
 }
 
 func (h *CfxStateHandler) CheckBalanceAgainstTransaction(
@@ -316,7 +316,7 @@ func (h *CfxStateHandler) CheckBalanceAgainstTransaction(
 		return types.CheckBalanceAgainstTransactionResponse{}, err
 	}
 
-	return check.(types.CheckBalanceAgainstTransactionResponse), err
+	return check.(types.CheckBalanceAgainstTransactionResponse), nil
 }
 
 func (h *CfxStateHandler) GetAccountInfo(
@@ -335,7 +335,7 @@ func (h *CfxStateHandler) GetAccountInfo(
 		return types.AccountInfo{}, err
 	}
 
-	return info.(types.AccountInfo), err
+	return info.(types.AccountInfo), nil
 }
 
 func (h *CfxStateHandler) GetInterestRate(
@@ -353,7 +353,7 @@ func (h *CfxStateHandler) GetInterestRate(
 		return nil, err
 	}
 
-	return rate.(*hexutil.Big), err
+	return rate.(*hexutil.Big), nil
 }
 
 func (h *CfxStateHandler) GetAccumulateInterestRate(
@@ -371,7 +371,7 @@ func (h *CfxStateHandler) GetAccumulateInterestRate(
 		return nil, err
 	}
 
-	return rate.(*hexutil.Big), err
+	return rate.(*hexutil.Big), nil
 }
 
 func (h *CfxStateHandler) GetSupplyInfo(
@@ -389,7 +389,7 @@ func (h *CfxStateHandler) GetSupplyInfo(
 		return types.TokenSupplyInfo{}, err
 	}
 
-	return info.(types.TokenSupplyInfo), err
+	return info.(types.TokenSupplyInfo), nil
 }
 
 func (h *CfxStateHandler) GetPoSEconomics(
@@ -407,7 +407,7 @@ func (h *CfxStateHandler) GetPoSEconomics(
 		return types.PoSEconomics{}, err
 	}
 
-	return economics.(types.PoSEconomics), err
+	return economics.(types.PoSEconomics), nil
 }
 
 func (h *CfxStateHandler) GetParamsFromVote(
@@ -425,7 +425,7 @@ func (h *CfxStateHandler) GetParamsFromVote(
 		return postypes.VoteParamsInfo{}, err
 	}
 
-	return vote.(postypes.VoteParamsInfo), err
+	return vote.(postypes.VoteParamsInfo), nil
 }
 
 func (h *CfxStateHandler) PosGetAccount(
@@ -444,7 +444,7 @@ func (h *CfxStateHandler) PosGetAccount(
 		return postypes.Account{}, err
 	}
 
-	return account.(postypes.Account), err
+	return account.(postypes.Account), nil
 }
 
 func (h *CfxStateHandler) PosGetAccountByPowAddress(
@@ -463,7 +463,7 @@ func (h *CfxStateHandler) PosGetAccountByPowAddress(
 		return postypes.Account{}, err
 	}
 
-	return account.(postypes.Account), err
+	return account.(postypes.Account), nil
 }
 
 func (h *CfxStateHandler) PosGetCommittee(
@@ -481,7 +481,7 @@ func (h *CfxStateHandler) PosGetCommittee(
 		return postypes.CommitteeState{}, err
 	}
 
-	return committee.(postypes.CommitteeState), err
+	return committee.(postypes.CommitteeState), nil
 }
 
 func (h *CfxStateHandler) PosGetRewardsByEpoch(
@@ -499,7 +499,7 @@ func (h *CfxStateHandler) PosGetRewardsByEpoch(
 		return postypes.EpochReward{}, err
 	}
 
-	return reward.(postypes.EpochReward), err
+	return reward.(postypes.EpochReward), nil
 }
 
 func (h *CfxStateHandler) PosGetEpochState(
@@ -517,7 +517,7 @@ func (h *CfxStateHandler) PosGetEpochState(
 		return nil, err
 	}
 
-	return state.(*postypes.EpochState), err
+	return state.(*postypes.EpochState), nil
 }
 
 func (h *CfxStateHandler) PosGetLedgerInfoByEpoch(
@@ -535,7 +535,7 @@ func (h *CfxStateHandler) PosGetLedgerInfoByEpoch(
 		return nil, err
 	}
 
-	return info.(*postypes.LedgerInfoWithSignatures), err
+	return info.(*postypes.LedgerInfoWithSignatures), nil
 }
 
 func (h *CfxStateHandler) PosGetLedgerInfosByEpoch(
@@ -554,7 +554,7 @@ func (h *CfxStateHandler) PosGetLedgerInfosByEpoch(
 		return nil, err
 	}
 
-	return info.([]*postypes.LedgerInfoWithSignatures), err
+	return info.([]*postypes.LedgerInfoWithSignatures), nil
 }
 
 func (h *CfxStateHandler) PosGetLedgerInfoByBlockNumber(
@@ -572,7 +572,7 @@ func (h *CfxStateHandler) PosGetLedgerInfoByBlockNumber(
 		return nil, err
 	}
 
-	return info.(*postypes.LedgerInfoWithSignatures), err
+	return info.(*postypes.LedgerInfoWithSignatures), nil
 }
 
 func (h *CfxStateHandler) PosGetLedgerInfoByEpochAndRound(
@@ -591,7 +591,7 @@ func (h *CfxStateHandler) PosGetLedgerInfoByEpochAndRound(
 		return nil, err
 	}
 
-	return info.(*postypes.LedgerInfoWithSignatures), err
+	return info.(*postypes.LedgerInfoWithSignatures), nil
 }
 
 func (h *CfxStateHandler) DebugGetEpochReceiptProofByTransaction(
@@ -609,7 +609,7 @@ func (h *CfxStateHandler) DebugGetEpochReceiptProofByTransaction(
 		return nil, err
 	}
 
-	return epochRcpt.(*types.EpochReceiptProof), err
+	return epochRcpt.(*types.EpochReceiptProof), nil
 }
 
 func (h *CfxStateHandler) DebugGetTransactionsByEpoch(
@@ -627,7 +627,7 @@ func (h *CfxStateHandler) DebugGetTransactionsByEpoch(
 		return nil, err
 	}
 
-	return txns.([]types.WrapTransaction), err
+	return txns.([]types.WrapTransaction), nil
 }
 
 func (h *CfxStateHandler) DebugGetTransactionsByBlock(
@@ -645,7 +645,7 @@ func (h *CfxStateHandler) DebugGetTransactionsByBlock(
 		return nil, err
 	}
 
-	return txns.([]types.WrapTransaction), err
+	return txns.([]types.WrapTransaction), nil
 }
 
 func (h *CfxStateHandler) TraceBlock(
@@ -663,7 +663,7 @@ func (h *CfxStateHandler) TraceBlock(
 		return nil, err
 	}
 
-	return trace.(*types.LocalizedBlockTrace), err
+	return trace.(*types.LocalizedBlockTrace), nil
 }
 
 func (h *CfxStateHandler) TraceFilter(
@@ -681,7 +681,7 @@ func (h *CfxStateHandler) TraceFilter(
 		return nil, err
 	}
 
-	return trace.([]types.LocalizedTrace), err
+	return trace.([]types.LocalizedTrace), nil
 }
 
 func (h *CfxStateHandler) TraceTransaction(
@@ -699,7 +699,7 @@ func (h *CfxStateHandler) TraceTransaction(
 		return nil, err
 	}
 
-	return trace.([]types.LocalizedTrace), err
+	return trace.([]types.LocalizedTrace), nil
 }
 
 func (h *CfxStateHandler) TraceEpoch(
@@ -717,7 +717,7 @@ func (h *CfxStateHandler) TraceEpoch(
 		return types.EpochTrace{}, err
 	}
 
-	return trace.(types.EpochTrace), err
+	return trace.(types.EpochTrace), nil
 }
 
 func (h *CfxStateHandler) doRequest(
