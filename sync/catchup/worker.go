@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
-	"github.com/sirupsen/logrus"
 )
 
 type worker struct {
@@ -30,20 +28,12 @@ func mustNewWorker(name string, client IRpcClient, chanSize int) *worker {
 func (w *worker) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epochTo, stepN uint64) {
 	defer wg.Done()
 
-	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
 	for eno := epochFrom; eno <= epochTo; {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 			epochData, err := w.fetchEpoch(eno)
-			etLogger.Log(
-				logrus.WithFields(logrus.Fields{
-					"epochNo":    eno,
-					"workerName": w.name,
-				}), err, "Catch-up worker failed to fetch epoch",
-			)
-
 			if err != nil {
 				time.Sleep(time.Second)
 				break

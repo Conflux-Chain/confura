@@ -6,24 +6,18 @@ import (
 
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/types"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/openweb3/web3go/types"
-	"github.com/sirupsen/logrus"
 )
 
 // ethGasStationAPI provides evm space gasstation API.
 type ethGasStationAPI struct {
-	handler  *handler.EthGasStationHandler
-	etLogger *logutil.ErrorTolerantLogger
+	handler *handler.EthGasStationHandler
 }
 
 // newEthGasStationAPI creates a new instance of `ethGasStationAPI`.
 func newEthGasStationAPI(handler *handler.EthGasStationHandler) *ethGasStationAPI {
-	return &ethGasStationAPI{
-		handler:  handler,
-		etLogger: logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
-	}
+	return &ethGasStationAPI{handler: handler}
 }
 
 // SuggestedGasFees retrieves the suggested gas fees.
@@ -32,11 +26,7 @@ func (api *ethGasStationAPI) SuggestedGasFees(ctx context.Context) (*types.Sugge
 
 	// Attempt to get suggested gas fees from the handler if available.
 	if api.handler != nil {
-		gasFee, err := api.handler.Suggest(eth)
-		api.etLogger.Log(
-			logrus.StandardLogger(), err, "Failed to get suggested gas fees from handler",
-		)
-		return gasFee, err
+		return api.handler.Suggest(eth)
 	}
 
 	// Fallback to fetching gas fees directly from the blockchain.

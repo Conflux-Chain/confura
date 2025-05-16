@@ -15,7 +15,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
+	"github.com/Conflux-Chain/go-conflux-util/health"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/web3go"
 	ethtypes "github.com/openweb3/web3go/types"
@@ -121,6 +121,7 @@ func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.MysqlStore) *EthSyn
 
 // Sync starts to sync Conflux EVM space blockchain data.
 func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
+	defer logrus.Info("ETH syncer shutdown ok")
 	logrus.WithField("fromBlock", syncer.fromBlock).Info("ETH sync starting to sync block data")
 
 	wg.Add(1)
@@ -134,19 +135,24 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	ticker := time.NewTimer(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
 
-	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
-	defer logrus.Info("ETH syncer shutdown ok")
-
+	healthStatus := health.NewCounter()
 	for syncer.elm.Await(ctx) {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			err := syncer.doTicker(ctx, ticker)
-			etLogger.Log(
-				logrus.WithField("fromBlock", syncer.fromBlock),
-				err, "ETH syncer failed to sync epoch data",
-			)
+			recovered, unhealthy, unrecovered, failures := healthStatus.OnError(err)
+			switch {
+			case recovered:
+				logrus.WithField("fromBlock", syncer.fromBlock).Warn("ETH syncer recovered from error")
+			case unhealthy:
+				logrus.WithError(err).Error("ETH syncer becomes unhealthy")
+			case unrecovered:
+				logrus.WithFields(logrus.Fields{
+					"failures": failures,
+				}).WithError(err).Warn("ETH syncer still not recovered after failures")
+			}
 		}
 	}
 }

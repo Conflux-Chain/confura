@@ -21,15 +21,14 @@ import (
 // NewHeads send a notification each time a new header (block) is appended to the chain.
 func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
-
-	if !supported {
-		logrus.WithError(err).Error("NewHeads pubsub notification unsupported")
-		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
+	if err != nil {
+		logrus.WithError(err).Info("NewHeads pubsub context error")
+		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
-	if err != nil {
-		logrus.WithError(err).Error("NewHeads pubsub context error")
-		return &rpc.Subscription{}, errSubscriptionProxyError
+	if !supported {
+		logrus.WithError(err).Info("NewHeads pubsub notification unsupported")
+		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
 	}
 
 	rpcSub := psCtx.notifier.CreateSubscription()
@@ -38,9 +37,6 @@ func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 	dClient := getOrNewEthDelegateClient(psCtx.eth)
 
 	dSub, err := dClient.delegateSubscribeNewHeads(rpcSub.ID, headersCh)
-	api.etPubsubLogger.Log(
-		logrus.WithError(err), err, "Failed to delegate pubsub NewHeads",
-	)
 	if err != nil {
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
@@ -85,14 +81,14 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 	metrics.Registry.PubSub.InputLogFilter("eth").Mark(!isEmptyEthLogFilter(filter))
 
 	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
-	if !supported {
-		logrus.WithError(err).Error("Logs pubsub notification unsupported")
-		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
-	}
-
 	if err != nil {
 		logrus.WithError(err).Error("Logs pubsub context error")
 		return &rpc.Subscription{}, errSubscriptionProxyError
+	}
+
+	if !supported {
+		logrus.WithError(err).Error("Logs pubsub notification unsupported")
+		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
 	}
 
 	rpcSub := psCtx.notifier.CreateSubscription()
@@ -101,15 +97,9 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 	dClient := getOrNewEthDelegateClient(psCtx.eth)
 
 	dSub, err := dClient.delegateSubscribeLogs(rpcSub.ID, logsCh, filter)
-	api.etPubsubLogger.Log(
-		logrus.WithField("filter", filter),
-		err, "Failed to delegate pubsub logs subscription",
-	)
 	if err != nil {
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
-
-	logger := logrus.WithField("rpcSubID", rpcSub.ID)
 
 	nodeName := rpcutil.Url2NodeName(psCtx.eth.URL)
 	counter := metrics.Registry.PubSub.Sessions("eth", "logs", nodeName)
@@ -122,20 +112,23 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 		for {
 			select {
 			case log := <-logsCh:
-				logger.WithField("log", log).Debug("Received new log from pubsub delegate")
+				logrus.WithFields(logrus.Fields{
+					"rpcSubID": rpcSub.ID,
+					"log":      log,
+				}).Debug("Received new log from pubsub delegate")
 				psCtx.notifier.Notify(rpcSub.ID, log)
 
 			case err = <-dSub.err: // delegate subscription error
-				logger.WithError(err).Debug("Received error from logs pubsub delegate")
+				logrus.WithField("rpcSubID", rpcSub.ID).WithError(err).Debug("Received error from logs pubsub delegate")
 				psCtx.rpcClient.Close()
 				return
 
 			case err = <-rpcSub.Err():
-				logger.WithError(err).Debugf("Logs pubsub subscription error")
+				logrus.WithField("rpcSubID", rpcSub.ID).WithError(err).Debugf("Logs pubsub subscription error")
 				return
 
 			case <-psCtx.notifier.Closed():
-				logger.Debugf("Logs pubsub connection closed")
+				logrus.WithField("rpcSubID", rpcSub.ID).Debugf("Logs pubsub connection closed")
 				return
 			}
 		}

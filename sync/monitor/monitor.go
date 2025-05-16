@@ -57,13 +57,14 @@ type Monitor struct {
 	getLatestHeight func() (uint64, error)
 
 	observer     HealthObserver
-	healthStatus health.Counter
+	healthStatus *health.Counter
 }
 
 func NewMonitor(cfg Config, latestHeightFunc func() (uint64, error)) *Monitor {
 	return &Monitor{
 		Config:          cfg,
 		getLatestHeight: latestHeightFunc,
+		healthStatus:    health.NewCounter(cfg.Health),
 	}
 }
 
@@ -163,7 +164,7 @@ func (m *Monitor) checkOnce() {
 }
 
 func (m *Monitor) onSuccess() {
-	recovered, failures := m.healthStatus.OnSuccess(m.Health)
+	recovered, failures := m.healthStatus.OnSuccess()
 	if recovered {
 		logrus.WithFields(logrus.Fields{
 			"failures": failures,
@@ -173,7 +174,7 @@ func (m *Monitor) onSuccess() {
 }
 
 func (m *Monitor) onFailure(err error, heights ...uint64) {
-	unhealthy, unrecovered, failures := m.healthStatus.OnFailure(m.Health)
+	unhealthy, unrecovered, failures := m.healthStatus.OnFailure()
 
 	// Handle unhealthy or unrecovered states
 	switch {

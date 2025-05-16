@@ -471,7 +471,7 @@ func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
 	defer ticker.Stop()
 
 	// Counter to track memory health status
-	var healthStatus health.Counter
+	healthStatus := health.NewCounter(memoryHealthCfg)
 	for {
 		select {
 		case <-ctx.Done():
@@ -488,13 +488,13 @@ func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
 			// Backpressure control according to memory usage
 			if memStats.Alloc < s.boostConf.MemoryThreshold {
 				// Memory usage is below the threshold, try to lift backpressure.
-				if recovered, _ := healthStatus.OnSuccess(memoryHealthCfg); recovered {
+				if recovered, _ := healthStatus.OnSuccess(); recovered {
 					logger.Warn("Catch-up boost sync memory usage has recovered below threshold")
 					c.enableBackpressure(false)
 				}
 			} else {
 				// Memory usage exceeds the threshold, check for health degradation.
-				unhealthy, unrecovered, _ := healthStatus.OnFailure(memoryHealthCfg)
+				unhealthy, unrecovered, _ := healthStatus.OnFailure()
 				if unhealthy {
 					logger.Warn("Catch-up boost sync memory usage exceeded threshold")
 					c.enableBackpressure(true)
