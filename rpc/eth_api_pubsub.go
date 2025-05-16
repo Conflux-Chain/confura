@@ -83,12 +83,12 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 
 	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
 	if err != nil {
-		logrus.WithError(err).Error("Logs pubsub context error")
+		logrus.WithError(err).Info("Logs pubsub context error")
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
 	if !supported {
-		logrus.WithError(err).Error("Logs pubsub notification unsupported")
+		logrus.WithError(err).Info("Logs pubsub notification unsupported")
 		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
 	}
 
