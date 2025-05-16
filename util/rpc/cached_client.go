@@ -39,21 +39,21 @@ type Web3goClient struct {
 	URL   string
 }
 
-func NewWeb3goClient(client *web3go.Client, dataCaches ...cacheRpc.Interface) *Web3goClient {
-	var dataCache cacheRpc.Interface
-	if len(dataCaches) > 0 {
-		dataCache = dataCaches[0]
+func NewWeb3goClient(client *web3go.Client, caches ...cacheRpc.Interface) *Web3goClient {
+	cache := cacheRpc.NotFoundImpl
+	if len(caches) > 0 && caches[0] != nil {
+		cache = caches[0]
 	}
 
 	return &Web3goClient{
 		Client: client,
 		Eth: cachedRpcEthClient{
 			RpcEthClient: client.Eth,
-			dataCache:    dataCache,
+			dataCache:    cache,
 		},
 		Trace: cachedRpcTraceClient{
 			RpcTraceClient: client.Trace,
-			dataCache:      dataCache,
+			dataCache:      cache,
 		},
 	}
 }
@@ -76,11 +76,9 @@ func (c cachedRpcEthClient) BlockByHash(blockHash common.Hash, isFull bool) (*we
 }
 
 func (c cachedRpcEthClient) LazyBlockByHash(blockHash common.Hash, isFull bool) (cacheTypes.Lazy[*web3Types.Block], error) {
-	if c.dataCache != nil {
-		lazyBlock, err := c.dataCache.GetBlock(cacheTypes.BlockHashOrNumberWithHash(blockHash), isFull)
-		if err == nil && !lazyBlock.IsEmptyOrNull() {
-			return lazyBlock, nil
-		}
+	lazyBlock, err := c.dataCache.GetBlock(cacheTypes.BlockHashOrNumberWithHash(blockHash), isFull)
+	if err == nil && !lazyBlock.IsEmptyOrNull() {
+		return lazyBlock, nil
 	}
 	return providers.Call[cacheTypes.Lazy[*web3Types.Block]](c, "eth_getBlockByHash", blockHash, isFull)
 }
@@ -94,71 +92,57 @@ func (c cachedRpcEthClient) BlockByNumber(blockNumber web3Types.BlockNumber, isF
 }
 
 func (c cachedRpcEthClient) LazyBlockByNumber(blockNumber web3Types.BlockNumber, isFull bool) (cacheTypes.Lazy[*web3Types.Block], error) {
-	if c.dataCache != nil {
-		lazyBlock, err := c.dataCache.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNumber)), isFull)
-		if err == nil && !lazyBlock.IsEmptyOrNull() {
-			return lazyBlock, nil
-		}
+	lazyBlock, err := c.dataCache.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNumber)), isFull)
+	if err == nil && !lazyBlock.IsEmptyOrNull() {
+		return lazyBlock, nil
 	}
 	return providers.Call[cacheTypes.Lazy[*web3Types.Block]](c, "eth_getBlockByNumber", blockNumber, isFull)
 }
 
 func (c cachedRpcEthClient) BlockTransactionCountByHash(blockHash common.Hash) (*big.Int, error) {
-	if c.dataCache != nil {
-		count, err := c.dataCache.GetBlockTransactionCount(cacheTypes.BlockHashOrNumberWithHash(blockHash))
-		if err == nil && count >= 0 {
-			return big.NewInt(count), nil
-		}
+	count, err := c.dataCache.GetBlockTransactionCount(cacheTypes.BlockHashOrNumberWithHash(blockHash))
+	if err == nil && count >= 0 {
+		return big.NewInt(count), nil
 	}
 	return c.RpcEthClient.BlockTransactionCountByHash(blockHash)
 }
 
 func (c cachedRpcEthClient) BlockTransactionCountByNumber(blockNum web3Types.BlockNumber) (*big.Int, error) {
-	if c.dataCache != nil {
-		count, err := c.dataCache.GetBlockTransactionCount(cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNum)))
-		if err == nil && count >= 0 {
-			return big.NewInt(count), nil
-		}
+	count, err := c.dataCache.GetBlockTransactionCount(cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNum)))
+	if err == nil && count >= 0 {
+		return big.NewInt(count), nil
 	}
 	return c.RpcEthClient.BlockTransactionCountByNumber(blockNum)
 }
 
 func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.TransactionDetail, error) {
-	if c.dataCache != nil {
-		txn, err := c.dataCache.GetTransactionByHash(txHash)
-		if err == nil && txn != nil {
-			return txn, nil
-		}
+	txn, err := c.dataCache.GetTransactionByHash(txHash)
+	if err == nil && txn != nil {
+		return txn, nil
 	}
 	return c.RpcEthClient.TransactionByHash(txHash)
 }
 
 func (c cachedRpcEthClient) TransactionByBlockHashAndIndex(blockHash common.Hash, index uint) (*web3Types.TransactionDetail, error) {
-	if c.dataCache != nil {
-		txn, err := c.dataCache.GetTransactionByIndex(cacheTypes.BlockHashOrNumberWithHash(blockHash), uint32(index))
-		if err == nil && txn != nil {
-			return txn, nil
-		}
+	txn, err := c.dataCache.GetTransactionByIndex(cacheTypes.BlockHashOrNumberWithHash(blockHash), uint32(index))
+	if err == nil && txn != nil {
+		return txn, nil
 	}
 	return c.RpcEthClient.TransactionByBlockHashAndIndex(blockHash, index)
 }
 
 func (c cachedRpcEthClient) TransactionByBlockNumberAndIndex(blockNum web3Types.BlockNumber, index uint) (*web3Types.TransactionDetail, error) {
-	if c.dataCache != nil {
-		txn, err := c.dataCache.GetTransactionByIndex(cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNum)), uint32(index))
-		if err == nil && txn != nil {
-			return txn, nil
-		}
+	txn, err := c.dataCache.GetTransactionByIndex(cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNum)), uint32(index))
+	if err == nil && txn != nil {
+		return txn, nil
 	}
 	return c.RpcEthClient.TransactionByBlockNumberAndIndex(blockNum, index)
 }
 
 func (c cachedRpcEthClient) TransactionReceipt(txHash common.Hash) (*web3Types.Receipt, error) {
-	if c.dataCache != nil {
-		receipt, err := c.dataCache.GetTransactionReceipt(txHash)
-		if err == nil && receipt != nil {
-			return receipt, nil
-		}
+	receipt, err := c.dataCache.GetTransactionReceipt(txHash)
+	if err == nil && receipt != nil {
+		return receipt, nil
 	}
 	return c.RpcEthClient.TransactionReceipt(txHash)
 }
@@ -179,11 +163,9 @@ func (c cachedRpcEthClient) BlockReceipts(blockNrOrHash *web3Types.BlockNumberOr
 }
 
 func (c cachedRpcEthClient) LazyBlockReceipts(blockNrOrHash *web3Types.BlockNumberOrHash) (cacheTypes.Lazy[[]web3Types.Receipt], error) {
-	if c.dataCache != nil {
-		lazyReceipt, err := c.dataCache.GetBlockReceipts(convertBlockNumberOrHash(*blockNrOrHash))
-		if err == nil && !lazyReceipt.IsEmptyOrNull() {
-			return lazyReceipt, nil
-		}
+	lazyReceipt, err := c.dataCache.GetBlockReceipts(convertBlockNumberOrHash(*blockNrOrHash))
+	if err == nil && !lazyReceipt.IsEmptyOrNull() {
+		return lazyReceipt, nil
 	}
 	return providers.Call[cacheTypes.Lazy[[]web3Types.Receipt]](c, "eth_getBlockReceipts", blockNrOrHash)
 }
@@ -194,11 +176,9 @@ type cachedRpcTraceClient struct {
 }
 
 func (c *cachedRpcTraceClient) Transactions(transactionHash common.Hash) ([]web3Types.LocalizedTrace, error) {
-	if c.dataCache != nil {
-		traces, err := c.dataCache.GetTransactionTraces(transactionHash)
-		if err == nil && traces != nil {
-			return traces, nil
-		}
+	traces, err := c.dataCache.GetTransactionTraces(transactionHash)
+	if err == nil && traces != nil {
+		return traces, nil
 	}
 	return c.RpcTraceClient.Transactions(transactionHash)
 }
@@ -212,11 +192,9 @@ func (c *cachedRpcTraceClient) Blocks(blockNumber web3Types.BlockNumberOrHash) (
 }
 
 func (c *cachedRpcTraceClient) LazyBlocks(blockNumber web3Types.BlockNumberOrHash) (cacheTypes.Lazy[[]web3Types.LocalizedTrace], error) {
-	if c.dataCache != nil {
-		lazyTraces, err := c.dataCache.GetBlockTraces(convertBlockNumberOrHash(blockNumber))
-		if err == nil && !lazyTraces.IsEmptyOrNull() {
-			return lazyTraces, nil
-		}
+	lazyTraces, err := c.dataCache.GetBlockTraces(convertBlockNumberOrHash(blockNumber))
+	if err == nil && !lazyTraces.IsEmptyOrNull() {
+		return lazyTraces, nil
 	}
 	return providers.Call[cacheTypes.Lazy[[]web3Types.LocalizedTrace]](c, "trace_block", blockNumber)
 }
