@@ -213,6 +213,7 @@ func (s *Syncer) Sync(ctx context.Context) {
 	for s.elm.Await(ctx) {
 		start, end, err := s.nextSyncRange()
 		if err != nil {
+			logrus.WithError(err).Info("Catch-up syncer failed to get next sync range")
 			time.Sleep(1 * time.Second)
 			continue
 		}

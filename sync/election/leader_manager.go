@@ -155,8 +155,8 @@ func (l *DlockLeaderManager) Campaign(ctx context.Context) {
 	newCtx, cancelFn := context.WithCancel(ctx)
 	l.cancel.Store(cancelFn)
 
+	healthStatus := health.NewCounter()
 	logger := logrus.WithFields(logrus.Fields{"electionKey": l.electionKey, "leaderID": l.ID})
-	healthStatus := health.NewCounter(health.CounterConfig{Threshold: 60, Remind: 60})
 
 	etlog := func(err error) {
 		recovered, unhealthy, unrecovered, failures := healthStatus.OnError(err)

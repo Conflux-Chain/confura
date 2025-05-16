@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
+	"github.com/sirupsen/logrus"
 )
 
 type worker struct {
@@ -35,6 +36,10 @@ func (w *worker) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epochT
 		default:
 			epochData, err := w.fetchEpoch(eno)
 			if err != nil {
+				logrus.WithFields(logrus.Fields{
+					"epochNo":    eno,
+					"workerName": w.name,
+				}).WithError(err).Info("Catch-up worker failed to fetch epoch")
 				time.Sleep(time.Second)
 				break
 			}

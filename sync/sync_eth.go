@@ -121,8 +121,8 @@ func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.MysqlStore) *EthSyn
 
 // Sync starts to sync Conflux EVM space blockchain data.
 func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
-	defer logrus.Info("ETH syncer shutdown ok")
 	logrus.WithField("fromBlock", syncer.fromBlock).Info("ETH sync starting to sync block data")
+	defer logrus.Info("ETH syncer shutdown ok")
 
 	wg.Add(1)
 	defer wg.Done()
@@ -145,13 +145,13 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 			recovered, unhealthy, unrecovered, failures := healthStatus.OnError(err)
 			switch {
 			case recovered:
-				logrus.WithField("fromBlock", syncer.fromBlock).Warn("ETH syncer recovered from error")
+				logrus.WithField("fromBlock", syncer.fromBlock).Warn("ETH syncer recovered from failures")
 			case unhealthy:
 				logrus.WithError(err).Error("ETH syncer becomes unhealthy")
 			case unrecovered:
 				logrus.WithFields(logrus.Fields{
 					"failures": failures,
-				}).WithError(err).Warn("ETH syncer still not recovered after failures")
+				}).WithError(err).Warn("ETH syncer is still not recovered after failures")
 			}
 		}
 	}

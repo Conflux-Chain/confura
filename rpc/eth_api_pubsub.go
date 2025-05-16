@@ -38,6 +38,7 @@ func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 	dSub, err := dClient.delegateSubscribeNewHeads(rpcSub.ID, headersCh)
 	if err != nil {
+		logrus.WithError(err).Info("Failed to delegate pubsub newheads subscription")
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
@@ -98,6 +99,7 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 
 	dSub, err := dClient.delegateSubscribeLogs(rpcSub.ID, logsCh, filter)
 	if err != nil {
+		logrus.WithField("filter", filter).WithError(err).Info("Failed to delegate pubsub logs subscription")
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 

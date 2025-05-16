@@ -124,8 +124,8 @@ func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.MysqlStore) *Data
 
 // Sync starts to sync epoch blockchain data.
 func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
-	defer logrus.Info("DB syncer shutdown ok")
 	logrus.WithField("epochFrom", syncer.epochFrom).Info("DB sync starting to sync epoch data")
+	defer logrus.Info("DB syncer shutdown ok")
 
 	wg.Add(1)
 	defer wg.Done()
@@ -148,13 +148,13 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 			recovered, unhealthy, unrecovered, failures := healthStatus.OnError(err)
 			switch {
 			case recovered:
-				logrus.WithField("epochFrom", syncer.epochFrom).Warn("Db syncer recovered from error")
+				logrus.WithField("epochFrom", syncer.epochFrom).Warn("Db syncer recovered from failures")
 			case unhealthy:
 				logrus.WithError(err).Error("Db syncer becomes unhealthy")
 			case unrecovered:
 				logrus.WithFields(logrus.Fields{
 					"failures": failures,
-				}).WithError(err).Warn("Db syncer still not recovered after failures")
+				}).WithError(err).Warn("Db syncer is still not recovered after failures")
 			}
 		}
 	}
