@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 
+	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go/types"
@@ -13,7 +14,7 @@ type ethTraceAPI struct {
 	stateHandler *handler.EthStateHandler
 }
 
-func (api *ethTraceAPI) Block(ctx context.Context, blockNumOrHash types.BlockNumberOrHash) ([]types.LocalizedTrace, error) {
+func (api *ethTraceAPI) Block(ctx context.Context, blockNumOrHash types.BlockNumberOrHash) (cacheTypes.Lazy[[]types.LocalizedTrace], error) {
 	w3c := GetEthClientFromContext(ctx)
 	return api.stateHandler.TraceBlock(ctx, w3c, blockNumOrHash)
 }

@@ -449,13 +449,13 @@ node:
 #     maxSplitEpochRange: 1000
 #     # Maximum block range to split log filters for full nodes
 #     maxSplitBlockRange: 1000
-#
+
 #   # Resource usage constraints
 #   resourceLimits:
 #     # Maximum response bytes for 'getLogs' requests (default 10MB)
 #     MaxGetLogsResponseBytes: 10485760
-#
-#   # ETH Cache settings
+
+#   # ETH cache settings
 #   ethCache:
 #     # Cache expiration time duration for 'net_version' requests
 #     netVersionExpiration: 1m
@@ -470,7 +470,9 @@ node:
 #     # LRU Cache size and expiration time duration for 'eth_call'
 #     callCacheExpiration: 1s
 #     callCacheSize: 128
-#
+#     # Remote cache service endpoint (refer to https://github.com/Conflux-Chain/confura-data-cache)
+#     #cacheServiceUrl: http://127.0.0.1:38545
+
 #   # ETH receipt retrieval configuration
 #   ethReceiptRetrieval:
 #     # 0 - Auto-detect (tries following methods in order)
