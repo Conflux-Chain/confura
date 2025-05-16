@@ -8,7 +8,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
+	"github.com/Conflux-Chain/go-conflux-util/health"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -155,14 +155,21 @@ func (l *DlockLeaderManager) Campaign(ctx context.Context) {
 	newCtx, cancelFn := context.WithCancel(ctx)
 	l.cancel.Store(cancelFn)
 
-	logger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
+	healthStatus := health.NewCounter()
+	logger := logrus.WithFields(logrus.Fields{"electionKey": l.electionKey, "leaderID": l.ID})
+
 	etlog := func(err error) {
-		logger.Log(
-			logrus.WithFields(logrus.Fields{
-				"electionKey": l.electionKey,
-				"leaderID":    l.ID,
-			}), err, "Leader election campaign error",
-		)
+		recovered, unhealthy, unrecovered, failures := healthStatus.OnError(err)
+		switch {
+		case recovered:
+			logger.Warn("Leader election recovered from failures")
+		case unhealthy:
+			logger.WithError(err).Error("Leader election becomes unhealthy")
+		case unrecovered:
+			logger.WithFields(logrus.Fields{
+				"failures": failures,
+			}).WithError(err).Warn("Leader election still not recovered after failures")
+		}
 	}
 
 	for {

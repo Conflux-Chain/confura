@@ -11,7 +11,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/types"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
+	"github.com/Conflux-Chain/go-conflux-util/health"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/sirupsen/logrus"
@@ -75,14 +75,28 @@ func (h *baseGasStationHandler) run(sync func() (bool, error), refresh func() er
 	refreshTicker := time.NewTicker(clusterUpdateInterval)
 	defer refreshTicker.Stop()
 
-	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
+	healthStatus := health.NewCounter()
+	etlog := func(err error) {
+		recovered, unhealthy, unrecovered, failures := healthStatus.OnError(err)
+		switch {
+		case recovered:
+			logrus.Warn("Gas station sync recovered from failures")
+		case unhealthy:
+			logrus.WithError(err).Error("Gas station sync becomes unhealthy")
+		case unrecovered:
+			logrus.WithFields(logrus.Fields{
+				"failures": failures,
+			}).WithError(err).Warn("Gas station sync still not recovered after failures")
+		}
+	}
+
 	for {
 		select {
 		case <-syncTicker.C:
 			complete, err := sync()
+			etlog(err)
 			h.status.Store(newGasStationStatus(err))
 			h.resetSyncTicker(syncTicker, complete, err)
-			etLogger.Log(logrus.StandardLogger(), err, "Gas Station handler sync error")
 		case <-refreshTicker.C:
 			if err := refresh(); err != nil {
 				logrus.WithError(err).Error("Gas station handler cluster refresh error")

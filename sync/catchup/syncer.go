@@ -11,7 +11,6 @@ import (
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
@@ -211,13 +210,10 @@ func (s *Syncer) Sync(ctx context.Context) {
 	logrus.WithField("numWorkers", len(s.workers)).
 		Debug("Catch-up syncer starting to catch up latest epoch")
 
-	etLogger := logutil.NewErrorTolerantLogger(logutil.DefaultETConfig)
 	for s.elm.Await(ctx) {
 		start, end, err := s.nextSyncRange()
 		if err != nil {
-			etLogger.Log(
-				logrus.StandardLogger(), err, "Catch-up syncer failed to get next sync range",
-			)
+			logrus.WithError(err).Info("Catch-up syncer failed to get next sync range")
 			time.Sleep(1 * time.Second)
 			continue
 		}

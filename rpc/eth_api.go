@@ -11,7 +11,6 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/go-rpc-provider"
@@ -61,7 +60,6 @@ type ethAPI struct {
 	provider         *node.EthClientProvider
 	inputBlockMetric metrics.InputBlockMetric
 	stateHandler     *handler.EthStateHandler
-	etPubsubLogger   *logutil.ErrorTolerantLogger
 
 	// return empty data before eSpace hardfork block number
 	hardforkBlockNumber web3Types.BlockNumber
@@ -91,7 +89,6 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 		EthAPIOption:        opt,
 		provider:            provider,
 		stateHandler:        handler.NewEthStateHandler(provider),
-		etPubsubLogger:      logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
 		hardforkBlockNumber: util.GetEthHardforkBlockNumber(*chainId),
 	}
 }

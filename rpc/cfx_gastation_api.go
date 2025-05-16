@@ -7,23 +7,17 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/types"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
-	logutil "github.com/Conflux-Chain/go-conflux-util/log"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/sirupsen/logrus"
 )
 
 // cfxGasStationAPI provides core space gasstation API.
 type cfxGasStationAPI struct {
-	handler  *handler.CfxGasStationHandler
-	etLogger *logutil.ErrorTolerantLogger
+	handler *handler.CfxGasStationHandler
 }
 
 // newCfxGasStationAPI creates a new instance of `cfxGasStationAPI`.
 func newCfxGasStationAPI(handler *handler.CfxGasStationHandler) *cfxGasStationAPI {
-	return &cfxGasStationAPI{
-		handler:  handler,
-		etLogger: logutil.NewErrorTolerantLogger(logutil.DefaultETConfig),
-	}
+	return &cfxGasStationAPI{handler: handler}
 }
 
 // SuggestedGasFees retrieves the suggested gas fees.
@@ -32,11 +26,7 @@ func (api *cfxGasStationAPI) SuggestedGasFees(ctx context.Context) (*types.Sugge
 
 	// Attempt to get suggested gas fees from the handler if available.
 	if api.handler != nil {
-		gasFee, err := api.handler.Suggest(cfx)
-		api.etLogger.Log(
-			logrus.StandardLogger(), err, "Failed to get suggested gas fees from handler",
-		)
-		return gasFee, err
+		return api.handler.Suggest(cfx)
 	}
 
 	// Fallback to fetching gas fees directly from the blockchain.
