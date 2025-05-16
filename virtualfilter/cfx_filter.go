@@ -9,7 +9,6 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -122,7 +121,7 @@ func (f *cfxLogFilter) fetch() (filterChanges, error) {
 	for _, fe := range pchanges.epochs {
 		if !fe.reorged() && len(fe.logs) == 0 { // filter epochs missing of event logs
 			missingBlockhashes = append(missingBlockhashes, fe.blockHash.String())
-			bnMin, bnMax = util.MinUint64(fe.epochNum, bnMin), util.MaxUint64(fe.epochNum, bnMax)
+			bnMin, bnMax = min(fe.epochNum, bnMin), max(fe.epochNum, bnMax)
 		}
 	}
 

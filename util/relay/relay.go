@@ -71,7 +71,7 @@ func (relayer *txnRelayer) Relay(signedTx hexutil.Bytes) bool {
 
 // run starts concurrency worker(s) asynchronously
 func (relayer *txnRelayer) run(process func()) {
-	concurrency := util.MaxInt(relayer.Concurrency, 1)
+	concurrency := max(relayer.Concurrency, 1)
 	for i := 0; i < concurrency; i++ {
 		go process()
 	}

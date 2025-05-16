@@ -2,7 +2,6 @@ package sync
 
 import (
 	"github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
 )
 
 // epochWindow maintains a continuous epoch window with a fixed size capacity.
@@ -27,7 +26,7 @@ func (win *epochWindow) reset(epochFrom, epochTo uint64) {
 // Expand the epoch window from a smaller epoch number.
 func (win *epochWindow) expandFrom(epochNo uint64) {
 	if win.isSet() {
-		win.epochFrom = util.MinUint64(win.epochFrom, epochNo)
+		win.epochFrom = min(win.epochFrom, epochNo)
 	} else {
 		win.reset(epochNo, epochNo)
 	}
@@ -36,7 +35,7 @@ func (win *epochWindow) expandFrom(epochNo uint64) {
 // Expand the epoch window to a bigger epoch number.
 func (win *epochWindow) expandTo(epochNo uint64) {
 	if win.isSet() {
-		win.epochTo = util.MaxUint64(win.epochTo, epochNo)
+		win.epochTo = max(win.epochTo, epochNo)
 	} else {
 		win.reset(epochNo, epochNo)
 	}
@@ -75,7 +74,7 @@ func (win *epochWindow) peekShrinkFrom(specSize uint32) (syncFrom uint64, syncSi
 		return 0, 0
 	}
 
-	return win.epochFrom, util.MinUint32(win.size(), specSize)
+	return win.epochFrom, min(win.size(), specSize)
 }
 
 // Shrink no more than the specified size of epoch(s) from the epoch window.
@@ -84,7 +83,7 @@ func (win *epochWindow) shrinkFrom(specSize uint32) (uint64, uint32) {
 		return 0, 0
 	}
 
-	syncFrom, syncSize := win.epochFrom, util.MinUint32(win.size(), specSize)
+	syncFrom, syncSize := win.epochFrom, min(win.size(), specSize)
 	win.epochFrom += uint64(syncSize)
 
 	return syncFrom, syncSize
