@@ -437,6 +437,9 @@ node:
 
 # # Request control Configuration
 # requestControl:
+#   # Maximum number of retry attempts for the 'getLogs' log filter suggestion.
+#   # Set this value to 0 to disable retries.
+#   maxGetLogsSuggestionAttempts: 0
 #   # Log filter limits for handling 'getLogs' requests
 #   logFilter:
 #   # Maximum number of block hashes allowed in a filter

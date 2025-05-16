@@ -12,7 +12,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -30,7 +30,7 @@ func MustInitFromViper() {
 	var resrcLimit struct {
 		MaxGetLogsResponseBytes uint64 `default:"10485760"` // default 10MB
 	}
-	viper.MustUnmarshalKey("requestControl.resourceLimits", &resrcLimit)
+	viperutil.MustUnmarshalKey("requestControl.resourceLimits", &resrcLimit)
 
 	maxGetLogsResponseBytes = resrcLimit.MaxGetLogsResponseBytes
 	errResponseBodySizeTooLarge = fmt.Errorf(
@@ -43,11 +43,12 @@ func MustInitFromViper() {
 type CfxLogsApiHandler struct {
 	ms *mysql.MysqlStore
 
-	prunedHandler *CfxPrunedLogsHandler // optional
+	prunedHandler      *CfxPrunedLogsHandler // optional
+	maxSuggestAttempts int
 }
 
-func NewCfxLogsApiHandler(ms *mysql.MysqlStore, prunedHandler *CfxPrunedLogsHandler) *CfxLogsApiHandler {
-	return &CfxLogsApiHandler{ms, prunedHandler}
+func NewCfxLogsApiHandler(ms *mysql.MysqlStore, prunedHandler *CfxPrunedLogsHandler, maxAttempts int) *CfxLogsApiHandler {
+	return &CfxLogsApiHandler{ms: ms, prunedHandler: prunedHandler, maxSuggestAttempts: maxAttempts}
 }
 
 func (handler *CfxLogsApiHandler) GetLogs(
@@ -62,10 +63,46 @@ func (handler *CfxLogsApiHandler) GetLogs(
 		return nil, false, err
 	}
 
+	var (
+		suggestErr   error
+		suggestCount int
+	)
+
 	for {
 		logs, hitStore, err := handler.getLogsReorgGuard(ctx, cfx, filter, delegatedRpcMethod)
 		if err != nil {
-			return nil, false, err
+			if maxAttempts := handler.maxSuggestAttempts; maxAttempts > 0 && suggestCount < maxAttempts {
+				var (
+					suggestBlockRangeErr *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
+					suggestEpochRangeErr *store.SuggestedFilterOversizedError[store.SuggestedEpochRange]
+				)
+				if filter.ToBlock != nil && errors.As(err, &suggestBlockRangeErr) {
+					suggestErr = suggestBlockRangeErr
+					filter.ToBlock = (*hexutil.Big)(big.NewInt(0).SetUint64(suggestBlockRangeErr.SuggestedRange.To))
+				} else if filter.ToEpoch != nil && errors.As(err, &suggestEpochRangeErr) {
+					suggestErr = suggestEpochRangeErr
+					filter.ToEpoch = types.NewEpochNumberUint64(suggestEpochRangeErr.SuggestedRange.To)
+				}
+
+				if suggestBlockRangeErr != nil || suggestEpochRangeErr != nil {
+					// check timeout before retry.
+					if err := checkTimeout(ctx); err != nil {
+						return nil, false, err
+					}
+
+					suggestCount++
+					continue
+				}
+			}
+
+			if suggestErr == nil {
+				return nil, false, err
+			}
+		}
+
+		// If for any reason a suggestion error was set, propagate it.
+		if suggestErr != nil {
+			return nil, false, suggestErr
 		}
 
 		// check the reorg version after query
