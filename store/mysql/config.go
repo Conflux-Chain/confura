@@ -85,7 +85,7 @@ func MustNewEthStoreConfigFromViper() *Config {
 	return mustNewConfigFromViper("ethstore.mysql")
 }
 
-// MustOpenOrCreate creates an instance of store or exits on any erorr.
+// MustOpenOrCreate creates an instance of store or exits on any error.
 func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 	newCreated := config.mustCreateDatabaseIfAbsent()
 
