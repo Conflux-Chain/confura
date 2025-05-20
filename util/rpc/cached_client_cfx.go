@@ -26,7 +26,7 @@ func (c CfxCoreClient) GetClientVersion() (string, error) {
 		return "", err
 	}
 
-	metrics.Registry.Client.LruCacheHit("cfx_clientVersion").Mark(loaded)
+	metrics.Registry.Client.ExpiryCacheHit("cfx_clientVersion").Mark(loaded)
 	return version, nil
 }
 
@@ -36,7 +36,7 @@ func (c CfxCoreClient) GetGasPrice() (*hexutil.Big, error) {
 		return nil, err
 	}
 
-	metrics.Registry.Client.LruCacheHit("cfx_gasPrice").Mark(loaded)
+	metrics.Registry.Client.ExpiryCacheHit("cfx_gasPrice").Mark(loaded)
 	return gasPrice, nil
 }
 
@@ -46,7 +46,7 @@ func (c CfxCoreClient) GetStatus() (types.Status, error) {
 		return types.Status{}, err
 	}
 
-	metrics.Registry.Client.LruCacheHit("cfx_status").Mark(loaded)
+	metrics.Registry.Client.ExpiryCacheHit("cfx_status").Mark(loaded)
 	return status, nil
 }
 
@@ -60,7 +60,7 @@ func (c CfxCoreClient) GetEpochNumber(epochs ...*types.Epoch) (*hexutil.Big, err
 	if err != nil {
 		return nil, err
 	}
-	metrics.Registry.Client.LruCacheHit("cfx_epochNumber").Mark(loaded)
+	metrics.Registry.Client.ExpiryCacheHit("cfx_epochNumber").Mark(loaded)
 	return epochNumber, nil
 }
 
@@ -70,6 +70,6 @@ func (c CfxCoreClient) GetBestBlockHash() (types.Hash, error) {
 		return blockHash, err
 	}
 
-	metrics.Registry.Client.LruCacheHit("cfx_bestBlockHash").Mark(loaded)
+	metrics.Registry.Client.ExpiryCacheHit("cfx_bestBlockHash").Mark(loaded)
 	return blockHash, nil
 }
