@@ -4,13 +4,14 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/go-rpc-provider/utils"
-	"github.com/openweb3/web3go"
+	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
 	"github.com/sirupsen/logrus"
 )
@@ -27,6 +28,8 @@ type EthCacheConfig struct {
 	PriceExpiration         time.Duration `default:"3s"`
 	CallCacheExpiration     time.Duration `default:"1s"`
 	CallCacheSize           int           `default:"128"`
+	BlockCacheExpiration    time.Duration `default:"1s"`
+	BlockCacheSize          int           `default:"300"`
 }
 
 // newEthCacheConfig returns a EthCacheConfig with default values.
@@ -51,6 +54,7 @@ type EthCache struct {
 	priceCache         *expiryCache
 	blockNumberCache   *nodeExpiryCaches
 	callCache          *keyExpiryLruCaches
+	blockCache         *keyExpiryLruCaches
 }
 
 func newEthCache(cfg EthCacheConfig) *EthCache {
@@ -61,12 +65,13 @@ func newEthCache(cfg EthCacheConfig) *EthCache {
 		priceCache:         newExpiryCache(cfg.PriceExpiration),
 		blockNumberCache:   newNodeExpiryCaches(cfg.BlockNumberExpiration),
 		callCache:          newKeyExpiryLruCaches(cfg.CallCacheExpiration, cfg.CallCacheSize),
+		blockCache:         newKeyExpiryLruCaches(cfg.BlockCacheExpiration, cfg.BlockCacheSize),
 	}
 }
 
-func (cache *EthCache) GetNetVersion(client *web3go.Client) (string, bool, error) {
+func (cache *EthCache) GetNetVersion(eth *client.RpcEthClient) (string, bool, error) {
 	return cache.GetNetVersionWithFunc(func() (interface{}, error) {
-		return client.Eth.NetVersion()
+		return eth.NetVersion()
 	})
 }
 
@@ -80,9 +85,9 @@ func (cache *EthCache) GetNetVersionWithFunc(rawGetter func() (interface{}, erro
 	return val.(string), loaded, nil
 }
 
-func (cache *EthCache) GetClientVersion(client *web3go.Client) (string, bool, error) {
+func (cache *EthCache) GetClientVersion(eth *client.RpcEthClient) (string, bool, error) {
 	return cache.GetClientVersionWithFunc(func() (interface{}, error) {
-		return client.Eth.ClientVersion()
+		return eth.ClientVersion()
 	})
 }
 
@@ -96,9 +101,9 @@ func (cache *EthCache) GetClientVersionWithFunc(rawGetter func() (interface{}, e
 	return val.(string), loaded, nil
 }
 
-func (cache *EthCache) GetChainId(client *web3go.Client) (*hexutil.Uint64, bool, error) {
+func (cache *EthCache) GetChainId(eth *client.RpcEthClient) (*hexutil.Uint64, bool, error) {
 	return cache.GetChainIdWithFunc(func() (interface{}, error) {
-		chid, err := client.Eth.ChainId()
+		chid, err := eth.ChainId()
 		if err != nil {
 			return nil, err
 		}
@@ -116,9 +121,9 @@ func (cache *EthCache) GetChainIdWithFunc(rawGetter func() (interface{}, error))
 	return val.(*hexutil.Uint64), loaded, nil
 }
 
-func (cache *EthCache) GetGasPrice(client *web3go.Client) (*hexutil.Big, bool, error) {
+func (cache *EthCache) GetGasPrice(eth *client.RpcEthClient) (*hexutil.Big, bool, error) {
 	return cache.GetGasPriceWithFunc(func() (interface{}, error) {
-		gasPrice, err := client.Eth.GasPrice()
+		gasPrice, err := eth.GasPrice()
 		if err != nil {
 			return nil, err
 		}
@@ -136,9 +141,9 @@ func (cache *EthCache) GetGasPriceWithFunc(rawGetter func() (interface{}, error)
 	return val.(*hexutil.Big), loaded, nil
 }
 
-func (cache *EthCache) GetBlockNumber(nodeName string, client *web3go.Client) (*hexutil.Big, bool, error) {
+func (cache *EthCache) GetBlockNumber(nodeName string, eth *client.RpcEthClient) (*hexutil.Big, bool, error) {
 	return cache.GetBlockNumberWithFunc(nodeName, func() (interface{}, error) {
-		blockNum, err := client.Eth.BlockNumber()
+		blockNum, err := eth.BlockNumber()
 		if err != nil {
 			return nil, err
 		}
@@ -156,6 +161,18 @@ func (cache *EthCache) GetBlockNumberWithFunc(nodeName string, rawGetter func() 
 	return val.(*hexutil.Big), loaded, nil
 }
 
+func (cache *EthCache) GetBlockWithFunc(
+	nodeName string,
+	rawGetter func() (interface{}, error),
+	bnh types.BlockNumberOrHash,
+	includeTxn bool,
+) (interface{}, bool, error) {
+	cacheKey := fmt.Sprintf("%s::%s::%v", nodeName, &bnh, includeTxn)
+	return cache.blockCache.getOrUpdate(cacheKey, func() (interface{}, error) {
+		return rawGetter()
+	})
+}
+
 // RPCResult represents the result of an RPC call,
 // containing the response data or a potential JSON-RPC error.
 type RPCResult struct {
@@ -165,12 +182,12 @@ type RPCResult struct {
 
 func (cache *EthCache) Call(
 	nodeName string,
-	client *web3go.Client,
+	eth *client.RpcEthClient,
 	callRequest types.CallRequest,
 	blockNum *types.BlockNumberOrHash,
 ) (RPCResult, bool, error) {
 	return cache.CallWithFunc(nodeName, func() (interface{}, error) {
-		return client.Eth.Call(callRequest, blockNum)
+		return eth.Call(callRequest, blockNum)
 	}, callRequest, blockNum)
 }
 

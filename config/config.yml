@@ -466,13 +466,16 @@ node:
 #     clientVersionExpiration: 1m
 #     # Cache expiration time duration for 'eth_chainId' requests
 #     chainIdExpiration: 8760h
-#     # Cache expiration time duration for 'eth_blockNumber'equests
+#     # Cache expiration time duration for 'eth_blockNumber' requests
 #     blockNumberExpiration: 1s
 #     # Cache expiration time duration for 'eth_gasPrice'
 #     priceExpiration: 3s
 #     # LRU Cache size and expiration time duration for 'eth_call'
 #     callCacheExpiration: 1s
 #     callCacheSize: 128
+#     # LRU Cache size and expiration time duration for 'eth_getBlockBy{Number/Hash}'
+#     blockCacheExpiration: 1s
+#     blockCacheSize: 300
 #     # Remote cache service endpoint (refer to https://github.com/Conflux-Chain/confura-data-cache)
 #     #cacheServiceUrl: http://127.0.0.1:38545
 

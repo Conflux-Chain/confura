@@ -246,6 +246,10 @@ func (*VirtualFilterMetrics) StoreQueryPercentage(space string, node, store stri
 
 type ClientMetrics struct{}
 
-func (*ClientMetrics) CacheHit(method string) metricUtil.Percentage {
-	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/client/cache/hit/%v", method)
+func (*ClientMetrics) LruCacheHit(method string) metricUtil.Percentage {
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/client/lru/cache/hit/%v", method)
+}
+
+func (*ClientMetrics) DataCacheHit(method string) metricUtil.Percentage {
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/client/data/cache/hit/%v", method)
 }

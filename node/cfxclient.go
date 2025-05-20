@@ -14,7 +14,11 @@ type CfxClientProvider struct {
 }
 
 func newCfxClient(url string) (sdk.ClientOperator, error) {
-	return rpc.NewCfxClient(url, rpc.WithClientHookMetrics(true), rpc.WithClientHookCache(true))
+	client, err := rpc.NewCfxClient(url, rpc.WithClientHookMetrics(true))
+	if err != nil {
+		return nil, err
+	}
+	return rpc.NewCfxCoreClient(client), nil
 }
 
 func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvider {
