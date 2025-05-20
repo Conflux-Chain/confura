@@ -3,6 +3,7 @@ package util
 import (
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -196,12 +197,7 @@ func GetEthHardforkBlockNumber(chainId uint64) web3goTypes.BlockNumber {
 // MatchEthLogTopics checks if the eSpace event log matches with the given topics condition
 func MatchEthLogTopics(log *web3goTypes.Log, topics [][]common.Hash) bool {
 	find := func(t common.Hash, topics []common.Hash) bool {
-		for _, topic := range topics {
-			if t == topic {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(topics, t)
 	}
 
 	for i := range topics {
@@ -219,10 +215,8 @@ func MatchEthLogTopics(log *web3goTypes.Log, topics [][]common.Hash) bool {
 
 // IncludeEthLogAddrs checks if the eSpace event logs include any of the given addresses
 func IncludeEthLogAddrs(log *web3goTypes.Log, addresses []common.Address) bool {
-	for _, addr := range addresses {
-		if log.Address == addr {
-			return true
-		}
+	if slices.Contains(addresses, log.Address) {
+		return true
 	}
 
 	return len(addresses) == 0
@@ -242,12 +236,7 @@ func IncludeCfxLogAddrs(log *types.Log, addresses []cfxaddress.Address) bool {
 // MatchCfxLogTopics checks if the core space event log matches with the given topics condition
 func MatchCfxLogTopics(log *types.Log, topics [][]types.Hash) bool {
 	find := func(t types.Hash, topics []types.Hash) bool {
-		for _, topic := range topics {
-			if t == topic {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(topics, t)
 	}
 
 	for i := range topics {
