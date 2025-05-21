@@ -27,12 +27,10 @@ func NewCfx() *CfxCache {
 }
 
 func (cache *CfxCache) GetGasPrice(cfx sdk.ClientOperator) (*hexutil.Big, bool, error) {
-	return cache.GetGasPriceWithFunc(func() (interface{}, error) {
-		return cfx.GetGasPrice()
-	})
+	return cache.GetGasPriceWithFunc(cfx.GetGasPrice)
 }
 
-func (cache *CfxCache) GetGasPriceWithFunc(rawGetter func() (interface{}, error)) (*hexutil.Big, bool, error) {
+func (cache *CfxCache) GetGasPriceWithFunc(rawGetter func() (*hexutil.Big, error)) (*hexutil.Big, bool, error) {
 	val, loaded, err := cache.priceCache.getOrUpdate(func() (interface{}, error) {
 		return rawGetter()
 	})
@@ -43,12 +41,10 @@ func (cache *CfxCache) GetGasPriceWithFunc(rawGetter func() (interface{}, error)
 }
 
 func (cache *CfxCache) GetClientVersion(cfx sdk.ClientOperator) (string, bool, error) {
-	return cache.GetClientVersionWithFunc(func() (interface{}, error) {
-		return cfx.GetClientVersion()
-	})
+	return cache.GetClientVersionWithFunc(cfx.GetClientVersion)
 }
 
-func (cache *CfxCache) GetClientVersionWithFunc(rawGetter func() (interface{}, error)) (string, bool, error) {
+func (cache *CfxCache) GetClientVersionWithFunc(rawGetter func() (string, error)) (string, bool, error) {
 	val, loaded, err := cache.versionCache.getOrUpdate(func() (interface{}, error) {
 		return rawGetter()
 	})

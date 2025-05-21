@@ -82,9 +82,6 @@ func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 	if !opt.hookMetrics {
 		hookFlag ^= MiddlewareHookLogMetrics
 	}
-	if !opt.hookCache {
-		hookFlag ^= MiddlewareHookCache
-	}
 	HookMiddlewares(eth.Provider(), url, "eth", hookFlag)
 
 	return eth, nil

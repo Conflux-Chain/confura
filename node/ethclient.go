@@ -19,11 +19,11 @@ type EthClientProvider struct {
 
 func newEthClientCtor(dataCache cacheRpc.Interface) clientFactory[*Web3goClient] {
 	return func(url string) (*Web3goClient, error) {
-		client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true), rpcutil.WithClientHookCache(true))
+		client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true))
 		if err != nil {
 			return nil, err
 		}
-		return rpcutil.NewWeb3goClient(client, dataCache), nil
+		return rpcutil.NewWeb3goClient(url, client, dataCache), nil
 	}
 }
 

@@ -466,7 +466,8 @@ node:
 #     clientVersionExpiration: 1m
 #     # Cache expiration time duration for 'eth_chainId' requests
 #     chainIdExpiration: 8760h
-#     # Cache expiration time duration for 'eth_blockNumber'equests
+#     # Cache expiration time duration for 'eth_blockNumber' or 'eth_getBlockByNumber' requests
+#     # when querying for dynamic tags such as 'latest', 'earliest', or 'safe'.
 #     blockNumberExpiration: 1s
 #     # Cache expiration time duration for 'eth_gasPrice'
 #     priceExpiration: 3s

@@ -4,14 +4,16 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/go-rpc-provider/utils"
-	"github.com/openweb3/web3go"
+	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -49,7 +51,7 @@ type EthCache struct {
 	clientVersionCache *expiryCache
 	chainIdCache       *expiryCache
 	priceCache         *expiryCache
-	blockNumberCache   *nodeExpiryCaches
+	blockNumberCache   *keyExpiryLruCaches
 	callCache          *keyExpiryLruCaches
 }
 
@@ -59,19 +61,17 @@ func newEthCache(cfg EthCacheConfig) *EthCache {
 		clientVersionCache: newExpiryCache(cfg.ClientVersionExpiration),
 		chainIdCache:       newExpiryCache(cfg.ChainIdExpiration),
 		priceCache:         newExpiryCache(cfg.PriceExpiration),
-		blockNumberCache:   newNodeExpiryCaches(cfg.BlockNumberExpiration),
+		blockNumberCache:   newKeyExpiryLruCaches(cfg.BlockNumberExpiration, 1000),
 		callCache:          newKeyExpiryLruCaches(cfg.CallCacheExpiration, cfg.CallCacheSize),
 	}
 }
 
-func (cache *EthCache) GetNetVersion(client *web3go.Client) (string, bool, error) {
-	return cache.GetNetVersionWithFunc(func() (interface{}, error) {
-		return client.Eth.NetVersion()
-	})
+func (cache *EthCache) GetNetVersion(eth *client.RpcEthClient) (string, bool, error) {
+	return cache.GetNetVersionWithFunc(eth.NetVersion)
 }
 
-func (cache *EthCache) GetNetVersionWithFunc(rawGetter func() (interface{}, error)) (string, bool, error) {
-	val, loaded, err := cache.netVersionCache.getOrUpdate(func() (interface{}, error) {
+func (cache *EthCache) GetNetVersionWithFunc(rawGetter func() (string, error)) (string, bool, error) {
+	val, loaded, err := cache.netVersionCache.getOrUpdate(func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {
@@ -80,14 +80,12 @@ func (cache *EthCache) GetNetVersionWithFunc(rawGetter func() (interface{}, erro
 	return val.(string), loaded, nil
 }
 
-func (cache *EthCache) GetClientVersion(client *web3go.Client) (string, bool, error) {
-	return cache.GetClientVersionWithFunc(func() (interface{}, error) {
-		return client.Eth.ClientVersion()
-	})
+func (cache *EthCache) GetClientVersion(eth *client.RpcEthClient) (string, bool, error) {
+	return cache.GetClientVersionWithFunc(eth.ClientVersion)
 }
 
-func (cache *EthCache) GetClientVersionWithFunc(rawGetter func() (interface{}, error)) (string, bool, error) {
-	val, loaded, err := cache.clientVersionCache.getOrUpdate(func() (interface{}, error) {
+func (cache *EthCache) GetClientVersionWithFunc(rawGetter func() (string, error)) (string, bool, error) {
+	val, loaded, err := cache.clientVersionCache.getOrUpdate(func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {
@@ -96,89 +94,98 @@ func (cache *EthCache) GetClientVersionWithFunc(rawGetter func() (interface{}, e
 	return val.(string), loaded, nil
 }
 
-func (cache *EthCache) GetChainId(client *web3go.Client) (*hexutil.Uint64, bool, error) {
-	return cache.GetChainIdWithFunc(func() (interface{}, error) {
-		chid, err := client.Eth.ChainId()
-		if err != nil {
-			return nil, err
-		}
-		return (*hexutil.Uint64)(chid), nil
-	})
+func (cache *EthCache) GetChainId(eth *client.RpcEthClient) (*uint64, bool, error) {
+	return cache.GetChainIdWithFunc(eth.ChainId)
 }
 
-func (cache *EthCache) GetChainIdWithFunc(rawGetter func() (interface{}, error)) (*hexutil.Uint64, bool, error) {
-	val, loaded, err := cache.chainIdCache.getOrUpdate(func() (interface{}, error) {
+func (cache *EthCache) GetChainIdWithFunc(rawGetter func() (*uint64, error)) (*uint64, bool, error) {
+	val, loaded, err := cache.chainIdCache.getOrUpdate(func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	return val.(*hexutil.Uint64), loaded, nil
+	return val.(*uint64), loaded, nil
 }
 
-func (cache *EthCache) GetGasPrice(client *web3go.Client) (*hexutil.Big, bool, error) {
-	return cache.GetGasPriceWithFunc(func() (interface{}, error) {
-		gasPrice, err := client.Eth.GasPrice()
-		if err != nil {
-			return nil, err
-		}
-		return (*hexutil.Big)(gasPrice), nil
-	})
+func (cache *EthCache) GetGasPrice(eth *client.RpcEthClient) (*big.Int, bool, error) {
+	return cache.GetGasPriceWithFunc(eth.GasPrice)
 }
 
-func (cache *EthCache) GetGasPriceWithFunc(rawGetter func() (interface{}, error)) (*hexutil.Big, bool, error) {
-	val, loaded, err := cache.priceCache.getOrUpdate(func() (interface{}, error) {
+func (cache *EthCache) GetGasPriceWithFunc(rawGetter func() (*big.Int, error)) (*big.Int, bool, error) {
+	val, loaded, err := cache.priceCache.getOrUpdate(func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	return val.(*hexutil.Big), loaded, nil
+	return val.(*big.Int), loaded, nil
 }
 
-func (cache *EthCache) GetBlockNumber(nodeName string, client *web3go.Client) (*hexutil.Big, bool, error) {
-	return cache.GetBlockNumberWithFunc(nodeName, func() (interface{}, error) {
-		blockNum, err := client.Eth.BlockNumber()
+func (cache *EthCache) GetBlockNumber(
+	nodeName string, eth *client.RpcEthClient, blockNums ...types.BlockNumber) (*big.Int, bool, error) {
+	blockNum := types.LatestBlockNumber
+	if len(blockNums) > 0 {
+		blockNum = blockNums[0]
+	}
+	if blockNum >= 0 {
+		return big.NewInt(blockNum.Int64()), true, nil
+	}
+	return cache.GetBlockNumberWithFunc(nodeName, blockNum, func() (*big.Int, error) {
+		if blockNum == types.LatestBlockNumber {
+			return eth.BlockNumber()
+		}
+		block, err := eth.BlockByNumber(blockNum, false)
 		if err != nil {
 			return nil, err
 		}
-		return (*hexutil.Big)(blockNum), nil
+		if block == nil {
+			return nil, errors.New("block not found")
+		}
+		return block.Number, nil
 	})
 }
 
-func (cache *EthCache) GetBlockNumberWithFunc(nodeName string, rawGetter func() (interface{}, error)) (*hexutil.Big, bool, error) {
-	val, loaded, err := cache.blockNumberCache.getOrUpdate(nodeName, func() (interface{}, error) {
+func (cache *EthCache) GetBlockNumberWithFunc(
+	nodeName string,
+	blockNum types.BlockNumber,
+	rawGetter func() (*big.Int, error),
+) (*big.Int, bool, error) {
+	cacheKey := fmt.Sprintf("%s::%d", nodeName, blockNum.Int64())
+	val, loaded, err := cache.blockNumberCache.getOrUpdate(cacheKey, func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	return val.(*hexutil.Big), loaded, nil
+	return val.(*big.Int), loaded, nil
 }
 
 // RPCResult represents the result of an RPC call,
 // containing the response data or a potential JSON-RPC error.
 type RPCResult struct {
-	Data     interface{}
+	Data     any
 	RpcError error
 }
 
 func (cache *EthCache) Call(
 	nodeName string,
-	client *web3go.Client,
+	eth *client.RpcEthClient,
 	callRequest types.CallRequest,
 	blockNum *types.BlockNumberOrHash,
 ) (RPCResult, bool, error) {
-	return cache.CallWithFunc(nodeName, func() (interface{}, error) {
-		return client.Eth.Call(callRequest, blockNum)
-	}, callRequest, blockNum)
+	return cache.CallWithFunc(nodeName, callRequest, blockNum,
+		func() ([]byte, error) {
+			return eth.Call(callRequest, blockNum)
+		},
+	)
 }
 
 func (cache *EthCache) CallWithFunc(
 	nodeName string,
-	rawGetter func() (interface{}, error),
 	callRequest types.CallRequest,
 	blockNum *types.BlockNumberOrHash,
+	rawGetter func() ([]byte, error),
 ) (RPCResult, bool, error) {
 	cacheKey, err := generateCallCacheKey(nodeName, callRequest, blockNum)
 	if err != nil {
@@ -193,7 +200,7 @@ func (cache *EthCache) CallWithFunc(
 		return RPCResult{Data: val}, false, err
 	}
 
-	val, loaded, err := cache.callCache.getOrUpdate(cacheKey, func() (interface{}, error) {
+	val, loaded, err := cache.callCache.getOrUpdate(cacheKey, func() (any, error) {
 		data, err := rawGetter()
 		// Cache RPC JSON errors or successful results
 		if err == nil || utils.IsRPCJSONError(err) {
@@ -210,7 +217,7 @@ func (cache *EthCache) CallWithFunc(
 
 func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockNum *types.BlockNumberOrHash) (string, error) {
 	// Create a map of parameters to be serialized
-	params := map[string]interface{}{
+	params := map[string]any{
 		"nodeName":    nodeName,
 		"callRequest": callRequest,
 		"blockNum":    blockNum,

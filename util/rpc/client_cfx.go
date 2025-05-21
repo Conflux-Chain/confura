@@ -80,9 +80,6 @@ func NewCfxClient(url string, options ...ClientOption) (*sdk.Client, error) {
 	if !opt.hookMetrics {
 		hookFlag ^= MiddlewareHookLogMetrics
 	}
-	if !opt.hookCache {
-		hookFlag ^= MiddlewareHookCache
-	}
 	HookMiddlewares(cfx.Provider(), url, "cfx", hookFlag)
 
 	return cfx, nil
