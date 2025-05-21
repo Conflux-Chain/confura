@@ -128,10 +128,10 @@ func (cache *EthCache) GetBlockNumber(
 	if len(blockNums) > 0 {
 		blockNum = blockNums[0]
 	}
+	if blockNum >= 0 {
+		return big.NewInt(blockNum.Int64()), true, nil
+	}
 	return cache.GetBlockNumberWithFunc(nodeName, blockNum, func() (*big.Int, error) {
-		if blockNum >= 0 {
-			return big.NewInt(blockNum.Int64()), nil
-		}
 		if blockNum == types.LatestBlockNumber {
 			return eth.BlockNumber()
 		}
