@@ -4,15 +4,16 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -50,7 +51,7 @@ type EthCache struct {
 	clientVersionCache *expiryCache
 	chainIdCache       *expiryCache
 	priceCache         *expiryCache
-	blockNumberCache   *nodeExpiryCaches
+	blockNumberCache   *keyExpiryLruCaches
 	callCache          *keyExpiryLruCaches
 }
 
@@ -60,7 +61,7 @@ func newEthCache(cfg EthCacheConfig) *EthCache {
 		clientVersionCache: newExpiryCache(cfg.ClientVersionExpiration),
 		chainIdCache:       newExpiryCache(cfg.ChainIdExpiration),
 		priceCache:         newExpiryCache(cfg.PriceExpiration),
-		blockNumberCache:   newNodeExpiryCaches(cfg.BlockNumberExpiration),
+		blockNumberCache:   newKeyExpiryLruCaches(cfg.BlockNumberExpiration, 1000),
 		callCache:          newKeyExpiryLruCaches(cfg.CallCacheExpiration, cfg.CallCacheSize),
 	}
 }
@@ -93,46 +94,71 @@ func (cache *EthCache) GetClientVersionWithFunc(rawGetter func() (string, error)
 	return val.(string), loaded, nil
 }
 
-func (cache *EthCache) GetChainId(eth *client.RpcEthClient) (*hexutil.Uint64, bool, error) {
+func (cache *EthCache) GetChainId(eth *client.RpcEthClient) (*uint64, bool, error) {
 	return cache.GetChainIdWithFunc(eth.ChainId)
 }
 
-func (cache *EthCache) GetChainIdWithFunc(rawGetter func() (*uint64, error)) (*hexutil.Uint64, bool, error) {
+func (cache *EthCache) GetChainIdWithFunc(rawGetter func() (*uint64, error)) (*uint64, bool, error) {
 	val, loaded, err := cache.chainIdCache.getOrUpdate(func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	return (*hexutil.Uint64)(val.(*uint64)), loaded, nil
+	return val.(*uint64), loaded, nil
 }
 
-func (cache *EthCache) GetGasPrice(eth *client.RpcEthClient) (*hexutil.Big, bool, error) {
+func (cache *EthCache) GetGasPrice(eth *client.RpcEthClient) (*big.Int, bool, error) {
 	return cache.GetGasPriceWithFunc(eth.GasPrice)
 }
 
-func (cache *EthCache) GetGasPriceWithFunc(rawGetter func() (*big.Int, error)) (*hexutil.Big, bool, error) {
+func (cache *EthCache) GetGasPriceWithFunc(rawGetter func() (*big.Int, error)) (*big.Int, bool, error) {
 	val, loaded, err := cache.priceCache.getOrUpdate(func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	return (*hexutil.Big)(val.(*big.Int)), loaded, nil
+	return val.(*big.Int), loaded, nil
 }
 
-func (cache *EthCache) GetBlockNumber(nodeName string, eth *client.RpcEthClient) (*hexutil.Big, bool, error) {
-	return cache.GetBlockNumberWithFunc(nodeName, eth.BlockNumber)
+func (cache *EthCache) GetBlockNumber(
+	nodeName string, eth *client.RpcEthClient, blockNums ...types.BlockNumber) (*big.Int, bool, error) {
+	blockNum := types.LatestBlockNumber
+	if len(blockNums) > 0 {
+		blockNum = blockNums[0]
+	}
+	return cache.GetBlockNumberWithFunc(nodeName, blockNum, func() (*big.Int, error) {
+		if blockNum >= 0 {
+			return big.NewInt(blockNum.Int64()), nil
+		}
+		if blockNum == types.LatestBlockNumber {
+			return eth.BlockNumber()
+		}
+		block, err := eth.BlockByNumber(blockNum, false)
+		if err != nil {
+			return nil, err
+		}
+		if block == nil {
+			return nil, errors.New("block not found")
+		}
+		return block.Number, nil
+	})
 }
 
-func (cache *EthCache) GetBlockNumberWithFunc(nodeName string, rawGetter func() (*big.Int, error)) (*hexutil.Big, bool, error) {
-	val, loaded, err := cache.blockNumberCache.getOrUpdate(nodeName, func() (any, error) {
+func (cache *EthCache) GetBlockNumberWithFunc(
+	nodeName string,
+	blockNum types.BlockNumber,
+	rawGetter func() (*big.Int, error),
+) (*big.Int, bool, error) {
+	cacheKey := fmt.Sprintf("%s::%d", nodeName, blockNum.Int64())
+	val, loaded, err := cache.blockNumberCache.getOrUpdate(cacheKey, func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	return (*hexutil.Big)(val.(*big.Int)), loaded, nil
+	return val.(*big.Int), loaded, nil
 }
 
 // RPCResult represents the result of an RPC call,

@@ -6,7 +6,6 @@ import (
 	cacheRpc "github.com/Conflux-Chain/confura-data-cache/rpc"
 	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	"github.com/Conflux-Chain/confura/util/rpc/cache"
 	lruCache "github.com/Conflux-Chain/confura/util/rpc/cache"
 	"github.com/ethereum/go-ethereum/common"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
@@ -18,10 +17,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-type cacheBlockTypeConverter func(web3Types.BlockNumberOrHash) (cacheTypes.BlockHashOrNumber, error)
+type cacheBlockTypeConverter func(*web3Types.BlockNumberOrHash) (cacheTypes.BlockHashOrNumber, error)
 
 func newCacheBlockTypeConverter(nodeName string, eth *client.RpcEthClient) cacheBlockTypeConverter {
-	return func(blockNrOrHash web3Types.BlockNumberOrHash) (cacheTypes.BlockHashOrNumber, error) {
+	return func(blockNrOrHash *web3Types.BlockNumberOrHash) (cacheTypes.BlockHashOrNumber, error) {
 		return convert2CacheBlockHashOrNumber(nodeName, eth, blockNrOrHash)
 	}
 }
@@ -179,7 +178,7 @@ func (c cachedRpcEthClient) BlockByNumber(blockNumber web3Types.BlockNumber, isF
 
 func (c cachedRpcEthClient) LazyBlockByNumber(blockNumber web3Types.BlockNumber, isFull bool) (res cacheTypes.Lazy[*web3Types.Block], err error) {
 	rpcBlockNumOrHash := web3Types.BlockNumberOrHashWithNumber(blockNumber)
-	cacheBlockNumOrHash, err := convert2CacheBlockHashOrNumber(c.nodeName, c.RpcEthClient, rpcBlockNumOrHash)
+	cacheBlockNumOrHash, err := convert2CacheBlockHashOrNumber(c.nodeName, c.RpcEthClient, &rpcBlockNumOrHash)
 	if err != nil {
 		return res, err
 	}
@@ -290,7 +289,7 @@ func (c cachedRpcEthClient) BlockReceipts(blockNrOrHash *web3Types.BlockNumberOr
 }
 
 func (c cachedRpcEthClient) LazyBlockReceipts(blockNrOrHash *web3Types.BlockNumberOrHash) (res cacheTypes.Lazy[[]web3Types.Receipt], err error) {
-	blockNumOrHash, err := convert2CacheBlockHashOrNumber(c.nodeName, c.RpcEthClient, *blockNrOrHash)
+	blockNumOrHash, err := convert2CacheBlockHashOrNumber(c.nodeName, c.RpcEthClient, blockNrOrHash)
 	if err != nil {
 		return res, err
 	}
@@ -336,7 +335,7 @@ func (c *cachedRpcTraceClient) Blocks(blockNumber web3Types.BlockNumberOrHash) (
 
 func (c *cachedRpcTraceClient) LazyBlocks(
 	blockNrOrHash web3Types.BlockNumberOrHash) (res cacheTypes.Lazy[[]web3Types.LocalizedTrace], err error) {
-	blockNumOrHash, err := c.converter(blockNrOrHash)
+	blockNumOrHash, err := c.converter(&blockNrOrHash)
 	if err != nil {
 		return res, err
 	}
@@ -354,20 +353,25 @@ func (c *cachedRpcTraceClient) LazyBlocks(
 }
 
 func convert2CacheBlockHashOrNumber(
-	nodeName string, eth *client.RpcEthClient, blockNrOrHash web3Types.BlockNumberOrHash) (res cacheTypes.BlockHashOrNumber, err error) {
+	nodeName string, eth *client.RpcEthClient, blockNrOrHash *web3Types.BlockNumberOrHash) (res cacheTypes.BlockHashOrNumber, err error) {
+	if blockNrOrHash == nil {
+		tmp := web3Types.BlockNumberOrHashWithNumber(web3Types.LatestBlockNumber)
+		blockNrOrHash = &tmp
+	}
+
 	if hash, ok := blockNrOrHash.Hash(); ok {
 		return cacheTypes.BlockHashOrNumberWithHash(hash), nil
 	}
 
-	if blockNum, _ := blockNrOrHash.Number(); blockNum >= 0 {
+	blockNum, _ := blockNrOrHash.Number()
+	if blockNum >= 0 {
 		return cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNum)), nil
 	}
 
 	// Normalize block number to uint64
-	blockNum, _, err := cache.EthDefault.GetBlockNumber(nodeName, eth)
+	normalizedBlockNum, _, err := lruCache.EthDefault.GetBlockNumber(nodeName, eth, blockNum)
 	if err != nil {
-		err = errors.WithMessage(err, "failed to normalize block number")
-		return res, err
+		return res, errors.WithMessage(err, "failed to normalize block number")
 	}
-	return cacheTypes.BlockHashOrNumberWithNumber(blockNum.ToInt().Uint64()), nil
+	return cacheTypes.BlockHashOrNumberWithNumber(normalizedBlockNum.Uint64()), nil
 }

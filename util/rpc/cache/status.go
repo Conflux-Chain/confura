@@ -26,13 +26,11 @@ func NewStatusCache() *StatusCache {
 }
 
 func (c *StatusCache) GetStatus(nodeName string, cfx sdk.ClientOperator) (types.Status, bool, error) {
-	return c.GetStatusWithFunc(nodeName, func() (interface{}, error) {
-		return cfx.GetStatus()
-	})
+	return c.GetStatusWithFunc(nodeName, cfx.GetStatus)
 }
 
-func (c *StatusCache) GetStatusWithFunc(nodeName string, rawGetter func() (interface{}, error)) (types.Status, bool, error) {
-	val, loaded, err := c.inner.getOrUpdate(nodeName, func() (interface{}, error) {
+func (c *StatusCache) GetStatusWithFunc(nodeName string, rawGetter func() (types.Status, error)) (types.Status, bool, error) {
+	val, loaded, err := c.inner.getOrUpdate(nodeName, func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {
@@ -56,13 +54,14 @@ func (c *StatusCache) GetEpochNumber(nodeName string, cfx sdk.ClientOperator, ep
 		return epochNum, loaded, nil
 	}
 
-	return c.GetEpochNumberWithFunc(nodeName, func() (interface{}, error) {
-		return cfx.GetEpochNumber(epoch)
-	}, epoch)
+	return c.GetEpochNumberWithFunc(nodeName, epoch, cfx.GetEpochNumber)
 }
 
 func (c *StatusCache) GetEpochNumberWithFunc(
-	nodeName string, rawGetter func() (interface{}, error), epoch *types.Epoch) (*hexutil.Big, bool, error) {
+	nodeName string,
+	epoch *types.Epoch,
+	rawGetter func(epoch ...*types.Epoch) (*hexutil.Big, error),
+) (*hexutil.Big, bool, error) {
 	if types.EpochEarliest.Equals(epoch) {
 		return types.NewBigInt(0), true, nil
 	}
@@ -84,8 +83,8 @@ func (c *StatusCache) GetEpochNumberWithFunc(
 
 	// otherwises load from epoch cache
 	cacheKey := fmt.Sprintf("%s_%s", nodeName, epoch.String())
-	val, loaded, err := c.epochCache.getOrUpdate(cacheKey, func() (interface{}, error) {
-		return rawGetter()
+	val, loaded, err := c.epochCache.getOrUpdate(cacheKey, func() (any, error) {
+		return rawGetter(epoch)
 	})
 	if err != nil {
 		return nil, false, err
@@ -101,7 +100,7 @@ func (c *StatusCache) GetBestBlockHash(nodeName string, cfx sdk.ClientOperator) 
 	return status.BestHash, loaded, nil
 }
 
-func (c *StatusCache) GetBestBlockHashWithFunc(nodeName string, rawGetter func() (interface{}, error)) (types.Hash, bool, error) {
+func (c *StatusCache) GetBestBlockHashWithFunc(nodeName string, rawGetter func() (types.Hash, error)) (types.Hash, bool, error) {
 	// load from status cache at first
 	if val, ok := c.inner.node2Caches.Load(nodeName); ok {
 		if status, ok := val.(types.Status); ok {
@@ -110,7 +109,7 @@ func (c *StatusCache) GetBestBlockHashWithFunc(nodeName string, rawGetter func()
 	}
 
 	// otherwise load from best hash cache
-	val, loaded, err := c.bestHashCache.getOrUpdate(nodeName, func() (interface{}, error) {
+	val, loaded, err := c.bestHashCache.getOrUpdate(nodeName, func() (any, error) {
 		return rawGetter()
 	})
 	if err != nil {

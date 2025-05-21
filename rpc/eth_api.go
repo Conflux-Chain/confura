@@ -13,7 +13,6 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/openweb3/go-rpc-provider"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -357,11 +356,9 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 }
 
 // GetBlockReceipts returns the receipts of a given block number or hash.
-func (api *ethAPI) GetBlockReceipts(
-	ctx context.Context, blockNrOrHash *web3Types.BlockNumberOrHash,
-) (interface{}, error) {
+func (api *ethAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash web3Types.BlockNumberOrHash) (any, error) {
 	w3c := GetEthClientFromContext(ctx)
-	lazyReceipts, err := w3c.Eth.LazyBlockReceipts(blockNrOrHash)
+	lazyReceipts, err := w3c.Eth.LazyBlockReceipts(&blockNrOrHash)
 	if err != nil {
 		return nil, err
 	}
@@ -375,14 +372,9 @@ func (api *ethAPI) GetBlockReceipts(
 	}
 
 	var block *web3Types.Block
-	if blockNrOrHash == nil {
-		tmp := web3Types.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
-		blockNrOrHash = &tmp
-	}
 	if blockNum, ok := blockNrOrHash.Number(); ok {
 		block, err = w3c.Eth.BlockByNumber(blockNum, false)
-	} else {
-		blockHash, _ := blockNrOrHash.Hash()
+	} else if blockHash, ok := blockNrOrHash.Hash(); ok {
 		block, err = w3c.Eth.BlockByHash(blockHash, false)
 	}
 	if err != nil {
@@ -409,7 +401,7 @@ func (api *ethAPI) GetBlockReceipts(
 			// Skip the original client
 			continue
 		}
-		receipts, err := client.Eth.BlockReceipts(blockNrOrHash)
+		receipts, err := client.Eth.BlockReceipts(&blockNrOrHash)
 		if err != nil {
 			continue
 		}
