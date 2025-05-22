@@ -567,7 +567,7 @@ type boostWorker struct {
 }
 
 // queryEpochData fetches blocks and logs for a given epoch range to construct a minimal `EpochData`
-// using `cfx_getLogs` for best peformance.
+// using `cfx_getLogs` for best performance.
 func (w *boostWorker) queryEpochData(fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
 	space := w.client.Space()
 	startTime := time.Now()

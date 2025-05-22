@@ -264,7 +264,7 @@ func (l *DlockLeaderManager) renewLock(ctx context.Context) error {
 	}
 }
 
-// acquireLock helper function to acquire a distrubted lock.
+// acquireLock helper function to acquire a distributed lock.
 func (l *DlockLeaderManager) acquireLock(ctx context.Context) error {
 	start := time.Now()
 	err := l.lockMan.Acquire(ctx, l.lockIntent())

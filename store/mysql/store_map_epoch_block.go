@@ -152,7 +152,7 @@ func (e2bms *epochBlockMapStore) LatestEpochBeforeBlock(maxEpochNumber, blockNum
 	return res.Epoch, true, nil
 }
 
-// pivotHash returns the pivot hash of the given epoch.
+// PivotHash returns the pivot hash of the given epoch.
 func (e2bms *epochBlockMapStore) PivotHash(epoch uint64) (string, bool, error) {
 	var e2bmap epochBlockMap
 
