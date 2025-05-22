@@ -575,18 +575,3 @@ func (api *ethAPI) FeeHistory(
 	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.FeeHistory(uint64(blockCount), lastBlock, rewardPercentiles)
 }
-
-// TODO: This method should be removed once `web3Types.FilterQuery` is logging friendly.
-func (api *ethAPI) filterLogger(filter *web3Types.FilterQuery) *logrus.Entry {
-	logger := logrus.WithField("filter", filter)
-
-	if filter.FromBlock != nil {
-		logger = logger.WithField("fromBlock", filter.FromBlock.Int64())
-	}
-
-	if filter.ToBlock != nil {
-		logger = logger.WithField("toBlock", filter.ToBlock.Int64())
-	}
-
-	return logger
-}
