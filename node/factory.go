@@ -23,7 +23,7 @@ func Factory() *factory {
 			func(group Group, name, url string) (Node, error) {
 				return NewCfxNode(group, name, url)
 			},
-			cfg.Endpoint, cfg.EndpointProto, urlCfg, cfg.Router.NodeRPCURL,
+			cfg.Endpoint, cfg.EndpointProto, urlCfg, cfg.Router.NodeRPCURL, cfg.Router.NodeGRPCURL,
 		)
 	})
 
@@ -37,7 +37,7 @@ func EthFactory() *factory {
 			func(group Group, name, url string) (Node, error) {
 				return NewEthNode(group, name, url)
 			},
-			cfg.EthEndpoint, cfg.EthEndpointProto, ethUrlCfg, cfg.Router.EthNodeRPCURL,
+			cfg.EthEndpoint, cfg.EthEndpointProto, ethUrlCfg, cfg.Router.EthNodeRPCURL, cfg.Router.EthNodeGRPCURL,
 		)
 	})
 
@@ -47,15 +47,17 @@ func EthFactory() *factory {
 // factory creates router and RPC server.
 type factory struct {
 	nodeRpcUrl      string
+	nodeGRpcUrl     string
 	rpcSrvEndpoint  string
 	gRpcSrvEndpoint string
 	groupConf       map[Group]UrlConfig
 	nodeFactory     nodeFactory
 }
 
-func newFactory(nf nodeFactory, rpcSrvEndpoint string, gRpcSrvEndpoint string, groupConf map[Group]UrlConfig, nodeRpcUrl string) *factory {
+func newFactory(nf nodeFactory, rpcSrvEndpoint, gRpcSrvEndpoint string, groupConf map[Group]UrlConfig, nodeRpcUrl, nodeGRpcUrl string) *factory {
 	return &factory{
 		nodeRpcUrl:      nodeRpcUrl,
+		nodeGRpcUrl:     nodeGRpcUrl,
 		nodeFactory:     nf,
 		rpcSrvEndpoint:  rpcSrvEndpoint,
 		gRpcSrvEndpoint: gRpcSrvEndpoint,
@@ -77,5 +79,5 @@ func (f *factory) MustStartServer(ctx context.Context, wg *sync.WaitGroup, db *m
 
 // CreateRouter creates node router
 func (f *factory) CreateRouter() Router {
-	return MustNewRouter(cfg.Router.RedisURL, f.nodeRpcUrl, f.groupConf)
+	return MustNewRouter(cfg.Router.RedisURL, f.nodeRpcUrl, f.nodeGRpcUrl, f.groupConf)
 }

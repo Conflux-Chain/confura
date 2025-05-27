@@ -99,7 +99,9 @@ type config struct {
 	Router struct {
 		RedisURL        string
 		NodeRPCURL      string
+		NodeGRPCURL     string
 		EthNodeRPCURL   string
+		EthNodeGRPCURL  string
 		ChainedFailover struct {
 			URL      string
 			WSURL    string
