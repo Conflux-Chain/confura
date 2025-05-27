@@ -345,18 +345,26 @@ node:
   #   recover:
   #     remindInterval: 5m
   #     successCounter: 60
-  # # Served HTTP endpoint for core space
+  # # Served HTTP RPC endpoint for core space
   # endpoint: ":22530"
-  # # Served HTTP endpoint for evm space
+  # # Served HTTP gRPC endpoint for core space
+  # endpointProto: ":22531"
+  # # Served HTTP RPC endpoint for evm space
   # ethEndpoint: ":28530"
+  # # Served HTTP gRPC endpoint for evm space
+  # ethEndpointProto: ":28531"
   # # Chained routers configurations
   # router:
   #   # Redis used for `RedisRouter`
   #   redisUrl: redis://<user>:<pass>@localhost:6379/<db>
   #   # Node manager RPC endpoint for `NodeRpcRouter`
   #   nodeRpcUrl: http://127.0.0.1:22530
+  #   # Node manager gRPC endpoint for `NodeRpcRouter`
+  #   nodeRpcUrlProto: http://127.0.0.1:22531
   #   # EVM space node manager RPC endpoint for `NodeRpcRouter`
   #   ethNodeRpcUrl: http://127.0.0.1:28530
+  #   # EVM space node manager gRPC endpoint for `NodeRpcRouter`
+  #   ethNodeRpcUrlProto: http://127.0.0.1:28531
   #   # Failover fullnode configuration
   #   chainedFailover:
   #     # Failover fullnode if group `cfxhttp` is capsized

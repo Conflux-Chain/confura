@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"sync"
 
 	"github.com/Conflux-Chain/confura/store/mysql"
@@ -22,7 +23,7 @@ func Factory() *factory {
 			func(group Group, name, url string) (Node, error) {
 				return NewCfxNode(group, name, url)
 			},
-			cfg.Endpoint, urlCfg, cfg.Router.NodeRPCURL,
+			cfg.Endpoint, cfg.EndpointProto, urlCfg, cfg.Router.NodeRPCURL, cfg.Router.NodeRpcUrlProto,
 		)
 	})
 
@@ -36,7 +37,7 @@ func EthFactory() *factory {
 			func(group Group, name, url string) (Node, error) {
 				return NewEthNode(group, name, url)
 			},
-			cfg.EthEndpoint, ethUrlCfg, cfg.Router.EthNodeRPCURL,
+			cfg.EthEndpoint, cfg.EthEndpointProto, ethUrlCfg, cfg.Router.EthNodeRPCURL, cfg.Router.EthNodeRpcUrlProto,
 		)
 	})
 
@@ -45,27 +46,38 @@ func EthFactory() *factory {
 
 // factory creates router and RPC server.
 type factory struct {
-	nodeRpcUrl     string
-	rpcSrvEndpoint string
-	groupConf      map[Group]UrlConfig
-	nodeFactory    nodeFactory
+	nodeRpcUrl      string
+	nodeGRpcUrl     string
+	rpcSrvEndpoint  string
+	gRpcSrvEndpoint string
+	groupConf       map[Group]UrlConfig
+	nodeFactory     nodeFactory
 }
 
-func newFactory(nf nodeFactory, rpcSrvEndpoint string, groupConf map[Group]UrlConfig, nodeRpcUrl string) *factory {
+func newFactory(nf nodeFactory, rpcSrvEndpoint, gRpcSrvEndpoint string, groupConf map[Group]UrlConfig, nodeRpcUrl, nodeGRpcUrl string) *factory {
 	return &factory{
-		nodeRpcUrl:     nodeRpcUrl,
-		nodeFactory:    nf,
-		rpcSrvEndpoint: rpcSrvEndpoint,
-		groupConf:      groupConf,
+		nodeRpcUrl:      nodeRpcUrl,
+		nodeGRpcUrl:     nodeGRpcUrl,
+		nodeFactory:     nf,
+		rpcSrvEndpoint:  rpcSrvEndpoint,
+		gRpcSrvEndpoint: gRpcSrvEndpoint,
+		groupConf:       groupConf,
 	}
 }
 
-// CreatRpcServer creates node manager RPC server
-func (f *factory) CreatRpcServer(db *mysql.MysqlStore) (*rpc.Server, string) {
-	return MustNewServer(db, f.nodeFactory, f.groupConf), f.rpcSrvEndpoint
+// MustStartServer starts node manager RPC server
+func (f *factory) MustStartServer(ctx context.Context, wg *sync.WaitGroup, db *mysql.MysqlStore) {
+	handler := MustNewApiHandler(db, f.nodeFactory, f.groupConf)
+
+	// start RPC server
+	rpcServer := NewServer(handler)
+	go rpcServer.MustServeGraceful(ctx, wg, f.rpcSrvEndpoint, rpc.ProtocolHttp)
+
+	// start gRPC server
+	MustStartGRPCRouterServer(ctx, wg, f.gRpcSrvEndpoint, handler)
 }
 
 // CreateRouter creates node router
 func (f *factory) CreateRouter() Router {
-	return MustNewRouter(cfg.Router.RedisURL, f.nodeRpcUrl, f.groupConf)
+	return MustNewRouter(cfg.Router.RedisURL, f.nodeRpcUrl, f.nodeGRpcUrl, f.groupConf)
 }

@@ -14,35 +14,10 @@ var (
 	errDbNotAvailableForPersistence = errors.New("db not available for persistence")
 )
 
-// MustNewServer creates node management RPC server
-func MustNewServer(db *mysql.MysqlStore, nf nodeFactory, grpConf map[Group]UrlConfig) *rpc.Server {
-	npool := newNodePool(nf)
-
-	if db != nil {
-		// load node route group config from db
-		routeGroups, err := db.LoadNodeRouteGroups()
-		if err != nil {
-			logrus.WithError(err).Fatal("Failed to load node route groups from db")
-		}
-
-		// merge node route groups with the pre-defined config
-		for _, grp := range routeGroups {
-			grpConf[Group(grp.Name)] = UrlConfig{Nodes: grp.Nodes}
-		}
-	}
-
-	// add group nodes to the pool
-	for grp, cfg := range grpConf {
-		if err := npool.add(grp, cfg.Nodes...); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"group":  grp,
-				"config": cfg,
-			}).WithError(err).Fatal("Failed to add group nodes to the pool")
-		}
-	}
-
+// NewServer creates node management RPC server
+func NewServer(handler *apiHandler) *rpc.Server {
 	return rpc.MustNewServer("node", map[string]interface{}{
-		"node": &api{h: &apiHandler{dbs: db, pool: npool}},
+		"node": &api{h: handler},
 	})
 }
 
@@ -107,6 +82,38 @@ type apiHandler struct {
 	pool *nodePool
 	// db store to save node route configs
 	dbs *mysql.MysqlStore
+}
+
+func MustNewApiHandler(db *mysql.MysqlStore, nf nodeFactory, grpConf map[Group]UrlConfig) *apiHandler {
+	npool := newNodePool(nf)
+
+	if db != nil {
+		// load node route group config from db
+		routeGroups, err := db.LoadNodeRouteGroups()
+		if err != nil {
+			logrus.WithError(err).Fatal("Failed to load node route groups from db")
+		}
+
+		// merge node route groups with the pre-defined config
+		for _, grp := range routeGroups {
+			grpConf[Group(grp.Name)] = UrlConfig{Nodes: grp.Nodes}
+		}
+	}
+
+	// add group nodes to the pool
+	for grp, cfg := range grpConf {
+		if err := npool.add(grp, cfg.Nodes...); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"group":  grp,
+				"config": cfg,
+			}).WithError(err).Fatal("Failed to add group nodes to the pool")
+		}
+	}
+
+	return &apiHandler{
+		dbs:  db,
+		pool: npool,
+	}
 }
 
 func (h *apiHandler) addGroupNode(grp Group, url string, saveGrp bool) error {

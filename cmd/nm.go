@@ -6,7 +6,6 @@ import (
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/node"
-	"github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -62,11 +61,9 @@ func startNodeManagerService(*cobra.Command, []string) {
 }
 
 func startNativeSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
-	server, endpoint := node.Factory().CreatRpcServer(storeCtx.CfxDB)
-	go server.MustServeGraceful(ctx, wg, endpoint, rpc.ProtocolHttp)
+	node.Factory().MustStartServer(ctx, wg, storeCtx.CfxDB)
 }
 
 func startEvmSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
-	server, endpoint := node.EthFactory().CreatRpcServer(storeCtx.EthDB)
-	go server.MustServeGraceful(ctx, wg, endpoint, rpc.ProtocolHttp)
+	node.EthFactory().MustStartServer(ctx, wg, storeCtx.EthDB)
 }

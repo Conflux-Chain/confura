@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/Conflux-Chain/confura/node/router/proto"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/buraksezer/consistent"
 	"github.com/cespare/xxhash"
@@ -14,6 +15,8 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Group allows to manage full nodes in multiple groups.
@@ -63,7 +66,7 @@ type NodeProvider interface {
 }
 
 // MustNewRouter creates an instance of Router.
-func MustNewRouter(redisURL string, nodeRPCURL string, groupConf map[Group]UrlConfig) Router {
+func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf map[Group]UrlConfig) Router {
 	var routers []Router
 
 	// Add redis router if configured
@@ -76,6 +79,19 @@ func MustNewRouter(redisURL string, nodeRPCURL string, groupConf map[Group]UrlCo
 
 		client := redis.NewClient(opt)
 		routers = append(routers, NewRedisRouter(client))
+	}
+
+	// Add node gRPC router if configured.
+	// Note, gRPC is prior to RPC for performance consideration.
+	if len(nodeGRpcUrl) > 0 {
+		router, err := NewNodeGRPCRouter(nodeGRpcUrl)
+		if err != nil {
+			logrus.WithError(err).Fatal("Failed to create gRPC router")
+		}
+
+		logrus.Info("Succeeded to create gRPC router")
+
+		routers = append(routers, router)
 	}
 
 	// Add node rpc router if configured
@@ -186,11 +202,43 @@ func NewNodeRpcRouter(client *rpc.Client) *NodeRpcRouter {
 func (r *NodeRpcRouter) Route(group Group, key []byte) string {
 	var result string
 	if err := r.client.Call(&result, "node_route", group, hexutil.Bytes(key)); err != nil {
-		logrus.WithError(err).Error("Failed to route key from node RPC")
+		logrus.WithError(err).Debug("Failed to route key from node RPC")
 		return ""
 	}
 
 	return result
+}
+
+// NodeGRPCRouter routes RPC requests via node management gRPC service.
+type NodeGRPCRouter struct {
+	client pb.RouterClient
+}
+
+func NewNodeGRPCRouter(url string) (*NodeGRPCRouter, error) {
+	opts := grpc.WithTransportCredentials(insecure.NewCredentials())
+	conn, err := grpc.Dial(url, opts)
+	if err != nil {
+		return nil, errors.WithMessage(err, "Failed to dial grpc router")
+	}
+
+	client := pb.NewRouterClient(conn)
+
+	return &NodeGRPCRouter{client}, nil
+}
+
+func (r *NodeGRPCRouter) Route(group Group, key []byte) string {
+	req := pb.RouteRequest{
+		Group: string(group),
+		Key:   key,
+	}
+
+	resp, err := r.client.Route(context.Background(), &req)
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to route key from node gRPC")
+		return ""
+	}
+
+	return resp.GetUrl()
 }
 
 type localNode string
