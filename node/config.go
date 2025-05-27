@@ -64,7 +64,9 @@ func MustInit() {
 
 type config struct {
 	Endpoint         string `default:":22530"`
+	EndpointProto    string `default:":22531"`
 	EthEndpoint      string `default:":28530"`
+	EthEndpointProto string `default:":28531"`
 	URLs             []string
 	EthURLs          []string
 	FullStateURLs    []string
