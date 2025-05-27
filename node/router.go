@@ -89,6 +89,8 @@ func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf ma
 			logrus.WithError(err).Fatal("Failed to create gRPC router")
 		}
 
+		logrus.Info("Succeeded to create gRPC router")
+
 		routers = append(routers, router)
 	}
 
