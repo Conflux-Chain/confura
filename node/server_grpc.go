@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 
-	pb "github.com/Conflux-Chain/confura/node/proto"
+	pb "github.com/Conflux-Chain/confura/node/router/proto"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
