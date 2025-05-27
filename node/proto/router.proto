@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package router;
+
+option go_package = ".;router";
+
+service Router {
+  rpc Route (RouteRequest) returns (RouteResponse);
+}
+
+message RouteRequest {
+  string group = 1;
+  bytes key = 2;
+}
+
+message RouteResponse {
+  string url = 1;
+}
