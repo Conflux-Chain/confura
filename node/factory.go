@@ -23,7 +23,7 @@ func Factory() *factory {
 			func(group Group, name, url string) (Node, error) {
 				return NewCfxNode(group, name, url)
 			},
-			cfg.Endpoint, cfg.EndpointProto, urlCfg, cfg.Router.NodeRPCURL, cfg.Router.NodeGRPCURL,
+			cfg.Endpoint, cfg.EndpointProto, urlCfg, cfg.Router.NodeRPCURL, cfg.Router.NodeRpcUrlProto,
 		)
 	})
 
@@ -37,7 +37,7 @@ func EthFactory() *factory {
 			func(group Group, name, url string) (Node, error) {
 				return NewEthNode(group, name, url)
 			},
-			cfg.EthEndpoint, cfg.EthEndpointProto, ethUrlCfg, cfg.Router.EthNodeRPCURL, cfg.Router.EthNodeGRPCURL,
+			cfg.EthEndpoint, cfg.EthEndpointProto, ethUrlCfg, cfg.Router.EthNodeRPCURL, cfg.Router.EthNodeRpcUrlProto,
 		)
 	})
 

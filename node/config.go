@@ -97,12 +97,12 @@ type config struct {
 		}
 	}
 	Router struct {
-		RedisURL        string
-		NodeRPCURL      string
-		NodeGRPCURL     string
-		EthNodeRPCURL   string
-		EthNodeGRPCURL  string
-		ChainedFailover struct {
+		RedisURL           string
+		NodeRPCURL         string
+		NodeRpcUrlProto    string
+		EthNodeRPCURL      string
+		EthNodeRpcUrlProto string
+		ChainedFailover    struct {
 			URL      string
 			WSURL    string
 			EthURL   string
