@@ -15,7 +15,6 @@ import (
 // MustStartGRPCRouterServer starts gRPC router service.
 func MustStartGRPCRouterServer(ctx context.Context, wg *sync.WaitGroup, endpoint string, handler *apiHandler) {
 	wg.Add(1)
-	defer wg.Done()
 
 	listener, err := net.Listen("tcp", endpoint)
 	if err != nil {
@@ -28,9 +27,11 @@ func MustStartGRPCRouterServer(ctx context.Context, wg *sync.WaitGroup, endpoint
 
 	logrus.WithField("endpoint", endpoint).Info("Succeeded to run gRPC router server")
 
-	<-ctx.Done()
-
-	server.GracefulStop()
+	go func() {
+		defer wg.Done()
+		<-ctx.Done()
+		server.GracefulStop()
+	}()
 }
 
 type grpcRouterServer struct {
