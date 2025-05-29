@@ -2,13 +2,17 @@ package node
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
+	cacheRpc "github.com/Conflux-Chain/confura-data-cache/rpc"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util"
-	"github.com/Conflux-Chain/confura/util/rpc"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -30,9 +34,10 @@ type clientFactory[T any] func(url string) (T, error)
 // or with node group for resource isolation. Generally, it is used by RPC server to delegate
 // RPC requests to full node cluster.
 type clientProvider[T any] struct {
-	router  Router
-	factory clientFactory[T]
-	mu      sync.Mutex
+	router       Router
+	defaultGroup Group
+	factory      clientFactory[T]
+	mu           sync.Mutex
 
 	// db store to load node route configs
 	db *mysql.MysqlStore
@@ -43,10 +48,11 @@ type clientProvider[T any] struct {
 	clients *util.ConcurrentMap
 }
 
-func newClientProvider[T any](db *mysql.MysqlStore, router Router, factory clientFactory[T]) *clientProvider[T] {
+func newClientProvider[T any](db *mysql.MysqlStore, router Router, defaultGroup Group, factory clientFactory[T]) *clientProvider[T] {
 	return &clientProvider[T]{
 		db:            db,
 		router:        router,
+		defaultGroup:  defaultGroup,
 		factory:       factory,
 		clients:       &util.ConcurrentMap{},
 		routeKeyCache: util.NewExpirableLruCache(RouteKeyCacheSize, RouteCacheExpirationTTL),
@@ -148,7 +154,7 @@ func (p *clientProvider[T]) getClient(key string, group Group) (res T, err error
 // getOrRegisterClient gets or registers RPC client for fullnode proxy.
 func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T, err error) {
 	clients := p.getOrRegisterGroup(group)
-	nodeName := rpc.Url2NodeName(url)
+	nodeName := rpcutil.Url2NodeName(url)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"node":  nodeName,
@@ -178,18 +184,89 @@ func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T,
 	return client.(T), nil
 }
 
-func remoteAddrFromContext(ctx context.Context) string {
-	if ip, ok := handlers.GetIPAddressFromContext(ctx); ok {
-		return ip
+// GetClient gets client of specific group (or use normal HTTP group as default).
+func (p *clientProvider[T]) GetClient(key string, groups ...Group) (T, error) {
+	if len(groups) > 0 {
+		return p.getClient(key, groups[0])
 	}
 
-	return "unknown_ip"
+	return p.getClient(key, p.defaultGroup)
 }
 
-func accessTokenFromContext(ctx context.Context) string {
-	if token, ok := handlers.GetAccessTokenFromContext(ctx); ok {
-		return token
+// GetClientByIP gets client of specific group (or use normal HTTP group as default) by remote IP address.
+func (p *clientProvider[T]) GetClientByIP(ctx context.Context, groups ...Group) (T, error) {
+	if ip, ok := handlers.GetIPAddressFromContext(ctx); ok {
+		return p.GetClient(ip, groups...)
 	}
 
-	return "unknown_access_token"
+	return p.GetClient("unknown_ip", groups...)
+}
+
+func (p *clientProvider[T]) GetClientRandom() (T, error) {
+	key := fmt.Sprintf("random_key_%v", rand.Int())
+	return p.GetClient(key)
+}
+
+// GetClientsByGroup gets all clients of specific group.
+func (p *clientProvider[T]) GetClientsByGroup(grp Group) (clients []T, err error) {
+	np := locateNodeProvider(p.router)
+	if np == nil {
+		return nil, ErrNotSupportedRouter
+	}
+
+	nodeUrls := np.ListNodesByGroup(grp)
+	for _, url := range nodeUrls {
+		if c, err := p.getOrRegisterClient(string(url), grp); err == nil {
+			clients = append(clients, c)
+		} else {
+			return nil, err
+		}
+	}
+
+	return clients, nil
+}
+
+// locateNodeProvider finds node provider from the router chain or nil.
+func locateNodeProvider(r Router) NodeProvider {
+	if np, ok := r.(NodeProvider); ok {
+		return np
+	}
+
+	if cr, ok := r.(*chainedRouter); ok {
+		for _, r := range cr.routers {
+			if np := locateNodeProvider(r); np != nil {
+				return np
+			}
+		}
+	}
+
+	return nil
+}
+
+// CfxClientProvider provides core space client by router.
+type CfxClientProvider = clientProvider[sdk.ClientOperator]
+
+func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvider {
+	return newClientProvider(db, router, GroupCfxHttp, func(url string) (sdk.ClientOperator, error) {
+		client, err := rpcutil.NewCfxClient(url, rpcutil.WithClientHookMetrics(true))
+		if err != nil {
+			return nil, err
+		}
+		return rpcutil.NewCfxCoreClient(client), nil
+	})
+}
+
+type Web3goClient = rpcutil.Web3goClient
+
+// EthClientProvider provides evm space client by router.
+type EthClientProvider = clientProvider[*Web3goClient]
+
+func NewEthClientProvider(dataCache cacheRpc.Interface, db *mysql.MysqlStore, router Router) *EthClientProvider {
+	return newClientProvider(db, router, GroupEthHttp, func(url string) (*Web3goClient, error) {
+		client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true))
+		if err != nil {
+			return nil, err
+		}
+		return rpcutil.NewWeb3goClient(url, client, dataCache), nil
+	})
 }
