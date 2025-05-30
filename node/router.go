@@ -212,27 +212,36 @@ func (r *NodeRpcRouter) Route(group Group, key []byte) string {
 // NodeGRPCRouter routes RPC requests via node management gRPC service.
 type NodeGRPCRouter struct {
 	client pb.RouterClient
+
+	timeout time.Duration
 }
 
 func NewNodeGRPCRouter(url string) (*NodeGRPCRouter, error) {
-	opts := grpc.WithTransportCredentials(insecure.NewCredentials())
-	conn, err := grpc.Dial(url, opts)
+	conn, err := grpc.Dial(
+		url,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Failed to dial grpc router")
 	}
 
-	client := pb.NewRouterClient(conn)
-
-	return &NodeGRPCRouter{client}, nil
+	return &NodeGRPCRouter{
+		client: pb.NewRouterClient(conn),
+		// hardcoded 1 second timeout is enough for intranet access
+		timeout: time.Second,
+	}, nil
 }
 
 func (r *NodeGRPCRouter) Route(group Group, key []byte) string {
+	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
+	defer cancel()
+
 	req := pb.RouteRequest{
 		Group: string(group),
 		Key:   key,
 	}
 
-	resp, err := r.client.Route(context.Background(), &req)
+	resp, err := r.client.Route(ctx, &req)
 	if err != nil {
 		logrus.WithError(err).Debug("Failed to route key from node gRPC")
 		return ""
