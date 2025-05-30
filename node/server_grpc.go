@@ -12,8 +12,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// MustStartGRPCRouterServer starts gRPC router service.
-func MustStartGRPCRouterServer(ctx context.Context, wg *sync.WaitGroup, endpoint string, handler *apiHandler) {
+// MustServeGRPC starts gRPC router service and wait for graceful shutdown.
+func MustServeGRPC(ctx context.Context, wg *sync.WaitGroup, endpoint string, handler *apiHandler) {
 	wg.Add(1)
 	defer wg.Done()
 

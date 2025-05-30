@@ -74,7 +74,7 @@ func (f *factory) MustStartServer(ctx context.Context, wg *sync.WaitGroup, db *m
 	go rpcServer.MustServeGraceful(ctx, wg, f.rpcSrvEndpoint, rpc.ProtocolHttp)
 
 	// start gRPC server
-	MustStartGRPCRouterServer(ctx, wg, f.gRpcSrvEndpoint, handler)
+	go MustServeGRPC(ctx, wg, f.gRpcSrvEndpoint, handler)
 }
 
 // CreateRouter creates node router
