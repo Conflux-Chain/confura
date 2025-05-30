@@ -234,18 +234,18 @@ func (h *EthStateHandler) TraceTransaction(
 	ctx context.Context,
 	w3c *node.Web3goClient,
 	txHash common.Hash,
-) ([]types.LocalizedTrace, error) {
+) (res cacheTypes.Lazy[[]types.LocalizedTrace], err error) {
 	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
-		return w3c.Trace.Transactions(txHash)
+		return w3c.Trace.LazyTransactions(txHash)
 	})
 
 	metrics.Registry.RPC.Percentage("trace_transaction", "fullState").Mark(usefs)
 
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
-	return result.([]types.LocalizedTrace), err
+	return result.(cacheTypes.Lazy[[]types.LocalizedTrace]), err
 }
 
 func (h *EthStateHandler) TraceFilter(
