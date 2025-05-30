@@ -24,7 +24,7 @@ func (api *ethTraceAPI) Filter(ctx context.Context, filter types.TraceFilter) ([
 	return api.stateHandler.TraceFilter(ctx, w3c, filter)
 }
 
-func (api *ethTraceAPI) Transaction(ctx context.Context, txHash common.Hash) ([]types.LocalizedTrace, error) {
+func (api *ethTraceAPI) Transaction(ctx context.Context, txHash common.Hash) (cacheTypes.Lazy[[]types.LocalizedTrace], error) {
 	w3c := GetEthClientFromContext(ctx)
 	return api.stateHandler.TraceTransaction(ctx, w3c, txHash)
 }

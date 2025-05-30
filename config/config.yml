@@ -482,8 +482,8 @@ node:
 #     # LRU Cache size and expiration time duration for 'eth_call'
 #     callCacheExpiration: 1s
 #     callCacheSize: 128
-#     # Remote cache service endpoint (refer to https://github.com/Conflux-Chain/confura-data-cache)
-#     #cacheServiceUrl: http://127.0.0.1:38545
+#     # Remote data cache gRPC service endpoint (refer to https://github.com/Conflux-Chain/confura-data-cache)
+#     #dataCacheEndpoint: http://127.0.0.1:48545
 
 #   # ETH receipt retrieval configuration
 #   ethReceiptRetrieval:
