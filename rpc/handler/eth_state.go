@@ -217,6 +217,18 @@ func (h *EthStateHandler) TraceBlock(
 	ctx context.Context,
 	w3c *node.Web3goClient,
 	blockNumOrHash types.BlockNumberOrHash,
+) ([]types.LocalizedTrace, error) {
+	lazyTrace, err := h.LazyTraceBlock(ctx, w3c, blockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+	return lazyTrace.Load()
+}
+
+func (h *EthStateHandler) LazyTraceBlock(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	blockNumOrHash types.BlockNumberOrHash,
 ) (res cacheTypes.Lazy[[]types.LocalizedTrace], err error) {
 	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
 		return w3c.Trace.LazyBlocks(blockNumOrHash)
@@ -235,17 +247,28 @@ func (h *EthStateHandler) TraceTransaction(
 	w3c *node.Web3goClient,
 	txHash common.Hash,
 ) ([]types.LocalizedTrace, error) {
-	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
-		return w3c.Trace.Transactions(txHash)
-	})
-
-	metrics.Registry.RPC.Percentage("trace_transaction", "fullState").Mark(usefs)
-
+	res, err := h.LazyTraceTransaction(ctx, w3c, txHash)
 	if err != nil {
 		return nil, err
 	}
+	return res.Load()
+}
 
-	return result.([]types.LocalizedTrace), err
+func (h *EthStateHandler) LazyTraceTransaction(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	txHash common.Hash,
+) (res cacheTypes.Lazy[[]types.LocalizedTrace], err error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+		return w3c.Trace.LazyTransactions(txHash)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_transaction", "fullState").Mark(usefs)
+	if err != nil {
+		return res, err
+	}
+
+	return result.(cacheTypes.Lazy[[]types.LocalizedTrace]), err
 }
 
 func (h *EthStateHandler) TraceFilter(

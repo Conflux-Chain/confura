@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/big"
 
+	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/store"
@@ -94,9 +95,7 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 
 // GetBlockByHash returns the requested block. When fullTx is true all transactions in
 // the block are returned in full detail, otherwise only the transaction hash is returned.
-func (api *ethAPI) GetBlockByHash(
-	ctx context.Context, blockHash common.Hash, fullTx bool,
-) (interface{}, error) {
+func (api *ethAPI) GetBlockByHash(ctx context.Context, blockHash common.Hash, fullTx bool) (any, error) {
 	metrics.Registry.RPC.Percentage("eth_getBlockByHash", "fullTx").Mark(fullTx)
 
 	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
@@ -142,7 +141,7 @@ func (api *ethAPI) GetBalance(
 //     only the transaction hash is returned.
 func (api *ethAPI) GetBlockByNumber(
 	ctx context.Context, blockNum web3Types.BlockNumber, fullTx bool,
-) (interface{}, error) {
+) (any, error) {
 	w3c := GetEthClientFromContext(ctx)
 	metrics.Registry.RPC.Percentage("eth_getBlockByNumber", "fullTx").Mark(fullTx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c.Eth)
@@ -272,7 +271,7 @@ func (api *ethAPI) EstimateGas(
 }
 
 // GetTransactionByHash returns the transaction with the given hash.
-func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (*web3Types.TransactionDetail, error) {
+func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (any, error) {
 	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
 		tx, err := api.StoreHandler.GetTransactionByHash(ctx, hash)
 		metrics.Registry.RPC.StoreHit("eth_getTransactionByHash", "store").Mark(err == nil)
@@ -282,36 +281,46 @@ func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (
 	}
 
 	w3c := GetEthClientFromContext(ctx)
-	return w3c.Eth.TransactionByHash(hash)
+	return w3c.Eth.LazyTransactionByHash(hash)
 }
 
 // GetTransactionReceipt returns the receipt of a transaction by transaction hash.
 // Note that the receipt is not available for pending transactions.
-func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (receipt *web3Types.Receipt, err error) {
+func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (_ any, err error) {
+	var found bool
 	defer func() {
 		if err == nil {
-			metrics.Registry.RPC.Percentage("eth_getTransactionReceipt", "notfound").Mark(receipt == nil)
+			metrics.Registry.RPC.Percentage("eth_getTransactionReceipt", "notfound").Mark(!found)
 		}
 	}()
 
 	if !store.EthStoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
+		var receipt *web3Types.Receipt
 		receipt, err = api.StoreHandler.GetTransactionReceipt(ctx, txHash)
 		metrics.Registry.RPC.StoreHit("eth_getTransactionReceipt", "store").Mark(err == nil)
 		if err == nil {
+			found = (receipt != nil)
 			return receipt, nil
 		}
 	}
 
 	w3c := GetEthClientFromContext(ctx)
-	receipt, err = w3c.Eth.TransactionReceipt(txHash)
+	lazyReceipt, err := w3c.Eth.LazyTransactionReceipt(txHash)
 	if err != nil {
 		return nil, err
 	}
 	if !viper.GetBool("ethrpc.reValidation") {
-		return receipt, nil
+		found = !lazyReceipt.IsEmptyOrNull()
+		return lazyReceipt, nil
+	}
+
+	receipt, err := lazyReceipt.Load()
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to load lazy receipt")
 	}
 
 	if receipt != nil && receipt.TransactionHash == txHash {
+		found = true
 		return receipt, nil
 	}
 
@@ -326,7 +335,7 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 
 	// If the initial receipt's block hash matches the transaction's block hash, it's considered valid
 	if receipt != nil && receipt.BlockHash == *txn.BlockHash {
-		// Receipt is valid
+		found = true
 		return receipt, nil
 	}
 
@@ -346,6 +355,7 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 			continue
 		}
 		if receipt != nil && receipt.BlockHash == *txn.BlockHash {
+			found = true
 			return receipt, nil
 		}
 	}
@@ -380,14 +390,15 @@ func (api *ethAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash web3Types
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to retrieve block for data correctness validation")
 	}
-	if block == nil || len(block.Transactions.Hashes()) == 0 {
-		// Block not found or no transactions included in block
+	if block == nil { // Block not found
+		return nil, nil
+	}
+	if len(block.Transactions.Hashes()) == 0 { // No transactions included in block
 		return []*web3Types.Receipt{}, nil
 	}
 
 	numTxns := len(block.Transactions.Hashes())
 	if len(receipts) == numTxns && receipts[0].BlockHash == block.Hash {
-		// Receipts are valid
 		return receipts, nil
 	}
 
@@ -545,19 +556,19 @@ func (api *ethAPI) GetUncleByBlockHashAndIndex(
 // transaction index position.
 func (api *ethAPI) GetTransactionByBlockHashAndIndex(
 	ctx context.Context, hash common.Hash, index hexutil.Uint,
-) (*web3Types.TransactionDetail, error) {
+) (cacheTypes.Lazy[*web3Types.TransactionDetail], error) {
 	w3c := GetEthClientFromContext(ctx)
-	return w3c.Eth.TransactionByBlockHashAndIndex(hash, uint(index))
+	return w3c.Eth.LazyTransactionByBlockHashAndIndex(hash, uint(index))
 }
 
 // GetTransactionByBlockNumberAndIndex returns information about a transaction by block number and
 // transaction index position.
 func (api *ethAPI) GetTransactionByBlockNumberAndIndex(
 	ctx context.Context, blockNum web3Types.BlockNumber, index hexutil.Uint,
-) (*web3Types.TransactionDetail, error) {
+) (cacheTypes.Lazy[*web3Types.TransactionDetail], error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getTransactionByBlockNumberAndIndex", w3c.Eth)
-	return w3c.Eth.TransactionByBlockNumberAndIndex(blockNum, uint(index))
+	return w3c.Eth.LazyTransactionByBlockNumberAndIndex(blockNum, uint(index))
 }
 
 // FeeHistory returns historical gas information, which could be used for tracking trends over time.
