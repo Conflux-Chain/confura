@@ -3,7 +3,7 @@ module github.com/Conflux-Chain/confura
 go 1.22
 
 require (
-	github.com/Conflux-Chain/confura-data-cache v0.0.0-20250603033714-1e3d496c1eef
+	github.com/Conflux-Chain/confura-data-cache v0.0.0-20250604104555-bb94ff9494ed
 	github.com/Conflux-Chain/go-conflux-sdk v1.5.11-0.20240913040447-d33c1c8903b2
 	github.com/Conflux-Chain/go-conflux-util v0.4.1
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20241012013327-2958dd644fcd
@@ -97,6 +97,7 @@ require (
 	github.com/hashicorp/go-bexpr v0.1.10 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-memdb v1.3.3 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/holiman/bloomfilter/v2 v2.0.3 // indirect
 	github.com/holiman/uint256 v1.2.4 // indirect
