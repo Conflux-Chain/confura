@@ -181,7 +181,7 @@ func (r *RedisRouter) Route(group Group, key []byte) string {
 	}
 
 	if err != nil {
-		logrus.WithError(err).WithField("key", redisKey).Error("Failed to route key from redis")
+		logrus.WithField("key", redisKey).WithError(err).Info("Failed to route key from redis")
 		return ""
 	}
 
@@ -202,7 +202,7 @@ func NewNodeRpcRouter(client *rpc.Client) *NodeRpcRouter {
 func (r *NodeRpcRouter) Route(group Group, key []byte) string {
 	var result string
 	if err := r.client.Call(&result, "node_route", group, hexutil.Bytes(key)); err != nil {
-		logrus.WithError(err).Debug("Failed to route key from node RPC")
+		logrus.WithField("key", string(key)).WithError(err).Info("Failed to route key from node RPC")
 		return ""
 	}
 
@@ -243,7 +243,7 @@ func (r *NodeGRPCRouter) Route(group Group, key []byte) string {
 
 	resp, err := r.client.Route(ctx, &req)
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to route key from node gRPC")
+		logrus.WithField("key", string(key)).WithError(err).Info("Failed to route key from node gRPC")
 		return ""
 	}
 

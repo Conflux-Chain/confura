@@ -360,11 +360,11 @@ node:
   #   # Node manager RPC endpoint for `NodeRpcRouter`
   #   nodeRpcUrl: http://127.0.0.1:22530
   #   # Node manager gRPC endpoint for `NodeRpcRouter`
-  #   nodeRpcUrlProto: http://127.0.0.1:22531
+  #   nodeRpcUrlProto: 127.0.0.1:22531
   #   # EVM space node manager RPC endpoint for `NodeRpcRouter`
   #   ethNodeRpcUrl: http://127.0.0.1:28530
   #   # EVM space node manager gRPC endpoint for `NodeRpcRouter`
-  #   ethNodeRpcUrlProto: http://127.0.0.1:28531
+  #   ethNodeRpcUrlProto: 127.0.0.1:28531
   #   # Failover fullnode configuration
   #   chainedFailover:
   #     # Failover fullnode if group `cfxhttp` is capsized
@@ -483,7 +483,7 @@ node:
 #     callCacheExpiration: 1s
 #     callCacheSize: 128
 #     # Remote data cache gRPC service endpoint (refer to https://github.com/Conflux-Chain/confura-data-cache)
-#     #dataCacheEndpoint: http://127.0.0.1:48545
+#     #dataCacheRpcUrlProto: 127.0.0.1:48545
 
 #   # ETH receipt retrieval configuration
 #   ethReceiptRetrieval:
