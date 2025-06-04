@@ -27,7 +27,7 @@ func newCacheBlockTypeConverter(nodeName string, eth *client.RpcEthClient) cache
 }
 
 func MustNewEthDataCacheClientFromViper() cacheRpc.Interface {
-	url := viper.GetString("requestControl.ethCache.dataCacheEndpoint")
+	url := viper.GetString("requestControl.ethCache.dataCacheRpcUrlProto")
 	if len(url) == 0 {
 		return nil
 	}
