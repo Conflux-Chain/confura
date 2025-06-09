@@ -48,7 +48,7 @@ func (tb *TraceBuilder) Append(trace, traceResult *types.LocalizedTrace, traceAd
 		tb.stackedResults = list.New()
 	}
 
-	// push into stack event the trace result is nil, e.g. internal_transfer_action, to keep trace address in sequence
+	// push into stack even the trace result is nil, e.g. internal_transfer_action, to keep trace address in sequence
 	tb.stackedResults.PushBack(stackedTraceResult{
 		traceResult:  traceResult,
 		traceAddress: traceAddress,
@@ -91,15 +91,19 @@ func (tb *TraceBuilder) pop(traceAddress []uint) error {
 				return fmt.Errorf("sibling traces not in sequence, pre = %v, cur = %v", pre.traceAddress, traceAddress)
 			}
 
-			tb.traces = append(tb.traces, *pre.traceResult)
 			tb.stackedResults.Remove(topEle)
+			if pre.traceResult != nil {
+				tb.traces = append(tb.traces, *pre.traceResult)
+			}
 
 			return nil
 
 		// new uncle trace, e.g. [x y Z ...] => [x y+1], pop the entire descendant traces of last sibling trace
 		default:
-			tb.traces = append(tb.traces, *pre.traceResult)
 			tb.stackedResults.Remove(topEle)
+			if pre.traceResult != nil {
+				tb.traces = append(tb.traces, *pre.traceResult)
+			}
 		}
 	}
 }

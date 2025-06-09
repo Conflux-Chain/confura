@@ -81,7 +81,8 @@ func TestTraceBuilderEmbedded(t *testing.T) {
 	// root - 0
 	builder.mustAppendTest(t, "R0", true, []uint{0})
 	builder.mustAppendTest(t, "R00", true, []uint{0, 0})
-	builder.mustAppendTest(t, "R01", true, []uint{0, 1})
+	builder.mustAppendTest(t, "R01", false, []uint{0, 1}) // suicide trace without result R01'
+	builder.mustAppendTest(t, "R02", true, []uint{0, 2})
 
 	// root - 1
 	builder.mustAppendTest(t, "R1", true, []uint{1})
@@ -98,7 +99,7 @@ func TestTraceBuilderEmbedded(t *testing.T) {
 	// build
 	builder.mustBuild(t,
 		"R",
-		"R0", "R00", "R00'", "R01", "R01'", "R0'",
+		"R0", "R00", "R00'", "R01", "R02", "R02'", "R0'",
 		"R1", "R10", "R10'", "R11", "R110", "R110'", "R111", "R111'", "R11'", "R1'",
 		"R2", "R20", "R200", "R200'", "R20'", "R2'",
 		"R'",
