@@ -46,7 +46,7 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 	var builder BlockTraceBuilder
 	for i := range traces {
 		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
-		if err := builder.Append(cfxTrace, cfxTraceResult, traces[i].Subtraces); err != nil {
+		if err := builder.Append(cfxTrace, cfxTraceResult, traces[i].TraceAddress); err != nil {
 			return nil, err
 		}
 	}
@@ -82,7 +82,7 @@ func (api *TraceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]type
 	var builder TraceBuilder
 	for i := range traces {
 		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
-		if err := builder.Append(cfxTrace, cfxTraceResult, traces[i].Subtraces); err != nil {
+		if err := builder.Append(cfxTrace, cfxTraceResult, traces[i].TraceAddress); err != nil {
 			return nil, err
 		}
 	}

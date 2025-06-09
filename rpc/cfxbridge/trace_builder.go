@@ -2,19 +2,14 @@ package cfxbridge
 
 import (
 	"container/list"
-	"errors"
+	"fmt"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/sirupsen/logrus"
-)
-
-var (
-	errWrongTraceStack = errors.New("wrong trace stack")
 )
 
 type stackedTraceResult struct {
-	traceResult *types.LocalizedTrace
-	subTraces   uint
+	traceResult  *types.LocalizedTrace
+	traceAddress []uint
 }
 
 // TraceBuilder builds traces in stack way and thread unsafe.
@@ -28,92 +23,89 @@ func (tb *TraceBuilder) Build() ([]types.LocalizedTrace, error) {
 		return emptyTraces, nil
 	}
 
-	// This shouldn't happen if stack push/pop operation pairs correctly.
-	if tb.stackedResults != nil && tb.stackedResults.Len() != 0 {
-		logrus.WithFields(logrus.Fields{
-			"stackLen":  tb.stackedResults.Len(),
-			"numTraces": len(tb.traces),
-		}).Error("Mismatched push/pop operation pairs for trace result stack")
-		return nil, errWrongTraceStack
+	if err := tb.pop(nil); err != nil {
+		return nil, err
 	}
 
 	return tb.traces, nil
 }
 
-func (tb *TraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) error {
+func (tb *TraceBuilder) Append(trace, traceResult *types.LocalizedTrace, traceAddress []uint) error {
 	// E.g. reward & suicide trace not supported in Conflux.
 	if trace == nil {
 		return nil
 	}
 
+	// pop previous trace result if required
+	if err := tb.pop(traceAddress); err != nil {
+		return err
+	}
+
 	tb.traces = append(tb.traces, *trace)
 
-	// If there are any subtraces for this one, just push the trace result
-	// to stack for later retrieval.
-	if subTraces != 0 {
-		if traceResult != nil {
-			tb.push(traceResult, subTraces)
-		}
-		return nil
-	}
-
-	// Otherwise, this trace is the end one of call stack. Need to append the
-	// trace result and pop the stack.
-	if traceResult != nil {
-		tb.traces = append(tb.traces, *traceResult)
-	}
-
-	return tb.pop()
-}
-
-func (tb *TraceBuilder) push(traceResult *types.LocalizedTrace, subTraces uint) {
-	// Lazy initialize the stack, but thread unsafe.
+	// lazy init stack
 	if tb.stackedResults == nil {
 		tb.stackedResults = list.New()
 	}
 
-	tb.stackedResults.PushBack(&stackedTraceResult{
-		traceResult: traceResult,
-		subTraces:   subTraces,
+	// push into stack even the trace result is nil, e.g. internal_transfer_action, to keep trace address in sequence
+	tb.stackedResults.PushBack(stackedTraceResult{
+		traceResult:  traceResult,
+		traceAddress: traceAddress,
 	})
+
+	return nil
 }
 
-func (tb *TraceBuilder) pop() error {
-	// No item pushed into stack before
+func (tb *TraceBuilder) pop(traceAddress []uint) error {
 	if tb.stackedResults == nil {
 		return nil
 	}
 
-	// No pending trace result to handle
-	topEle := tb.stackedResults.Back()
-	if topEle == nil {
-		return nil
+	for {
+		// previous trace should always exist
+		topEle := tb.stackedResults.Back()
+		if topEle == nil {
+			return fmt.Errorf("no trace adddress in stack, cur = %v", traceAddress)
+		}
+
+		pre := topEle.Value.(stackedTraceResult)
+		preTraceAddressLen, curTraceAddressLen := len(pre.traceAddress), len(traceAddress)
+
+		switch {
+		// new sub trace, e.g. [x y z] => [x y z 0], do not pop any previous trace
+		case curTraceAddressLen > preTraceAddressLen:
+			if curTraceAddressLen > preTraceAddressLen+1 {
+				return fmt.Errorf("trace address too large, pre = %v, cur = %v", pre.traceAddress, traceAddress)
+			}
+
+			if traceAddress[curTraceAddressLen-1] != 0 {
+				return fmt.Errorf("sub trace starts with non-zero index, pre = %v, cur = %v", pre.traceAddress, traceAddress)
+			}
+
+			return nil
+
+		// new sibling trace, e.g. [x y z] => [x y z+1], pop the previous trace
+		case curTraceAddressLen == preTraceAddressLen:
+			if preTraceAddressLen > 0 && pre.traceAddress[preTraceAddressLen-1]+1 != traceAddress[curTraceAddressLen-1] {
+				return fmt.Errorf("sibling traces not in sequence, pre = %v, cur = %v", pre.traceAddress, traceAddress)
+			}
+
+			tb.stackedResults.Remove(topEle)
+			if pre.traceResult != nil {
+				tb.traces = append(tb.traces, *pre.traceResult)
+			}
+
+			return nil
+
+		// new uncle trace, e.g. [x y Z ...] => [x y+1], pop the entire descendant traces of last sibling trace
+		default:
+			tb.stackedResults.Remove(topEle)
+			if pre.traceResult != nil {
+				tb.traces = append(tb.traces, *pre.traceResult)
+			}
+		}
 	}
-
-	item := topEle.Value.(*stackedTraceResult)
-
-	// Should never happen, but make code robust
-	if item.subTraces == 0 {
-		logrus.WithFields(logrus.Fields{
-			"txnHash":   item.traceResult.TransactionHash.String(),
-			"traceType": item.traceResult.Type,
-		}).Error("Failed to pop due to invalid subtraces")
-		return errWrongTraceStack
-	}
-
-	item.subTraces--
-
-	// There are remaining sub traces that unhandled
-	if item.subTraces > 0 {
-		return nil
-	}
-
-	// All sub traces handled and pop the trace result
-	tb.traces = append(tb.traces, *item.traceResult)
-	tb.stackedResults.Remove(topEle)
-
-	// Pop upstream trace
-	return tb.pop()
 }
 
 type TransactionTraceBuilder struct {
@@ -135,7 +127,7 @@ func (ttb *TransactionTraceBuilder) Build() (*types.LocalizedTransactionTrace, b
 	return &ttb.txTrace, true, nil
 }
 
-func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) (bool, error) {
+func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, traceAddress []uint) (bool, error) {
 	if trace == nil {
 		// ignore nil trace and continue to append other traces
 		return true, nil
@@ -151,7 +143,7 @@ func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTr
 		return false, nil
 	}
 
-	if err := ttb.builder.Append(trace, traceResult, subTraces); err != nil {
+	if err := ttb.builder.Append(trace, traceResult, traceAddress); err != nil {
 		return false, err
 	}
 
@@ -175,12 +167,12 @@ func (btb *BlockTraceBuilder) Build() ([]types.LocalizedTransactionTrace, error)
 	return btb.txTraces, nil
 }
 
-func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, subTraces uint) error {
+func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, traceAddress []uint) error {
 	if trace == nil {
 		return nil
 	}
 
-	next, err := btb.builer.Append(trace, traceResult, subTraces)
+	next, err := btb.builer.Append(trace, traceResult, traceAddress)
 	if err != nil || next {
 		return err
 	}
@@ -189,7 +181,7 @@ func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, s
 		return err
 	}
 
-	_, err = btb.builer.Append(trace, traceResult, subTraces)
+	_, err = btb.builer.Append(trace, traceResult, traceAddress)
 	return err
 }
 
