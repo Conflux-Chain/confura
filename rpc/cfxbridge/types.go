@@ -308,7 +308,7 @@ func resolveToAddresses(val interface{}) ([]EthAddress, error) {
 	// if val is string, new address and return
 	if addrStr, ok := val.(string); ok {
 		var addr EthAddress
-		if err := json.Unmarshal([]byte(fmt.Sprintf(`"%v"`, addrStr)), &addr); err != nil {
+		if err := json.Unmarshal(fmt.Appendf(nil, `"%v"`, addrStr), &addr); err != nil {
 			return nil, errors.Wrapf(err, "failed to create address by %v", addrStr)
 		}
 
@@ -325,7 +325,7 @@ func resolveToAddresses(val interface{}) ([]EthAddress, error) {
 			}
 
 			var addr EthAddress
-			if err := json.Unmarshal([]byte(fmt.Sprintf(`"%v"`, vStr)), &addr); err != nil {
+			if err := json.Unmarshal(fmt.Appendf(nil, `"%v"`, vStr), &addr); err != nil {
 				return nil, errors.Wrapf(err, "failed to create address by %v", v)
 			}
 
