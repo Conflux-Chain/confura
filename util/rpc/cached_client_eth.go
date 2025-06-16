@@ -198,16 +198,36 @@ func (c cachedRpcEthClient) BlockTransactionCountByNumber(blockNum web3Types.Blo
 	return c.RpcEthClient.BlockTransactionCountByNumber(blockNum)
 }
 
+func (c cachedRpcEthClient) SendRawTransaction(rawTx []byte) (common.Hash, error) {
+	txnHash, err := c.RpcEthClient.SendRawTransaction(rawTx)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	lruCache.EthDefault.AddPendingTransaction(txnHash, rawTx)
+	return txnHash, nil
+}
+
 func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.TransactionDetail, error) {
 	return loadLazyIfNoError(c.LazyTransactionByHash(txHash))
 }
 
 func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (cacheTypes.Lazy[*web3Types.TransactionDetail], error) {
-	lazyTxn, err := c.dataCache.GetTransactionByHash(txHash)
+	res, loaded, err := lruCache.EthDefault.GetTransactionByHashWithFunc(
+		c.nodeName, txHash, func() (cacheTypes.Lazy[*web3Types.TransactionDetail], error) {
+			lazyTxn, err := c.dataCache.GetTransactionByHash(txHash)
+			if err != nil {
+				return lazyTxn, err
+			}
+			return resolveLazyWithFallback(c, "eth_getTransactionByHash", lazyTxn, txHash)
+		},
+	)
 	if err != nil {
-		return lazyTxn, err
+		return res, err
 	}
-	return resolveLazyWithFallback(c, "eth_getTransactionByHash", lazyTxn, txHash)
+
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(loaded)
+	return res, nil
 }
 
 func (c cachedRpcEthClient) TransactionByBlockHashAndIndex(blockHash common.Hash, index uint) (*web3Types.TransactionDetail, error) {
@@ -241,12 +261,22 @@ func (c cachedRpcEthClient) TransactionReceipt(txHash common.Hash) (*web3Types.R
 	return loadLazyIfNoError(c.LazyTransactionReceipt(txHash))
 }
 
-func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (cacheTypes.Lazy[*web3Types.Receipt], error) {
-	lazyReceipt, err := c.dataCache.GetTransactionReceipt(txHash)
+func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.Receipt], err error) {
+	res, loaded, err := lruCache.EthDefault.GetTransactionReceiptWithFunc(
+		c.nodeName, txHash, func() (cacheTypes.Lazy[*web3Types.Receipt], error) {
+			lazyReceipt, err := c.dataCache.GetTransactionReceipt(txHash)
+			if err != nil {
+				return lazyReceipt, err
+			}
+			return resolveLazyWithFallback(c, "eth_getTransactionReceipt", lazyReceipt, txHash)
+		},
+	)
 	if err != nil {
-		return lazyReceipt, err
+		return res, err
 	}
-	return resolveLazyWithFallback(c, "eth_getTransactionReceipt", lazyReceipt, txHash)
+
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(loaded)
+	return res, nil
 }
 
 func (c cachedRpcEthClient) BlockReceipts(blockNrOrHash *web3Types.BlockNumberOrHash) (res []*web3Types.Receipt, _ error) {

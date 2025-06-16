@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 	"time"
 
+	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/ethereum/go-ethereum/common"
+	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go/client"
@@ -22,13 +26,19 @@ var (
 )
 
 type EthCacheConfig struct {
-	NetVersionExpiration    time.Duration `default:"1m"`
-	ClientVersionExpiration time.Duration `default:"1m"`
-	ChainIdExpiration       time.Duration `default:"8760h"`
-	BlockNumberExpiration   time.Duration `default:"1s"`
-	PriceExpiration         time.Duration `default:"3s"`
-	CallCacheExpiration     time.Duration `default:"1s"`
-	CallCacheSize           int           `default:"128"`
+	NetVersionExpiration      time.Duration `default:"1m"`
+	ClientVersionExpiration   time.Duration `default:"1m"`
+	ChainIdExpiration         time.Duration `default:"8760h"`
+	BlockNumberExpiration     time.Duration `default:"1s"`
+	PriceExpiration           time.Duration `default:"3s"`
+	CallCacheExpiration       time.Duration `default:"1s"`
+	CallCacheSize             int           `default:"128"`
+	PendingTxnCacheExpiration time.Duration `default:"3s"`
+	PendingTxnCacheSize       int           `default:"128"`
+	TxnCacheExpiration        time.Duration `default:"1s"`
+	TxnCacheSize              int           `default:"128"`
+	ReceiptCacheExpiration    time.Duration `default:"1s"`
+	ReceiptCacheSize          int           `default:"128"`
 }
 
 // newEthCacheConfig returns a EthCacheConfig with default values.
@@ -53,6 +63,9 @@ type EthCache struct {
 	priceCache         *expiryCache
 	blockNumberCache   *keyExpiryLruCaches
 	callCache          *keyExpiryLruCaches
+	pendingTxnCache    *keyExpiryLruCaches
+	txnCache           *keyExpiryLruCaches
+	receiptCache       *keyExpiryLruCaches
 }
 
 func newEthCache(cfg EthCacheConfig) *EthCache {
@@ -63,6 +76,9 @@ func newEthCache(cfg EthCacheConfig) *EthCache {
 		priceCache:         newExpiryCache(cfg.PriceExpiration),
 		blockNumberCache:   newKeyExpiryLruCaches(cfg.BlockNumberExpiration, 1000),
 		callCache:          newKeyExpiryLruCaches(cfg.CallCacheExpiration, cfg.CallCacheSize),
+		pendingTxnCache:    newKeyExpiryLruCaches(cfg.PendingTxnCacheExpiration, cfg.PendingTxnCacheSize),
+		txnCache:           newKeyExpiryLruCaches(cfg.TxnCacheExpiration, cfg.TxnCacheSize),
+		receiptCache:       newKeyExpiryLruCaches(cfg.ReceiptCacheExpiration, cfg.ReceiptCacheSize),
 	}
 }
 
@@ -235,4 +251,134 @@ func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockN
 
 	// Convert hash to a hexadecimal string
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+type lazyRlpDecodedTxn struct {
+	encoded []byte
+	val     atomic.Value
+}
+
+func newLazyRlpDecodedTxn(data []byte) *lazyRlpDecodedTxn {
+	return &lazyRlpDecodedTxn{encoded: data}
+}
+
+func (lazy *lazyRlpDecodedTxn) Load() (*types.Transaction, error) {
+	if len(lazy.encoded) == 0 {
+		return nil, nil
+	}
+
+	if v, ok := lazy.val.Load().(*types.Transaction); ok {
+		return v, nil
+	}
+
+	var txn types.Transaction
+	if err := txn.UnmarshalBinary(lazy.encoded); err != nil {
+		return nil, errors.WithMessage(err, "failed to unmarshal transaction")
+	}
+
+	lazy.val.Store(&txn)
+	return &txn, nil
+}
+
+func (cache *EthCache) AddPendingTransaction(txHash common.Hash, rawTxnData []byte) {
+	cache.pendingTxnCache.getOrUpdate(txHash.String(), func() (any, error) {
+		return newLazyRlpDecodedTxn(rawTxnData), nil
+	})
+}
+
+func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (*types.TransactionDetail, bool, error) {
+	v, ok := cache.pendingTxnCache.get(txHash.String())
+	if !ok {
+		return nil, false, nil // not found in cache
+	}
+
+	txn, err := v.(*lazyRlpDecodedTxn).Load()
+	if err != nil {
+		return nil, false, errors.WithMessagef(err, "failed to load transaction")
+	}
+
+	// Build the transaction detail
+	txnDetail, err := buildTransactionDetail(txHash, txn)
+	if err != nil {
+		return nil, false, err
+	}
+	return txnDetail, true, nil
+}
+
+func (cache *EthCache) GetTransactionByHashWithFunc(
+	nodeName string,
+	txHash common.Hash,
+	rawGetter func() (cacheTypes.Lazy[*types.TransactionDetail], error),
+) (res cacheTypes.Lazy[*types.TransactionDetail], loaded bool, err error) {
+	cacheKey := fmt.Sprintf("%s::%s", nodeName, txHash)
+	val, loaded, err := cache.txnCache.getOrUpdate(cacheKey, func() (any, error) {
+		txn, ok, err := cache.GetPendingTransaction(txHash)
+		if err != nil {
+			return res, err
+		}
+		if ok {
+			loaded = true
+			return cacheTypes.NewLazy(txn)
+		}
+		return rawGetter()
+	})
+	if err != nil {
+		return res, false, err
+	}
+	return val.(cacheTypes.Lazy[*types.TransactionDetail]), loaded, nil
+}
+
+func (cache *EthCache) GetTransactionReceiptWithFunc(
+	nodeName string,
+	txHash common.Hash,
+	rawGetter func() (cacheTypes.Lazy[*types.Receipt], error),
+) (res cacheTypes.Lazy[*types.Receipt], loaed bool, err error) {
+	if _, ok := cache.pendingTxnCache.get(txHash.String()); ok {
+		// Pending transaction does not have receipt yet.
+		return res, true, nil
+	}
+
+	cacheKey := fmt.Sprintf("%s::%s", nodeName, txHash)
+	val, loaded, err := cache.receiptCache.getOrUpdate(cacheKey, func() (any, error) {
+		return rawGetter()
+	})
+	if err != nil {
+		return res, false, err
+	}
+
+	return val.(cacheTypes.Lazy[*types.Receipt]), loaded, nil
+}
+
+func buildTransactionDetail(txnHash common.Hash, txn *types.Transaction) (*types.TransactionDetail, error) {
+	chainId := txn.ChainId()
+	txnType := uint64(txn.Type())
+	sigV, sigR, sigS := txn.RawSignatureValues()
+
+	// Recover the sender address
+	singer := ethTypes.LatestSignerForChainID(chainId)
+	from, err := ethTypes.Sender(singer, txn)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "failed to recover sender of pending transaction")
+	}
+
+	return &types.TransactionDetail{
+		// Transaction is not included in a block yet, so `BlockHash`, `BlockNumber`, `TransactionIndex`
+		// and `Status` fields are left empty by default.
+		ChainID:              chainId,
+		Nonce:                txn.Nonce(),
+		GasPrice:             txn.GasPrice(),
+		MaxFeePerGas:         txn.GasFeeCap(),
+		MaxPriorityFeePerGas: txn.GasTipCap(),
+		Gas:                  txn.Gas(),
+		From:                 from,
+		To:                   txn.To(),
+		Value:                txn.Value(),
+		Input:                txn.Data(),
+		V:                    sigR,
+		R:                    sigV,
+		S:                    sigS,
+		Accesses:             txn.AccessList(),
+		Hash:                 txnHash,
+		Type:                 &txnType,
+	}, nil
 }

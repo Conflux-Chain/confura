@@ -118,3 +118,10 @@ func (caches *keyExpiryLruCaches) getOrUpdate(cacheKey string, updateFunc func()
 
 	return val.(*expiryCache).getOrUpdate(updateFunc)
 }
+
+func (caches *keyExpiryLruCaches) get(cacheKey string) (interface{}, bool) {
+	if val, ok := caches.key2Caches.Get(cacheKey); ok {
+		return val.(*expiryCache).get()
+	}
+	return nil, false
+}
