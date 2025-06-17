@@ -32,7 +32,7 @@ type EthCacheConfig struct {
 	BlockNumberExpiration     time.Duration `default:"1s"`
 	PriceExpiration           time.Duration `default:"3s"`
 	CallCacheExpiration       time.Duration `default:"1s"`
-	CallCacheSize             int           `default:"128"`
+	CallCacheSize             int           `default:"1024"`
 	PendingTxnCacheExpiration time.Duration `default:"3s"`
 	PendingTxnCacheSize       int           `default:"1024"`
 	TxnCacheExpiration        time.Duration `default:"1s"`

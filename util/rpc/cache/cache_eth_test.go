@@ -82,7 +82,7 @@ func TestLazyRlpDecodedTxn(t *testing.T) {
 	})
 
 	t.Run("LoadEIP1559Txn", func(t *testing.T) {
-		signedTx, encoded, err := buildEIP155Tx(
+		signedTx, encoded, err := buildEIP1559Tx(
 			0,
 			big.NewInt(1000000000),
 			big.NewInt(50000000000),
@@ -137,7 +137,7 @@ func TestGetTransactionByHashWithFunc(t *testing.T) {
 	ethCache := newEthCache(newEthCacheConfig())
 
 	t.Run("NoPendingTransactionCache", func(t *testing.T) {
-		signedTx, _, err := buildEIP155Tx(
+		signedTx, _, err := buildEIP1559Tx(
 			0,
 			big.NewInt(1000000000),
 			big.NewInt(50000000000),
@@ -182,7 +182,7 @@ func TestGetTransactionByHashWithFunc(t *testing.T) {
 	})
 
 	t.Run("PendingTransactionHit", func(t *testing.T) {
-		signedTx, encoded, err := buildEIP155Tx(
+		signedTx, encoded, err := buildEIP1559Tx(
 			1,
 			big.NewInt(1000000000),
 			big.NewInt(50000000000),
@@ -246,7 +246,7 @@ func TestGetTransactionReceiptWithFunc(t *testing.T) {
 	})
 
 	t.Run("PendingTransactionHit", func(t *testing.T) {
-		signedTx, encoded, err := buildEIP155Tx(
+		signedTx, encoded, err := buildEIP1559Tx(
 			0,
 			big.NewInt(1000000000),
 			big.NewInt(50000000000),
@@ -303,8 +303,8 @@ func buildSignedLegacyTx(nonce uint64, gasPrice *big.Int, gasLimit uint64, value
 	return signedTx, encoded, nil
 }
 
-// buildEIP155Tx returns a signed EIP1559 transaction and its RLP-encoded bytes.
-func buildEIP155Tx(nonce uint64, gasTipCap, gasFeeCap *big.Int, gas uint64, value *big.Int) (*types.Transaction, []byte, error) {
+// buildEIP1559Tx returns a signed EIP1559 transaction and its RLP-encoded bytes.
+func buildEIP1559Tx(nonce uint64, gasTipCap, gasFeeCap *big.Int, gas uint64, value *big.Int) (*types.Transaction, []byte, error) {
 	privateKey, err := crypto.HexToECDSA(testPrivateKeyHex)
 	if err != nil {
 		return nil, nil, err
