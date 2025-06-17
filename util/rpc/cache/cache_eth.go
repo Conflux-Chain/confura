@@ -34,11 +34,11 @@ type EthCacheConfig struct {
 	CallCacheExpiration       time.Duration `default:"1s"`
 	CallCacheSize             int           `default:"128"`
 	PendingTxnCacheExpiration time.Duration `default:"3s"`
-	PendingTxnCacheSize       int           `default:"128"`
+	PendingTxnCacheSize       int           `default:"1024"`
 	TxnCacheExpiration        time.Duration `default:"1s"`
-	TxnCacheSize              int           `default:"128"`
+	TxnCacheSize              int           `default:"1024"`
 	ReceiptCacheExpiration    time.Duration `default:"1s"`
-	ReceiptCacheSize          int           `default:"128"`
+	ReceiptCacheSize          int           `default:"1024"`
 }
 
 // newEthCacheConfig returns a EthCacheConfig with default values.
@@ -298,7 +298,7 @@ func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (*types.Transac
 	}
 
 	// Build the transaction detail
-	txnDetail, err := buildTransactionDetail(txHash, txn)
+	txnDetail, err := buildTransactionDetail(txn)
 	if err != nil {
 		return nil, false, err
 	}
@@ -310,14 +310,16 @@ func (cache *EthCache) GetTransactionByHashWithFunc(
 	txHash common.Hash,
 	rawGetter func() (cacheTypes.Lazy[*types.TransactionDetail], error),
 ) (res cacheTypes.Lazy[*types.TransactionDetail], loaded bool, err error) {
+	pendingCacheHit := false
 	cacheKey := fmt.Sprintf("%s::%s", nodeName, txHash)
+
 	val, loaded, err := cache.txnCache.getOrUpdate(cacheKey, func() (any, error) {
 		txn, ok, err := cache.GetPendingTransaction(txHash)
 		if err != nil {
 			return res, err
 		}
 		if ok {
-			loaded = true
+			pendingCacheHit = true
 			return cacheTypes.NewLazy(txn)
 		}
 		return rawGetter()
@@ -325,7 +327,7 @@ func (cache *EthCache) GetTransactionByHashWithFunc(
 	if err != nil {
 		return res, false, err
 	}
-	return val.(cacheTypes.Lazy[*types.TransactionDetail]), loaded, nil
+	return val.(cacheTypes.Lazy[*types.TransactionDetail]), loaded || pendingCacheHit, nil
 }
 
 func (cache *EthCache) GetTransactionReceiptWithFunc(
@@ -349,7 +351,7 @@ func (cache *EthCache) GetTransactionReceiptWithFunc(
 	return val.(cacheTypes.Lazy[*types.Receipt]), loaded, nil
 }
 
-func buildTransactionDetail(txnHash common.Hash, txn *types.Transaction) (*types.TransactionDetail, error) {
+func buildTransactionDetail(txn *types.Transaction) (*types.TransactionDetail, error) {
 	chainId := txn.ChainId()
 	txnType := uint64(txn.Type())
 	sigV, sigR, sigS := txn.RawSignatureValues()
@@ -378,7 +380,7 @@ func buildTransactionDetail(txnHash common.Hash, txn *types.Transaction) (*types
 		R:                    sigV,
 		S:                    sigS,
 		Accesses:             txn.AccessList(),
-		Hash:                 txnHash,
+		Hash:                 txn.Hash(),
 		Type:                 &txnType,
 	}, nil
 }

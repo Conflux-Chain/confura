@@ -481,16 +481,16 @@ node:
 #     priceExpiration: 3s
 #     # LRU Cache size and expiration time duration for 'eth_call'
 #     callCacheExpiration: 1s
-#     callCacheSize: 128
+#     callCacheSize: 1024
 #     # LRU Cache size and expiration time duration for pending transactions submitted by "eth_sendRawTransaction"
 #     PendingTxnCacheExpiration: 3s
-#     PendingTxnCacheSize: 128
+#     PendingTxnCacheSize: 1024
 #     # LRU Cache size and expiration time duration for 'eth_getTransactionByHash'
 #     TxnCacheExpiration: 1s
-#     TxnCacheSize: 128
+#     TxnCacheSize: 1024
 #     # LRU Cache size and expiration time duration for 'eth_getTransactionReceipt'
 #     ReceiptCacheExpiration: 1s
-#     ReceiptCacheSize: 128
+#     ReceiptCacheSize: 1024
 #     # Remote data cache gRPC service endpoint (refer to https://github.com/Conflux-Chain/confura-data-cache)
 #     #dataCacheRpcUrlProto: 127.0.0.1:48545
 
