@@ -21,6 +21,7 @@ var (
 	value     = big.NewInt(1000000000)
 	gasTipCap = big.NewInt(1000000000)
 	gasFeeCap = big.NewInt(50000000000)
+	data      = []byte{0x1, 0x2}
 
 	// Private key used to sign transactions for testing
 	testPrivateKeyHex = "4f3edf983ac636a65a842ce7c78d9aa706d3b113b37c98b8dc6ef8c9c8c0d3c5"
@@ -49,6 +50,7 @@ func TestBuildSignedTransactionDetail(t *testing.T) {
 		assert.EqualValues(t, value.Uint64(), txn.Value.Uint64())
 		assert.EqualValues(t, gasLimit, txn.Gas)
 		assert.EqualValues(t, gasPrice.Uint64(), txn.GasPrice.Uint64())
+		assert.EqualValues(t, signedTx.Data(), txn.Input)
 
 		v, r, s := signedTx.RawSignatureValues()
 		assert.Equal(t, r.String(), txn.R.String())
@@ -77,6 +79,7 @@ func TestBuildSignedTransactionDetail(t *testing.T) {
 		assert.EqualValues(t, value.Uint64(), txn.Value.Uint64())
 		assert.EqualValues(t, gasTipCap.Uint64(), txn.MaxPriorityFeePerGas.Uint64())
 		assert.EqualValues(t, gasFeeCap.Uint64(), txn.MaxFeePerGas.Uint64())
+		assert.EqualValues(t, signedTx.Data(), txn.Input)
 
 		v, r, s := signedTx.RawSignatureValues()
 		assert.Equal(t, r.String(), txn.R.String())
@@ -85,7 +88,7 @@ func TestBuildSignedTransactionDetail(t *testing.T) {
 	})
 
 	t.Run("InvalidSender", func(t *testing.T) {
-		unsignedTxn := ethTypes.NewTransaction(1, toAddr, value, gasLimit, gasPrice, []byte{0x01, 0x02})
+		unsignedTxn := ethTypes.NewTransaction(1, toAddr, value, gasLimit, gasPrice, data)
 		// Unsigned transaction will fail sender recovery
 		txn, err := buildSignedTransactionDetail(unsignedTxn)
 		assert.Error(t, err)
@@ -216,6 +219,7 @@ func buildSignedLegacyTx(nonce uint64) (*types.Transaction, []byte, error) {
 		Gas:      gasLimit,
 		To:       &toAddr,
 		Value:    value,
+		Data:     data,
 	}
 	tx := ethTypes.NewTx(&txData)
 
@@ -249,6 +253,7 @@ func buildEIP1559Tx(nonce uint64) (*types.Transaction, []byte, error) {
 		Gas:       gasLimit,
 		To:        &toAddr,
 		Value:     value,
+		Data:      data,
 	}
 	tx := ethTypes.NewTx(&txData)
 
