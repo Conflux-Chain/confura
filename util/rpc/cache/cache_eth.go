@@ -353,7 +353,7 @@ func (t *ethPendingTxn) ParsedTransaction() (*types.TransactionDetail, error) {
 		return nil, errors.WithMessage(err, "failed to build transaction detail")
 	}
 
-	t.parsed = txnDetail
+	t.encoded, t.parsed = nil, txnDetail
 	return t.parsed, nil
 }
 
