@@ -6,10 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"sync/atomic"
+	"sync"
 	"time"
 
-	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	ethTypes "github.com/ethereum/go-ethereum/core/types"
@@ -33,12 +32,10 @@ type EthCacheConfig struct {
 	PriceExpiration           time.Duration `default:"3s"`
 	CallCacheExpiration       time.Duration `default:"1s"`
 	CallCacheSize             int           `default:"1024"`
-	PendingTxnCacheExpiration time.Duration `default:"3s"`
+	PendingTxnCacheExpiration time.Duration `default:"3m"`
 	PendingTxnCacheSize       int           `default:"1024"`
-	TxnCacheExpiration        time.Duration `default:"1s"`
-	TxnCacheSize              int           `default:"1024"`
-	ReceiptCacheExpiration    time.Duration `default:"1s"`
-	ReceiptCacheSize          int           `default:"1024"`
+	PendingTxnCheckExemption  time.Duration `default:"3s"`
+	PendingTxnCheckInterval   time.Duration `default:"1s"`
 }
 
 // newEthCacheConfig returns a EthCacheConfig with default values.
@@ -57,6 +54,7 @@ func MustInitFromViper() {
 
 // EthCache memory cache for some evm space RPC methods
 type EthCache struct {
+	EthCacheConfig
 	netVersionCache    *expiryCache
 	clientVersionCache *expiryCache
 	chainIdCache       *expiryCache
@@ -64,12 +62,11 @@ type EthCache struct {
 	blockNumberCache   *keyExpiryLruCaches
 	callCache          *keyExpiryLruCaches
 	pendingTxnCache    *keyExpiryLruCaches
-	txnCache           *keyExpiryLruCaches
-	receiptCache       *keyExpiryLruCaches
 }
 
 func newEthCache(cfg EthCacheConfig) *EthCache {
 	return &EthCache{
+		EthCacheConfig:     cfg,
 		netVersionCache:    newExpiryCache(cfg.NetVersionExpiration),
 		clientVersionCache: newExpiryCache(cfg.ClientVersionExpiration),
 		chainIdCache:       newExpiryCache(cfg.ChainIdExpiration),
@@ -77,8 +74,6 @@ func newEthCache(cfg EthCacheConfig) *EthCache {
 		blockNumberCache:   newKeyExpiryLruCaches(cfg.BlockNumberExpiration, 1000),
 		callCache:          newKeyExpiryLruCaches(cfg.CallCacheExpiration, cfg.CallCacheSize),
 		pendingTxnCache:    newKeyExpiryLruCaches(cfg.PendingTxnCacheExpiration, cfg.PendingTxnCacheSize),
-		txnCache:           newKeyExpiryLruCaches(cfg.TxnCacheExpiration, cfg.TxnCacheSize),
-		receiptCache:       newKeyExpiryLruCaches(cfg.ReceiptCacheExpiration, cfg.ReceiptCacheSize),
 	}
 }
 
@@ -253,105 +248,130 @@ func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockN
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-type lazyRlpDecodedTxn struct {
-	encoded []byte
-	val     atomic.Value
+func (cache *EthCache) AddPendingTransaction(txHash common.Hash, txnRlpData []byte) {
+	cache.pendingTxnCache.getOrUpdate(txHash.String(), func() (any, error) {
+		return &ethPendingTxn{
+			encoded:       txnRlpData,
+			createdAt:     time.Now(),
+			lastCheckedAt: time.Now(),
+		}, nil
+	})
 }
 
-func newLazyRlpDecodedTxn(data []byte) *lazyRlpDecodedTxn {
-	return &lazyRlpDecodedTxn{encoded: data}
+func (cache *EthCache) GetPendingTransaction(
+	txHash common.Hash,
+	fetchTxn func(common.Hash) (*types.TransactionDetail, error),
+) (txn *types.TransactionDetail, hitImmediate, hitLazy bool, err error) {
+	pendingTxn, ok := cache.getPendingTransaction(txHash)
+	if !ok {
+		return nil, false, false, nil
+	}
+
+	if pendingTxn.ShouldCheckNow(cache.PendingTxnCheckExemption, cache.PendingTxnCheckInterval) {
+		txn, err := fetchTxn(txHash)
+		if err != nil {
+			return nil, false, false, err
+		}
+
+		pendingTxn.MarkChecked()
+		if txn != nil && txn.BlockHash != nil && txn.BlockNumber != nil {
+			cache.pendingTxnCache.del(txHash.String())
+		}
+		return txn, false, true, nil
+	}
+
+	txn, err = pendingTxn.ParsedTransaction()
+	if err != nil {
+		return nil, false, false, errors.WithMessage(err, "failed to parse transaction detail")
+	}
+	return txn, true, false, nil
 }
 
-func (lazy *lazyRlpDecodedTxn) Load() (*types.Transaction, error) {
-	if len(lazy.encoded) == 0 {
+func (cache *EthCache) GetPendingTransactionReceipt(
+	txHash common.Hash,
+	fetchReceipt func(common.Hash) (*types.Receipt, error),
+) (receipt *types.Receipt, hitImmediate, hitLazy bool, err error) {
+	pendingTxn, ok := cache.getPendingTransaction(txHash)
+	if !ok {
+		return nil, false, false, nil
+	}
+
+	if pendingTxn.ShouldCheckNow(cache.PendingTxnCheckExemption, cache.PendingTxnCheckInterval) {
+		receipt, err := fetchReceipt(txHash)
+		if err != nil {
+			return nil, false, false, err
+		}
+
+		pendingTxn.MarkChecked()
+		if receipt != nil {
+			cache.pendingTxnCache.del(txHash.String())
+		}
+		return receipt, false, true, nil
+	}
+
+	// Pending transaction doesn't have receipt
+	return nil, true, false, nil
+}
+
+func (cache *EthCache) getPendingTransaction(txHash common.Hash) (*ethPendingTxn, bool) {
+	v, ok := cache.pendingTxnCache.get(txHash.String())
+	if !ok {
+		return nil, false
+	}
+	return v.(*ethPendingTxn), true
+}
+
+type ethPendingTxn struct {
+	mu            sync.Mutex
+	parsed        *types.TransactionDetail // Parsed transaction detail
+	encoded       []byte                   // RLP encoded data for lazy decoding
+	createdAt     time.Time                // Creation time
+	lastCheckedAt time.Time                // Last check time of mined status
+}
+
+func (t *ethPendingTxn) ParsedTransaction() (*types.TransactionDetail, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.parsed != nil {
+		return t.parsed, nil
+	}
+
+	if len(t.encoded) == 0 {
 		return nil, nil
 	}
 
-	if v, ok := lazy.val.Load().(*types.Transaction); ok {
-		return v, nil
-	}
-
+	// Decode the transaction
 	var txn types.Transaction
-	if err := txn.UnmarshalBinary(lazy.encoded); err != nil {
+	if err := txn.UnmarshalBinary(t.encoded); err != nil {
 		return nil, errors.WithMessage(err, "failed to unmarshal transaction")
 	}
 
-	lazy.val.Store(&txn)
-	return &txn, nil
-}
-
-func (cache *EthCache) AddPendingTransaction(txHash common.Hash, rawTxnData []byte) {
-	cache.pendingTxnCache.getOrUpdate(txHash.String(), func() (any, error) {
-		return newLazyRlpDecodedTxn(rawTxnData), nil
-	})
-}
-
-func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (*types.TransactionDetail, bool, error) {
-	v, ok := cache.pendingTxnCache.get(txHash.String())
-	if !ok {
-		return nil, false, nil // not found in cache
-	}
-
-	txn, err := v.(*lazyRlpDecodedTxn).Load()
-	if err != nil {
-		return nil, false, errors.WithMessagef(err, "failed to load transaction")
-	}
-
 	// Build the transaction detail
-	txnDetail, err := buildTransactionDetail(txn)
+	txnDetail, err := buildSignedTransactionDetail(&txn)
 	if err != nil {
-		return nil, false, err
+		return nil, errors.WithMessage(err, "failed to build transaction detail")
 	}
-	return txnDetail, true, nil
+
+	t.parsed = txnDetail
+	return t.parsed, nil
 }
 
-func (cache *EthCache) GetTransactionByHashWithFunc(
-	nodeName string,
-	txHash common.Hash,
-	rawGetter func() (cacheTypes.Lazy[*types.TransactionDetail], error),
-) (res cacheTypes.Lazy[*types.TransactionDetail], loaded bool, err error) {
-	pendingCacheHit := false
-	cacheKey := fmt.Sprintf("%s::%s", nodeName, txHash)
-
-	val, loaded, err := cache.txnCache.getOrUpdate(cacheKey, func() (any, error) {
-		txn, ok, err := cache.GetPendingTransaction(txHash)
-		if err != nil {
-			return res, err
-		}
-		if ok {
-			pendingCacheHit = true
-			return cacheTypes.NewLazy(txn)
-		}
-		return rawGetter()
-	})
-	if err != nil {
-		return res, false, err
-	}
-	return val.(cacheTypes.Lazy[*types.TransactionDetail]), loaded || pendingCacheHit, nil
+// MarkChecked marks the mined status as checked
+func (t *ethPendingTxn) MarkChecked() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.lastCheckedAt = time.Now()
 }
 
-func (cache *EthCache) GetTransactionReceiptWithFunc(
-	nodeName string,
-	txHash common.Hash,
-	rawGetter func() (cacheTypes.Lazy[*types.Receipt], error),
-) (res cacheTypes.Lazy[*types.Receipt], loaed bool, err error) {
-	if _, ok := cache.pendingTxnCache.get(txHash.String()); ok {
-		// Pending transaction does not have receipt yet.
-		return res, true, nil
-	}
-
-	cacheKey := fmt.Sprintf("%s::%s", nodeName, txHash)
-	val, loaded, err := cache.receiptCache.getOrUpdate(cacheKey, func() (any, error) {
-		return rawGetter()
-	})
-	if err != nil {
-		return res, false, err
-	}
-
-	return val.(cacheTypes.Lazy[*types.Receipt]), loaded, nil
+// ShouldCheckNow returns whether it's time to check if the tx is mined.
+func (t *ethPendingTxn) ShouldCheckNow(exemption, checkInterval time.Duration) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return time.Since(t.createdAt) > exemption && time.Since(t.lastCheckedAt) > checkInterval
 }
 
-func buildTransactionDetail(txn *types.Transaction) (*types.TransactionDetail, error) {
+func buildSignedTransactionDetail(txn *types.Transaction) (*types.TransactionDetail, error) {
 	chainId := txn.ChainId()
 	txnType := uint64(txn.Type())
 	sigV, sigR, sigS := txn.RawSignatureValues()
@@ -360,7 +380,7 @@ func buildTransactionDetail(txn *types.Transaction) (*types.TransactionDetail, e
 	singer := ethTypes.LatestSignerForChainID(chainId)
 	from, err := ethTypes.Sender(singer, txn)
 	if err != nil {
-		return nil, errors.WithMessagef(err, "failed to recover sender of pending transaction")
+		return nil, errors.WithMessage(err, "failed to recover transaction sender")
 	}
 
 	return &types.TransactionDetail{
@@ -376,8 +396,8 @@ func buildTransactionDetail(txn *types.Transaction) (*types.TransactionDetail, e
 		To:                   txn.To(),
 		Value:                txn.Value(),
 		Input:                txn.Data(),
-		V:                    sigR,
-		R:                    sigV,
+		V:                    sigV,
+		R:                    sigR,
 		S:                    sigS,
 		Accesses:             txn.AccessList(),
 		Hash:                 txn.Hash(),

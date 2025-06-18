@@ -3,8 +3,8 @@ package cache
 import (
 	"math/big"
 	"testing"
+	"time"
 
-	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -13,32 +13,110 @@ import (
 )
 
 var (
-	nodeName = "testNode"
-
-	chainId = big.NewInt(1030)
-	toAddr  = common.HexToAddress("0xF0109fC8DF283027b6285cc889F5aA624EaC1F55")
+	// Test transaction parameters
+	chainId   = big.NewInt(1030)
+	toAddr    = common.HexToAddress("0xF0109fC8DF283027b6285cc889F5aA624EaC1F55")
+	gasPrice  = big.NewInt(234567897654321)
+	gasLimit  = uint64(2000000)
+	value     = big.NewInt(1000000000)
+	gasTipCap = big.NewInt(1000000000)
+	gasFeeCap = big.NewInt(50000000000)
 
 	// Private key used to sign transactions for testing
 	testPrivateKeyHex = "4f3edf983ac636a65a842ce7c78d9aa706d3b113b37c98b8dc6ef8c9c8c0d3c5"
 )
 
-func TestLazyRlpDecodedTxn(t *testing.T) {
+func TestBuildSignedTransactionDetail(t *testing.T) {
+	t.Run("LegacyTxn", func(t *testing.T) {
+		signedTx, _, err := buildSignedLegacyTx(0)
+		assert.NoError(t, err)
+
+		signer := ethTypes.LatestSignerForChainID(chainId)
+		assert.NoError(t, err)
+
+		sender, err := ethTypes.Sender(signer, signedTx)
+		assert.NoError(t, err)
+
+		txn, err := buildSignedTransactionDetail(signedTx)
+		assert.NoError(t, err)
+		assert.NotNil(t, txn)
+		assert.Equal(t, ethTypes.LegacyTxType, int(*txn.Type))
+		assert.Equal(t, signedTx.Hash(), txn.Hash)
+		assert.Equal(t, sender, txn.From)
+		assert.Equal(t, toAddr.String(), txn.To.String())
+		assert.Equal(t, chainId.Uint64(), txn.ChainID.Uint64())
+		assert.EqualValues(t, 0, txn.Nonce)
+		assert.EqualValues(t, value.Uint64(), txn.Value.Uint64())
+		assert.EqualValues(t, gasLimit, txn.Gas)
+		assert.EqualValues(t, gasPrice.Uint64(), txn.GasPrice.Uint64())
+
+		v, r, s := signedTx.RawSignatureValues()
+		assert.Equal(t, r.String(), txn.R.String())
+		assert.Equal(t, s.String(), txn.S.String())
+		assert.Equal(t, v.String(), txn.V.String())
+	})
+
+	t.Run("EIP1559Txn", func(t *testing.T) {
+		signedTx, _, err := buildEIP1559Tx(0)
+		assert.NoError(t, err)
+
+		signer := ethTypes.LatestSignerForChainID(chainId)
+		sender, err := ethTypes.Sender(signer, signedTx)
+		assert.NoError(t, err)
+
+		txn, err := buildSignedTransactionDetail(signedTx)
+		assert.NoError(t, err)
+		assert.NotNil(t, txn)
+		assert.Equal(t, chainId.Uint64(), txn.ChainID.Uint64())
+		assert.Equal(t, ethTypes.DynamicFeeTxType, int(*txn.Type))
+		assert.Equal(t, signedTx.Hash(), txn.Hash)
+		assert.Equal(t, sender, txn.From)
+		assert.Equal(t, toAddr.String(), txn.To.String())
+		assert.Equal(t, chainId.Uint64(), txn.ChainID.Uint64())
+		assert.EqualValues(t, 0, txn.Nonce)
+		assert.EqualValues(t, value.Uint64(), txn.Value.Uint64())
+		assert.EqualValues(t, gasTipCap.Uint64(), txn.MaxPriorityFeePerGas.Uint64())
+		assert.EqualValues(t, gasFeeCap.Uint64(), txn.MaxFeePerGas.Uint64())
+
+		v, r, s := signedTx.RawSignatureValues()
+		assert.Equal(t, r.String(), txn.R.String())
+		assert.Equal(t, s.String(), txn.S.String())
+		assert.Equal(t, v.String(), txn.V.String())
+	})
+
+	t.Run("InvalidSender", func(t *testing.T) {
+		unsignedTxn := ethTypes.NewTransaction(1, toAddr, value, gasLimit, gasPrice, []byte{0x01, 0x02})
+		// Unsigned transaction will fail sender recovery
+		txn, err := buildSignedTransactionDetail(unsignedTxn)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to recover transaction sender")
+		assert.Nil(t, txn)
+	})
+}
+
+func TestEthPendingTxn(t *testing.T) {
 	t.Parallel()
 
-	t.Run("LoadEmptyData", func(t *testing.T) {
-		lazy := newLazyRlpDecodedTxn([]byte{})
-		txn, err := lazy.Load()
+	t.Run("EmptyData", func(t *testing.T) {
+		pendingTxn := &ethPendingTxn{encoded: []byte{}}
+		txn, err := pendingTxn.ParsedTransaction()
 		assert.NoError(t, err)
 		assert.Nil(t, txn)
 	})
 
-	t.Run("LoadLegacyTxnRLP", func(t *testing.T) {
-		signedTx, encoded, err := buildSignedLegacyTx(
-			0,
-			big.NewInt(234567897654321),
-			2000000,
-			big.NewInt(1000000000),
-		)
+	t.Run("InvalidEncoded", func(t *testing.T) {
+		pendingTxn := &ethPendingTxn{
+			encoded: []byte{0xFF, 0xFF}, // Invalid RLP data
+		}
+
+		result, err := pendingTxn.ParsedTransaction()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to unmarshal transaction")
+		assert.Nil(t, result)
+	})
+
+	t.Run("LegacyTxn", func(t *testing.T) {
+		signedTx, encoded, err := buildSignedLegacyTx(0)
 		assert.NoError(t, err)
 
 		signer := ethTypes.LatestSignerForChainID(chainId)
@@ -47,234 +125,86 @@ func TestLazyRlpDecodedTxn(t *testing.T) {
 		sender, err := ethTypes.Sender(signer, signedTx)
 		assert.NoError(t, err)
 
-		// Construct a `lazyRlpDecodedTxn` and load it
-		lazy := newLazyRlpDecodedTxn(encoded)
-
-		loadedTx, err := lazy.Load()
+		pendingTxn := &ethPendingTxn{encoded: encoded}
+		txn, err := pendingTxn.ParsedTransaction()
 		assert.NoError(t, err)
 
-		// Verify the loaded transaction
-		assert.Equal(t, chainId.Uint64(), loadedTx.ChainId().Uint64())
-		assert.Equal(t, ethTypes.LegacyTxType, int(loadedTx.Type()))
-		assert.Equal(t, toAddr.String(), loadedTx.To().String())
-		assert.EqualValues(t, 0, loadedTx.Nonce())
-		assert.EqualValues(t, 234567897654321, loadedTx.GasPrice().Uint64())
-		assert.EqualValues(t, 2000000, loadedTx.Gas())
-		assert.EqualValues(t, 1000000000, loadedTx.Value().Uint64())
-
-		loadedTx2, err := lazy.Load()
+		// Verify the parsed transaction
 		assert.NoError(t, err)
-		assert.Same(t, loadedTx, loadedTx2, "should be cached and return the same pointer")
+		assert.NotNil(t, txn)
+		assert.Equal(t, ethTypes.LegacyTxType, int(*txn.Type))
+		assert.Equal(t, signedTx.Hash(), txn.Hash)
+		assert.Equal(t, sender, txn.From)
+		assert.Equal(t, toAddr.String(), txn.To.String())
+		assert.Equal(t, chainId.Uint64(), txn.ChainID.Uint64())
+		assert.EqualValues(t, 0, txn.Nonce)
+		assert.EqualValues(t, value.Uint64(), txn.Value.Uint64())
+		assert.EqualValues(t, gasLimit, txn.Gas)
+		assert.EqualValues(t, gasPrice.Uint64(), txn.GasPrice.Uint64())
 
-		// Build and check transaction detail
-		txnDetail, err := buildTransactionDetail(loadedTx)
+		txn2, err := pendingTxn.ParsedTransaction()
 		assert.NoError(t, err)
-		assert.NotNil(t, txnDetail)
-		assert.Equal(t, ethTypes.LegacyTxType, int(*txnDetail.Type))
-		assert.Equal(t, signedTx.Hash(), txnDetail.Hash)
-		assert.Equal(t, sender, txnDetail.From)
-		assert.Equal(t, toAddr.String(), txnDetail.To.String())
-		assert.Equal(t, chainId.Uint64(), txnDetail.ChainID.Uint64())
-		assert.EqualValues(t, 0, txnDetail.Nonce)
-		assert.EqualValues(t, 1000000000, txnDetail.Value.Uint64())
-		assert.EqualValues(t, 2000000, txnDetail.Gas)
-		assert.EqualValues(t, 234567897654321, txnDetail.GasPrice.Uint64())
+		assert.Equal(t, txn, txn2)
 	})
 
-	t.Run("LoadEIP1559Txn", func(t *testing.T) {
-		signedTx, encoded, err := buildEIP1559Tx(
-			0,
-			big.NewInt(1000000000),
-			big.NewInt(50000000000),
-			21000,
-			big.NewInt(1000000000),
-		)
+	t.Run("EIP1559Txn", func(t *testing.T) {
+		signedTx, encoded, err := buildEIP1559Tx(0)
 		assert.NoError(t, err)
 
 		signer := ethTypes.LatestSignerForChainID(chainId)
 		sender, err := ethTypes.Sender(signer, signedTx)
 		assert.NoError(t, err)
 
-		// Construct a `lazyRlpDecodedTxn` and load it
-		lazy := newLazyRlpDecodedTxn(encoded)
-		loadedTx, err := lazy.Load()
+		pendingTxn := &ethPendingTxn{encoded: encoded}
+		txn, err := pendingTxn.ParsedTransaction()
 		assert.NoError(t, err)
 
-		// Verify the loaded transaction
-		assert.Equal(t, chainId.Uint64(), loadedTx.ChainId().Uint64())
-		assert.Equal(t, ethTypes.DynamicFeeTxType, int(loadedTx.Type()))
-		assert.Equal(t, toAddr.String(), loadedTx.To().String())
-		assert.EqualValues(t, 0, loadedTx.Nonce())
-		assert.EqualValues(t, 1000000000, loadedTx.GasTipCap().Uint64())
-		assert.EqualValues(t, 50000000000, loadedTx.GasFeeCap().Uint64())
-		assert.EqualValues(t, 21000, loadedTx.Gas())
-		assert.EqualValues(t, 1000000000, loadedTx.Value().Uint64())
-
-		loadedTx2, err := lazy.Load()
+		// Verify the parsed transaction
 		assert.NoError(t, err)
-		assert.Same(t, loadedTx, loadedTx2, "should be cached and return the same pointer")
+		assert.NotNil(t, txn)
+		assert.Equal(t, chainId.Uint64(), txn.ChainID.Uint64())
+		assert.Equal(t, ethTypes.DynamicFeeTxType, int(*txn.Type))
+		assert.Equal(t, signedTx.Hash(), txn.Hash)
+		assert.Equal(t, sender, txn.From)
+		assert.Equal(t, toAddr.String(), txn.To.String())
+		assert.Equal(t, chainId.Uint64(), txn.ChainID.Uint64())
+		assert.EqualValues(t, 0, txn.Nonce)
+		assert.EqualValues(t, value.Uint64(), txn.Value.Uint64())
+		assert.EqualValues(t, gasTipCap.Uint64(), txn.MaxPriorityFeePerGas.Uint64())
+		assert.EqualValues(t, gasFeeCap.Uint64(), txn.MaxFeePerGas.Uint64())
 
-		// Build and check transaction detail
-		txnDetail, err := buildTransactionDetail(loadedTx)
+		txn2, err := pendingTxn.ParsedTransaction()
 		assert.NoError(t, err)
-		assert.NotNil(t, txnDetail)
-		assert.Equal(t, chainId.Uint64(), txnDetail.ChainID.Uint64())
-		assert.Equal(t, ethTypes.DynamicFeeTxType, int(*txnDetail.Type))
-		assert.Equal(t, signedTx.Hash(), txnDetail.Hash)
-		assert.Equal(t, sender, txnDetail.From)
-		assert.Equal(t, toAddr.String(), txnDetail.To.String())
-		assert.Equal(t, chainId.Uint64(), txnDetail.ChainID.Uint64())
-		assert.EqualValues(t, 0, txnDetail.Nonce)
-		assert.EqualValues(t, 1000000000, txnDetail.Value.Uint64())
-		assert.EqualValues(t, 1000000000, txnDetail.MaxPriorityFeePerGas.Uint64())
-		assert.EqualValues(t, 50000000000, txnDetail.MaxFeePerGas.Uint64())
-	})
-}
-
-func TestGetTransactionByHashWithFunc(t *testing.T) {
-	t.Parallel()
-
-	ethCache := newEthCache(newEthCacheConfig())
-
-	t.Run("NoPendingTransactionCache", func(t *testing.T) {
-		signedTx, _, err := buildEIP1559Tx(
-			0,
-			big.NewInt(1000000000),
-			big.NewInt(50000000000),
-			21000,
-			big.NewInt(1000000000),
-		)
-		assert.NoError(t, err)
-
-		expectedDetail, err := buildTransactionDetail(signedTx)
-		assert.NoError(t, err)
-
-		txHash := signedTx.Hash()
-
-		rawGetterCalled := false
-		rawGetter := func() (cacheTypes.Lazy[*types.TransactionDetail], error) {
-			rawGetterCalled = true
-			return cacheTypes.NewLazy(expectedDetail)
-		}
-
-		result, loaded, err := ethCache.GetTransactionByHashWithFunc(nodeName, txHash, rawGetter)
-		assert.NoError(t, err)
-		assert.False(t, loaded)
-		assert.True(t, rawGetterCalled)
-
-		txn, err := result.Load()
-		assert.NoError(t, err)
-		assert.Equal(t, txHash, txn.Hash)
-
-		// Cache hit after first call
-		result, loaded, err = ethCache.GetTransactionByHashWithFunc(nodeName, txHash,
-			func() (cacheTypes.Lazy[*types.TransactionDetail], error) {
-				t.Fatal("rawGetter should not be called on cache hit")
-				return cacheTypes.Lazy[*types.TransactionDetail]{}, nil
-			},
-		)
-		assert.NoError(t, err)
-		assert.True(t, loaded)
-
-		txn, err = result.Load()
-		assert.NoError(t, err)
-		assert.Equal(t, txHash, txn.Hash)
+		assert.Equal(t, txn, txn2)
 	})
 
-	t.Run("PendingTransactionHit", func(t *testing.T) {
-		signedTx, encoded, err := buildEIP1559Tx(
-			1,
-			big.NewInt(1000000000),
-			big.NewInt(50000000000),
-			21000,
-			big.NewInt(1000000000),
-		)
-		assert.NoError(t, err)
-
-		pendingHash := signedTx.Hash()
-		ethCache.AddPendingTransaction(pendingHash, encoded)
-
-		rawGetter := func() (cacheTypes.Lazy[*types.TransactionDetail], error) {
-			t.Fatal("rawGetter should not be called for pending transaction")
-			return cacheTypes.Lazy[*types.TransactionDetail]{}, nil
+	t.Run("WithinExemptionPeriod", func(t *testing.T) {
+		pendingTxn := &ethPendingTxn{
+			createdAt: time.Now(),
 		}
-
-		result, loaded, err := ethCache.GetTransactionByHashWithFunc(nodeName, pendingHash, rawGetter)
-		assert.NoError(t, err)
-		assert.True(t, loaded)
-
-		txn, err := result.Load()
-		assert.NoError(t, err)
-		assert.Equal(t, pendingHash, txn.Hash)
-	})
-}
-
-func TestGetTransactionReceiptWithFunc(t *testing.T) {
-	ethCache := newEthCache(newEthCacheConfig())
-
-	t.Run("NoPendingTransactionCache", func(t *testing.T) {
-		txHash := common.HexToHash("0xabc123456")
-		rawGetterCalled := false
-
-		rawGetter := func() (cacheTypes.Lazy[*types.Receipt], error) {
-			rawGetterCalled = true
-			return cacheTypes.NewLazy(&types.Receipt{TransactionHash: txHash})
-		}
-
-		lazy, loaded, err := ethCache.GetTransactionReceiptWithFunc(nodeName, txHash, rawGetter)
-		assert.NoError(t, err)
-		assert.False(t, loaded)
-		assert.True(t, rawGetterCalled)
-
-		receipt, err := lazy.Load()
-		assert.NoError(t, err)
-		assert.Equal(t, txHash, receipt.TransactionHash)
-
-		// Cache hit after first call
-		result, loaded, err := ethCache.GetTransactionReceiptWithFunc(nodeName, txHash,
-			func() (cacheTypes.Lazy[*types.Receipt], error) {
-				t.Fatal("rawGetter should not be called on cache hit")
-				return cacheTypes.Lazy[*types.Receipt]{}, nil
-			},
-		)
-		assert.NoError(t, err)
-		assert.True(t, loaded)
-
-		receipt, err = result.Load()
-		assert.NoError(t, err)
-		assert.Equal(t, txHash, receipt.TransactionHash)
+		pendingTxn.MarkChecked()
+		assert.False(t, pendingTxn.ShouldCheckNow(3*time.Second, time.Second))
 	})
 
-	t.Run("PendingTransactionHit", func(t *testing.T) {
-		signedTx, encoded, err := buildEIP1559Tx(
-			0,
-			big.NewInt(1000000000),
-			big.NewInt(50000000000),
-			21000,
-			big.NewInt(1000000000),
-		)
-		assert.NoError(t, err)
-
-		pendingHash := signedTx.Hash()
-		ethCache.AddPendingTransaction(pendingHash, encoded)
-
-		rawGetter := func() (cacheTypes.Lazy[*types.Receipt], error) {
-			t.Fatal("rawGetter should not be called for pending transaction")
-			return cacheTypes.Lazy[*types.Receipt]{}, nil
+	t.Run("AfterExemptionBeforeInterval", func(t *testing.T) {
+		pendingTxn := &ethPendingTxn{
+			createdAt:     time.Now().Add(-6 * time.Second),
+			lastCheckedAt: time.Now().Add(-500 * time.Millisecond),
 		}
+		assert.False(t, pendingTxn.ShouldCheckNow(3*time.Second, time.Second))
+	})
 
-		result, loaded, err := ethCache.GetTransactionReceiptWithFunc(nodeName, pendingHash, rawGetter)
-		assert.NoError(t, err)
-		assert.True(t, loaded)
-
-		receipt, err := result.Load()
-		assert.NoError(t, err)
-		assert.Nil(t, receipt)
+	t.Run("AfterExemptionAndInterval", func(t *testing.T) {
+		pendingTxn := &ethPendingTxn{
+			createdAt:     time.Now().Add(-6 * time.Second),
+			lastCheckedAt: time.Now().Add(-2 * time.Second),
+		}
+		assert.True(t, pendingTxn.ShouldCheckNow(3*time.Second, time.Second))
 	})
 }
 
 // buildSignedLegacyTx returns a signed legacy transaction and its RLP-encoded bytes.
-func buildSignedLegacyTx(nonce uint64, gasPrice *big.Int, gasLimit uint64, value *big.Int) (*types.Transaction, []byte, error) {
+func buildSignedLegacyTx(nonce uint64) (*types.Transaction, []byte, error) {
 	privateKey, err := crypto.HexToECDSA(testPrivateKeyHex)
 	if err != nil {
 		return nil, nil, err
@@ -304,7 +234,7 @@ func buildSignedLegacyTx(nonce uint64, gasPrice *big.Int, gasLimit uint64, value
 }
 
 // buildEIP1559Tx returns a signed EIP1559 transaction and its RLP-encoded bytes.
-func buildEIP1559Tx(nonce uint64, gasTipCap, gasFeeCap *big.Int, gas uint64, value *big.Int) (*types.Transaction, []byte, error) {
+func buildEIP1559Tx(nonce uint64) (*types.Transaction, []byte, error) {
 	privateKey, err := crypto.HexToECDSA(testPrivateKeyHex)
 	if err != nil {
 		return nil, nil, err
@@ -316,7 +246,7 @@ func buildEIP1559Tx(nonce uint64, gasTipCap, gasFeeCap *big.Int, gas uint64, val
 		Nonce:     nonce,
 		GasTipCap: gasTipCap,
 		GasFeeCap: gasFeeCap,
-		Gas:       gas,
+		Gas:       gasLimit,
 		To:        &toAddr,
 		Value:     value,
 	}

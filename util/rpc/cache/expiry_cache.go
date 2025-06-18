@@ -125,3 +125,7 @@ func (caches *keyExpiryLruCaches) get(cacheKey string) (interface{}, bool) {
 	}
 	return nil, false
 }
+
+func (caches *keyExpiryLruCaches) del(cacheKey string) bool {
+	return caches.key2Caches.Del(cacheKey)
+}

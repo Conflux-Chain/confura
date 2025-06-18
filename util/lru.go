@@ -45,6 +45,11 @@ func (c *ExpirableLruCache) Add(key, value interface{}) bool {
 	return c.add(key, value)
 }
 
+// Del removes a key-value pair. Returns true if the key existed.
+func (c *ExpirableLruCache) Del(key interface{}) bool {
+	return c.lru.Remove(key)
+}
+
 // Get looks up a key's value from the cache. Will purge the entry and return nil
 // if the entry expired.
 func (c *ExpirableLruCache) Get(key interface{}) (v interface{}, found bool) {
