@@ -213,11 +213,6 @@ func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.Tr
 }
 
 func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
-	pendingTxn, _, expired, err := lruCache.EthDefault.GetPendingTransaction(txHash)
-	if err != nil {
-		return res, err
-	}
-
 	lazyTxn, err := c.dataCache.GetTransactionByHash(txHash)
 	if err != nil {
 		return
@@ -228,6 +223,10 @@ func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cache
 		return
 	}
 
+	pendingTxn, _, expired, err := lruCache.EthDefault.GetPendingTransaction(txHash)
+	if err != nil {
+		return res, err
+	}
 	if expired { // Check if transaction is mined
 		txn, err := lazyTxn.Load()
 		if err != nil {
