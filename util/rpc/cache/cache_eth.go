@@ -284,7 +284,7 @@ func (t *ethPendingTxn) Set(txn *types.TransactionDetail) {
 	t.val.Store(txn)
 }
 
-// Set gets the pending transaction detail
+// Get gets the pending transaction detail
 func (t *ethPendingTxn) Get() (*types.TransactionDetail, bool) {
 	v, ok := t.val.Load().(*types.TransactionDetail)
 	return v, ok
