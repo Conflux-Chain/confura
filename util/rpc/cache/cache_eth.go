@@ -6,12 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
-	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go/client"
@@ -248,159 +247,51 @@ func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockN
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func (cache *EthCache) AddPendingTransaction(txHash common.Hash, txnRlpData []byte) {
-	cache.pendingTxnCache.getOrUpdate(txHash.String(), func() (any, error) {
+func (cache *EthCache) AddPendingTransaction(txn *types.TransactionDetail) error {
+	txnHash := txn.Hash.String()
+	if _, ok := cache.pendingTxnCache.get(txnHash); ok {
+		return nil
+	}
+
+	// Cache the pending transaction
+	cache.pendingTxnCache.getOrUpdate(txnHash, func() (any, error) {
 		return &ethPendingTxn{
-			encoded:       txnRlpData,
-			createdAt:     time.Now(),
-			lastCheckedAt: time.Now(),
+			TransactionDetail: txn,
+			createdAt:         time.Now(),
 		}, nil
 	})
+
+	return nil
 }
 
-func (cache *EthCache) GetPendingTransaction(
-	txHash common.Hash,
-	fetchTxn func(common.Hash) (*types.TransactionDetail, error),
-) (txn *types.TransactionDetail, hitImmediate, hitLazy bool, err error) {
-	pendingTxn, ok := cache.getPendingTransaction(txHash)
-	if !ok {
-		return nil, false, false, nil
-	}
-
-	if pendingTxn.ShouldCheckNow(cache.PendingTxnCheckExemption, cache.PendingTxnCheckInterval) {
-		txn, err := fetchTxn(txHash)
-		if err != nil {
-			return nil, false, false, err
-		}
-
-		pendingTxn.MarkChecked()
-		if txn != nil && txn.BlockHash != nil && txn.BlockNumber != nil {
-			cache.pendingTxnCache.del(txHash.String())
-		}
-		return txn, false, true, nil
-	}
-
-	txn, err = pendingTxn.ParsedTransaction()
-	if err != nil {
-		return nil, false, false, errors.WithMessage(err, "failed to parse transaction detail")
-	}
-	return txn, true, false, nil
-}
-
-func (cache *EthCache) GetPendingTransactionReceipt(
-	txHash common.Hash,
-	fetchReceipt func(common.Hash) (*types.Receipt, error),
-) (receipt *types.Receipt, hitImmediate, hitLazy bool, err error) {
-	pendingTxn, ok := cache.getPendingTransaction(txHash)
-	if !ok {
-		return nil, false, false, nil
-	}
-
-	if pendingTxn.ShouldCheckNow(cache.PendingTxnCheckExemption, cache.PendingTxnCheckInterval) {
-		receipt, err := fetchReceipt(txHash)
-		if err != nil {
-			return nil, false, false, err
-		}
-
-		pendingTxn.MarkChecked()
-		if receipt != nil {
-			cache.pendingTxnCache.del(txHash.String())
-		}
-		return receipt, false, true, nil
-	}
-
-	// Pending transaction doesn't have receipt
-	return nil, true, false, nil
-}
-
-func (cache *EthCache) getPendingTransaction(txHash common.Hash) (*ethPendingTxn, bool) {
+func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (pendingTxn *ethPendingTxn, loaded, expired bool, err error) {
 	v, ok := cache.pendingTxnCache.get(txHash.String())
 	if !ok {
-		return nil, false
+		return nil, false, false, nil
 	}
-	return v.(*ethPendingTxn), true
+
+	pendingTxn = v.(*ethPendingTxn)
+	expired = pendingTxn.shouldCheckNow(cache.PendingTxnCheckExemption, cache.PendingTxnCheckInterval)
+	return pendingTxn, true, expired, nil
+}
+
+func (cache *EthCache) RemovePendingTransaction(txHash common.Hash) bool {
+	return cache.pendingTxnCache.del(txHash.String())
 }
 
 type ethPendingTxn struct {
-	mu            sync.Mutex
-	parsed        *types.TransactionDetail // Parsed transaction detail
-	encoded       []byte                   // RLP encoded data for lazy decoding
-	createdAt     time.Time                // Creation time
-	lastCheckedAt time.Time                // Last check time of mined status
-}
-
-func (t *ethPendingTxn) ParsedTransaction() (*types.TransactionDetail, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.parsed != nil {
-		return t.parsed, nil
-	}
-
-	if len(t.encoded) == 0 {
-		return nil, nil
-	}
-
-	// Decode the transaction
-	var txn types.Transaction
-	if err := txn.UnmarshalBinary(t.encoded); err != nil {
-		return nil, errors.WithMessage(err, "failed to unmarshal transaction")
-	}
-
-	// Build the transaction detail
-	txnDetail, err := buildSignedTransactionDetail(&txn)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to build transaction detail")
-	}
-
-	t.encoded, t.parsed = nil, txnDetail
-	return t.parsed, nil
+	*types.TransactionDetail
+	createdAt     time.Time    // Creation time
+	lastCheckedAt atomic.Int64 // Last check timestamp of mined status
 }
 
 // MarkChecked marks the mined status as checked
 func (t *ethPendingTxn) MarkChecked() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.lastCheckedAt = time.Now()
+	t.lastCheckedAt.Store(time.Now().Unix())
 }
 
-// ShouldCheckNow returns whether it's time to check if the tx is mined.
-func (t *ethPendingTxn) ShouldCheckNow(exemption, checkInterval time.Duration) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return time.Since(t.createdAt) > exemption && time.Since(t.lastCheckedAt) > checkInterval
-}
-
-func buildSignedTransactionDetail(txn *types.Transaction) (*types.TransactionDetail, error) {
-	chainId := txn.ChainId()
-	txnType := uint64(txn.Type())
-	sigV, sigR, sigS := txn.RawSignatureValues()
-
-	// Recover the sender address
-	singer := ethTypes.LatestSignerForChainID(chainId)
-	from, err := ethTypes.Sender(singer, txn)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to recover transaction sender")
-	}
-
-	return &types.TransactionDetail{
-		// Transaction is not included in a block yet, so `BlockHash`, `BlockNumber`, `TransactionIndex`
-		// and `Status` fields are left empty by default.
-		ChainID:              chainId,
-		Nonce:                txn.Nonce(),
-		GasPrice:             txn.GasPrice(),
-		MaxFeePerGas:         txn.GasFeeCap(),
-		MaxPriorityFeePerGas: txn.GasTipCap(),
-		Gas:                  txn.Gas(),
-		From:                 from,
-		To:                   txn.To(),
-		Value:                txn.Value(),
-		Input:                txn.Data(),
-		V:                    sigV,
-		R:                    sigR,
-		S:                    sigS,
-		Accesses:             txn.AccessList(),
-		Hash:                 txn.Hash(),
-		Type:                 &txnType,
-	}, nil
+// ShouldCheckNow returns whether it's time to check if the pending transaction is mined.
+func (t *ethPendingTxn) shouldCheckNow(exemption, checkInterval time.Duration) bool {
+	return time.Since(t.createdAt) > exemption &&
+		time.Since(time.Unix(t.lastCheckedAt.Load(), 0)) > checkInterval
 }

@@ -8,10 +8,12 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	lruCache "github.com/Conflux-Chain/confura/util/rpc/cache"
 	"github.com/ethereum/go-ethereum/common"
+	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/openweb3/go-rpc-provider/interfaces"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/client"
+	"github.com/openweb3/web3go/types"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -204,7 +206,18 @@ func (c cachedRpcEthClient) SendRawTransaction(rawTx []byte) (common.Hash, error
 		return common.Hash{}, err
 	}
 
-	lruCache.EthDefault.AddPendingTransaction(txnHash, rawTx)
+	var txn types.Transaction
+	if err := txn.UnmarshalBinary(rawTx); err != nil {
+		return common.Hash{}, errors.WithMessage(err, "failed to unmarshal transaction")
+	}
+
+	// Build the transaction detail
+	txnDetail, err := buildSignedTransactionDetail(&txn)
+	if err != nil {
+		return common.Hash{}, errors.WithMessage(err, "failed to build transaction detail")
+	}
+
+	lruCache.EthDefault.AddPendingTransaction(txnDetail)
 	return txnHash, nil
 }
 
@@ -213,21 +226,38 @@ func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.Tr
 }
 
 func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
-	txn, hitImmediate, hitLazy, err := lruCache.EthDefault.GetPendingTransaction(txHash, c.RpcEthClient.TransactionByHash)
+	pendingTxn, loaded, expired, err := lruCache.EthDefault.GetPendingTransaction(txHash)
 	if err != nil {
 		return res, err
 	}
 
-	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(hitImmediate)
-	if hitImmediate || hitLazy {
-		return cacheTypes.NewLazy(txn)
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(loaded && !expired)
+	if loaded && !expired {
+		return cacheTypes.NewLazy(pendingTxn.TransactionDetail)
 	}
 
 	lazyTxn, err := c.dataCache.GetTransactionByHash(txHash)
 	if err != nil {
-		return lazyTxn, err
+		return
 	}
-	return resolveLazyWithFallback(c, "eth_getTransactionByHash", lazyTxn, txHash)
+
+	lazyTxn, err = resolveLazyWithFallback(c, "eth_getTransactionByHash", lazyTxn, txHash)
+	if err != nil {
+		return
+	}
+
+	if expired { // Check if transaction is mined
+		txn, err := lazyTxn.Load()
+		if err != nil {
+			return res, err
+		}
+
+		pendingTxn.MarkChecked()
+		if txn != nil && txn.BlockHash != nil && txn.BlockNumber != nil {
+			lruCache.EthDefault.RemovePendingTransaction(txHash)
+		}
+	}
+	return lazyTxn, nil
 }
 
 func (c cachedRpcEthClient) TransactionByBlockHashAndIndex(blockHash common.Hash, index uint) (*web3Types.TransactionDetail, error) {
@@ -262,21 +292,38 @@ func (c cachedRpcEthClient) TransactionReceipt(txHash common.Hash) (*web3Types.R
 }
 
 func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.Receipt], err error) {
-	receipt, hitImmediate, hitLazy, err := lruCache.EthDefault.GetPendingTransactionReceipt(txHash, c.RpcEthClient.TransactionReceipt)
+	pendingTxn, loaded, expired, err := lruCache.EthDefault.GetPendingTransaction(txHash)
 	if err != nil {
 		return res, err
 	}
 
-	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(hitImmediate)
-	if hitImmediate || hitLazy {
-		return cacheTypes.NewLazy(receipt)
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(loaded && !expired)
+	if loaded && !expired {
+		return res, nil
 	}
 
 	lazyReceipt, err := c.dataCache.GetTransactionReceipt(txHash)
 	if err != nil {
 		return lazyReceipt, err
 	}
-	return resolveLazyWithFallback(c, "eth_getTransactionReceipt", lazyReceipt, txHash)
+
+	lazyReceipt, err = resolveLazyWithFallback(c, "eth_getTransactionReceipt", lazyReceipt, txHash)
+	if err != nil {
+		return lazyReceipt, err
+	}
+
+	if expired { // Check if transaction is mined
+		receipt, err := lazyReceipt.Load()
+		if err != nil {
+			return res, err
+		}
+
+		pendingTxn.MarkChecked()
+		if receipt != nil {
+			lruCache.EthDefault.RemovePendingTransaction(txHash)
+		}
+	}
+	return lazyReceipt, nil
 }
 
 func (c cachedRpcEthClient) BlockReceipts(blockNrOrHash *web3Types.BlockNumberOrHash) (res []*web3Types.Receipt, _ error) {
@@ -389,4 +436,38 @@ func loadLazyIfNoError[T any](lazy cacheTypes.Lazy[T], err error) (res T, _ erro
 		return res, err
 	}
 	return lazy.Load()
+}
+
+func buildSignedTransactionDetail(txn *types.Transaction) (*types.TransactionDetail, error) {
+	chainId := txn.ChainId()
+	txnType := uint64(txn.Type())
+	sigV, sigR, sigS := txn.RawSignatureValues()
+
+	// Recover the sender address
+	singer := ethTypes.LatestSignerForChainID(chainId)
+	from, err := ethTypes.Sender(singer, txn)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to recover transaction sender")
+	}
+
+	return &types.TransactionDetail{
+		// Transaction is not included in a block yet, so `BlockHash`, `BlockNumber`, `TransactionIndex`
+		// and `Status` fields are left empty by default.
+		ChainID:              chainId,
+		Nonce:                txn.Nonce(),
+		GasPrice:             txn.GasPrice(),
+		MaxFeePerGas:         txn.GasFeeCap(),
+		MaxPriorityFeePerGas: txn.GasTipCap(),
+		Gas:                  txn.Gas(),
+		From:                 from,
+		To:                   txn.To(),
+		Value:                txn.Value(),
+		Input:                txn.Data(),
+		V:                    sigV,
+		R:                    sigR,
+		S:                    sigS,
+		Accesses:             txn.AccessList(),
+		Hash:                 txn.Hash(),
+		Type:                 &txnType,
+	}, nil
 }
