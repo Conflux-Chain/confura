@@ -214,12 +214,14 @@ func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.Tr
 
 func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
 	pendingTxn, loaded, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
-	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(loaded && !expired)
 	if loaded && !expired {
 		if txn, ok := pendingTxn.Get(); ok {
+			metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(true)
 			return cacheTypes.NewLazy(txn)
 		}
 	}
+
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(false)
 
 	lazyTxn, err := c.dataCache.GetTransactionByHash(txHash)
 	if err != nil {
