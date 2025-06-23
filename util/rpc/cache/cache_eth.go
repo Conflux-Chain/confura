@@ -247,26 +247,23 @@ func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockN
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func (cache *EthCache) AddPendingTransaction(txn *types.TransactionDetail) {
-	txnHash := txn.Hash.String()
-	if _, ok := cache.pendingTxnCache.get(txnHash); !ok {
+func (cache *EthCache) AddPendingTransaction(txnHash common.Hash) {
+	txnHashStr := txnHash.String()
+	if _, ok := cache.pendingTxnCache.get(txnHashStr); !ok {
 		// Cache the pending transaction
-		cache.pendingTxnCache.getOrUpdate(txnHash, func() (any, error) {
-			return &ethPendingTxn{
-				TransactionDetail: txn,
-				createdAt:         time.Now(),
-			}, nil
+		cache.pendingTxnCache.getOrUpdate(txnHashStr, func() (any, error) {
+			return &ethPendingTxnInfo{createdAt: time.Now()}, nil
 		})
 	}
 }
 
-func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (pendingTxn *ethPendingTxn, loaded, expired bool, err error) {
+func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (pendingTxn *ethPendingTxnInfo, loaded, expired bool, err error) {
 	v, ok := cache.pendingTxnCache.get(txHash.String())
 	if !ok {
 		return nil, false, false, nil
 	}
 
-	pendingTxn = v.(*ethPendingTxn)
+	pendingTxn = v.(*ethPendingTxnInfo)
 	expired = pendingTxn.shouldCheckNow(cache.PendingTxnCheckExemption, cache.PendingTxnCheckInterval)
 	return pendingTxn, true, expired, nil
 }
@@ -275,19 +272,18 @@ func (cache *EthCache) RemovePendingTransaction(txHash common.Hash) bool {
 	return cache.pendingTxnCache.del(txHash.String())
 }
 
-type ethPendingTxn struct {
-	*types.TransactionDetail
+type ethPendingTxnInfo struct {
 	createdAt     time.Time    // Creation time
 	lastCheckedAt atomic.Int64 // Last check timestamp of mined status
 }
 
 // MarkChecked marks the mined status as checked
-func (t *ethPendingTxn) MarkChecked() {
+func (t *ethPendingTxnInfo) MarkChecked() {
 	t.lastCheckedAt.Store(time.Now().UnixMilli())
 }
 
 // ShouldCheckNow returns whether it's time to check if the pending transaction is mined.
-func (t *ethPendingTxn) shouldCheckNow(exemption, checkInterval time.Duration) bool {
+func (t *ethPendingTxnInfo) shouldCheckNow(exemption, checkInterval time.Duration) bool {
 	return time.Since(t.createdAt) > exemption &&
 		time.Since(time.UnixMilli(t.lastCheckedAt.Load())) > checkInterval
 }

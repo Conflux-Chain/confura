@@ -8,12 +8,10 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	lruCache "github.com/Conflux-Chain/confura/util/rpc/cache"
 	"github.com/ethereum/go-ethereum/common"
-	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/openweb3/go-rpc-provider/interfaces"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	"github.com/openweb3/web3go"
 	"github.com/openweb3/web3go/client"
-	"github.com/openweb3/web3go/types"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -206,29 +204,8 @@ func (c cachedRpcEthClient) SendRawTransaction(rawTx []byte) (common.Hash, error
 		return common.Hash{}, err
 	}
 
-	if err := c.cachePendingTxn(rawTx); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"nodeName": c.nodeName,
-			"txnHash":  txnHash,
-		}).WithError(err).Info("failed to cache pending transaction")
-	}
+	lruCache.EthDefault.AddPendingTransaction(txnHash)
 	return txnHash, nil
-}
-
-func (c cachedRpcEthClient) cachePendingTxn(rawTx []byte) error {
-	var txn types.Transaction
-	if err := txn.UnmarshalBinary(rawTx); err != nil {
-		return errors.WithMessage(err, "failed to unmarshal transaction")
-	}
-
-	// Build the transaction detail
-	txnDetail, err := buildSignedTransactionDetail(&txn)
-	if err != nil {
-		return errors.WithMessage(err, "failed to build transaction detail")
-	}
-
-	lruCache.EthDefault.AddPendingTransaction(txnDetail)
-	return nil
 }
 
 func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.TransactionDetail, error) {
@@ -236,14 +213,9 @@ func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.Tr
 }
 
 func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
-	pendingTxn, loaded, expired, err := lruCache.EthDefault.GetPendingTransaction(txHash)
+	pendingTxn, _, expired, err := lruCache.EthDefault.GetPendingTransaction(txHash)
 	if err != nil {
 		return res, err
-	}
-
-	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(loaded && !expired)
-	if loaded && !expired {
-		return cacheTypes.NewLazy(pendingTxn.TransactionDetail)
 	}
 
 	lazyTxn, err := c.dataCache.GetTransactionByHash(txHash)
@@ -446,38 +418,4 @@ func loadLazyIfNoError[T any](lazy cacheTypes.Lazy[T], err error) (res T, _ erro
 		return res, err
 	}
 	return lazy.Load()
-}
-
-func buildSignedTransactionDetail(txn *types.Transaction) (*types.TransactionDetail, error) {
-	chainId := txn.ChainId()
-	txnType := uint64(txn.Type())
-	sigV, sigR, sigS := txn.RawSignatureValues()
-
-	// Recover the sender address
-	singer := ethTypes.LatestSignerForChainID(chainId)
-	from, err := ethTypes.Sender(singer, txn)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to recover transaction sender")
-	}
-
-	return &types.TransactionDetail{
-		// Transaction is not included in a block yet, so `BlockHash`, `BlockNumber`, `TransactionIndex`
-		// and `Status` fields are left empty by default.
-		ChainID:              chainId,
-		Nonce:                txn.Nonce(),
-		GasPrice:             txn.GasPrice(),
-		MaxFeePerGas:         txn.GasFeeCap(),
-		MaxPriorityFeePerGas: txn.GasTipCap(),
-		Gas:                  txn.Gas(),
-		From:                 from,
-		To:                   txn.To(),
-		Value:                txn.Value(),
-		Input:                txn.Data(),
-		V:                    sigV,
-		R:                    sigR,
-		S:                    sigS,
-		Accesses:             txn.AccessList(),
-		Hash:                 txn.Hash(),
-		Type:                 &txnType,
-	}, nil
 }
