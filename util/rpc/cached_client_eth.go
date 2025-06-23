@@ -206,19 +206,29 @@ func (c cachedRpcEthClient) SendRawTransaction(rawTx []byte) (common.Hash, error
 		return common.Hash{}, err
 	}
 
+	if err := c.cachePendingTxn(rawTx); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"nodeName": c.nodeName,
+			"txnHash":  txnHash,
+		}).WithError(err).Info("failed to cache pending transaction")
+	}
+	return txnHash, nil
+}
+
+func (c cachedRpcEthClient) cachePendingTxn(rawTx []byte) error {
 	var txn types.Transaction
 	if err := txn.UnmarshalBinary(rawTx); err != nil {
-		return common.Hash{}, errors.WithMessage(err, "failed to unmarshal transaction")
+		return errors.WithMessage(err, "failed to unmarshal transaction")
 	}
 
 	// Build the transaction detail
 	txnDetail, err := buildSignedTransactionDetail(&txn)
 	if err != nil {
-		return common.Hash{}, errors.WithMessage(err, "failed to build transaction detail")
+		return errors.WithMessage(err, "failed to build transaction detail")
 	}
 
 	lruCache.EthDefault.AddPendingTransaction(txnDetail)
-	return txnHash, nil
+	return nil
 }
 
 func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.TransactionDetail, error) {

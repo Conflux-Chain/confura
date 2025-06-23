@@ -247,21 +247,17 @@ func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockN
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func (cache *EthCache) AddPendingTransaction(txn *types.TransactionDetail) error {
+func (cache *EthCache) AddPendingTransaction(txn *types.TransactionDetail) {
 	txnHash := txn.Hash.String()
-	if _, ok := cache.pendingTxnCache.get(txnHash); ok {
-		return nil
+	if _, ok := cache.pendingTxnCache.get(txnHash); !ok {
+		// Cache the pending transaction
+		cache.pendingTxnCache.getOrUpdate(txnHash, func() (any, error) {
+			return &ethPendingTxn{
+				TransactionDetail: txn,
+				createdAt:         time.Now(),
+			}, nil
+		})
 	}
-
-	// Cache the pending transaction
-	cache.pendingTxnCache.getOrUpdate(txnHash, func() (any, error) {
-		return &ethPendingTxn{
-			TransactionDetail: txn,
-			createdAt:         time.Now(),
-		}, nil
-	})
-
-	return nil
 }
 
 func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (pendingTxn *ethPendingTxn, loaded, expired bool, err error) {
@@ -287,11 +283,11 @@ type ethPendingTxn struct {
 
 // MarkChecked marks the mined status as checked
 func (t *ethPendingTxn) MarkChecked() {
-	t.lastCheckedAt.Store(time.Now().Unix())
+	t.lastCheckedAt.Store(time.Now().UnixMilli())
 }
 
 // ShouldCheckNow returns whether it's time to check if the pending transaction is mined.
 func (t *ethPendingTxn) shouldCheckNow(exemption, checkInterval time.Duration) bool {
 	return time.Since(t.createdAt) > exemption &&
-		time.Since(time.Unix(t.lastCheckedAt.Load(), 0)) > checkInterval
+		time.Since(time.UnixMilli(t.lastCheckedAt.Load())) > checkInterval
 }

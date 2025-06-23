@@ -21,8 +21,7 @@ func TestEthCachePendingTransaction(t *testing.T) {
 	t.Run("Add and Get PendingTransaction", func(t *testing.T) {
 		ethCache := newEthCache(newEthCacheConfig())
 		tx := mockTransaction("0xaaa")
-		err := ethCache.AddPendingTransaction(tx)
-		assert.NoError(t, err)
+		ethCache.AddPendingTransaction(tx)
 
 		pending, loaded, expired, err := ethCache.GetPendingTransaction(tx.Hash)
 		assert.NoError(t, err)
@@ -34,14 +33,12 @@ func TestEthCachePendingTransaction(t *testing.T) {
 	t.Run("Duplicate Add Should Not Overwrite", func(t *testing.T) {
 		ethCache := newEthCache(newEthCacheConfig())
 		tx := mockTransaction("0xbbb")
-		err := ethCache.AddPendingTransaction(tx)
-		assert.NoError(t, err)
+		ethCache.AddPendingTransaction(tx)
 
 		first, _, _, _ := ethCache.GetPendingTransaction(tx.Hash)
 
 		// Try add again
-		err = ethCache.AddPendingTransaction(tx)
-		assert.NoError(t, err)
+		ethCache.AddPendingTransaction(tx)
 
 		second, _, _, _ := ethCache.GetPendingTransaction(tx.Hash)
 		assert.Equal(t, first, second)
@@ -50,7 +47,7 @@ func TestEthCachePendingTransaction(t *testing.T) {
 	t.Run("Remove PendingTransaction", func(t *testing.T) {
 		ethCache := newEthCache(newEthCacheConfig())
 		tx := mockTransaction("0xccc")
-		_ = ethCache.AddPendingTransaction(tx)
+		ethCache.AddPendingTransaction(tx)
 
 		removed := ethCache.RemovePendingTransaction(tx.Hash)
 		assert.True(t, removed)
@@ -63,11 +60,11 @@ func TestEthCachePendingTransaction(t *testing.T) {
 		// override config for faster test
 		cfg := newEthCacheConfig()
 		cfg.PendingTxnCheckExemption = 1 * time.Second
-		cfg.PendingTxnCheckInterval = 1000 * time.Millisecond
+		cfg.PendingTxnCheckInterval = 500 * time.Millisecond
 		ethCache := newEthCache(cfg)
 
 		tx := mockTransaction("0xddd")
-		_ = ethCache.AddPendingTransaction(tx)
+		ethCache.AddPendingTransaction(tx)
 
 		time.Sleep(1100 * time.Millisecond)
 
