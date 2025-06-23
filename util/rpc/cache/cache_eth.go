@@ -248,13 +248,9 @@ func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockN
 }
 
 func (cache *EthCache) AddPendingTransaction(txnHash common.Hash) {
-	txnHashStr := txnHash.String()
-	if _, ok := cache.pendingTxnCache.get(txnHashStr); !ok {
-		// Cache the pending transaction
-		cache.pendingTxnCache.getOrUpdate(txnHashStr, func() (any, error) {
-			return &ethPendingTxn{createdAt: time.Now()}, nil
-		})
-	}
+	cache.pendingTxnCache.getOrUpdate(txnHash.String(), func() (any, error) {
+		return &ethPendingTxn{createdAt: time.Now()}, nil
+	})
 }
 
 func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (pendingTxn *ethPendingTxn, loaded, expired bool) {
