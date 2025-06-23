@@ -252,38 +252,50 @@ func (cache *EthCache) AddPendingTransaction(txnHash common.Hash) {
 	if _, ok := cache.pendingTxnCache.get(txnHashStr); !ok {
 		// Cache the pending transaction
 		cache.pendingTxnCache.getOrUpdate(txnHashStr, func() (any, error) {
-			return &ethPendingTxnInfo{createdAt: time.Now()}, nil
+			return &ethPendingTxn{createdAt: time.Now()}, nil
 		})
 	}
 }
 
-func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (pendingTxn *ethPendingTxnInfo, loaded, expired bool, err error) {
+func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (pendingTxn *ethPendingTxn, loaded, expired bool) {
 	v, ok := cache.pendingTxnCache.get(txHash.String())
 	if !ok {
-		return nil, false, false, nil
+		return nil, false, false
 	}
 
-	pendingTxn = v.(*ethPendingTxnInfo)
+	pendingTxn = v.(*ethPendingTxn)
 	expired = pendingTxn.shouldCheckNow(cache.PendingTxnCheckExemption, cache.PendingTxnCheckInterval)
-	return pendingTxn, true, expired, nil
+	return pendingTxn, true, expired
 }
 
 func (cache *EthCache) RemovePendingTransaction(txHash common.Hash) bool {
 	return cache.pendingTxnCache.del(txHash.String())
 }
 
-type ethPendingTxnInfo struct {
+type ethPendingTxn struct {
+	val           atomic.Value
 	createdAt     time.Time    // Creation time
 	lastCheckedAt atomic.Int64 // Last check timestamp of mined status
 }
 
 // MarkChecked marks the mined status as checked
-func (t *ethPendingTxnInfo) MarkChecked() {
+func (t *ethPendingTxn) MarkChecked() {
 	t.lastCheckedAt.Store(time.Now().UnixMilli())
 }
 
+// Set updates the pending transaction detail
+func (t *ethPendingTxn) Set(txn *types.TransactionDetail) {
+	t.val.Store(txn)
+}
+
+// Set gets the pending transaction detail
+func (t *ethPendingTxn) Get() (*types.TransactionDetail, bool) {
+	v, ok := t.val.Load().(*types.TransactionDetail)
+	return v, ok
+}
+
 // ShouldCheckNow returns whether it's time to check if the pending transaction is mined.
-func (t *ethPendingTxnInfo) shouldCheckNow(exemption, checkInterval time.Duration) bool {
+func (t *ethPendingTxn) shouldCheckNow(exemption, checkInterval time.Duration) bool {
 	return time.Since(t.createdAt) > exemption &&
 		time.Since(time.UnixMilli(t.lastCheckedAt.Load())) > checkInterval
 }

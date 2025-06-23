@@ -16,8 +16,7 @@ func TestEthCachePendingTransaction(t *testing.T) {
 		txHash := common.HexToHash("0xaaa")
 		ethCache.AddPendingTransaction(txHash)
 
-		pending, loaded, expired, err := ethCache.GetPendingTransaction(txHash)
-		assert.NoError(t, err)
+		pending, loaded, expired := ethCache.GetPendingTransaction(txHash)
 		assert.True(t, loaded)
 		assert.False(t, expired)
 		assert.NotNil(t, pending)
@@ -28,12 +27,12 @@ func TestEthCachePendingTransaction(t *testing.T) {
 		txHash := common.HexToHash("0xbbb")
 		ethCache.AddPendingTransaction(txHash)
 
-		first, _, _, _ := ethCache.GetPendingTransaction(txHash)
+		first, _, _ := ethCache.GetPendingTransaction(txHash)
 
 		// Try add again
 		ethCache.AddPendingTransaction(txHash)
 
-		second, _, _, _ := ethCache.GetPendingTransaction(txHash)
+		second, _, _ := ethCache.GetPendingTransaction(txHash)
 		assert.Equal(t, first, second)
 	})
 
@@ -45,7 +44,7 @@ func TestEthCachePendingTransaction(t *testing.T) {
 		removed := ethCache.RemovePendingTransaction(txHash)
 		assert.True(t, removed)
 
-		_, loaded, _, _ := ethCache.GetPendingTransaction(txHash)
+		_, loaded, _ := ethCache.GetPendingTransaction(txHash)
 		assert.False(t, loaded)
 	})
 
@@ -61,22 +60,21 @@ func TestEthCachePendingTransaction(t *testing.T) {
 
 		time.Sleep(1100 * time.Millisecond)
 
-		pending, loaded, expired, err := ethCache.GetPendingTransaction(txHash)
-		assert.NoError(t, err)
+		pending, loaded, expired := ethCache.GetPendingTransaction(txHash)
 		assert.True(t, loaded)
 		assert.True(t, expired, "should expire after exemption")
 
 		pending.MarkChecked()
-		_, _, expired, _ = ethCache.GetPendingTransaction(txHash)
+		_, _, expired = ethCache.GetPendingTransaction(txHash)
 		assert.False(t, expired, "just checked, should not expire")
 
 		time.Sleep(cfg.PendingTxnCheckInterval + 100*time.Millisecond)
-		_, _, expired, _ = ethCache.GetPendingTransaction(txHash)
+		_, _, expired = ethCache.GetPendingTransaction(txHash)
 		assert.True(t, expired, "should expire after interval")
 	})
 
 	t.Run("MarkChecked updates timestamp", func(t *testing.T) {
-		ptx := &ethPendingTxnInfo{
+		ptx := &ethPendingTxn{
 			createdAt: time.Now().Add(-5 * time.Minute),
 		}
 

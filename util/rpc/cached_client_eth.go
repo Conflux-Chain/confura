@@ -213,6 +213,14 @@ func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.Tr
 }
 
 func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
+	pendingTxn, loaded, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(loaded && !expired)
+	if loaded && !expired {
+		if txn, ok := pendingTxn.Get(); ok {
+			return cacheTypes.NewLazy(txn)
+		}
+	}
+
 	lazyTxn, err := c.dataCache.GetTransactionByHash(txHash)
 	if err != nil {
 		return
@@ -223,19 +231,17 @@ func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cache
 		return
 	}
 
-	pendingTxn, _, expired, err := lruCache.EthDefault.GetPendingTransaction(txHash)
-	if err != nil {
-		return res, err
-	}
-	if expired { // Check if transaction is mined
+	if loaded { // Check if transaction is mined
 		txn, err := lazyTxn.Load()
 		if err != nil {
 			return res, err
 		}
 
-		pendingTxn.MarkChecked()
 		if txn != nil && txn.BlockHash != nil && txn.BlockNumber != nil {
 			lruCache.EthDefault.RemovePendingTransaction(txHash)
+		} else {
+			pendingTxn.MarkChecked()
+			pendingTxn.Set(txn)
 		}
 	}
 	return lazyTxn, nil
@@ -273,11 +279,7 @@ func (c cachedRpcEthClient) TransactionReceipt(txHash common.Hash) (*web3Types.R
 }
 
 func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.Receipt], err error) {
-	pendingTxn, loaded, expired, err := lruCache.EthDefault.GetPendingTransaction(txHash)
-	if err != nil {
-		return res, err
-	}
-
+	pendingTxn, loaded, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
 	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(loaded && !expired)
 	if loaded && !expired {
 		return res, nil
@@ -294,14 +296,10 @@ func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (res cach
 	}
 
 	if expired { // Check if transaction is mined
-		receipt, err := lazyReceipt.Load()
-		if err != nil {
-			return res, err
-		}
-
-		pendingTxn.MarkChecked()
-		if receipt != nil {
+		if !lazyReceipt.IsEmptyOrNull() {
 			lruCache.EthDefault.RemovePendingTransaction(txHash)
+		} else {
+			pendingTxn.MarkChecked()
 		}
 	}
 	return lazyReceipt, nil
