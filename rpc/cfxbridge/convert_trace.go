@@ -19,7 +19,7 @@ var (
 	}
 )
 
-func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.TraceType, cfxTraceAction interface{}) types.LocalizedTrace {
+func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.TraceType, cfxTraceAction interface{}) *types.LocalizedTrace {
 	// transaction position
 	var txPos *hexutil.Uint64
 	if ethTrace.TransactionPosition != nil {
@@ -34,7 +34,7 @@ func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.Trace
 		valid = true
 	}
 
-	return types.LocalizedTrace{
+	return &types.LocalizedTrace{
 		Action:              cfxTraceAction,
 		Valid:               valid,
 		Type:                cfxTraceType,
@@ -46,7 +46,7 @@ func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.Trace
 	}
 }
 
-func convertTraceCall(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32) (types.LocalizedTrace, types.LocalizedTrace) {
+func convertTraceCall(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32) (*types.LocalizedTrace, *types.LocalizedTrace) {
 	ethActionCall := ethTrace.Action.(web3goTypes.Call)
 	cfxTraceCall := convertTrace(ethTrace, types.TRACE_CALL, types.Call{
 		Space:    types.SPACE_EVM,
@@ -81,7 +81,7 @@ func convertTraceCall(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32)
 	return cfxTraceCall, cfxTraceCallResult
 }
 
-func convertTraceCreate(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32) (types.LocalizedTrace, types.LocalizedTrace) {
+func convertTraceCreate(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32) (*types.LocalizedTrace, *types.LocalizedTrace) {
 	ethActionCreate := ethTrace.Action.(web3goTypes.Create)
 	createType := types.CREATE_NONE
 	if ethActionCreate.CreateType != nil {
@@ -126,6 +126,20 @@ func convertTraceCreate(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint3
 	return cfxTraceCreate, cfxTraceCreateResult
 }
 
+func convertTraceSuicide(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32) *types.LocalizedTrace {
+	ethActionSuicide := ethTrace.Action.(web3goTypes.Suicide)
+
+	return convertTrace(ethTrace, types.TRACE_INTERNAL_TRANSFER_ACTIION, types.InternalTransferAction{
+		From:       ConvertAddress(ethActionSuicide.Address, ethNetworkId),
+		FromPocket: types.POCKET_BALANCE,
+		FromSpace:  types.SPACE_EVM,
+		To:         ConvertAddress(ethActionSuicide.RefundAddress, ethNetworkId),
+		ToPocket:   types.POCKET_BALANCE,
+		ToSpace:    types.SPACE_EVM,
+		Value:      hexutil.Big(*ethActionSuicide.Balance),
+	})
+}
+
 func ConvertTrace(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32) (*types.LocalizedTrace, *types.LocalizedTrace) {
 	if ethTrace == nil {
 		return nil, nil
@@ -133,13 +147,12 @@ func ConvertTrace(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32) (*t
 
 	switch ethTrace.Type {
 	case web3goTypes.TRACE_CALL:
-		call, callResult := convertTraceCall(ethTrace, ethNetworkId)
-		return &call, &callResult
+		return convertTraceCall(ethTrace, ethNetworkId)
 	case web3goTypes.TRACE_CREATE:
-		create, createResult := convertTraceCreate(ethTrace, ethNetworkId)
-		return &create, &createResult
-	// Convert TRACE_SUICIDE to Internal_Transfer_action?
-	// case web3goTypes.TRACE_SUICIDE, web3goTypes.TRACE_REWARD:
+		return convertTraceCreate(ethTrace, ethNetworkId)
+	case web3goTypes.TRACE_SUICIDE:
+		return convertTraceSuicide(ethTrace, ethNetworkId), nil
+	// case web3goTypes.TRACE_REWARD:
 	// 	return nil, nil
 	default:
 		return nil, nil
