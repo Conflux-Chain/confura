@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go/client"
@@ -22,13 +24,17 @@ var (
 )
 
 type EthCacheConfig struct {
-	NetVersionExpiration    time.Duration `default:"1m"`
-	ClientVersionExpiration time.Duration `default:"1m"`
-	ChainIdExpiration       time.Duration `default:"8760h"`
-	BlockNumberExpiration   time.Duration `default:"1s"`
-	PriceExpiration         time.Duration `default:"3s"`
-	CallCacheExpiration     time.Duration `default:"1s"`
-	CallCacheSize           int           `default:"128"`
+	NetVersionExpiration      time.Duration `default:"1m"`
+	ClientVersionExpiration   time.Duration `default:"1m"`
+	ChainIdExpiration         time.Duration `default:"8760h"`
+	BlockNumberExpiration     time.Duration `default:"1s"`
+	PriceExpiration           time.Duration `default:"3s"`
+	CallCacheExpiration       time.Duration `default:"1s"`
+	CallCacheSize             int           `default:"1024"`
+	PendingTxnCacheExpiration time.Duration `default:"3m"`
+	PendingTxnCacheSize       int           `default:"1024"`
+	PendingTxnCheckExemption  time.Duration `default:"3s"`
+	PendingTxnCheckInterval   time.Duration `default:"1s"`
 }
 
 // newEthCacheConfig returns a EthCacheConfig with default values.
@@ -47,22 +53,26 @@ func MustInitFromViper() {
 
 // EthCache memory cache for some evm space RPC methods
 type EthCache struct {
+	EthCacheConfig
 	netVersionCache    *expiryCache
 	clientVersionCache *expiryCache
 	chainIdCache       *expiryCache
 	priceCache         *expiryCache
 	blockNumberCache   *keyExpiryLruCaches
 	callCache          *keyExpiryLruCaches
+	pendingTxnCache    *keyExpiryLruCaches
 }
 
 func newEthCache(cfg EthCacheConfig) *EthCache {
 	return &EthCache{
+		EthCacheConfig:     cfg,
 		netVersionCache:    newExpiryCache(cfg.NetVersionExpiration),
 		clientVersionCache: newExpiryCache(cfg.ClientVersionExpiration),
 		chainIdCache:       newExpiryCache(cfg.ChainIdExpiration),
 		priceCache:         newExpiryCache(cfg.PriceExpiration),
 		blockNumberCache:   newKeyExpiryLruCaches(cfg.BlockNumberExpiration, 1000),
 		callCache:          newKeyExpiryLruCaches(cfg.CallCacheExpiration, cfg.CallCacheSize),
+		pendingTxnCache:    newKeyExpiryLruCaches(cfg.PendingTxnCacheExpiration, cfg.PendingTxnCacheSize),
 	}
 }
 
@@ -235,4 +245,53 @@ func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockN
 
 	// Convert hash to a hexadecimal string
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func (cache *EthCache) AddPendingTransaction(txnHash common.Hash) {
+	cache.pendingTxnCache.getOrUpdate(txnHash.String(), func() (any, error) {
+		return &ethPendingTxn{createdAt: time.Now()}, nil
+	})
+}
+
+func (cache *EthCache) GetPendingTransaction(txHash common.Hash) (pendingTxn *ethPendingTxn, loaded, expired bool) {
+	v, ok := cache.pendingTxnCache.get(txHash.String())
+	if !ok {
+		return nil, false, false
+	}
+
+	pendingTxn = v.(*ethPendingTxn)
+	expired = pendingTxn.shouldCheckNow(cache.PendingTxnCheckExemption, cache.PendingTxnCheckInterval)
+	return pendingTxn, true, expired
+}
+
+func (cache *EthCache) RemovePendingTransaction(txHash common.Hash) bool {
+	return cache.pendingTxnCache.del(txHash.String())
+}
+
+type ethPendingTxn struct {
+	val           atomic.Value
+	createdAt     time.Time    // Creation time
+	lastCheckedAt atomic.Int64 // Last check timestamp of mined status
+}
+
+// MarkChecked marks the mined status as checked
+func (t *ethPendingTxn) MarkChecked() {
+	t.lastCheckedAt.Store(time.Now().UnixMilli())
+}
+
+// Set updates the pending transaction detail
+func (t *ethPendingTxn) Set(txn *types.TransactionDetail) {
+	t.val.Store(txn)
+}
+
+// Get gets the pending transaction detail
+func (t *ethPendingTxn) Get() (*types.TransactionDetail, bool) {
+	v, ok := t.val.Load().(*types.TransactionDetail)
+	return v, ok
+}
+
+// ShouldCheckNow returns whether it's time to check if the pending transaction is mined.
+func (t *ethPendingTxn) shouldCheckNow(exemption, checkInterval time.Duration) bool {
+	return time.Since(t.createdAt) > exemption &&
+		time.Since(time.UnixMilli(t.lastCheckedAt.Load())) > checkInterval
 }

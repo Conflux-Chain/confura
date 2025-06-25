@@ -198,16 +198,55 @@ func (c cachedRpcEthClient) BlockTransactionCountByNumber(blockNum web3Types.Blo
 	return c.RpcEthClient.BlockTransactionCountByNumber(blockNum)
 }
 
+func (c cachedRpcEthClient) SendRawTransaction(rawTx []byte) (common.Hash, error) {
+	txnHash, err := c.RpcEthClient.SendRawTransaction(rawTx)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	lruCache.EthDefault.AddPendingTransaction(txnHash)
+	return txnHash, nil
+}
+
 func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.TransactionDetail, error) {
 	return loadLazyIfNoError(c.LazyTransactionByHash(txHash))
 }
 
-func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (cacheTypes.Lazy[*web3Types.TransactionDetail], error) {
+func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
+	pendingTxn, loaded, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
+	if loaded && !expired {
+		if txn, ok := pendingTxn.Get(); ok {
+			metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(true)
+			return cacheTypes.NewLazy(txn)
+		}
+	}
+
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(false)
+
 	lazyTxn, err := c.dataCache.GetTransactionByHash(txHash)
 	if err != nil {
-		return lazyTxn, err
+		return
 	}
-	return resolveLazyWithFallback(c, "eth_getTransactionByHash", lazyTxn, txHash)
+
+	lazyTxn, err = resolveLazyWithFallback(c, "eth_getTransactionByHash", lazyTxn, txHash)
+	if err != nil {
+		return
+	}
+
+	if loaded { // Check if transaction is mined
+		txn, err := lazyTxn.Load()
+		if err != nil {
+			return res, err
+		}
+
+		if txn != nil && txn.BlockHash != nil && txn.BlockNumber != nil {
+			lruCache.EthDefault.RemovePendingTransaction(txHash)
+		} else {
+			pendingTxn.MarkChecked()
+			pendingTxn.Set(txn)
+		}
+	}
+	return lazyTxn, nil
 }
 
 func (c cachedRpcEthClient) TransactionByBlockHashAndIndex(blockHash common.Hash, index uint) (*web3Types.TransactionDetail, error) {
@@ -241,12 +280,31 @@ func (c cachedRpcEthClient) TransactionReceipt(txHash common.Hash) (*web3Types.R
 	return loadLazyIfNoError(c.LazyTransactionReceipt(txHash))
 }
 
-func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (cacheTypes.Lazy[*web3Types.Receipt], error) {
+func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.Receipt], err error) {
+	pendingTxn, loaded, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(loaded && !expired)
+	if loaded && !expired {
+		return res, nil
+	}
+
 	lazyReceipt, err := c.dataCache.GetTransactionReceipt(txHash)
 	if err != nil {
 		return lazyReceipt, err
 	}
-	return resolveLazyWithFallback(c, "eth_getTransactionReceipt", lazyReceipt, txHash)
+
+	lazyReceipt, err = resolveLazyWithFallback(c, "eth_getTransactionReceipt", lazyReceipt, txHash)
+	if err != nil {
+		return lazyReceipt, err
+	}
+
+	if expired { // Check if transaction is mined
+		if !lazyReceipt.IsEmptyOrNull() {
+			lruCache.EthDefault.RemovePendingTransaction(txHash)
+		} else {
+			pendingTxn.MarkChecked()
+		}
+	}
+	return lazyReceipt, nil
 }
 
 func (c cachedRpcEthClient) BlockReceipts(blockNrOrHash *web3Types.BlockNumberOrHash) (res []*web3Types.Receipt, _ error) {
