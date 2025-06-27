@@ -11,7 +11,6 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/openweb3/web3go"
 	web3goTypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -103,9 +102,16 @@ func ConvertToHashSlice(ss []string) []types.Hash {
 	return res
 }
 
+// EthBlockNumberResolver defines an interface for resolving Ethereum block identifiers
+// (also known as block tags) into concrete block numbers (uint64).
+type EthBlockNumberResolver interface {
+	// Resolve takes a potential block identifier and returns its corresponding block number as uint64.
+	Resolve(web3goTypes.BlockNumber) (uint64, error)
+}
+
 // NormalizeEthBlockNumber normalizes ETH block number to be positive if necessary
 func NormalizeEthBlockNumber(
-	w3c *web3go.Client, blockNum *web3goTypes.BlockNumber, hardforkBlockNumber web3goTypes.BlockNumber,
+	resolver EthBlockNumberResolver, blockNum *web3goTypes.BlockNumber, hardforkBlockNumber web3goTypes.BlockNumber,
 ) (*web3goTypes.BlockNumber, error) {
 	if blockNum == nil {
 		return nil, errors.New("block number must be provided")
@@ -127,19 +133,13 @@ func NormalizeEthBlockNumber(
 	}
 
 	// pending or latest => latest_mined or latest_state
-	block, err := w3c.Eth.BlockByNumber(*blockNum, false)
+	realBlockNum, err := resolver.Resolve(*blockNum)
 	if err != nil {
 		blockText, _ := blockNum.MarshalText()
 		return nil, errors.WithMessagef(err, "failed to get block (%v)", blockText)
 	}
 
-	// !!! eth rpc may return nil for `pending` and `earliest` block number
-	if block == nil {
-		blockText, _ := blockNum.MarshalText()
-		return nil, errors.Errorf("unknown block number (%v)", string(blockText))
-	}
-
-	blockNo := web3goTypes.BlockNumber(block.Number.Int64())
+	blockNo := web3goTypes.BlockNumber(realBlockNum)
 	return &blockNo, nil
 }
 

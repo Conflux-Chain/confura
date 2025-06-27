@@ -8,7 +8,6 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/openweb3/web3go"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 )
@@ -82,7 +81,7 @@ func ParseEthLogFilterType(filter *web3Types.FilterQuery) (LogFilterType, bool) 
 }
 
 func NormalizeEthLogFilter(
-	w3c *web3go.Client, flag LogFilterType,
+	resolver util.EthBlockNumberResolver, flag LogFilterType,
 	filter *web3Types.FilterQuery, hardforkBlockNum web3Types.BlockNumber,
 ) error {
 	if flag&LogFilterTypeBlockRange == 0 { // not a blockrange log filter
@@ -104,7 +103,7 @@ func NormalizeEthLogFilter(
 
 	var blocks [2]*web3Types.BlockNumber
 	for i, b := range []*web3Types.BlockNumber{filter.FromBlock, filter.ToBlock} {
-		block, err := util.NormalizeEthBlockNumber(w3c, b, hardforkBlockNum)
+		block, err := util.NormalizeEthBlockNumber(resolver, b, hardforkBlockNum)
 		if err != nil {
 			return errors.WithMessage(err, "failed to normalize block number")
 		}

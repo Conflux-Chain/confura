@@ -453,7 +453,7 @@ func (api *ethAPI) getLogs(
 		return ethEmptyLogs, ErrInvalidEthLogFilter
 	}
 
-	if err := NormalizeEthLogFilter(w3c.Client, flag, fq, api.hardforkBlockNumber); err != nil {
+	if err := NormalizeEthLogFilter(w3c.Resolver, flag, fq, api.hardforkBlockNumber); err != nil {
 		return ethEmptyLogs, err
 	}
 

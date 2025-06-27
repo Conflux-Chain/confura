@@ -3,7 +3,7 @@ module github.com/Conflux-Chain/confura
 go 1.22
 
 require (
-	github.com/Conflux-Chain/confura-data-cache v0.0.0-20250604104555-bb94ff9494ed
+	github.com/Conflux-Chain/confura-data-cache v0.0.0-20250626063338-9e762b6027ab
 	github.com/Conflux-Chain/go-conflux-sdk v1.5.11-0.20240913040447-d33c1c8903b2
 	github.com/Conflux-Chain/go-conflux-util v0.4.1
 	github.com/Conflux-Chain/web3pay-service v0.0.0-20241012013327-2958dd644fcd
@@ -150,6 +150,7 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/status-im/keycard-go v0.2.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.2.0 // indirect
 	github.com/supranational/blst v0.3.11 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect

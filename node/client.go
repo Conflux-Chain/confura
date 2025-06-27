@@ -267,6 +267,6 @@ func NewEthClientProvider(dataCache cacheRpc.Interface, db *mysql.MysqlStore, ro
 		if err != nil {
 			return nil, err
 		}
-		return rpcutil.NewWeb3goClient(url, client, dataCache), nil
+		return rpcutil.NewWeb3goClientFromViper(url, client, dataCache)
 	})
 }

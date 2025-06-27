@@ -1,12 +1,18 @@
 package rpc
 
 import (
+	"context"
 	"math/big"
+	"sync"
 
+	"github.com/Conflux-Chain/confura-data-cache/nearhead"
 	cacheRpc "github.com/Conflux-Chain/confura-data-cache/rpc"
+	cacheSync "github.com/Conflux-Chain/confura-data-cache/sync"
 	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
+	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	lruCache "github.com/Conflux-Chain/confura/util/rpc/cache"
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/go-rpc-provider/interfaces"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
@@ -18,19 +24,66 @@ import (
 	"github.com/spf13/viper"
 )
 
-type cacheBlockTypeConverter func(*web3Types.BlockNumberOrHash) (cacheTypes.BlockHashOrNumber, error)
+var (
+	_ util.EthBlockNumberResolver = (*ethBlockNumberResolver)(nil)
+)
 
-func newCacheBlockTypeConverter(nodeName string, eth *client.RpcEthClient) cacheBlockTypeConverter {
-	return func(blockNrOrHash *web3Types.BlockNumberOrHash) (cacheTypes.BlockHashOrNumber, error) {
-		return convert2CacheBlockHashOrNumber(nodeName, eth, blockNrOrHash)
+type NearHeadConfig struct {
+	Enabled bool
+	Cache   nearhead.Config
+	Sync    cacheSync.EthConfig
+}
+
+// ethNearHeadSyncer wraps the underlying near head syncer and its cache.
+type ethNearHeadSyncer struct {
+	NearHeadConfig
+	underlying *cacheSync.EthNearHeadSyncer
+	cache      *nearhead.EthCache
+	cancel     context.CancelFunc
+}
+
+func newEthNearHeadSyncerFromViper(url string) (syncer ethNearHeadSyncer, err error) {
+	var nearheadConf NearHeadConfig
+	if err := viperutil.UnmarshalKey("nearhead", &nearheadConf); err != nil {
+		return syncer, errors.WithMessage(err, "failed to unmarshal near head config")
 	}
+	nearheadConf.Sync.Extract.RpcEndpoint = url
+
+	syncer = ethNearHeadSyncer{
+		NearHeadConfig: nearheadConf,
+		cache:          nearhead.NewEthCache(nearheadConf.Cache),
+	}
+
+	if !nearheadConf.Enabled {
+		logrus.Info("Near head cache is disabled by configuration.")
+		return syncer, nil
+	}
+
+	syncer.underlying, err = cacheSync.NewEthNearHeadSyncer(nearheadConf.Sync, syncer.cache)
+	if err != nil {
+		return syncer, errors.WithMessage(err, "failed to create near head syncer")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	syncer.cancel = cancel
+
+	// Start near head sync.
+	go func() {
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		syncer.underlying.Run(ctx, &wg)
+		wg.Wait()
+	}()
+	return syncer, nil
 }
 
 func MustNewEthDataCacheClientFromViper() cacheRpc.Interface {
 	url := viper.GetString("requestControl.ethCache.dataCacheRpcUrlProto")
 	if len(url) == 0 {
-		return nil
+		logrus.Info("ETH data cache client URL not configured, returning noop client.")
+		return cacheRpc.NotFoundImpl
 	}
+
 	client, err := cacheRpc.NewClientProto(url, ethClientCfg.RequestTimeout)
 	if err != nil {
 		logrus.WithField("url", url).WithError(err).Fatal("Failed to create ETH data cache client")
@@ -38,75 +91,120 @@ func MustNewEthDataCacheClientFromViper() cacheRpc.Interface {
 	return client
 }
 
+// ethBlockNumberResolver resolves block identifiers to concrete block numbers.
+type ethBlockNumberResolver struct {
+	nodeName string
+	eth      *client.RpcEthClient
+}
+
+func newEthBlockNumberResolver(nodeName string, eth *client.RpcEthClient) ethBlockNumberResolver {
+	return ethBlockNumberResolver{
+		nodeName: nodeName,
+		eth:      eth,
+	}
+}
+
+// Resolve implements the `util.EthBlockNumberResolver` interface.
+// It resolves block tags (e.g., "latest", "pending") into concrete block numbers.
+func (r ethBlockNumberResolver) Resolve(blockNum web3Types.BlockNumber) (uint64, error) {
+	// Positive block numbers are already concrete.
+	if blockNum > 0 {
+		return uint64(blockNum), nil
+	}
+
+	// Resolve block tags (e.g., EarliestBlockNumber, PendingBlockNumber, LatestBlockNumber)
+	// using the LRU cache to avoid direct RPC calls if possible.
+	realBlockNum, _, err := lruCache.EthDefault.GetBlockNumber(r.nodeName, r.eth, blockNum)
+	if err != nil {
+		return 0, errors.WithMessagef(err, "failed to resolve block number for tag %v", blockNum)
+	}
+	return realBlockNum.Uint64(), nil
+}
+
+// Web3goClient wraps web3go.Client with additional caching and resolution capabilities.
 type Web3goClient struct {
 	*web3go.Client
 
-	Eth   cachedRpcEthClient
-	Trace cachedRpcTraceClient
-	URL   string
+	Eth      cachedRpcEthClient
+	Trace    cachedRpcTraceClient
+	URL      string
+	Resolver util.EthBlockNumberResolver
+
+	nearheadSyncer ethNearHeadSyncer
 }
 
-func NewWeb3goClient(url string, client *web3go.Client, caches ...cacheRpc.Interface) *Web3goClient {
-	cache := cacheRpc.NotFoundImpl
-	if len(caches) > 0 && caches[0] != nil {
-		cache = caches[0]
+func NewWeb3goClientFromViper(url string, client *web3go.Client, dataCache cacheRpc.Interface) (*Web3goClient, error) {
+	nearheadSyncer, err := newEthNearHeadSyncerFromViper(url)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to create near head syncer")
 	}
 
 	nodeName := Url2NodeName(url)
+	resolver := newEthBlockNumberResolver(nodeName, client.Eth)
+	commonCacheFields := commonClientCacheFields{
+		nodeName:  nodeName,
+		dataCache: dataCache,
+		nearhead:  nearheadSyncer.cache,
+		resolver:  resolver,
+	}
+
 	return &Web3goClient{
 		Client: client,
 		URL:    url,
 		Eth: cachedRpcEthClient{
-			RpcEthClient: client.Eth,
-			nodeName:     nodeName,
-			dataCache:    cache,
+			RpcEthClient:            client.Eth,
+			commonClientCacheFields: commonCacheFields,
 		},
 		Trace: cachedRpcTraceClient{
-			RpcTraceClient: client.Trace,
-			dataCache:      cache,
-			converter:      newCacheBlockTypeConverter(nodeName, client.Eth),
+			RpcTraceClient:          client.Trace,
+			commonClientCacheFields: commonCacheFields,
 		},
-	}
+		nearheadSyncer: nearheadSyncer,
+		Resolver:       resolver,
+	}, nil
 }
 
 func (w3c Web3goClient) NodeName() string {
 	return Url2NodeName(w3c.URL)
 }
 
-type cachedRpcEthClient struct {
-	*client.RpcEthClient
+func (w3c Web3goClient) Close() {
+	if w3c.nearheadSyncer.cancel != nil {
+		// Stop near head sync.
+		w3c.nearheadSyncer.cancel()
+	}
+	w3c.Client.Close()
+}
+
+// commonClientCacheFields holds common fields for cached RPC clients.
+type commonClientCacheFields struct {
 	nodeName  string
 	dataCache cacheRpc.Interface
+	nearhead  *nearhead.EthCache
+	resolver  util.EthBlockNumberResolver
+}
+
+type cachedRpcEthClient struct {
+	*client.RpcEthClient
+	commonClientCacheFields
 }
 
 func (c cachedRpcEthClient) ChainId() (*uint64, error) {
-	chainId, loaded, err := lruCache.EthDefault.GetChainId(c.RpcEthClient)
-	if err != nil {
-		return nil, err
-	}
-
-	metrics.Registry.Client.ExpiryCacheHit("eth_chainId").Mark(loaded)
-	return (*uint64)(chainId), nil
+	return queryLRUCacheAndMetric("eth_chainId", func() (*uint64, bool, error) {
+		return lruCache.EthDefault.GetChainId(c.RpcEthClient)
+	})
 }
 
 func (c cachedRpcEthClient) GasPrice() (*big.Int, error) {
-	gasPrice, loaded, err := lruCache.EthDefault.GetGasPrice(c.RpcEthClient)
-	if err != nil {
-		return nil, err
-	}
-
-	metrics.Registry.Client.ExpiryCacheHit("eth_gasPrice").Mark(loaded)
-	return (*big.Int)(gasPrice), nil
+	return queryLRUCacheAndMetric("eth_gasPrice", func() (*big.Int, bool, error) {
+		return lruCache.EthDefault.GetGasPrice(c.RpcEthClient)
+	})
 }
 
 func (c cachedRpcEthClient) BlockNumber() (*big.Int, error) {
-	blockNum, loaded, err := lruCache.EthDefault.GetBlockNumber(c.nodeName, c.RpcEthClient)
-	if err != nil {
-		return nil, err
-	}
-
-	metrics.Registry.Client.ExpiryCacheHit("eth_blockNumber").Mark(loaded)
-	return (*big.Int)(blockNum), nil
+	return queryLRUCacheAndMetric("eth_blockNumber", func() (*big.Int, bool, error) {
+		return lruCache.EthDefault.GetBlockNumber(c.nodeName, c.RpcEthClient)
+	})
 }
 
 func (c cachedRpcEthClient) Call(callRequest web3Types.CallRequest, blockNum *web3Types.BlockNumberOrHash) ([]byte, error) {
@@ -123,23 +221,129 @@ func (c cachedRpcEthClient) Call(callRequest web3Types.CallRequest, blockNum *we
 }
 
 func (c cachedRpcEthClient) NetVersion() (string, error) {
-	version, loaded, err := lruCache.EthDefault.GetNetVersion(c.RpcEthClient)
-	if err != nil {
-		return "", err
-	}
-
-	metrics.Registry.Client.ExpiryCacheHit("net_version").Mark(loaded)
-	return version, nil
+	return queryLRUCacheAndMetric("net_version", func() (string, bool, error) {
+		return lruCache.EthDefault.GetNetVersion(c.RpcEthClient)
+	})
 }
 
 func (c cachedRpcEthClient) ClientVersion() (string, error) {
-	version, loaded, err := lruCache.EthDefault.GetClientVersion(c.RpcEthClient)
-	if err != nil {
-		return "", err
+	return queryLRUCacheAndMetric("web3_clientVersion", func() (string, bool, error) {
+		return lruCache.EthDefault.GetClientVersion(c.RpcEthClient)
+	})
+}
+
+func (c cachedRpcEthClient) Logs(filter web3Types.FilterQuery) ([]web3Types.Log, error) {
+	if filter.BlockHash != nil {
+		return c.getLogsByBlockHash(filter)
 	}
 
-	metrics.Registry.Client.ExpiryCacheHit("web3_clientVersion").Mark(loaded)
-	return version, nil
+	fromBlock, toBlock, err := c.resolveBlockRange(filter)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to resolve block numbers")
+	}
+	return c.getLogsByBlockRange(filter, fromBlock, toBlock)
+}
+
+func (c cachedRpcEthClient) getLogsByBlockRange(filter web3Types.FilterQuery, fromBlock, toBlock uint64) ([]web3Types.Log, error) {
+	ethLogs, err := c.nearhead.GetLogsByBlockRange(fromBlock, toBlock, nearhead.FilterOpt{
+		Addresses: filter.Addresses,
+		Topics:    filter.Topics,
+	})
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get logs from near head cache")
+	}
+
+	metrics.Registry.Client.NearHeadCacheHit("eth_getLogs").Mark(ethLogs != nil)
+	if ethLogs == nil {
+		return c.RpcEthClient.Logs(filter)
+	}
+
+	// This shouldn't happen, sanity check
+	if ethLogs.FromBlock < fromBlock || ethLogs.ToBlock > toBlock {
+		return nil, errors.New("bad event logs from near head cache")
+	}
+	return c.assembleLogsFromCacheAndRPC(filter, ethLogs, fromBlock, toBlock)
+}
+
+// assembleLogsFromCacheAndRPC stitches together logs from the near head cache and RPC.
+func (c cachedRpcEthClient) assembleLogsFromCacheAndRPC(
+	filter web3Types.FilterQuery,
+	ethLogs *nearhead.EthLogs,
+	fromBlock, toBlock uint64,
+) ([]web3Types.Log, error) {
+	result := ethLogs.Logs
+
+	// Handle the block range before the near head cached range.
+	if fromBlock < ethLogs.FromBlock {
+		logs, err := c.fetchLogsFromRpc(filter, fromBlock, ethLogs.FromBlock-1)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to get logs from RPC for leading range")
+		}
+		result = append(logs, result...)
+	}
+
+	// Handle the block range after the cached range.
+	if toBlock > ethLogs.ToBlock {
+		logs, err := c.fetchLogsFromRpc(filter, ethLogs.ToBlock+1, toBlock)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to get logs from RPC for trailing range")
+		}
+		result = append(result, logs...)
+	}
+
+	return result, nil
+}
+
+func (c cachedRpcEthClient) fetchLogsFromRpc(filter web3Types.FilterQuery, from, to uint64) ([]web3Types.Log, error) {
+	fromBlock := web3Types.BlockNumber(from)
+	toBlock := web3Types.BlockNumber(to)
+	filterCopy := filter
+	filterCopy.FromBlock = &fromBlock
+	filterCopy.ToBlock = &toBlock
+
+	return c.RpcEthClient.Logs(filterCopy)
+}
+
+// resolveBlockRange resolves the 'from' and 'to' block numbers from the filter.
+func (c cachedRpcEthClient) resolveBlockRange(filter web3Types.FilterQuery) (uint64, uint64, error) {
+	defaultBlock := web3Types.LatestBlockNumber
+	fromBlock := filter.FromBlock
+	if fromBlock == nil {
+		fromBlock = &defaultBlock
+	}
+
+	toBlock := filter.ToBlock
+	if toBlock == nil {
+		toBlock = &defaultBlock
+	}
+
+	fromNumber, err := c.resolver.Resolve(*fromBlock)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	toNumber, err := c.resolver.Resolve(*toBlock)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return fromNumber, toNumber, nil
+}
+
+func (c cachedRpcEthClient) getLogsByBlockHash(filter web3Types.FilterQuery) ([]web3Types.Log, error) {
+	ethLogs, err := c.nearhead.GetLogsByBlockHash(*filter.BlockHash, nearhead.FilterOpt{
+		Addresses: filter.Addresses,
+		Topics:    filter.Topics,
+	})
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get logs from near head cache")
+	}
+
+	metrics.Registry.Client.NearHeadCacheHit("eth_getLogs").Mark(ethLogs != nil)
+	if ethLogs != nil {
+		return ethLogs.Logs, nil
+	}
+	return c.RpcEthClient.Logs(filter)
 }
 
 func (c cachedRpcEthClient) BlockByHash(blockHash common.Hash, isFull bool) (*web3Types.Block, error) {
@@ -147,6 +351,12 @@ func (c cachedRpcEthClient) BlockByHash(blockHash common.Hash, isFull bool) (*we
 }
 
 func (c cachedRpcEthClient) LazyBlockByHash(blockHash common.Hash, isFull bool) (res cacheTypes.Lazy[*web3Types.Block], err error) {
+	block := c.nearhead.GetBlock(cacheTypes.BlockHashOrNumberWithHash(blockHash), isFull)
+	metrics.Registry.Client.NearHeadCacheHit("eth_getBlockByHash").Mark(block != nil)
+	if block != nil {
+		return cacheTypes.NewLazy(block)
+	}
+
 	lazyBlock, err := c.dataCache.GetBlock(cacheTypes.BlockHashOrNumberWithHash(blockHash), isFull)
 	if err != nil {
 		return lazyBlock, err
@@ -160,9 +370,15 @@ func (c cachedRpcEthClient) BlockByNumber(blockNumber web3Types.BlockNumber, isF
 
 func (c cachedRpcEthClient) LazyBlockByNumber(blockNumber web3Types.BlockNumber, isFull bool) (res cacheTypes.Lazy[*web3Types.Block], err error) {
 	rpcBlockNumOrHash := web3Types.BlockNumberOrHashWithNumber(blockNumber)
-	cacheBlockNumOrHash, err := convert2CacheBlockHashOrNumber(c.nodeName, c.RpcEthClient, &rpcBlockNumOrHash)
+	cacheBlockNumOrHash, err := convert2CacheBlockHashOrNumber(c.resolver, rpcBlockNumOrHash)
 	if err != nil {
 		return res, err
+	}
+
+	block := c.nearhead.GetBlock(cacheBlockNumOrHash, isFull)
+	metrics.Registry.Client.NearHeadCacheHit("eth_getBlockByNumber").Mark(block != nil)
+	if block != nil {
+		return cacheTypes.NewLazy(block)
 	}
 
 	lazyBlock, err := c.dataCache.GetBlock(cacheBlockNumOrHash, isFull)
@@ -173,6 +389,13 @@ func (c cachedRpcEthClient) LazyBlockByNumber(blockNumber web3Types.BlockNumber,
 }
 
 func (c cachedRpcEthClient) BlockTransactionCountByHash(blockHash common.Hash) (*big.Int, error) {
+	block := c.nearhead.GetBlock(cacheTypes.BlockHashOrNumberWithHash(blockHash), false)
+	metrics.Registry.Client.NearHeadCacheHit("eth_getBlockTransactionCountByHash").Mark(block != nil)
+	if block != nil {
+		numTxs := len(block.Transactions.Hashes())
+		return big.NewInt(int64(numTxs)), nil
+	}
+
 	count, err := c.dataCache.GetBlockTransactionCount(cacheTypes.BlockHashOrNumberWithHash(blockHash))
 	if err != nil {
 		return nil, err
@@ -186,6 +409,19 @@ func (c cachedRpcEthClient) BlockTransactionCountByHash(blockHash common.Hash) (
 }
 
 func (c cachedRpcEthClient) BlockTransactionCountByNumber(blockNum web3Types.BlockNumber) (*big.Int, error) {
+	rpcBlockNumOrHash := web3Types.BlockNumberOrHashWithNumber(blockNum)
+	cacheBlockNumOrHash, err := convert2CacheBlockHashOrNumber(c.resolver, rpcBlockNumOrHash)
+	if err != nil {
+		return nil, err
+	}
+
+	block := c.nearhead.GetBlock(cacheBlockNumOrHash, false)
+	metrics.Registry.Client.NearHeadCacheHit("eth_getBlockTransactionCountByNumber").Mark(block != nil)
+	if block != nil {
+		numTxs := len(block.Transactions.Transactions())
+		return big.NewInt(int64(numTxs)), nil
+	}
+
 	count, err := c.dataCache.GetBlockTransactionCount(cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNum)))
 	if err != nil {
 		return nil, err
@@ -214,14 +450,19 @@ func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.Tr
 
 func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
 	pendingTxn, loaded, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
-	if loaded && !expired {
+	if !expired {
 		if txn, ok := pendingTxn.Get(); ok {
 			metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(true)
 			return cacheTypes.NewLazy(txn)
 		}
 	}
-
 	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(false)
+
+	txn := c.nearhead.GetTransactionByHash(txHash)
+	metrics.Registry.Client.NearHeadCacheHit("eth_getTransactionByHash").Mark(txn != nil)
+	if txn != nil {
+		return cacheTypes.NewLazy(txn)
+	}
 
 	lazyTxn, err := c.dataCache.GetTransactionByHash(txHash)
 	if err != nil {
@@ -281,10 +522,16 @@ func (c cachedRpcEthClient) TransactionReceipt(txHash common.Hash) (*web3Types.R
 }
 
 func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.Receipt], err error) {
-	pendingTxn, loaded, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
-	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(loaded && !expired)
-	if loaded && !expired {
+	pendingTxn, _, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(!expired)
+	if !expired {
 		return res, nil
+	}
+
+	receipt := c.nearhead.GetTransactionReceipt(txHash)
+	metrics.Registry.Client.NearHeadCacheHit("eth_getTransactionReceipt").Mark(receipt != nil)
+	if receipt != nil {
+		return cacheTypes.NewLazy(receipt)
 	}
 
 	lazyReceipt, err := c.dataCache.GetTransactionReceipt(txHash)
@@ -297,7 +544,7 @@ func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (res cach
 		return lazyReceipt, err
 	}
 
-	if expired { // Check if transaction is mined
+	if expired { // Time to check if transaction is mined
 		if !lazyReceipt.IsEmptyOrNull() {
 			lruCache.EthDefault.RemovePendingTransaction(txHash)
 		} else {
@@ -320,9 +567,24 @@ func (c cachedRpcEthClient) BlockReceipts(blockNrOrHash *web3Types.BlockNumberOr
 }
 
 func (c cachedRpcEthClient) LazyBlockReceipts(blockNrOrHash *web3Types.BlockNumberOrHash) (res cacheTypes.Lazy[[]web3Types.Receipt], err error) {
-	blockNumOrHash, err := convert2CacheBlockHashOrNumber(c.nodeName, c.RpcEthClient, blockNrOrHash)
+	if blockNrOrHash == nil { // defaulting to LatestBlockNumber.
+		tmp := web3Types.BlockNumberOrHashWithNumber(web3Types.LatestBlockNumber)
+		blockNrOrHash = &tmp
+	}
+
+	blockNumOrHash, err := convert2CacheBlockHashOrNumber(c.resolver, *blockNrOrHash)
 	if err != nil {
-		return res, err
+		return res, errors.WithMessage(err, "failed to convert cache block type")
+	}
+
+	receipts := c.nearhead.GetBlockReceipts(blockNumOrHash)
+	metrics.Registry.Client.NearHeadCacheHit("eth_getBlockReceipts").Mark(receipts != nil)
+	if receipts != nil {
+		receiptsCopy := make([]web3Types.Receipt, len(receipts))
+		for i := range receipts {
+			receiptsCopy[i] = *receipts[i]
+		}
+		return cacheTypes.NewLazy(receiptsCopy)
 	}
 
 	lazyReceipt, err := c.dataCache.GetBlockReceipts(blockNumOrHash)
@@ -332,10 +594,10 @@ func (c cachedRpcEthClient) LazyBlockReceipts(blockNrOrHash *web3Types.BlockNumb
 	return resolveLazyWithFallback(c, "eth_getBlockReceipts", lazyReceipt, blockNrOrHash)
 }
 
+// cachedRpcTraceClient wraps client.RpcTraceClient with caching.
 type cachedRpcTraceClient struct {
 	*client.RpcTraceClient
-	dataCache cacheRpc.Interface
-	converter cacheBlockTypeConverter
+	commonClientCacheFields
 }
 
 func (c cachedRpcTraceClient) Transactions(transactionHash common.Hash) ([]web3Types.LocalizedTrace, error) {
@@ -343,6 +605,12 @@ func (c cachedRpcTraceClient) Transactions(transactionHash common.Hash) ([]web3T
 }
 
 func (c cachedRpcTraceClient) LazyTransactions(transactionHash common.Hash) (cacheTypes.Lazy[[]web3Types.LocalizedTrace], error) {
+	traces := c.nearhead.GetTransactionTraces(transactionHash)
+	metrics.Registry.Client.NearHeadCacheHit("trace_transaction").Mark(traces != nil)
+	if traces != nil {
+		return cacheTypes.NewLazy(traces)
+	}
+
 	lazyTraces, err := c.dataCache.GetTransactionTraces(transactionHash)
 	if err != nil {
 		return lazyTraces, err
@@ -356,9 +624,15 @@ func (c *cachedRpcTraceClient) Blocks(blockNumber web3Types.BlockNumberOrHash) (
 
 func (c cachedRpcTraceClient) LazyBlocks(
 	blockNrOrHash web3Types.BlockNumberOrHash) (res cacheTypes.Lazy[[]web3Types.LocalizedTrace], err error) {
-	blockNumOrHash, err := c.converter(&blockNrOrHash)
+	blockNumOrHash, err := convert2CacheBlockHashOrNumber(c.resolver, blockNrOrHash)
 	if err != nil {
-		return res, err
+		return res, errors.WithMessage(err, "failed to convert cache block type")
+	}
+
+	traces := c.nearhead.GetBlockTraces(blockNumOrHash)
+	metrics.Registry.Client.NearHeadCacheHit("trace_block").Mark(traces != nil)
+	if traces != nil {
+		return cacheTypes.NewLazy(traces)
 	}
 
 	lazyTraces, err := c.dataCache.GetBlockTraces(blockNumOrHash)
@@ -368,31 +642,28 @@ func (c cachedRpcTraceClient) LazyBlocks(
 	return resolveLazyWithFallback(c, "trace_block", lazyTraces, blockNrOrHash)
 }
 
+// convert2CacheBlockHashOrNumber converts web3Types.BlockNumberOrHash to cacheTypes.BlockHashOrNumber.
 func convert2CacheBlockHashOrNumber(
-	nodeName string, eth *client.RpcEthClient, blockNrOrHash *web3Types.BlockNumberOrHash) (res cacheTypes.BlockHashOrNumber, err error) {
-	if blockNrOrHash == nil {
-		tmp := web3Types.BlockNumberOrHashWithNumber(web3Types.LatestBlockNumber)
-		blockNrOrHash = &tmp
-	}
-
+	resolver util.EthBlockNumberResolver, blockNrOrHash web3Types.BlockNumberOrHash) (res cacheTypes.BlockHashOrNumber, err error) {
 	if hash, ok := blockNrOrHash.Hash(); ok {
 		return cacheTypes.BlockHashOrNumberWithHash(hash), nil
 	}
 
 	blockNum, _ := blockNrOrHash.Number()
-	if blockNum >= 0 {
+	if blockNum > 0 {
 		return cacheTypes.BlockHashOrNumberWithNumber(uint64(blockNum)), nil
 	}
 
-	// Normalize block number to uint64
-	normalizedBlockNum, _, err := lruCache.EthDefault.GetBlockNumber(nodeName, eth, blockNum)
+	// Resolve block tag to uint64
+	realBlockNum, err := resolver.Resolve(blockNum)
 	if err != nil {
-		return res, errors.WithMessage(err, "failed to normalize block number")
+		return res, errors.WithMessage(err, "failed to resolve block number")
 	}
-	return cacheTypes.BlockHashOrNumberWithNumber(normalizedBlockNum.Uint64()), nil
+	return cacheTypes.BlockHashOrNumberWithNumber(realBlockNum), nil
 }
 
-// resolveLazyWithFallback resolves a lazy value from data cache with fallback to RPC
+// resolveLazyWithFallback resolves a lazy value from data cache with fallback to RPC.
+// It also records data cache hit/miss metrics and logs RPC fallback.
 func resolveLazyWithFallback[T any](
 	p interfaces.Provider, method string, lazy cacheTypes.Lazy[T], args ...any) (cacheTypes.Lazy[T], error) {
 	cacheHit := !lazy.IsEmptyOrNull()
@@ -417,4 +688,16 @@ func loadLazyIfNoError[T any](lazy cacheTypes.Lazy[T], err error) (res T, _ erro
 		return res, err
 	}
 	return lazy.Load()
+}
+
+// queryLRUCacheAndMetric is a helper to query the LRU cache and record metrics.
+// It takes the RPC method name and a function to get the value from LRU cache.
+func queryLRUCacheAndMetric[T any](method string, getter func() (T, bool, error)) (T, error) {
+	val, loaded, err := getter()
+	if err != nil {
+		return val, err
+	}
+
+	metrics.Registry.Client.ExpiryCacheHit(method).Mark(loaded)
+	return val, nil
 }

@@ -508,3 +508,24 @@ node:
 #   enabled: false
 #   # The endpoint to start a http server for pprof
 #   httpEndpoint: ":6060"
+
+# # Near head caching configuration
+# nearhead:
+#   # Toggle to enable/disable the near-head cache feature.
+#   enabled: false
+#   # In-memory cache settings
+#   cache:
+#     # Maximum memory allocation for the cache (in bytes), default 100MB.
+#     maxMemory: 104857600
+#     # Upper limit on the number of logs returned per query operation, default 10000.
+#     maxLogs: 10000
+#   # Near head syncing settings
+#   sync:
+#     # Extractor configurations
+#     extract:
+#       maxMemoryUsageBytes: 268435456
+#       pollInterval: 1s
+#     # Health configurations
+#     health:
+#       threshold: 1m
+#       remind: 5m
