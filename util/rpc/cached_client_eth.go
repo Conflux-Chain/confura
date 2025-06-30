@@ -278,18 +278,22 @@ func (c cachedRpcEthClient) assembleLogsFromCacheAndRPC(
 
 	// Handle the block range before the near head cached range.
 	if fromBlock < ethLogs.FromBlock {
-		logs, err := c.fetchLogsFromRpc(filter, fromBlock, ethLogs.FromBlock-1)
+		logs, err := c.fetchLogsFromFullNode(filter, fromBlock, ethLogs.FromBlock-1)
 		if err != nil {
-			return nil, errors.WithMessage(err, "failed to get logs from RPC for leading range")
+			return nil, errors.WithMessagef(
+				err, "failed to get logs from full node for leading range [%d, %d]", fromBlock, ethLogs.FromBlock-1,
+			)
 		}
 		result = append(logs, result...)
 	}
 
 	// Handle the block range after the cached range.
 	if toBlock > ethLogs.ToBlock {
-		logs, err := c.fetchLogsFromRpc(filter, ethLogs.ToBlock+1, toBlock)
+		logs, err := c.fetchLogsFromFullNode(filter, ethLogs.ToBlock+1, toBlock)
 		if err != nil {
-			return nil, errors.WithMessage(err, "failed to get logs from RPC for trailing range")
+			return nil, errors.WithMessagef(
+				err, "failed to get logs from full node for trailing range [%d, %d]", ethLogs.ToBlock+1, toBlock,
+			)
 		}
 		result = append(result, logs...)
 	}
@@ -297,14 +301,13 @@ func (c cachedRpcEthClient) assembleLogsFromCacheAndRPC(
 	return result, nil
 }
 
-func (c cachedRpcEthClient) fetchLogsFromRpc(filter web3Types.FilterQuery, from, to uint64) ([]web3Types.Log, error) {
+func (c cachedRpcEthClient) fetchLogsFromFullNode(filter web3Types.FilterQuery, from, to uint64) ([]web3Types.Log, error) {
 	fromBlock := web3Types.BlockNumber(from)
 	toBlock := web3Types.BlockNumber(to)
-	filterCopy := filter
-	filterCopy.FromBlock = &fromBlock
-	filterCopy.ToBlock = &toBlock
+	filter.FromBlock = &fromBlock
+	filter.ToBlock = &toBlock
 
-	return c.RpcEthClient.Logs(filterCopy)
+	return c.RpcEthClient.Logs(filter)
 }
 
 // resolveBlockRange resolves the 'from' and 'to' block numbers from the filter.
@@ -597,7 +600,6 @@ func (c cachedRpcEthClient) LazyBlockReceipts(blockNrOrHash *web3Types.BlockNumb
 	return resolveLazyWithFallback(c, "eth_getBlockReceipts", lazyReceipt, blockNrOrHash)
 }
 
-// cachedRpcTraceClient wraps client.RpcTraceClient with caching.
 type cachedRpcTraceClient struct {
 	*client.RpcTraceClient
 	commonClientCacheFields
@@ -660,7 +662,8 @@ func convert2CacheBlockHashOrNumber(
 	// Resolve block tag to uint64
 	realBlockNum, err := resolver.Resolve(blockNum)
 	if err != nil {
-		return res, errors.WithMessage(err, "failed to resolve block number")
+		tag, _ := blockNum.MarshalText()
+		return res, errors.WithMessagef(err, "failed to resolve block number for tag %v", string(tag))
 	}
 	return cacheTypes.BlockHashOrNumberWithNumber(realBlockNum), nil
 }
