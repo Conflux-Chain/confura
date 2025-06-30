@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	_ util.EthBlockNumberResolver = (*ethBlockNumberResolver)(nil)
+	_ util.EthBlockNumberResolver = (*cachedEthBlockNumberResolver)(nil)
 )
 
 type NearHeadConfig struct {
@@ -34,53 +34,58 @@ type NearHeadConfig struct {
 	Sync    cacheSync.EthConfig
 }
 
-// ethNearHeadSyncer wraps the underlying near head syncer and its cache.
-type ethNearHeadSyncer struct {
-	NearHeadConfig
-	underlying *cacheSync.EthNearHeadSyncer
-	cache      *nearhead.EthCache
-	cancel     context.CancelFunc
+type EthNearHeadCache struct {
+	*nearhead.EthCache
+	stopSync context.CancelFunc
 }
 
-func newEthNearHeadSyncerFromViper(url string) (syncer ethNearHeadSyncer, err error) {
-	var nearheadConf NearHeadConfig
-	if err := viperutil.UnmarshalKey("nearhead", &nearheadConf); err != nil {
-		return syncer, errors.WithMessage(err, "failed to unmarshal near head config")
+func newDummyEthNearHeadCache() *EthNearHeadCache {
+	return &EthNearHeadCache{
+		EthCache: nearhead.NewEthCache(nearhead.Config{}),
 	}
-	nearheadConf.Sync.Extract.RpcEndpoint = url
+}
 
-	syncer = ethNearHeadSyncer{
-		NearHeadConfig: nearheadConf,
-		cache:          nearhead.NewEthCache(nearheadConf.Cache),
+func (c *EthNearHeadCache) Close() {
+	if c.stopSync != nil {
+		c.stopSync()
+	}
+}
+
+func NewEthNearHeadCacheFromViper(url string) (*EthNearHeadCache, error) {
+	var conf NearHeadConfig
+	if err := viperutil.UnmarshalKey("nearhead", &conf); err != nil {
+		return nil, errors.WithMessage(err, "failed to unmarshal near head config")
 	}
 
-	if !nearheadConf.Enabled {
+	if !conf.Enabled {
 		logrus.Info("Near head cache is disabled by configuration.")
-		return syncer, nil
+		return nil, nil
 	}
 
-	syncer.underlying, err = cacheSync.NewEthNearHeadSyncer(nearheadConf.Sync, syncer.cache)
+	cache := nearhead.NewEthCache(conf.Cache)
+
+	conf.Sync.Extract.RpcEndpoint = url
+	syncer, err := cacheSync.NewEthNearHeadSyncer(conf.Sync, cache)
 	if err != nil {
-		return syncer, errors.WithMessage(err, "failed to create near head syncer")
+		return nil, errors.WithMessage(err, "failed to create near head syncer")
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	syncer.cancel = cancel
 
 	// Start near head sync.
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		wg := sync.WaitGroup{}
 		wg.Add(1)
-		syncer.underlying.Run(ctx, &wg)
+		syncer.Run(ctx, &wg)
 		wg.Wait()
 	}()
-	return syncer, nil
+
+	return &EthNearHeadCache{EthCache: cache, stopSync: cancel}, nil
 }
 
 func MustNewEthDataCacheClientFromViper() cacheRpc.Interface {
 	url := viper.GetString("requestControl.ethCache.dataCacheRpcUrlProto")
 	if len(url) == 0 {
-		logrus.Info("ETH data cache client URL not configured, returning noop client.")
+		logrus.Info("ETH data cache client URL not configured, use noop client.")
 		return cacheRpc.NotFoundImpl
 	}
 
@@ -91,22 +96,18 @@ func MustNewEthDataCacheClientFromViper() cacheRpc.Interface {
 	return client
 }
 
-// ethBlockNumberResolver resolves block identifiers to concrete block numbers.
-type ethBlockNumberResolver struct {
+type cachedEthBlockNumberResolver struct {
 	nodeName string
 	eth      *client.RpcEthClient
 }
 
-func newEthBlockNumberResolver(nodeName string, eth *client.RpcEthClient) ethBlockNumberResolver {
-	return ethBlockNumberResolver{
-		nodeName: nodeName,
-		eth:      eth,
-	}
+func newCachedEthBlockNumberResolver(nodeName string, eth *client.RpcEthClient) cachedEthBlockNumberResolver {
+	return cachedEthBlockNumberResolver{nodeName: nodeName, eth: eth}
 }
 
 // Resolve implements the `util.EthBlockNumberResolver` interface.
 // It resolves block tags (e.g., "latest", "pending") into concrete block numbers.
-func (r ethBlockNumberResolver) Resolve(blockNum web3Types.BlockNumber) (uint64, error) {
+func (r cachedEthBlockNumberResolver) Resolve(blockNum web3Types.BlockNumber) (uint64, error) {
 	// Positive block numbers are already concrete.
 	if blockNum > 0 {
 		return uint64(blockNum), nil
@@ -124,33 +125,38 @@ func (r ethBlockNumberResolver) Resolve(blockNum web3Types.BlockNumber) (uint64,
 // Web3goClient wraps web3go.Client with additional caching and resolution capabilities.
 type Web3goClient struct {
 	*web3go.Client
+	util.EthBlockNumberResolver
 
-	Eth      cachedRpcEthClient
-	Trace    cachedRpcTraceClient
-	URL      string
-	Resolver util.EthBlockNumberResolver
+	URL   string
+	Eth   cachedRpcEthClient
+	Trace cachedRpcTraceClient
 
-	nearheadSyncer ethNearHeadSyncer
+	nearhead *EthNearHeadCache
 }
 
-func NewWeb3goClientFromViper(url string, client *web3go.Client, dataCache cacheRpc.Interface) (*Web3goClient, error) {
-	nearheadSyncer, err := newEthNearHeadSyncerFromViper(url)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to create near head syncer")
+func NewWeb3goClient(
+	url string,
+	client *web3go.Client,
+	dataCache cacheRpc.Interface,
+	nearHeadCache *EthNearHeadCache,
+) (*Web3goClient, error) {
+	if nearHeadCache == nil {
+		nearHeadCache = newDummyEthNearHeadCache()
 	}
 
 	nodeName := Url2NodeName(url)
-	resolver := newEthBlockNumberResolver(nodeName, client.Eth)
+	resolver := newCachedEthBlockNumberResolver(nodeName, client.Eth)
 	commonCacheFields := commonClientCacheFields{
 		nodeName:  nodeName,
-		dataCache: dataCache,
-		nearhead:  nearheadSyncer.cache,
 		resolver:  resolver,
+		dataCache: dataCache,
+		nearhead:  nearHeadCache,
 	}
 
 	return &Web3goClient{
-		Client: client,
-		URL:    url,
+		URL:                    url,
+		Client:                 client,
+		EthBlockNumberResolver: resolver,
 		Eth: cachedRpcEthClient{
 			RpcEthClient:            client.Eth,
 			commonClientCacheFields: commonCacheFields,
@@ -159,8 +165,7 @@ func NewWeb3goClientFromViper(url string, client *web3go.Client, dataCache cache
 			RpcTraceClient:          client.Trace,
 			commonClientCacheFields: commonCacheFields,
 		},
-		nearheadSyncer: nearheadSyncer,
-		Resolver:       resolver,
+		nearhead: nearHeadCache,
 	}, nil
 }
 
@@ -169,10 +174,7 @@ func (w3c Web3goClient) NodeName() string {
 }
 
 func (w3c Web3goClient) Close() {
-	if w3c.nearheadSyncer.cancel != nil {
-		// Stop near head sync.
-		w3c.nearheadSyncer.cancel()
-	}
+	w3c.nearhead.Close()
 	w3c.Client.Close()
 }
 
@@ -180,7 +182,7 @@ func (w3c Web3goClient) Close() {
 type commonClientCacheFields struct {
 	nodeName  string
 	dataCache cacheRpc.Interface
-	nearhead  *nearhead.EthCache
+	nearhead  *EthNearHeadCache
 	resolver  util.EthBlockNumberResolver
 }
 
@@ -241,6 +243,7 @@ func (c cachedRpcEthClient) Logs(filter web3Types.FilterQuery) ([]web3Types.Log,
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to resolve block numbers")
 	}
+
 	return c.getLogsByBlockRange(filter, fromBlock, toBlock)
 }
 

@@ -28,7 +28,7 @@ var (
 )
 
 // clientFactory factory method to create RPC client for fullnode proxy.
-type clientFactory[T any] func(url string) (T, error)
+type clientFactory[T any] func(grp Group, url string) (T, error)
 
 // clientProvider provides different RPC client based on request IP to achieve load balance
 // or with node group for resource isolation. Generally, it is used by RPC server to delegate
@@ -167,7 +167,7 @@ func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T,
 		// TODO improvements required
 		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
 		// 2. Different metrics for different full nodes.
-		return p.factory(url)
+		return p.factory(group, url)
 	})
 
 	if err != nil {
@@ -247,7 +247,7 @@ func locateNodeProvider(r Router) NodeProvider {
 type CfxClientProvider = clientProvider[sdk.ClientOperator]
 
 func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvider {
-	return newClientProvider(db, router, GroupCfxHttp, func(url string) (sdk.ClientOperator, error) {
+	return newClientProvider(db, router, GroupCfxHttp, func(grp Group, url string) (sdk.ClientOperator, error) {
 		client, err := rpcutil.NewCfxClient(url, rpcutil.WithClientHookMetrics(true))
 		if err != nil {
 			return nil, err
@@ -262,11 +262,20 @@ type Web3goClient = rpcutil.Web3goClient
 type EthClientProvider = clientProvider[*Web3goClient]
 
 func NewEthClientProvider(dataCache cacheRpc.Interface, db *mysql.MysqlStore, router Router) *EthClientProvider {
-	return newClientProvider(db, router, GroupEthHttp, func(url string) (*Web3goClient, error) {
+	return newClientProvider(db, router, GroupEthHttp, func(grp Group, url string) (*Web3goClient, error) {
 		client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true))
 		if err != nil {
-			return nil, err
+			return nil, errors.WithMessagef(err, "failed to create ETH client for %s", url)
 		}
-		return rpcutil.NewWeb3goClientFromViper(url, client, dataCache)
+
+		var nearheadCache *rpcutil.EthNearHeadCache
+		if grp == GroupEthHttp || grp == GroupEthLogs {
+			nearheadCache, err = rpcutil.NewEthNearHeadCacheFromViper(url)
+			if err != nil {
+				return nil, errors.WithMessagef(err, "failed to create near head cache for %s", url)
+			}
+		}
+
+		return rpcutil.NewWeb3goClient(url, client, dataCache, nearheadCache)
 	})
 }

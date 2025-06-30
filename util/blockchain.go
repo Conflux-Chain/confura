@@ -105,7 +105,6 @@ func ConvertToHashSlice(ss []string) []types.Hash {
 // EthBlockNumberResolver defines an interface for resolving Ethereum block identifiers
 // (also known as block tags) into concrete block numbers (uint64).
 type EthBlockNumberResolver interface {
-	// Resolve takes a potential block identifier and returns its corresponding block number as uint64.
 	Resolve(web3goTypes.BlockNumber) (uint64, error)
 }
 
