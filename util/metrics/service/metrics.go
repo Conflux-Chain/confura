@@ -44,16 +44,6 @@ func (gauge *Gauge) Update(v int64) {
 	gauge.updater.UpdateGauge(gauge.name, v)
 }
 
-func (gauge *Gauge) Dec(i int64) {
-	gauge.Gauge.Dec(i)
-	gauge.updater.DecGauge(gauge.name, i)
-}
-
-func (gauge *Gauge) Inc(i int64) {
-	gauge.Gauge.Inc(i)
-	gauge.updater.IncGauge(gauge.name, i)
-}
-
 // GaugeFloat64
 type GaugeFloat64 struct {
 	clientMetric

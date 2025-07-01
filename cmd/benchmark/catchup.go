@@ -166,7 +166,7 @@ func reportBoostMetrics() {
 	fmt.Printf(" p50 batch epochs: %v\n", boostQueryRangeHistogram.Snapshot().Percentile(0.50))
 
 	fmt.Println("// ---------- boost query success rate ------------")
-	fmt.Printf(" success ratio: %v\n", boostQueryRateGaugue.Snapshot().Value())
+	fmt.Printf(" success ratio: %v\n", boostQueryRateGaugue.Value())
 
 	fmt.Println("// ------------------------------------------------")
 }
@@ -192,7 +192,7 @@ func reportClassicMetrics() {
 	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(queryTimer.Snapshot().Percentile(0.50))/1e6)
 
 	fmt.Println("// -------- epoch query success rate ----------")
-	fmt.Printf(" success ratio: %v\n", queryRateGaugue.Snapshot().Value())
+	fmt.Printf(" success ratio: %v\n", queryRateGaugue.Value())
 
 	fmt.Println("// --------------------------------------------")
 }

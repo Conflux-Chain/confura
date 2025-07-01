@@ -87,7 +87,7 @@ func (s *Status) MarshalJSON() ([]byte, error) {
 		LatestHeartBeatErrs []string `json:"latestHeartBeatErrs"`
 	}
 
-	availability := metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, s.metric.availability).Snapshot().Value()
+	availability := metricUtil.GetOrRegisterTimeWindowPercentageDefault(s.metric.availability).Value()
 	latency := metricUtil.GetOrRegisterHistogram(s.metric.latency).Snapshot()
 
 	scopy := Status{
@@ -202,7 +202,7 @@ func (sm *statusMetrics) update(start time.Time, err error) {
 		metricUtil.GetOrRegisterHistogram(sm.latency).Update(time.Since(start).Nanoseconds())
 	}
 
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, sm.availability).Mark(err == nil)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(sm.availability).Mark(err == nil)
 }
 
 func (sm *statusMetrics) unregisterAll() {
