@@ -9,8 +9,6 @@ import (
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/confura/util/rpc/cache"
 	"github.com/Conflux-Chain/go-conflux-util/config"
-	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
-	"github.com/ethereum/go-ethereum/metrics"
 )
 
 // Read system environment variables prefixed with "INFURA".
@@ -18,11 +16,6 @@ import (
 const viperEnvPrefix = "infura"
 
 func Init() {
-	// Note, must use metrics.DefaultRegistry from geth, since go-rpc-provider depends on it
-	// for rpc metrics by default. When RPC middleware supported at server side, we can use
-	// a custom metrics registry.
-	metricUtil.DefaultRegistry = metrics.DefaultRegistry
-
 	// init utilities eg., viper, alert, metrics and logging
 	config.MustInit(viperEnvPrefix)
 

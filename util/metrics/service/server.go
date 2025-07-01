@@ -59,14 +59,6 @@ func (api *MetricsAPI) UpdateGauge(name string, v int64) {
 	metricUtil.GetOrRegisterGauge(name).Update(v)
 }
 
-func (api *MetricsAPI) DecGauge(name string, i int64) {
-	metricUtil.GetOrRegisterGauge(name).Dec(i)
-}
-
-func (api *MetricsAPI) IncGauge(name string, i int64) {
-	metricUtil.GetOrRegisterGauge(name).Inc(i)
-}
-
 // GaugeFloat64
 func (api *MetricsAPI) UpdateGaugeFloat64(name string, v float64) {
 	metricUtil.GetOrRegisterGaugeFloat64(name).Update(v)
@@ -100,15 +92,15 @@ func (api *MetricsAPI) StopTimer(name string) {
 }
 
 // Percentage
-func (api *MetricsAPI) MarkPercentage(defaultVal float64, name string, marked bool) {
-	metricUtil.GetOrRegisterPercentage(defaultVal, name).Mark(marked)
+func (api *MetricsAPI) MarkPercentage(name string, marked bool) {
+	metricUtil.GetOrRegisterPercentage(name).Mark(marked)
 }
 
 // TimeWindowPercentage
-func (api *MetricsAPI) MarkTimeWindowPercentageDefault(defaultVal float64, name string, marked bool) {
-	metricUtil.GetOrRegisterTimeWindowPercentageDefault(defaultVal, name).Mark(marked)
+func (api *MetricsAPI) MarkTimeWindowPercentageDefault(name string, marked bool) {
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault(name).Mark(marked)
 }
 
-func (api *MetricsAPI) MarkTimeWindowPercentage(defaultVal float64, name string, marked bool, slots int, slotIntervalNanos int64) {
-	metricUtil.GetOrRegisterTimeWindowPercentage(defaultVal, time.Duration(slotIntervalNanos), slots, name).Mark(marked)
+func (api *MetricsAPI) MarkTimeWindowPercentage(name string, marked bool, slots int, slotIntervalNanos int64) {
+	metricUtil.GetOrRegisterTimeWindowPercentage(time.Duration(slotIntervalNanos), slots, name).Mark(marked)
 }

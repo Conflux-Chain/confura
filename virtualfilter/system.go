@@ -7,7 +7,6 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	gethmetrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 )
@@ -93,18 +92,14 @@ func (fs *filterSystemBase) onClosed(nodeName string, fid rpc.ID) error {
 }
 
 func metricVirtualFilterSession(space string, f virtualFilter, delta int64) {
-	var gauge gethmetrics.Gauge
-
 	switch f.ftype() {
 	case filterTypeBlock:
-		gauge = metrics.Registry.VirtualFilter.Sessions(space, "block", f.nodeName())
+		metrics.Registry.VirtualFilter.Sessions(space, "block", f.nodeName()).Inc(delta)
 	case filterTypePendingTxn:
-		gauge = metrics.Registry.VirtualFilter.Sessions(space, "pendingTxn", f.nodeName())
+		metrics.Registry.VirtualFilter.Sessions(space, "pendingTxn", f.nodeName()).Inc(delta)
 	case filterTypeLog:
-		gauge = metrics.Registry.VirtualFilter.Sessions(space, "log", f.nodeName())
+		metrics.Registry.VirtualFilter.Sessions(space, "log", f.nodeName()).Inc(delta)
 	default:
 		return
 	}
-
-	gauge.Inc(delta)
 }

@@ -10,8 +10,6 @@ type Updater interface {
 	IncCounter(name string, i int64)
 
 	UpdateGauge(name string, v int64)
-	DecGauge(name string, i int64)
-	IncGauge(name string, i int64)
 
 	UpdateGaugeFloat64(name string, v float64)
 
