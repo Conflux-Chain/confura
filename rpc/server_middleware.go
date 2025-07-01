@@ -23,9 +23,6 @@ func MustInit() {
 	// init handler
 	handler.MustInitFromViper()
 
-	// init metrics
-	initMetrics()
-
 	// Register middlewares for go-rpc-provider, which only supports static middlewares for RPC server.
 	// The following middlewares are executed in order.
 
