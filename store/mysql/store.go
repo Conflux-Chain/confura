@@ -99,7 +99,7 @@ func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
 	return ms.PushnWithFinalizer(dataSlice, nil)
 }
 
-// Popn saves multiple epoch data into db with an extra finalizer to commit or rollback the transaction.
+// PushnWithFinalizer saves multiple epoch data into db with an extra finalizer to commit or rollback the transaction.
 func (ms *MysqlStore) PushnWithFinalizer(dataSlice []*store.EpochData, finalizer func(*gorm.DB) error) error {
 	if len(dataSlice) == 0 {
 		return nil
@@ -212,7 +212,7 @@ func (ms *MysqlStore) Popn(epochUntil uint64) error {
 	return ms.PopnWithFinalizer(epochUntil, nil)
 }
 
-// Popn pops multiple epoch data from database with an extra finalizer to commit or rollback the transaction.
+// PopnWithFinalizer pops multiple epoch data from database with an extra finalizer to commit or rollback the transaction.
 func (ms *MysqlStore) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.DB) error) error {
 	maxEpoch, ok, err := ms.MaxEpoch()
 	if err != nil {
