@@ -4,7 +4,7 @@ import (
 	"time"
 
 	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
-	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/rcrowley/go-metrics"
 )
 
 type clientMetric struct {

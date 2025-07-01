@@ -5,19 +5,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	gmetrics "github.com/ethereum/go-ethereum/metrics"
+	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
 )
 
 type benchmarker struct {
 	startTime, endTime   time.Time
-	persistDbRowsMetrics gmetrics.Histogram
-	persistEpochsMetrics gmetrics.Histogram
-	persistTimer         gmetrics.Timer
-	fetchPerEpochTimer   gmetrics.Timer
+	persistDbRowsMetrics metrics.Histogram
+	persistEpochsMetrics metrics.Histogram
+	persistTimer         metrics.Timer
+	fetchPerEpochTimer   metrics.Timer
 
-	avgPersistDurationPerDbRowMetrics gmetrics.Histogram
-	avgPersistDurationPerEpochMetrics gmetrics.Histogram
+	avgPersistDurationPerDbRowMetrics metrics.Histogram
+	avgPersistDurationPerEpochMetrics metrics.Histogram
 
 	totalPersistDuration time.Duration
 	totalPersistDbRows   int64
@@ -28,18 +28,18 @@ type benchmarker struct {
 }
 
 func newBenchmarker() *benchmarker {
-	if !gmetrics.Enabled {
+	if metrics.UseNilMetrics {
 		logrus.Warn("Geth metrics are not enabled, which will prevent performance metrics from being collected.")
 	}
 	return &benchmarker{
-		persistDbRowsMetrics: gmetrics.NewHistogram(gmetrics.NewExpDecaySample(1024, 0.015)),
-		persistEpochsMetrics: gmetrics.NewHistogram(gmetrics.NewExpDecaySample(1024, 0.015)),
+		persistDbRowsMetrics: metrics.NewHistogram(metrics.NewExpDecaySample(1024, 0.015)),
+		persistEpochsMetrics: metrics.NewHistogram(metrics.NewExpDecaySample(1024, 0.015)),
 
-		avgPersistDurationPerDbRowMetrics: gmetrics.NewHistogram(gmetrics.NewExpDecaySample(1024, 0.015)),
-		avgPersistDurationPerEpochMetrics: gmetrics.NewHistogram(gmetrics.NewExpDecaySample(1024, 0.015)),
+		avgPersistDurationPerDbRowMetrics: metrics.NewHistogram(metrics.NewExpDecaySample(1024, 0.015)),
+		avgPersistDurationPerEpochMetrics: metrics.NewHistogram(metrics.NewExpDecaySample(1024, 0.015)),
 
-		persistTimer:       gmetrics.NewTimer(),
-		fetchPerEpochTimer: gmetrics.NewTimer(),
+		persistTimer:       metrics.NewTimer(),
+		fetchPerEpochTimer: metrics.NewTimer(),
 	}
 }
 

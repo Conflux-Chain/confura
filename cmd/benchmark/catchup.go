@@ -10,7 +10,6 @@ import (
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	gmetrics "github.com/ethereum/go-ethereum/metrics"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -38,9 +37,6 @@ var (
 )
 
 func init() {
-	// Ensure metrics are enabled
-	gmetrics.Enabled = true
-
 	Cmd.AddCommand(catchUpCmd)
 	hookCatchUpCmdFlags(catchUpCmd)
 }

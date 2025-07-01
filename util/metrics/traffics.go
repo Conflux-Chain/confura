@@ -6,7 +6,7 @@ import (
 	"time"
 
 	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
-	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/rcrowley/go-metrics"
 )
 
 var (
@@ -15,7 +15,7 @@ var (
 )
 
 func DefaultTrafficCollector() TrafficCollector {
-	if !metrics.Enabled {
+	if metrics.UseNilMetrics {
 		return &noopTrafficCollector{}
 	}
 
