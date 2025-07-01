@@ -253,3 +253,7 @@ func (*ClientMetrics) ExpiryCacheHit(method string) metricUtil.Percentage {
 func (*ClientMetrics) DataCacheHit(method string) metricUtil.Percentage {
 	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/client/data/cache/hit/%v", method)
 }
+
+func (*ClientMetrics) NearHeadCacheHit(method string) metricUtil.Percentage {
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault(0, "infura/client/nearhead/cache/hit/%v", method)
+}
