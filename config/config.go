@@ -1,6 +1,9 @@
 package config
 
 import (
+	"log/slog"
+	"maps"
+
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc"
 	"github.com/Conflux-Chain/confura/store"
@@ -9,6 +12,9 @@ import (
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/confura/util/rpc/cache"
 	"github.com/Conflux-Chain/go-conflux-util/config"
+	"github.com/ethereum/go-ethereum/log"
+	slogrus "github.com/samber/slog-logrus/v2"
+	"github.com/sirupsen/logrus"
 )
 
 // Read system environment variables prefixed with "INFURA".
@@ -33,4 +39,13 @@ func Init() {
 	node.MustInit()
 	// init rpc
 	rpc.MustInit()
+
+	// Adapt Geth's slog-based logging (used by `go-rpc-provider`) to logrus.
+	maps.Copy(slogrus.LogLevels, map[slog.Level]logrus.Level{
+		log.LevelCrit:  logrus.FatalLevel,
+		log.LevelTrace: logrus.TraceLevel,
+		log.LevelWarn:  logrus.InfoLevel,
+	})
+	handler := slogrus.Option{}.NewLogrusHandler()
+	log.SetDefault(log.NewLogger(handler.WithGroup("geth")))
 }
