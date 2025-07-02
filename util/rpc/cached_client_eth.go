@@ -456,7 +456,7 @@ func (c cachedRpcEthClient) TransactionByHash(txHash common.Hash) (*web3Types.Tr
 
 func (c cachedRpcEthClient) LazyTransactionByHash(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
 	pendingTxn, loaded, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
-	if !expired {
+	if loaded && !expired {
 		if txn, ok := pendingTxn.Get(); ok {
 			metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionByHash").Mark(true)
 			return cacheTypes.NewLazy(txn)
@@ -528,9 +528,9 @@ func (c cachedRpcEthClient) TransactionReceipt(txHash common.Hash) (*web3Types.R
 }
 
 func (c cachedRpcEthClient) LazyTransactionReceipt(txHash common.Hash) (res cacheTypes.Lazy[*web3Types.Receipt], err error) {
-	pendingTxn, _, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
-	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(!expired)
-	if !expired {
+	pendingTxn, loaded, expired := lruCache.EthDefault.GetPendingTransaction(txHash)
+	metrics.Registry.Client.ExpiryCacheHit("eth_getTransactionReceipt").Mark(loaded && !expired)
+	if loaded && !expired {
 		return res, nil
 	}
 
