@@ -120,7 +120,7 @@ func ConvertTx(tx *ethTypes.TransactionDetail, ethNetworkId uint32) *types.Trans
 	}
 
 	return &types.Transaction{
-		TransactionType:      DeduceTxnType(tx),
+		TransactionType:      (*hexutil.Uint64)(tx.Type),
 		Hash:                 types.Hash(tx.Hash.Hex()),
 		Nonce:                types.NewBigInt(tx.Nonce),
 		BlockHash:            ConvertHashNullable(tx.BlockHash),
