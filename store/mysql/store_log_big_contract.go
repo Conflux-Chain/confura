@@ -110,7 +110,7 @@ func (bcls *bigContractLogStore) preparePartitions(dataSlice []*store.EpochData)
 			continue
 		}
 
-		// Migrate event logs of new big contract to seperate log table partition.
+		// Migrate event logs of new big contract to separate log table partition.
 		// We assume the possibility of migration for more than one big contracts
 		// at the same time is very small, otherwise the migration process might
 		// collapse the sync progress.
@@ -122,7 +122,7 @@ func (bcls *bigContractLogStore) preparePartitions(dataSlice []*store.EpochData)
 	return contract2BnPartitions, nil
 }
 
-// migrate migrates address indexed event logs for the big contract to seperate log table partition.
+// migrate migrates address indexed event logs for the big contract to separate log table partition.
 func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartition) error {
 	aiTableName := bcls.ails.GetPartitionedTableName(contract.Address)
 
@@ -149,7 +149,7 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 				deleteIds = append(deleteIds, aiLog.ID)
 			}
 
-			// insert into seperate contract log table
+			// insert into separate contract log table
 			if err := dbTx.Table(clTableName).Create(&clLogs).Error; err != nil {
 				return errors.WithMessage(err, "failed to insert contract logs")
 			}
@@ -177,7 +177,7 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 			return errors.WithMessage(err, "failed to expand partition bn range")
 		}
 
-		// update seperate contract log partition count
+		// update separate contract log partition count
 		err := bcls.deltaUpdateCount(dbTx, clEntity, int(partition.Index), int(res.RowsAffected))
 		if err != nil {
 			return errors.WithMessage(err, "failed to update contract log partition count")

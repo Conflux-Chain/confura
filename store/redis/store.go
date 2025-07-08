@@ -126,7 +126,7 @@ func (rs *RedisStore) GetTransaction(ctx context.Context, txHash types.Hash) (*s
 		return nil, err
 	}
 
-	// TODO: return extention field
+	// TODO: return extension field
 	return &store.Transaction{CfxTransaction: tx}, nil
 }
 
@@ -136,7 +136,7 @@ func (rs *RedisStore) GetReceipt(ctx context.Context, txHash types.Hash) (*store
 		return nil, err
 	}
 
-	// TODO: return extention field
+	// TODO: return extension field
 	return &store.TransactionReceipt{CfxReceipt: receipt}, nil
 }
 
@@ -161,7 +161,7 @@ func (rs *RedisStore) GetBlockSummaryByEpoch(ctx context.Context, epochNumber ui
 		return nil, err
 	}
 
-	// TODO: return extention field
+	// TODO: return extension field
 	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
@@ -175,7 +175,7 @@ func (rs *RedisStore) GetBlockSummaryByHash(ctx context.Context, blockHash types
 		return nil, err
 	}
 
-	// TODO: return extention field
+	// TODO: return extension field
 	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
@@ -189,7 +189,7 @@ func (rs *RedisStore) GetBlockSummaryByBlockNumber(ctx context.Context, blockNum
 		return nil, err
 	}
 
-	// TODO: return extention field
+	// TODO: return extension field
 	return &store.BlockSummary{CfxBlockSummary: blocksum}, nil
 }
 
@@ -354,7 +354,7 @@ func (rs *RedisStore) execWithTx(txConsumeFunc func(tx *redis.Tx) error, watchKe
 	}
 }
 
-// TODO: store extention json field.
+// TODO: store extension json field.
 func (rs *RedisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (store.EpochDataOpNumAlters, error) {
 	opHistory := store.EpochDataOpNumAlters{}
 
