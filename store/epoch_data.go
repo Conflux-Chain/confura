@@ -55,7 +55,7 @@ type EpochData struct {
 	Blocks   []*types.Block // blocks in order and the last one is pivot block
 	Receipts map[types.Hash]*types.TransactionReceipt
 
-	// custom extra extentions
+	// custom extra extensions
 	BlockExts   []*BlockExtra
 	ReceiptExts map[types.Hash]*ReceiptExtra
 }

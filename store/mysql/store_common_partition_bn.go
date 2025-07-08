@@ -120,7 +120,7 @@ func (bnps *bnPartitionedStore) growPartition(entity string, tabler schema.Table
 	return &newPart, err
 }
 
-// shrinkPartition removes a partition with the oldest index from the entity paritition list and the partition table will also
+// shrinkPartition removes a partition with the oldest index from the entity partition list and the partition table will also
 // be dropped.
 // If the passed in `partitionIndex` parameter is non-negative, it will do sanity check to ensure the oldest partition index is
 // equal to the passed in `partitionIndex`.
@@ -162,7 +162,7 @@ func (bnps *bnPartitionedStore) shrinkPartition(entity string, tabler schema.Tab
 // covered by all entity partitions (sbn1 < bn0 or sbn0 < bn0 < sbn1), it will regard the entity data
 // for the search block range as already pruned and raise an error.
 //
-// Otherwise, it will return the partitions (usally span at most two partitions) which hold the entity data
+// Otherwise, it will return the partitions (usually span at most two partitions) which hold the entity data
 // for the search block range and the block range which is not covered by any entity partition.
 func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange types.RangeUint64) (
 	partitions []*bnPartition, uncoverings *types.RangeUint64, err error,

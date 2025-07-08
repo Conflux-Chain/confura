@@ -316,7 +316,7 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 			return nil, err
 		}
 
-		// if the contract is a big contract, find the event logs from seperate table.
+		// if the contract is a big contract, find the event logs from separate table.
 		if isBigContract {
 			logs, err := ms.bcls.GetContractLogs(ctx, cid, storeFilter)
 			if err != nil {
