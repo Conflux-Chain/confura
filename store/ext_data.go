@@ -6,7 +6,7 @@ import (
 	web3Types "github.com/openweb3/web3go/types"
 )
 
-// custom block fields for extention
+// custom block fields for extension
 type BlockExtra struct {
 	// extended fields for ETH block
 	MixHash         *common.Hash `json:"mixHash,omitempty"`
@@ -16,20 +16,20 @@ type BlockExtra struct {
 	TxnExts []*TransactionExtra `json:"-"`
 }
 
-// custom transaction fields for extention
+// custom transaction fields for extension
 type TransactionExtra struct {
 	// extended fields for ETH transaction
 	BlockNumber *hexutil.Big `json:"blockNumber,omitempty"`
 	StandardV   *hexutil.Big `json:"standardV,omitempty"`
 }
 
-// custom receipt fields for extention
+// custom receipt fields for extension
 type ReceiptExtra struct {
 	// extended fields for ETH receipt
 	LogExts []*LogExtra `json:"-"`
 }
 
-// custom event log fields for extention
+// custom event log fields for extension
 type LogExtra struct {
 	// extended fields for ETH log
 	LogType *string `json:"logType,omitempty"`
