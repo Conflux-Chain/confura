@@ -204,7 +204,7 @@ type EthCallRequest struct {
 	AccessList           types.AccessList
 }
 
-func (req *EthCallRequest) ToCallMsg() ethTypes.CallRequest {
+func (req *EthCallRequest) ToCallMsg() (ethTypes.CallRequest, error) {
 	msg := ethTypes.CallRequest{
 		From: req.From.ValueOrNil(),
 		To:   req.To.ValueOrNil(),
@@ -235,14 +235,18 @@ func (req *EthCallRequest) ToCallMsg() ethTypes.CallRequest {
 	}
 
 	if req.Data != nil {
-		msg.Data = hexutil.MustDecode(*req.Data)
+		var err error
+		msg.Data, err = hexutil.Decode(*req.Data)
+		if err != nil {
+			return ethTypes.CallRequest{}, errors.WithMessage(err, "failed to decode data")
+		}
 	}
 
 	if acl := req.AccessList.ToEthType(); acl != nil {
 		msg.AccessList = &acl
 	}
 
-	return msg
+	return msg, nil
 }
 
 // EthLogFilter is compatible with CFX LogFilter and accepts hex40 format address.

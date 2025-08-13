@@ -12,6 +12,7 @@ import (
 	rpcp "github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go"
 	ethTypes "github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 )
 
 type CfxAPI struct {
@@ -193,7 +194,11 @@ func (api *CfxAPI) SendRawTransaction(ctx context.Context, signedTx hexutil.Byte
 }
 
 func (api *CfxAPI) Call(ctx context.Context, request EthCallRequest, bn *EthBlockNumber) (hexutil.Bytes, error) {
-	return api.w3c.WithContext(ctx).Eth.Call(request.ToCallMsg(), bn.ToArg())
+	callMsg, err := request.ToCallMsg()
+	if err != nil {
+		return nil, errors.WithMessage(err, "invalid call request")
+	}
+	return api.w3c.WithContext(ctx).Eth.Call(callMsg, bn.ToArg())
 }
 
 func (api *CfxAPI) GetLogs(ctx context.Context, filter EthLogFilter) ([]types.Log, error) {
@@ -220,7 +225,12 @@ func (api *CfxAPI) GetTransactionByHash(ctx context.Context, txHash common.Hash)
 }
 
 func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCallRequest, bn *EthBlockNumber) (types.Estimate, error) {
-	gasLimit, err := api.w3c.WithContext(ctx).Eth.EstimateGas(request.ToCallMsg(), bn.ToArg())
+	callMsg, err := request.ToCallMsg()
+	if err != nil {
+		return types.Estimate{}, errors.WithMessage(err, "invalid call request")
+	}
+
+	gasLimit, err := api.w3c.WithContext(ctx).Eth.EstimateGas(callMsg, bn.ToArg())
 	if err != nil {
 		return types.Estimate{}, err
 	}
