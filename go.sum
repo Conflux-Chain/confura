@@ -482,8 +482,8 @@ github.com/openweb3/go-rpc-provider v0.3.5 h1:KEKtJiEtCV9dhVkpGe+mf0CpNmMDpSZPbZ
 github.com/openweb3/go-rpc-provider v0.3.5/go.mod h1:eXd8viZzDcuvHKhl0Y14x92pGo4uzSB3Y0My5KOd+NM=
 github.com/openweb3/go-sdk-common v0.0.0-20240627072707-f78f0155ab34 h1:qLelmviLGRleOB6A8ssljatvs6K6n1BMd3PNeozNq/E=
 github.com/openweb3/go-sdk-common v0.0.0-20240627072707-f78f0155ab34/go.mod h1:YMfzbYeq1G7s6nRjcFAgYSA/Uqy5+Aa1UvL0Rbnc290=
-github.com/openweb3/web3go v0.3.0 h1:EfCWosP2e1981nkeatIrit5n3ZmbVyGHklUoPsbM5q4=
-github.com/openweb3/web3go v0.3.0/go.mod h1:N9G0bo4m3D4005g8EOPNDDx2Ex0lPMhMNJk23mZ5WMs=
+github.com/openweb3/web3go v0.3.1-0.20250814081736-d2e9f1eefc15 h1:LsYlsZCKCq3NSo+AZvK7t+I80j6Ri4q4f5dTVyiJ3fw=
+github.com/openweb3/web3go v0.3.1-0.20250814081736-d2e9f1eefc15/go.mod h1:N9G0bo4m3D4005g8EOPNDDx2Ex0lPMhMNJk23mZ5WMs=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
 github.com/pelletier/go-toml v1.9.4 h1:tjENF6MfZAg8e4ZmZTeWaWiT2vXtsoO6+iuOjFhECwM=
