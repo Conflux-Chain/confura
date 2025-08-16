@@ -176,7 +176,7 @@ func (validator *EpochValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 	samplingTicker := time.NewTicker(validator.conf.SamplingInterval)
 	defer samplingTicker.Stop()
 
-	// Sequentially scaning epochs from the earliest epoch to latest confirmed epoch. Confirmed epochs are
+	// Sequentially scanning epochs from the earliest epoch to latest confirmed epoch. Confirmed epochs are
 	// rerely reverted, an error/panic will be triggered once validation failed.
 	scanTicker := time.NewTicker(validator.conf.ScanInterval)
 	defer scanTicker.Stop()
@@ -289,7 +289,7 @@ func (validator *EpochValidator) scanOnce() (bool, error) {
 			To:   maxEpochTo,
 		}
 		logrus.WithField("epochRange", epochRange).Debug(
-			"Epoch validator scaning skipped due to catched up already",
+			"Epoch validator scanning skipped due to catched up already",
 		)
 
 		return true, nil
@@ -316,7 +316,7 @@ func (validator *EpochValidator) scanOnce() (bool, error) {
 
 	validator.conf.EpochScanFrom++
 
-	// periodly save the scaning progress per 1000 epochs in case of data lost
+	// periodly save the scanning progress per 1000 epochs in case of data lost
 	if validator.conf.EpochScanFrom%1000 == 0 {
 		validator.saveScanCursor()
 	}
@@ -958,7 +958,7 @@ func (validator *EpochValidator) Destroy() {
 	validator.cfx.Close()
 	validator.infura.Close()
 
-	// Save scaning cursor
+	// Save scanning cursor
 	validator.saveScanCursor()
 }
 

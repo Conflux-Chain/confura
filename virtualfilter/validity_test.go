@@ -94,7 +94,7 @@ func teardown() (err error) {
 	return nil
 }
 
-// Consistantly polls changed logs from filter API to accumulate event logs from a `finalized` perspective,
+// Consistently polls changed logs from filter API to accumulate event logs from a `finalized` perspective,
 // then fetches corresponding event logs  with `cfx_getLogs` to validate the correctness of polled and
 // fetched result data.
 func TestCfxFilterDataValidity(t *testing.T) {
@@ -239,7 +239,7 @@ func TestCfxFilterDataValidity(t *testing.T) {
 	}
 }
 
-// Consistantly polls changed logs from filter API to accumulate event logs from a `finalized` perspective,
+// Consistently polls changed logs from filter API to accumulate event logs from a `finalized` perspective,
 // then fetches corresponding event logs  with `eth_getLogs` to validate the correctness of polled and
 // fetched result data.
 func TestEthFilterDataValidity(t *testing.T) {

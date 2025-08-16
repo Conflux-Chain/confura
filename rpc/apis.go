@@ -46,7 +46,7 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 			continue
 		}
 
-		err := errors.Errorf("unkown module %v to be exposed", m)
+		err := errors.Errorf("unknown module %v to be exposed", m)
 		return map[string]interface{}{}, err
 	}
 
