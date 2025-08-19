@@ -209,8 +209,15 @@ func (c cachedRpcEthClient) BlockNumber() (*big.Int, error) {
 	})
 }
 
-func (c cachedRpcEthClient) Call(callRequest web3Types.CallRequest, blockNum *web3Types.BlockNumberOrHash) ([]byte, error) {
-	res, loaded, err := lruCache.EthDefault.Call(c.nodeName, c.RpcEthClient, callRequest, blockNum)
+func (c cachedRpcEthClient) Call(
+	callRequest web3Types.CallRequest,
+	blockNum *web3Types.BlockNumberOrHash,
+	overrides *web3Types.StateOverride,
+	blockOverrides *web3Types.BlockOverrides,
+) ([]byte, error) {
+	res, loaded, err := lruCache.EthDefault.Call(
+		c.nodeName, c.RpcEthClient, callRequest, blockNum, overrides, blockOverrides,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -183,10 +183,13 @@ func (cache *EthCache) Call(
 	eth *client.RpcEthClient,
 	callRequest types.CallRequest,
 	blockNum *types.BlockNumberOrHash,
+	overrides *types.StateOverride,
+	blockOverrides *types.BlockOverrides,
 ) (RPCResult, bool, error) {
-	return cache.CallWithFunc(nodeName, callRequest, blockNum,
+	return cache.CallWithFunc(
+		nodeName, callRequest, blockNum, overrides, blockOverrides,
 		func() ([]byte, error) {
-			return eth.Call(callRequest, blockNum)
+			return eth.Call(callRequest, blockNum, overrides, blockOverrides)
 		},
 	)
 }
@@ -195,9 +198,11 @@ func (cache *EthCache) CallWithFunc(
 	nodeName string,
 	callRequest types.CallRequest,
 	blockNum *types.BlockNumberOrHash,
+	overrides *types.StateOverride,
+	blockOverrides *types.BlockOverrides,
 	rawGetter func() ([]byte, error),
 ) (RPCResult, bool, error) {
-	cacheKey, err := generateCallCacheKey(nodeName, callRequest, blockNum)
+	cacheKey, err := generateCallCacheKey(nodeName, callRequest, blockNum, overrides, blockOverrides)
 	if err != nil {
 		// This should rarely happen, but if it does, we don't want to fail the entire request due to cache error.
 		// The error is logged and the request is forwarded to the node directly.
@@ -225,12 +230,20 @@ func (cache *EthCache) CallWithFunc(
 	return val.(RPCResult), loaded, nil
 }
 
-func generateCallCacheKey(nodeName string, callRequest types.CallRequest, blockNum *types.BlockNumberOrHash) (string, error) {
+func generateCallCacheKey(
+	nodeName string,
+	callRequest types.CallRequest,
+	blockNum *types.BlockNumberOrHash,
+	overrides *types.StateOverride,
+	blockOverrides *types.BlockOverrides,
+) (string, error) {
 	// Create a map of parameters to be serialized
 	params := map[string]any{
-		"nodeName":    nodeName,
-		"callRequest": callRequest,
-		"blockNum":    blockNum,
+		"nodeName":       nodeName,
+		"callRequest":    callRequest,
+		"blockNum":       blockNum,
+		"overrides":      overrides,
+		"blockOverrides": blockOverrides,
 	}
 
 	// Serialize the parameters to JSON

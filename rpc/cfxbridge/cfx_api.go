@@ -198,7 +198,7 @@ func (api *CfxAPI) Call(ctx context.Context, request EthCallRequest, bn *EthBloc
 	if err != nil {
 		return nil, errors.WithMessage(err, "invalid call request")
 	}
-	return api.w3c.WithContext(ctx).Eth.Call(callMsg, bn.ToArg())
+	return api.w3c.WithContext(ctx).Eth.Call(callMsg, bn.ToArg(), nil, nil)
 }
 
 func (api *CfxAPI) GetLogs(ctx context.Context, filter EthLogFilter) ([]types.Log, error) {
@@ -230,7 +230,7 @@ func (api *CfxAPI) EstimateGasAndCollateral(ctx context.Context, request EthCall
 		return types.Estimate{}, errors.WithMessage(err, "invalid call request")
 	}
 
-	gasLimit, err := api.w3c.WithContext(ctx).Eth.EstimateGas(callMsg, bn.ToArg())
+	gasLimit, err := api.w3c.WithContext(ctx).Eth.EstimateGas(callMsg, bn.ToArg(), nil, nil)
 	if err != nil {
 		return types.Estimate{}, err
 	}

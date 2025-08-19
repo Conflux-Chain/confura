@@ -103,9 +103,11 @@ func (h *EthStateHandler) Call(
 	w3c *node.Web3goClient,
 	callRequest types.CallRequest,
 	blockNum *types.BlockNumberOrHash,
+	overrides *types.StateOverride,
+	blockOverrides *types.BlockOverrides,
 ) ([]byte, error) {
 	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
-		return w3c.Eth.Call(callRequest, blockNum)
+		return w3c.Eth.Call(callRequest, blockNum, overrides, blockOverrides)
 	})
 
 	metrics.Registry.RPC.Percentage("eth_call", "fullState").Mark(usefs)
@@ -122,9 +124,11 @@ func (h *EthStateHandler) EstimateGas(
 	w3c *node.Web3goClient,
 	callRequest types.CallRequest,
 	blockNum *types.BlockNumberOrHash,
+	overrides *types.StateOverride,
+	blockOverrides *types.BlockOverrides,
 ) (*big.Int, error) {
 	est, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
-		return w3c.Eth.EstimateGas(callRequest, blockNum)
+		return w3c.Eth.EstimateGas(callRequest, blockNum, overrides, blockOverrides)
 	})
 
 	metrics.Registry.RPC.Percentage("eth_estimateGas", "fullState").Mark(usefs)
