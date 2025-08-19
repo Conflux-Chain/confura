@@ -275,6 +275,24 @@ func (h *EthStateHandler) LazyTraceTransaction(
 	return result.(cacheTypes.Lazy[[]types.LocalizedTrace]), err
 }
 
+func (h *EthStateHandler) TraceGet(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	txHash common.Hash,
+	indexes []uint,
+) (*types.LocalizedTrace, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (any, error) {
+		return w3c.Trace.Trace(txHash, indexes)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_get", "fullState").Mark(usefs)
+	if err != nil {
+		return nil, err
+	}
+
+	return result.(*types.LocalizedTrace), err
+}
+
 func (h *EthStateHandler) TraceFilter(
 	ctx context.Context,
 	w3c *node.Web3goClient,
@@ -285,12 +303,28 @@ func (h *EthStateHandler) TraceFilter(
 	})
 
 	metrics.Registry.RPC.Percentage("trace_filter", "fullState").Mark(usefs)
-
 	if err != nil {
 		return nil, err
 	}
 
 	return result.([]types.LocalizedTrace), err
+}
+
+func (h *EthStateHandler) TraceBlockSetAuth(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	blockNumber types.BlockNumberOrHash,
+) ([]types.LocalizedSetAuthTrace, error) {
+	result, err, usefs := h.doRequest(ctx, w3c, func(w3c *node.Web3goClient) (interface{}, error) {
+		return w3c.Trace.BlockSetAuthTraces(blockNumber)
+	})
+
+	metrics.Registry.RPC.Percentage("trace_blockSetAuth", "fullState").Mark(usefs)
+	if err != nil {
+		return nil, err
+	}
+
+	return result.([]types.LocalizedSetAuthTrace), err
 }
 
 func (h *EthStateHandler) doRequest(
