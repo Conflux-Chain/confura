@@ -250,11 +250,15 @@ func (api *ethAPI) SubmitTransaction(ctx context.Context, signedTx hexutil.Bytes
 
 // Call executes a new message call immediately without creating a transaction on the block chain.
 func (api *ethAPI) Call(
-	ctx context.Context, request web3Types.CallRequest, blockNumOrHash *web3Types.BlockNumberOrHash,
+	ctx context.Context,
+	request web3Types.CallRequest,
+	blockNumOrHash *web3Types.BlockNumberOrHash,
+	overrides *web3Types.StateOverride,
+	blockOverrides *web3Types.BlockOverrides,
 ) (hexutil.Bytes, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_call", w3c.Eth)
-	return api.stateHandler.Call(ctx, w3c, request, blockNumOrHash)
+	return api.stateHandler.Call(ctx, w3c, request, blockNumOrHash, overrides, blockOverrides)
 }
 
 // EstimateGas generates and returns an estimate of how much gas is necessary to allow the transaction
@@ -262,11 +266,15 @@ func (api *ethAPI) Call(
 // significantly more than the amount of gas actually used by the transaction, for a variety of reasons
 // including EVM mechanics and node performance or miner policy.
 func (api *ethAPI) EstimateGas(
-	ctx context.Context, request web3Types.CallRequest, blockNumOrHash *web3Types.BlockNumberOrHash,
+	ctx context.Context,
+	request web3Types.CallRequest,
+	blockNumOrHash *web3Types.BlockNumberOrHash,
+	overrides *web3Types.StateOverride,
+	blockOverrides *web3Types.BlockOverrides,
 ) (*hexutil.Big, error) {
 	w3c := GetEthClientFromContext(ctx)
 	api.inputBlockMetric.Update2(blockNumOrHash, "eth_estimateGas", w3c.Eth)
-	gas, err := api.stateHandler.EstimateGas(ctx, w3c, request, blockNumOrHash)
+	gas, err := api.stateHandler.EstimateGas(ctx, w3c, request, blockNumOrHash, overrides, blockOverrides)
 	return (*hexutil.Big)(gas), err
 }
 
