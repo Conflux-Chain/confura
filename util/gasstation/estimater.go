@@ -19,7 +19,7 @@ const (
 	// max continuous failures for gas price sample gathering
 	maxGatheringFailtures = 10
 
-	// define fast/fatest/safeLow/average mining duration hirarchy
+	// define fast/fatest/safeLow/average mining duration hierarchy
 	// for gas price prediction
 	thresholdFastestMiningDuration  = 10 * time.Second // <= 10s
 	thresholdFastMiningDuration     = 20 * time.Second // <= 20s
