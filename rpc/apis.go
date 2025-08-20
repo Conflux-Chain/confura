@@ -138,6 +138,11 @@ func evmSpaceApis(
 			Service:   &ethDebugAPI{stateHandler},
 			Public:    false,
 		}, {
+			Namespace: "txpool",
+			Version:   "1.0",
+			Service:   &ethTxPoolAPI{},
+			Public:    false,
+		}, {
 			Namespace: "gasstation",
 			Version:   "1.0",
 			Service:   newEthGasStationAPI(gashandler),
