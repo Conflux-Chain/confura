@@ -28,7 +28,7 @@ rpc:
 
 # EVM space RPC proxy server configurations
 ethrpc:
-  # Available exposed modules are `eth`, `web3`, `net`, `trace`, `parity`, `gasstation` and `debug`.
+  # Available exposed modules are `eth`, `web3`, `net`, `trace`, `parity`,`debug` and `txpool` and `gasstation`.
   # if left empty all public APIs will be exposed.
   exposedModules: []
   # Served HTTP endpoint
