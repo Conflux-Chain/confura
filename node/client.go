@@ -114,7 +114,7 @@ func (p *clientProvider[T]) populateCache(token string) (grp Group, ok bool) {
 		defer p.mu.Unlock()
 
 		// for db error, we cache an empty group for the key by which no expiry cache value existed
-		// so that db pressure can be mitigrated by reducing too many subsequential queries.
+		// so that db pressure can be mitigated by reducing too many subsequential queries.
 		if _, _, found := p.routeKeyCache.GetWithoutExp(token); !found {
 			p.routeKeyCache.Add(token, grp)
 		}
