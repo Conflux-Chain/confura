@@ -259,6 +259,7 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 		EffectiveGasPrice: effectiveGasPrice,
 		From:              from,
 		GasUsed:           value.GasUsed.ToInt().Uint64(),
+		GasFee:            value.GasFee.ToInt().Uint64(),
 		Logs:              logs,
 		LogsBloom:         logsBloom,
 		Root:              root,
