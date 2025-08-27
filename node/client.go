@@ -98,7 +98,7 @@ func (p *clientProvider[T]) cacheLoad(key string) (Group, bool) {
 	}
 
 	if found && expired {
-		// extend lifespan for expired cache kv temporarliy for performance
+		// extend lifespan for expired cache kv temporarily for performance
 		p.routeKeyCache.Add(key, v.(Group))
 	}
 
