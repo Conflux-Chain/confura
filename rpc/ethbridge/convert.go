@@ -246,9 +246,9 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 		cumulativeGasUsed = value.AccumulatedGasUsed.ToInt().Uint64()
 	}
 
-	var effectiveGasPrice uint64
-	if value.EffectiveGasPrice != nil {
-		effectiveGasPrice = value.EffectiveGasPrice.ToInt().Uint64()
+	var gasUsed uint64
+	if value.GasUsed != nil {
+		gasUsed = value.GasUsed.ToInt().Uint64()
 	}
 
 	receipt := &types.Receipt{
@@ -256,10 +256,10 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 		BlockNumber:       uint64(*value.EpochNumber),
 		ContractAddress:   contractAddr,
 		CumulativeGasUsed: cumulativeGasUsed,
-		EffectiveGasPrice: effectiveGasPrice,
+		EffectiveGasPrice: value.EffectiveGasPrice.ToInt(),
 		From:              from,
-		GasUsed:           value.GasUsed.ToInt().Uint64(),
-		GasFee:            value.GasFee.ToInt().Uint64(),
+		GasUsed:           gasUsed,
+		GasFee:            value.GasFee.ToInt(),
 		Logs:              logs,
 		LogsBloom:         logsBloom,
 		Root:              root,
