@@ -287,6 +287,15 @@ func queryEthData(
 	txnReceipts := map[common.Hash]*types.Receipt{}
 	blockTxs := block.Transactions.Transactions()
 
+	// If the block has no transactions, there is no need to query receipts or logs.
+	if len(blockTxs) == 0 {
+		return &EthData{
+			Number:   blockNumber,
+			Block:    block,
+			Receipts: txnReceipts,
+		}, nil
+	}
+
 	// Check if ChainReceipts are disabled
 	if opt.Disabler != nil && opt.Disabler.IsChainReceiptDisabled() {
 		// If both ChainReceipt and ChainLog are disabled, return only the block data
