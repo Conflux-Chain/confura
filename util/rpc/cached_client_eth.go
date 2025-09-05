@@ -612,6 +612,28 @@ type cachedRpcTraceClient struct {
 	commonClientCacheFields
 }
 
+func (c *cachedRpcTraceClient) Trace(transactionHash common.Hash, indexes []uint) (*web3Types.LocalizedTrace, error) {
+	return loadLazyIfNoError(c.LazyTrace(transactionHash, indexes))
+}
+
+func (c cachedRpcTraceClient) LazyTrace(transactionHash common.Hash, indexes []uint) (cacheTypes.Lazy[*web3Types.LocalizedTrace], error) {
+	if len(indexes) == 0 {
+		return cacheTypes.Lazy[*web3Types.LocalizedTrace]{}, nil
+	}
+
+	trace := c.nearhead.GetTrace(transactionHash, indexes[0])
+	metrics.Registry.Client.NearHeadCacheHit("trace_get").Mark(trace != nil)
+	if trace != nil {
+		return cacheTypes.NewLazy(trace)
+	}
+
+	lazyTrace, err := c.dataCache.GetTrace(transactionHash, indexes[0])
+	if err != nil {
+		return lazyTrace, err
+	}
+	return resolveLazyWithFallback(c, "trace_get", lazyTrace, transactionHash, indexes)
+}
+
 func (c cachedRpcTraceClient) Transactions(transactionHash common.Hash) ([]web3Types.LocalizedTrace, error) {
 	return loadLazyIfNoError(c.LazyTransactions(transactionHash))
 }

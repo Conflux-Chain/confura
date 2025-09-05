@@ -221,15 +221,15 @@ func (h *EthStateHandler) LazyTraceTransaction(
 	return result, err
 }
 
-func (h *EthStateHandler) TraceGet(
+func (h *EthStateHandler) LazyTrace(
 	ctx context.Context,
 	w3c *node.Web3goClient,
 	txHash common.Hash,
 	indexes []uint,
-) (*types.LocalizedTrace, error) {
+) (cacheTypes.Lazy[*types.LocalizedTrace], error) {
 	result, err, usefs := tryResolveState(h, ctx, w3c,
-		func(w3c *node.Web3goClient) (*types.LocalizedTrace, error) {
-			return w3c.Trace.Trace(txHash, indexes)
+		func(w3c *node.Web3goClient) (cacheTypes.Lazy[*types.LocalizedTrace], error) {
+			return w3c.Trace.LazyTrace(txHash, indexes)
 		},
 	)
 

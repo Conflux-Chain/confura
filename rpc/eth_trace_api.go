@@ -30,14 +30,14 @@ func (api *ethTraceAPI) Transaction(ctx context.Context, txHash common.Hash) (ca
 	return api.stateHandler.LazyTraceTransaction(ctx, w3c, txHash)
 }
 
-func (api *ethTraceAPI) Get(ctx context.Context, txHash common.Hash, indexes []hexutil.Uint) (*types.LocalizedTrace, error) {
+func (api *ethTraceAPI) Get(ctx context.Context, txHash common.Hash, indexes []hexutil.Uint) (cacheTypes.Lazy[*types.LocalizedTrace], error) {
 	idxs := make([]uint, 0, len(indexes))
 	for _, v := range indexes {
 		idxs = append(idxs, uint(v))
 	}
 
 	w3c := GetEthClientFromContext(ctx)
-	return api.stateHandler.TraceGet(ctx, w3c, txHash, idxs)
+	return api.stateHandler.LazyTrace(ctx, w3c, txHash, idxs)
 }
 
 func (api *ethTraceAPI) BlockSetAuth(ctx context.Context, blockNumber types.BlockNumberOrHash) ([]types.LocalizedSetAuthTrace, error) {
