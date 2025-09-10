@@ -5,16 +5,16 @@ go 1.23.0
 toolchain go1.23.10
 
 require (
-	github.com/Conflux-Chain/confura-data-cache v0.0.0-20250904025738-7465e0786aaa
+	github.com/Conflux-Chain/confura-data-cache v0.0.0-20250905081826-5b842415a00e
 	github.com/Conflux-Chain/go-conflux-sdk v1.5.11-0.20240913040447-d33c1c8903b2
-	github.com/Conflux-Chain/go-conflux-util v0.5.0
+	github.com/Conflux-Chain/go-conflux-util v0.6.7
 	github.com/Conflux-Chain/web3pay-service v1.0.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
 	github.com/cespare/xxhash v1.1.0
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/go-sql-driver/mysql v1.6.0
+	github.com/go-sql-driver/mysql v1.8.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/mcuadros/go-defaults v1.2.0
@@ -36,11 +36,12 @@ require (
 	golang.org/x/time v0.9.0
 	google.golang.org/grpc v1.75.0
 	google.golang.org/protobuf v1.36.6
-	gorm.io/driver/mysql v1.3.6
-	gorm.io/gorm v1.23.8
+	gorm.io/driver/mysql v1.6.0
+	gorm.io/gorm v1.30.0
 )
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/DataDog/zstd v1.4.5 // indirect
 	github.com/DmitriyVTitov/size v1.5.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -119,7 +120,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
-	github.com/mattn/go-sqlite3 v1.14.14 // indirect
+	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/mitchellh/pointerstructure v1.2.0 // indirect
@@ -176,7 +177,7 @@ require (
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/driver/sqlite v1.3.6 // indirect
+	gorm.io/driver/sqlite v1.6.0 // indirect
 	gotest.tools v2.2.0+incompatible // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )

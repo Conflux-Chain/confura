@@ -11,7 +11,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
-	"github.com/Conflux-Chain/go-conflux-util/store/mysql"
+	"github.com/Conflux-Chain/go-conflux-util/store"
 	"github.com/mcuadros/go-defaults"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -60,11 +60,13 @@ func setup() error {
 		return nil
 	}
 
-	conf := mysql.Config{
-		Host:     host,
-		Database: dbn,
-		Username: user,
-		Password: pwd,
+	conf := store.Config{
+		Mysql: &store.MysqlConfig{
+			Host:     host,
+			Database: dbn,
+			Username: user,
+			Password: pwd,
+		},
 	}
 
 	defaults.SetDefaults(&conf)
