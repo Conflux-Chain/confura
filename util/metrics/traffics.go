@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"container/heap"
+	"maps"
 	"sync"
 	"time"
 
@@ -82,9 +83,7 @@ func (twTrafficSlotAggregator) Clone(v twTrafficSlotData) twTrafficSlotData {
 	}
 
 	copy := make(twTrafficSlotData, len(v))
-	for k, v := range v {
-		copy[k] = v
-	}
+	maps.Copy(copy, v)
 
 	return copy
 }
