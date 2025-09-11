@@ -178,7 +178,7 @@ func nativeSpaceBridgeApis(config *CfxBridgeServerConfig) ([]API, error) {
 	rpc.HookMiddlewares(eth.Provider(), ethNodeURL, "eth")
 
 	var cfx *sdk.Client
-	if len(cfxNodeURL) > 0 { // optioinal
+	if len(cfxNodeURL) > 0 { // optional
 		cfx, err = rpc.NewCfxClient(cfxNodeURL)
 		if err != nil {
 			return nil, errors.WithMessage(err, "Failed to connect to cfx space")
