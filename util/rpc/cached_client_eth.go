@@ -14,6 +14,7 @@ import (
 	lruCache "github.com/Conflux-Chain/confura/util/rpc/cache"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/go-rpc-provider/interfaces"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
 	"github.com/openweb3/web3go"
@@ -513,7 +514,7 @@ func (c cachedRpcEthClient) LazyTransactionByBlockHashAndIndex(
 	if err != nil {
 		return lazyTxn, err
 	}
-	return resolveLazyWithFallback(c, "eth_getTransactionByBlockHashAndIndex", lazyTxn, blockHash, index)
+	return resolveLazyWithFallback(c, "eth_getTransactionByBlockHashAndIndex", lazyTxn, blockHash, hexutil.Uint(index))
 }
 
 func (c cachedRpcEthClient) TransactionByBlockNumberAndIndex(
@@ -527,7 +528,7 @@ func (c cachedRpcEthClient) LazyTransactionByBlockNumberAndIndex(
 	if err != nil {
 		return lazyTxn, err
 	}
-	return resolveLazyWithFallback(c, "eth_getTransactionByBlockNumberAndIndex", lazyTxn, blockNum, index)
+	return resolveLazyWithFallback(c, "eth_getTransactionByBlockNumberAndIndex", lazyTxn, blockNum, hexutil.Uint(index))
 }
 
 func (c cachedRpcEthClient) TransactionReceipt(txHash common.Hash) (*web3Types.Receipt, error) {
@@ -631,7 +632,12 @@ func (c cachedRpcTraceClient) LazyTrace(transactionHash common.Hash, indexes []u
 	if err != nil {
 		return lazyTrace, err
 	}
-	return resolveLazyWithFallback(c, "trace_get", lazyTrace, transactionHash, indexes)
+
+	hexIndexes := make([]hexutil.Uint, len(indexes))
+	for i, index := range indexes {
+		hexIndexes[i] = hexutil.Uint(index)
+	}
+	return resolveLazyWithFallback(c, "trace_get", lazyTrace, transactionHash, hexIndexes)
 }
 
 func (c cachedRpcTraceClient) Transactions(transactionHash common.Hash) ([]web3Types.LocalizedTrace, error) {
