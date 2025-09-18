@@ -134,8 +134,7 @@ func NormalizeEthBlockNumber(
 	// pending or latest => latest_mined or latest_state
 	realBlockNum, err := resolver.Resolve(*blockNum)
 	if err != nil {
-		blockText, _ := blockNum.MarshalText()
-		return nil, errors.WithMessagef(err, "failed to get block (%v)", blockText)
+		return nil, errors.WithMessagef(err, "failed to get block (%v)", blockNum.String())
 	}
 
 	blockNo := web3goTypes.BlockNumber(realBlockNum)
