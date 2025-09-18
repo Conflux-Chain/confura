@@ -135,7 +135,7 @@ func NormalizeEthBlockNumber(
 	realBlockNum, err := resolver.Resolve(*blockNum)
 	if err != nil {
 		blockText, _ := blockNum.MarshalText()
-		return nil, errors.WithMessagef(err, "failed to get block (%v)", blockText)
+		return nil, errors.WithMessagef(err, "failed to get block (%v)", string(blockText))
 	}
 
 	blockNo := web3goTypes.BlockNumber(realBlockNum)
