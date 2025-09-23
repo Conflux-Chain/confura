@@ -307,13 +307,10 @@ func ConvertLog(log *cfxtypes.Log, logExtra *store.LogExtra) *types.Log {
 	// fill missed data field `LogType`, `Removed`, `BlockTimestamp`
 	if logExtra != nil {
 		ethLog.LogType = logExtra.LogType
+		ethLog.BlockTimestamp = logExtra.BlockTimestamp
 
 		if logExtra.Removed != nil {
 			ethLog.Removed = *logExtra.Removed
-		}
-
-		if logExtra.BlockTimestamp != 0 {
-			ethLog.BlockTimestamp = logExtra.BlockTimestamp
 		}
 	}
 
