@@ -32,8 +32,9 @@ type ReceiptExtra struct {
 // custom event log fields for extension
 type LogExtra struct {
 	// extended fields for ETH log
-	LogType *string `json:"logType,omitempty"`
-	Removed *bool   `json:"removed,,omitempty"`
+	LogType        *string `json:"logType,omitempty"`
+	Removed        *bool   `json:"removed,omitempty"`
+	BlockTimestamp uint64  `json:"blockTimestamp,omitempty"`
 }
 
 func ExtractEthBlockExt(ethBlock *web3Types.Block) *BlockExtra {
@@ -61,7 +62,9 @@ func ExtractEthTransactionExt(ethTxn *web3Types.TransactionDetail) *TransactionE
 
 func ExtractEthLogExt(ethLog *web3Types.Log) *LogExtra {
 	return &LogExtra{
-		LogType: ethLog.LogType, Removed: &ethLog.Removed,
+		LogType:        ethLog.LogType,
+		Removed:        &ethLog.Removed,
+		BlockTimestamp: ethLog.BlockTimestamp,
 	}
 }
 
