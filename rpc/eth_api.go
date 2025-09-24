@@ -14,6 +14,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	lru "github.com/hashicorp/golang-lru"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -63,6 +64,9 @@ type ethAPI struct {
 
 	// return empty data before eSpace hardfork block number
 	hardforkBlockNumber web3Types.BlockNumber
+
+	// block timestamp LRU cache
+	blockTimstampCache *lru.Cache
 }
 
 func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *ethAPI {
@@ -85,11 +89,17 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 		opt = option[0]
 	}
 
+	blockTsCache, err := lru.New(10000)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to create block timestamp cache")
+	}
+
 	return &ethAPI{
 		EthAPIOption:        opt,
 		provider:            provider,
 		stateHandler:        handler.NewEthStateHandler(provider),
 		hardforkBlockNumber: util.GetEthHardforkBlockNumber(*chainId),
+		blockTimstampCache:  blockTsCache,
 	}
 }
 
@@ -444,7 +454,34 @@ func (api *ethAPI) GetAccountPendingTransactions(
 // GetLogs returns an array of all logs matching a given filter object.
 func (api *ethAPI) GetLogs(ctx context.Context, fq web3Types.FilterQuery) ([]web3Types.Log, error) {
 	w3c := GetEthClientFromContext(ctx)
-	return api.getLogs(ctx, w3c, &fq, rpcMethodEthGetLogs)
+	logs, err := api.getLogs(ctx, w3c, &fq, rpcMethodEthGetLogs)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range logs {
+		if logs[i].BlockTimestamp == 0 {
+			// TODO: Remove this when full node supports block timestamp
+			api.fillBlockTimestamp(w3c, &logs[i])
+		}
+	}
+	return logs, nil
+}
+
+func (api *ethAPI) fillBlockTimestamp(w3c *node.Web3goClient, log *web3Types.Log) {
+	if ts, ok := api.blockTimstampCache.Get(log.BlockHash); ok {
+		log.BlockTimestamp = ts.(uint64)
+		return
+	}
+
+	// Ignore error since block timestamp is not critical
+	block, err := w3c.Eth.BlockByHash(log.BlockHash, false)
+	if err != nil || block == nil {
+		return
+	}
+
+	log.BlockTimestamp = block.Timestamp
+	api.blockTimstampCache.Add(log.BlockHash, block.Timestamp)
 }
 
 // getLogs helper method to get logs from store or fullnode.
