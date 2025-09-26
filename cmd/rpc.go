@@ -172,9 +172,6 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 		logrus.Info("Virtual filter client enabled")
 	}
 
-	// initialize gas station handler
-	gasHandler := handler.MustNewEthGasStationHandlerFromViper(clientProvider)
-
 	if storeCtx.EthDB != nil {
 		// initialize store handler
 		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.EthDB, nil)
@@ -191,7 +188,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 
 	// initialize RPC server
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
-	server := rpc.MustNewEvmSpaceServer(rateReg, clientProvider, gasHandler, exposedModules, option)
+	server := rpc.MustNewEvmSpaceServer(rateReg, clientProvider, exposedModules, option)
 
 	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("ethrpc.endpoint")
