@@ -103,7 +103,6 @@ func nativeSpaceApis(
 // evmSpaceApis returns the collection of built-in RPC APIs for EVM space.
 func evmSpaceApis(
 	clientProvider *node.EthClientProvider,
-	gashandler *handler.EthGasStationHandler,
 	option ...EthAPIOption) ([]API, error) {
 	stateHandler := handler.NewEthStateHandler(clientProvider)
 	return []API{
@@ -141,11 +140,6 @@ func evmSpaceApis(
 			Namespace: "txpool",
 			Version:   "1.0",
 			Service:   &ethTxPoolAPI{},
-			Public:    false,
-		}, {
-			Namespace: "gasstation",
-			Version:   "1.0",
-			Service:   newEthGasStationAPI(gashandler),
 			Public:    false,
 		},
 	}, nil
