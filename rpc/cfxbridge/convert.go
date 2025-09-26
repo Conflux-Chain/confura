@@ -73,7 +73,7 @@ func ConvertAddresses(addresses []common.Address, ethNetworkId uint32) []types.A
 
 func ConvertTxStatus(value *uint64) hexutil.Uint64 {
 	v := ConvertTxStatusNullable(value)
-	if v == nil { // unkown status? regarded as `failed` anyway
+	if v == nil { // unknown status? regarded as `failed` anyway
 		return txnStatusFailed
 	}
 
