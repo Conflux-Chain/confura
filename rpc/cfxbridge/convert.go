@@ -269,6 +269,13 @@ func ConvertReceipt(receipt *ethTypes.Receipt, ethNetworkId uint32) *types.Trans
 		stateRoot = types.Hash(hexutil.Encode(receipt.Root))
 	}
 
+	if receipt.GasFee == nil {
+		receipt.GasFee = new(big.Int).Mul(
+			receipt.EffectiveGasPrice,
+			new(big.Int).SetUint64(receipt.GasUsed),
+		)
+	}
+
 	return &types.TransactionReceipt{
 		Type:                    (*hexutil.Uint64)(receipt.Type),
 		TransactionHash:         types.Hash(receipt.TransactionHash.Hex()),
