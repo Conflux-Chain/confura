@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"math"
 	"os"
 	"reflect"
@@ -87,7 +86,7 @@ func MustNewEthValidator(conf *EthValidConfig) *EthValidator {
 	conf.ScanFromBlock = 1 // default scan from block #1
 
 	// Read last validated block from config file, on which the validation will continue
-	dat, err := ioutil.ReadFile(validBlockFromNoFilePath)
+	dat, err := os.ReadFile(validBlockFromNoFilePath)
 	if err != nil {
 		logrus.WithError(err).Debugf(
 			"Eth validator failed to load last validated block from file %v", validBlockFromNoFilePath,
@@ -664,7 +663,7 @@ func (validator *EthValidator) doValidateGetLogs(filter *types.FilterQuery) erro
 func (validator *EthValidator) saveScanCursor() error {
 	// Write last validated epoch to config file
 	epochStr := strconv.FormatUint(atomic.LoadUint64(&validator.conf.ScanFromBlock), 10)
-	if err := ioutil.WriteFile(validBlockFromNoFilePath, []byte(epochStr), fs.ModePerm); err != nil {
+	if err := os.WriteFile(validBlockFromNoFilePath, []byte(epochStr), fs.ModePerm); err != nil {
 		logrus.WithError(err).Infof(
 			"ETH validator failed to write last validated block to file %v", validBlockFromNoFilePath,
 		)
