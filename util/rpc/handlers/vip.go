@@ -34,8 +34,9 @@ const ( // !!! order is important
 const VipSubPropTierKey = "tier"
 
 type VipStatus struct {
-	ID   string  // VIP ID
-	Tier VipTier // VIP tier
+	ID       string     `json:"id"`                 // VIP ID
+	Tier     VipTier    `json:"tier"`               // VIP tier
+	ExpireAt *time.Time `json:"expireAt,omitempty"` // VIP expiration time (optional)
 }
 
 // IsAccessTokenValid checks if access token from the context
@@ -86,7 +87,12 @@ func GetVipStatusBySubscriptionStatus(vss *web3pay.VipSubscriptionStatus) (*VipS
 	}
 
 	if tier, ok := GetVipTierBySubscription(vi); ok {
-		return &VipStatus{Tier: tier, ID: vi.Account.String()}, true
+		expiredAt := time.Unix(vi.ExpireAt.Int64(), 0)
+		return &VipStatus{
+			Tier:     tier,
+			ID:       vi.Account.String(),
+			ExpireAt: &expiredAt,
+		}, true
 	}
 
 	return nil, false

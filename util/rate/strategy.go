@@ -24,6 +24,17 @@ const (
 	LimitTypeByIp
 )
 
+func (typ LimitType) String() string {
+	switch typ {
+	case LimitTypeByKey:
+		return "by_key"
+	case LimitTypeByIp:
+		return "by_ip"
+	default:
+		return "unknown"
+	}
+}
+
 const (
 	// pre-defined default strategy name
 	DefaultStrategy = "default"

@@ -5,6 +5,7 @@ import (
 	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util/metrics/service"
+	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/pkg/errors"
@@ -57,6 +58,7 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 func nativeSpaceApis(
 	clientProvider *node.CfxClientProvider,
 	gashandler *handler.CfxGasStationHandler,
+	registry *rate.Registry,
 	option ...CfxAPIOption,
 ) []API {
 	stateHandler := handler.NewCfxStateHandler(clientProvider)
@@ -96,6 +98,11 @@ func nativeSpaceApis(
 			Version:   "1.0",
 			Service:   &cfxDebugAPI{stateHandler},
 			Public:    false,
+		}, {
+			Namespace: "diagnostic",
+			Version:   "1.0",
+			Service:   &diagnosticAPI{registry},
+			Public:    false,
 		},
 	}
 }
@@ -104,6 +111,7 @@ func nativeSpaceApis(
 func evmSpaceApis(
 	clientProvider *node.EthClientProvider,
 	gashandler *handler.EthGasStationHandler,
+	registry *rate.Registry,
 	option ...EthAPIOption) ([]API, error) {
 	stateHandler := handler.NewEthStateHandler(clientProvider)
 	return []API{
@@ -146,6 +154,10 @@ func evmSpaceApis(
 			Namespace: "gasstation",
 			Version:   "1.0",
 			Service:   newEthGasStationAPI(gashandler),
+		}, {
+			Namespace: "diagnostic",
+			Version:   "1.0",
+			Service:   &diagnosticAPI{registry},
 			Public:    false,
 		},
 	}, nil
