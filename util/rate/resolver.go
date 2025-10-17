@@ -49,13 +49,13 @@ type StrategyResolver interface {
 type DefaultResolver struct{}
 
 func (r *DefaultResolver) Resolve(ctx context.Context, reg *Registry) (*StrategyDecision, error) {
-	ip, _ := handlers.GetIPAddressFromContext(ctx)
 	stg := reg.strategies[DefaultStrategy]
 	if stg == nil {
 		logrus.Debug("Default rate limit strategy not configured")
 	}
 
-	decision := &StrategyDecision{
+	ip, _ := handlers.GetIPAddressFromContext(ctx)
+	return &StrategyDecision{
 		Strategy:  stg,
 		LimitType: LimitTypeByIp,
 		LimitKey:  fmt.Sprintf("ip:%v", ip),
@@ -64,9 +64,7 @@ func (r *DefaultResolver) Resolve(ctx context.Context, reg *Registry) (*Strategy
 			"userType": UserTypeGuest,
 			"clientIp": ip,
 		},
-	}
-
-	return decision, nil
+	}, nil
 }
 
 type Web3payResolver struct{}
@@ -87,7 +85,7 @@ func (r *Web3payResolver) Resolve(ctx context.Context, reg *Registry) (*Strategy
 		logrus.WithField("vip", vip).Debug("Web3pay VIP strategy not configured")
 	}
 
-	decision := &StrategyDecision{
+	return &StrategyDecision{
 		Strategy:  stg,
 		LimitKey:  fmt.Sprintf("key:%v", authId),
 		LimitType: LimitTypeByKey,
@@ -96,8 +94,7 @@ func (r *Web3payResolver) Resolve(ctx context.Context, reg *Registry) (*Strategy
 			"userType":    UserTypeWeb3Pay,
 			"web3payInfo": vip,
 		},
-	}
-	return decision, nil
+	}, nil
 }
 
 type ProvisionedResolver struct{}
@@ -129,10 +126,10 @@ func (r *ProvisionedResolver) Resolve(ctx context.Context, reg *Registry) (*Stra
 		limitKey = fmt.Sprintf("key:%v", authId)
 
 	default:
-		return nil, errors.Errorf("invalid limit type %d", ki.Type)
+		return nil, errors.Errorf("unsupported limit type %d", ki.Type)
 	}
 
-	decision := &StrategyDecision{
+	return &StrategyDecision{
 		Strategy:  stg,
 		LimitKey:  limitKey,
 		LimitType: ki.Type,
@@ -142,8 +139,7 @@ func (r *ProvisionedResolver) Resolve(ctx context.Context, reg *Registry) (*Stra
 			"clientIp": ip,
 			"apiKey":   ki.Key,
 		},
-	}
-	return decision, nil
+	}, nil
 }
 
 // CompositeResolver tries multiple resolvers in order until one matches.
