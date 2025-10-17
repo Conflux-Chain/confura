@@ -29,7 +29,7 @@ func MustNewNativeSpaceServer(
 	option ...CfxAPIOption,
 ) *rpc.Server {
 	// retrieve all available core space rpc apis
-	allApis := nativeSpaceApis(clientProvider, gashandler, option...)
+	allApis := nativeSpaceApis(clientProvider, gashandler, registry, option...)
 
 	exposedApis, err := filterExposedApis(allApis, exposedModules)
 	if err != nil {
@@ -54,7 +54,7 @@ func MustNewEvmSpaceServer(
 	option ...EthAPIOption,
 ) *rpc.Server {
 	// retrieve all available evm space rpc apis
-	allApis, err := evmSpaceApis(clientProvider, gasHandler, option...)
+	allApis, err := evmSpaceApis(clientProvider, gasHandler, registry, option...)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new EVM space RPC server")
 	}

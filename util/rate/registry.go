@@ -46,6 +46,9 @@ type Registry struct {
 	// all available strategies
 	strategies    map[string]*Strategy // strategy name => *Strategy
 	id2Strategies map[uint32]*Strategy // strategy id => *Strategy
+
+	// strategy resolver
+	resolver *CompositeResolver
 }
 
 func NewRegistry(kloader *KeyLoader, valFactory acl.ValidatorFactory) *Registry {
@@ -54,6 +57,11 @@ func NewRegistry(kloader *KeyLoader, valFactory acl.ValidatorFactory) *Registry 
 		aclRegistry:   newAclRegistry(kloader, valFactory),
 		strategies:    make(map[string]*Strategy),
 		id2Strategies: make(map[uint32]*Strategy),
+		resolver: NewCompositeResolver(
+			&Web3payResolver{},
+			&ProvisionedResolver{},
+			&DefaultResolver{},
+		),
 	}
 
 	m.Registry = http.NewRegistry(m)
@@ -62,30 +70,50 @@ func NewRegistry(kloader *KeyLoader, valFactory acl.ValidatorFactory) *Registry 
 	return m
 }
 
+func (r *Registry) Strategies() []*Strategy {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	stgs := make([]*Strategy, 0, len(r.strategies))
+	for _, stg := range r.strategies {
+		stgs = append(stgs, stg)
+	}
+	return stgs
+}
+
+func (r *Registry) Resolve(ctx context.Context) (*StrategyDecision, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.resolver.Resolve(ctx, r)
+}
+
 // implements `http.LimiterFactory`
 
 func (r *Registry) GetGroupAndKey(
 	ctx context.Context,
 	resource string,
 ) (group, key string, err error) {
-	authId, ok := handlers.GetAuthIdFromContext(ctx)
-	if !ok {
-		// use default strategy if not authenticated
-		return r.genDefaultGroupAndKey(ctx, resource)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	decision, err := r.resolver.Resolve(ctx, r)
+	if err != nil {
+		return group, key, errors.WithMessage(err, "failed to resolve rate limit strategy")
 	}
 
-	if vip, ok := handlers.VipStatusFromContext(ctx); ok {
-		// use vip strategy with corresponding tier
-		return r.genVipGroupAndKey(ctx, resource, authId, vip)
+	// No rate limit applied if no strategy matched
+	if decision == nil || decision.Strategy == nil {
+		return group, key, nil
 	}
 
-	if ki, ok := r.kloader.Load(authId); ok && ki != nil {
-		// use strategy with corresponding key info
-		return r.genKeyInfoGroupAndKey(ctx, resource, authId, ki)
+	if _, ok := decision.Strategy.LimitOptions[resource]; !ok {
+		// No rate limit applied if rule not defined
+		return group, key, nil
 	}
 
-	// use default strategy as fallback
-	return r.genDefaultGroupAndKey(ctx, resource)
+	group, key = decision.Strategy.Name, decision.LimitKey
+	return group, key, nil
 }
 
 func (r *Registry) Create(ctx context.Context, resource, group string) (rate.Limiter, error) {
