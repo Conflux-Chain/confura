@@ -99,9 +99,9 @@ func nativeSpaceApis(
 			Service:   &cfxDebugAPI{stateHandler},
 			Public:    false,
 		}, {
-			Namespace: "ratelimit",
+			Namespace: "diagnostic",
 			Version:   "1.0",
-			Service:   &rateLimitAPI{registry},
+			Service:   &diagnosticAPI{registry},
 			Public:    false,
 		},
 	}
@@ -155,9 +155,9 @@ func evmSpaceApis(
 			Version:   "1.0",
 			Service:   newEthGasStationAPI(gashandler),
 		}, {
-			Namespace: "ratelimit",
+			Namespace: "diagnostic",
 			Version:   "1.0",
-			Service:   &rateLimitAPI{registry},
+			Service:   &diagnosticAPI{registry},
 			Public:    false,
 		},
 	}, nil
