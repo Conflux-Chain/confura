@@ -395,7 +395,7 @@ func (syncer *EthSyncer) reorgRevert(ctx context.Context, revertTo uint64) error
 	return nil
 }
 
-// Load last sync block from databse to continue synchronization.
+// Load last sync block from database to continue synchronization.
 func (syncer *EthSyncer) mustLoadLastSyncBlock() {
 	if err := syncer.loadLastSyncBlock(); err != nil {
 		logrus.WithError(err).Fatal("Failed to load last sync block range from ethdb")
@@ -403,7 +403,7 @@ func (syncer *EthSyncer) mustLoadLastSyncBlock() {
 }
 
 func (syncer *EthSyncer) loadLastSyncBlock() error {
-	// load last sync block from databse
+	// load last sync block from database
 	maxBlock, ok, err := syncer.db.MaxEpoch()
 	if err != nil {
 		return errors.WithMessage(err, "failed to get max block from e2b mapping")

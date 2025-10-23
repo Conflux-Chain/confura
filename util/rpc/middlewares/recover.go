@@ -36,7 +36,7 @@ func Recover(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 					"panicErr": err,
 				}).Error("RPC middleware panic recovered")
 
-				// rewrite error responce
+				// rewrite error response
 				resp = msg.ErrorResponse(errMiddlewareCrashed)
 			}
 		}()

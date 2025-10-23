@@ -213,7 +213,7 @@ func (rs *RedisStore) Pushn(dataSlice []*store.EpochData) error {
 		return errors.WithMessage(err, "failed to get global epoch range from redis")
 	}
 
-	// ensure continous epoch
+	// ensure continuous epoch
 	if err := store.RequireContinuous(dataSlice, lastEpoch); err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func (rs *RedisStore) Pushn(dataSlice []*store.EpochData) error {
 	return rs.execWithTx(func(tx *redis.Tx) error {
 		txOpHistory := store.EpochDataOpAffects{NumAlters: store.EpochDataOpNumAlters{}}
 
-		// Operation is commited only if the watched keys remain unchanged.
+		// Operation is committed only if the watched keys remain unchanged.
 		_, err = tx.TxPipelined(rs.ctx, func(pipe redis.Pipeliner) error {
 			for _, data := range dataSlice {
 				opHistory, err := rs.putOneWithTx(pipe, data)
@@ -540,7 +540,7 @@ func (rs *RedisStore) remove(epochFrom, epochTo uint64, option store.EpochRemove
 			removeOpHistory.Merge(opHistory)
 		}
 
-		// Operation is commited only if the watched keys remain unchanged.
+		// Operation is committed only if the watched keys remain unchanged.
 		_, err := tx.TxPipelined(rs.ctx, func(pipe redis.Pipeliner) error {
 			// unlink epoch cache keys
 			if err := pipe.Unlink(rs.ctx, unlinkKeys...).Err(); err != nil {

@@ -270,7 +270,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
 		return &dbFilter, nil, nil
 	}
 
-	// otherwise, partial data in databse
+	// otherwise, partial data in database
 	dbFilter := store.ParseEthLogFilter(blockFrom, maxBlock, filter, networkId)
 	fnBlockFrom := types.BlockNumber(maxBlock + 1)
 	fnFilter := types.FilterQuery{

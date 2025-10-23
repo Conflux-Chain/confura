@@ -171,7 +171,7 @@ func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
 	catchUpSyncer.Sync(ctx)
 }
 
-// Load last sync epoch from databse to continue synchronization.
+// Load last sync epoch from database to continue synchronization.
 func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 	if err := syncer.loadLastSyncEpoch(); err != nil {
 		logrus.WithError(err).Fatal("Failed to load last sync epoch range from db")
@@ -179,7 +179,7 @@ func (syncer *DatabaseSyncer) mustLoadLastSyncEpoch() {
 }
 
 func (syncer *DatabaseSyncer) loadLastSyncEpoch() error {
-	// Load last sync epoch from databse
+	// Load last sync epoch from database
 	maxEpoch, ok, err := syncer.db.MaxEpoch()
 	if err != nil {
 		return errors.WithMessage(err, "failed to get max epoch from epoch to block mapping")

@@ -395,7 +395,7 @@ func (handler *CfxLogsApiHandler) splitLogFilterByBlockRange(
 		return []store.LogFilter{dbFilter}, nil, nil
 	}
 
-	// otherwise, partial data in databse
+	// otherwise, partial data in database
 	partialFilter := *filter
 	partialFilter.ToBlock = (*hexutil.Big)(big.NewInt(int64(maxBlock)))
 	dbFilter := store.ParseCfxLogFilter(blockFrom, maxBlock, &partialFilter)
@@ -459,7 +459,7 @@ func (handler *CfxLogsApiHandler) splitLogFilterByEpochRange(
 		return []store.LogFilter{dbFilter}, nil, nil
 	}
 
-	// otherwise, partial data in databse
+	// otherwise, partial data in database
 	partialFilter := *filter
 	partialFilter.ToEpoch = types.NewEpochNumberUint64(maxEpoch)
 	dbFilter := store.ParseCfxLogFilter(blockFrom, maxBlock, &partialFilter)
