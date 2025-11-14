@@ -66,7 +66,7 @@ func (tb *TraceBuilder) pop(traceAddress []uint) error {
 		// previous trace should always exist
 		topEle := tb.stackedResults.Back()
 		if topEle == nil {
-			return fmt.Errorf("no trace adddress in stack, cur = %v", traceAddress)
+			return fmt.Errorf("no trace address in stack, cur = %v", traceAddress)
 		}
 
 		pre := topEle.Value.(stackedTraceResult)
