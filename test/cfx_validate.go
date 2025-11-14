@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"os"
@@ -134,7 +133,7 @@ func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
 	conf.EpochScanFrom = 1 // default scan from epoch #1
 
 	// Read last validated epoch from config file, on which the validation will continue
-	dat, err := ioutil.ReadFile(validEpochFromNoFilePath)
+	dat, err := os.ReadFile(validEpochFromNoFilePath)
 	if err != nil {
 		logrus.WithError(err).Debugf(
 			"Epoch validator failed to load last validated epoch from file %v", validEpochFromNoFilePath,
@@ -942,7 +941,7 @@ func (validator *EpochValidator) filterLogs(logs []types.Log) []types.Log {
 func (validator *EpochValidator) saveScanCursor() error {
 	// Write last validated epoch to config file
 	epochStr := strconv.FormatUint(atomic.LoadUint64(&validator.conf.EpochScanFrom), 10)
-	if err := ioutil.WriteFile(validEpochFromNoFilePath, []byte(epochStr), fs.ModePerm); err != nil {
+	if err := os.WriteFile(validEpochFromNoFilePath, []byte(epochStr), fs.ModePerm); err != nil {
 		logrus.WithError(err).Infof(
 			"Epoch validator failed to write last validated epoch to file %v", validEpochFromNoFilePath,
 		)
