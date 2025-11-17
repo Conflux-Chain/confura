@@ -210,13 +210,13 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 		return false, errors.WithMessage(err, "failed to load last sync epoch")
 	}
 
-	// catched up to the most recent block?
+	// caught up to the most recent block?
 	if syncer.fromBlock > recentBlockNo {
 		logrus.WithFields(logrus.Fields{
 			"latestBlockNo": recentBlockNo,
 			"syncFromBlock": syncer.fromBlock,
 			"recentBlockNo": recentBlockNo,
-		}).Debug("ETH syncer skipped due to already catched up")
+		}).Debug("ETH syncer skipped due to already caught up")
 
 		return true, nil
 	}
@@ -362,7 +362,7 @@ func (syncer *EthSyncer) reorgRevert(ctx context.Context, revertTo uint64) error
 
 	if revertTo >= syncer.fromBlock {
 		logger.Debug(
-			"ETH syncer skipped re-org revert due to not catched up yet",
+			"ETH syncer skipped re-org revert due to not caught up yet",
 		)
 		return nil
 	}

@@ -288,7 +288,7 @@ func (validator *EpochValidator) scanOnce() (bool, error) {
 			To:   maxEpochTo,
 		}
 		logrus.WithField("epochRange", epochRange).Debug(
-			"Epoch validator scanning skipped due to catched up already",
+			"Epoch validator scanning skipped due to caught up already",
 		)
 
 		return true, nil

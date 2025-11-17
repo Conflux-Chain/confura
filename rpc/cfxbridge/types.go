@@ -325,7 +325,7 @@ func resolveToAddresses(val interface{}) ([]EthAddress, error) {
 		for _, v := range addrStrList {
 			vStr, ok := v.(string)
 			if !ok {
-				return nil, errors.Errorf("could not conver type %v to address", reflect.TypeOf(v))
+				return nil, errors.Errorf("could not convert type %v to address", reflect.TypeOf(v))
 			}
 
 			var addr EthAddress
@@ -378,7 +378,7 @@ func resolveToHashes(val interface{}) ([]common.Hash, error) {
 		for _, v := range addrStrList {
 			vStr, ok := v.(string)
 			if !ok {
-				return nil, errors.Errorf("could not conver type %v to hash", reflect.TypeOf(v))
+				return nil, errors.Errorf("could not convert type %v to hash", reflect.TypeOf(v))
 			}
 
 			addrList = append(addrList, common.HexToHash(vStr))
