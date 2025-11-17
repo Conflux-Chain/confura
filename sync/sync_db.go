@@ -382,7 +382,7 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(ctx context.Context, revertTo ui
 
 	if revertTo >= syncer.epochFrom {
 		logger.Debug(
-			"Db syncer skipped pivot switch revert due to not catched up yet",
+			"Db syncer skipped pivot switch revert due to not caught up yet",
 		)
 		return nil
 	}

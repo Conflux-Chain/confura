@@ -279,7 +279,7 @@ func (bcls *bigContractLogStore) Add(
 			return errors.WithMessage(err, "failed to delta update partition size")
 		}
 
-		// Update contract statistics (log count and lastest updated epoch).
+		// Update contract statistics (log count and latest updated epoch).
 		latestUpdateEpoch := logs[len(logs)-1].Epoch
 		if err := bcls.cs.UpdateContractStats(dbTx, cid, len(logs), latestUpdateEpoch); err != nil {
 			return errors.WithMessage(err, "failed to update contract statistics")
@@ -342,7 +342,7 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 			totalRowsAffected += res.RowsAffected
 		}
 
-		// update contract statistics (log count and lastest updated epoch).
+		// update contract statistics (log count and latest updated epoch).
 		if err := bcls.cs.UpdateContractStats(dbTx, contract.ID, int(-totalRowsAffected), epochUntil); err != nil {
 			return errors.WithMessage(err, "failed to update contract statistics")
 		}

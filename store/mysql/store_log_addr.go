@@ -160,7 +160,7 @@ func (ls *AddressIndexedLogStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochDat
 	}
 
 	for cid, logCount := range allContract2LogCount {
-		// Update contract statistics (log count and lastest updated epoch).
+		// Update contract statistics (log count and latest updated epoch).
 		latestUpdatedEpoch := allContract2UpdatedEpochs[cid]
 		if err := ls.cs.UpdateContractStats(dbTx, cid, logCount, latestUpdatedEpoch); err != nil {
 			return errors.WithMessage(err, "failed to update contract statistics")
@@ -194,7 +194,7 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 			return err
 		}
 
-		// Update contract statistics (log count and lastest updated epoch).
+		// Update contract statistics (log count and latest updated epoch).
 		// A rough estimation of the number of logs deleted from the contract, not accounting for other contracts in the same partition
 		// since the accuracy is not critical and it happens rarely.
 		if err := ls.cs.UpdateContractStats(dbTx, contract.ID, int(-res.RowsAffected), epochFrom); err != nil {
