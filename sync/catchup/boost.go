@@ -61,14 +61,14 @@ func (pq syncTaskPriorityQueue) Swap(i, j int) {
 	pq[j].index = j
 }
 
-func (pq *syncTaskPriorityQueue) Push(x interface{}) {
+func (pq *syncTaskPriorityQueue) Push(x any) {
 	n := len(*pq)
 	item := x.(*syncTaskItem)
 	item.index = n
 	*pq = append(*pq, item)
 }
 
-func (pq *syncTaskPriorityQueue) Pop() interface{} {
+func (pq *syncTaskPriorityQueue) Pop() any {
 	old := *pq
 	n := len(old)
 	if n == 0 {

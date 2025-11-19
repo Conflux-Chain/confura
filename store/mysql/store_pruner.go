@@ -47,7 +47,7 @@ func (sp *storePruner) schedulePrune(config *Config) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		sp.bnPartitionObsEntitySet.Range(func(key, value interface{}) bool {
+		sp.bnPartitionObsEntitySet.Range(func(key, value any) bool {
 			entity := key.(string)
 			tabler := value.(schema.Tabler)
 

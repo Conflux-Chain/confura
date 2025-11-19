@@ -55,7 +55,7 @@ func (fs *cfxFilterSystem) newPendingTransactionFilter(client *sdk.Client) (rpc.
 
 func (fs *cfxFilterSystem) newFilter(client *sdk.Client, crit types.LogFilter) (rpc.ID, error) {
 	nodeName := rpcutil.Url2NodeName(client.GetNodeURL())
-	worker, _ := fs.workers.LoadOrStoreFn(nodeName, func(k interface{}) interface{} {
+	worker, _ := fs.workers.LoadOrStoreFn(nodeName, func(k any) any {
 		return newCfxFilterWorker(
 			fs.conf.MaxFullFilterEpochs, fs, client, fs.shutdownCtx,
 		)

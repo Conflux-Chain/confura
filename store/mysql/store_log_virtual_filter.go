@@ -244,7 +244,7 @@ func (vfls *VirtualFilterLogStore) GC(fid string) error {
 // expandPartitioBnRange expands block number range of the specified entity partition.
 func (vfls *VirtualFilterLogStore) expandPartitioBnRange(
 	dbTx *gorm.DB, entity string, partitionIndex uint32, from, to uint64) error {
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"bn_min": gorm.Expr("LEAST(IFNULL(bn_min, ?), ?)", math.MaxInt64, from),
 		"bn_max": gorm.Expr("GREATEST(IFNULL(bn_max, ?), ?)", 0, to),
 	}

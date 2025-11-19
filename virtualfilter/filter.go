@@ -24,7 +24,7 @@ var (
 	errFilterNotFound = errors.New("filter not found")
 )
 
-type filterChanges interface{}
+type filterChanges any
 
 type virtualFilter interface {
 	fid() rpc.ID                    // filter ID

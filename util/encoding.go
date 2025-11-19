@@ -7,7 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func MustMarshalJson(v interface{}) []byte {
+func MustMarshalJson(v any) []byte {
 	if IsInterfaceValNil(v) {
 		return nil
 	}
@@ -19,7 +19,7 @@ func MustMarshalJson(v interface{}) []byte {
 	return data
 }
 
-func MustUnmarshalJson(data []byte, v interface{}) {
+func MustUnmarshalJson(data []byte, v any) {
 	if err := json.Unmarshal(data, v); err != nil {
 		logrus.WithError(err).Fatalf(
 			"Failed to unmarshal JSON data, v = %v, data = %x", v, data,
@@ -27,7 +27,7 @@ func MustUnmarshalJson(data []byte, v interface{}) {
 	}
 }
 
-func MustMarshalRLP(v interface{}) []byte {
+func MustMarshalRLP(v any) []byte {
 	if IsInterfaceValNil(v) {
 		return nil
 	}
@@ -40,7 +40,7 @@ func MustMarshalRLP(v interface{}) []byte {
 	return data
 }
 
-func MustUnmarshalRLP(data []byte, v interface{}) {
+func MustUnmarshalRLP(data []byte, v any) {
 	if err := rlp.DecodeBytes(data, v); err != nil {
 		logrus.WithError(err).Fatalf(
 			"Failed to unmarshal RLP data, v = %v, data = %x", v, data,

@@ -128,7 +128,7 @@ func (r *Registry) Create(ctx context.Context, resource, group string) (rate.Lim
 	return r.createWithOption(opt)
 }
 
-func (r *Registry) createWithOption(option interface{}) (l rate.Limiter, err error) {
+func (r *Registry) createWithOption(option any) (l rate.Limiter, err error) {
 	switch opt := option.(type) {
 	case FixedWindowOption:
 		l = rate.NewFixedWindow(opt.Interval, opt.Quota)

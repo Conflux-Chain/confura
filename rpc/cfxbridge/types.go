@@ -280,8 +280,8 @@ func (l *EthLogFilter) UnmarshalJSON(data []byte) error {
 		FromEpoch   *EthBlockNumber `json:"fromEpoch,omitempty"`
 		ToEpoch     *EthBlockNumber `json:"toEpoch,omitempty"`
 		BlockHashes *common.Hash    `json:"blockHashes,omitempty"`
-		Address     interface{}     `json:"address,omitempty"`
-		Topics      []interface{}   `json:"topics,omitempty"`
+		Address     any             `json:"address,omitempty"`
+		Topics      []any           `json:"topics,omitempty"`
 	}
 
 	t := tmpLogFilter{}
@@ -303,7 +303,7 @@ func (l *EthLogFilter) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func resolveToAddresses(val interface{}) ([]EthAddress, error) {
+func resolveToAddresses(val any) ([]EthAddress, error) {
 	// if val is nil, return
 	if val == nil {
 		return nil, nil
@@ -320,7 +320,7 @@ func resolveToAddresses(val interface{}) ([]EthAddress, error) {
 	}
 
 	// if val is string slice, new every item to cfxaddress
-	if addrStrList, ok := val.([]interface{}); ok {
+	if addrStrList, ok := val.([]any); ok {
 		addrList := make([]EthAddress, 0)
 		for _, v := range addrStrList {
 			vStr, ok := v.(string)
@@ -342,7 +342,7 @@ func resolveToAddresses(val interface{}) ([]EthAddress, error) {
 	return nil, errors.Errorf("failed to unmarshal %#v to address or address list", val)
 }
 
-func resolveToTopicsList(val []interface{}) ([][]common.Hash, error) {
+func resolveToTopicsList(val []any) ([][]common.Hash, error) {
 	// if val is nil, return
 	if val == nil {
 		return nil, nil
@@ -361,7 +361,7 @@ func resolveToTopicsList(val []interface{}) ([][]common.Hash, error) {
 	return topicsList, nil
 }
 
-func resolveToHashes(val interface{}) ([]common.Hash, error) {
+func resolveToHashes(val any) ([]common.Hash, error) {
 	// if val is nil, return
 	if val == nil {
 		return nil, nil
@@ -373,7 +373,7 @@ func resolveToHashes(val interface{}) ([]common.Hash, error) {
 	}
 
 	// if val is string slice, append every item
-	if addrStrList, ok := val.([]interface{}); ok {
+	if addrStrList, ok := val.([]any); ok {
 		addrList := make([]common.Hash, 0)
 		for _, v := range addrStrList {
 			vStr, ok := v.(string)

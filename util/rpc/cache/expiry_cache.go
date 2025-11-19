@@ -10,7 +10,7 @@ import (
 
 // for atomic load/store in cache.
 type cacheValue struct {
-	value    interface{}
+	value    any
 	expireAt time.Time
 }
 
@@ -27,11 +27,11 @@ func newExpiryCache(timeout time.Duration) *expiryCache {
 	}
 }
 
-func (cache *expiryCache) get() (interface{}, bool) {
+func (cache *expiryCache) get() (any, bool) {
 	return cache.getAt(time.Now())
 }
 
-func (cache *expiryCache) getAt(time time.Time) (interface{}, bool) {
+func (cache *expiryCache) getAt(time time.Time) (any, bool) {
 	value := cache.value.Load()
 	if value == nil {
 		return nil, false
@@ -45,11 +45,11 @@ func (cache *expiryCache) getAt(time time.Time) (interface{}, bool) {
 	return val.value, true
 }
 
-func (cache *expiryCache) getOrUpdate(updateFunc func() (interface{}, error)) (interface{}, bool, error) {
+func (cache *expiryCache) getOrUpdate(updateFunc func() (any, error)) (any, bool, error) {
 	return cache.getOrUpdateAt(time.Now(), updateFunc)
 }
 
-func (cache *expiryCache) getOrUpdateAt(time time.Time, updateFunc func() (interface{}, error)) (interface{}, bool, error) {
+func (cache *expiryCache) getOrUpdateAt(time time.Time, updateFunc func() (any, error)) (any, bool, error) {
 	// cache value not expired
 	if val, ok := cache.getAt(time); ok {
 		return val, true, nil
@@ -90,8 +90,8 @@ func newNodeExpiryCaches(timeout time.Duration) *nodeExpiryCaches {
 	}
 }
 
-func (caches *nodeExpiryCaches) getOrUpdate(node string, updateFunc func() (interface{}, error)) (interface{}, bool, error) {
-	val, _ := caches.node2Caches.LoadOrStoreFn(node, func(interface{}) interface{} {
+func (caches *nodeExpiryCaches) getOrUpdate(node string, updateFunc func() (any, error)) (any, bool, error) {
+	val, _ := caches.node2Caches.LoadOrStoreFn(node, func(any) any {
 		return newExpiryCache(caches.timeout)
 	})
 
@@ -111,15 +111,15 @@ func newKeyExpiryLruCaches(ttl time.Duration, size int) *keyExpiryLruCaches {
 	}
 }
 
-func (caches *keyExpiryLruCaches) getOrUpdate(cacheKey string, updateFunc func() (interface{}, error)) (interface{}, bool, error) {
-	val, _ := caches.key2Caches.GetOrUpdate(cacheKey, func() (interface{}, error) {
+func (caches *keyExpiryLruCaches) getOrUpdate(cacheKey string, updateFunc func() (any, error)) (any, bool, error) {
+	val, _ := caches.key2Caches.GetOrUpdate(cacheKey, func() (any, error) {
 		return newExpiryCache(caches.ttl), nil
 	})
 
 	return val.(*expiryCache).getOrUpdate(updateFunc)
 }
 
-func (caches *keyExpiryLruCaches) get(cacheKey string) (interface{}, bool) {
+func (caches *keyExpiryLruCaches) get(cacheKey string) (any, bool) {
 	if val, ok := caches.key2Caches.Get(cacheKey); ok {
 		return val.(*expiryCache).get()
 	}

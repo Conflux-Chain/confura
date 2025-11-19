@@ -9,7 +9,7 @@ import (
 
 // expirableValue is used to hold value with expiration
 type expirableValue struct {
-	value     interface{}
+	value     any
 	expiresAt time.Time
 }
 
@@ -38,7 +38,7 @@ func NewExpirableLruCache(size int, ttl time.Duration, timeNowFunc ...func() tim
 }
 
 // Add adds a value to the cache. Returns true if an eviction occurred.
-func (c *ExpirableLruCache) Add(key, value interface{}) bool {
+func (c *ExpirableLruCache) Add(key, value any) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -46,13 +46,13 @@ func (c *ExpirableLruCache) Add(key, value interface{}) bool {
 }
 
 // Del removes a key-value pair. Returns true if the key existed.
-func (c *ExpirableLruCache) Del(key interface{}) bool {
+func (c *ExpirableLruCache) Del(key any) bool {
 	return c.lru.Remove(key)
 }
 
 // Get looks up a key's value from the cache. Will purge the entry and return nil
 // if the entry expired.
-func (c *ExpirableLruCache) Get(key interface{}) (v interface{}, found bool) {
+func (c *ExpirableLruCache) Get(key any) (v any, found bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -73,7 +73,7 @@ func (c *ExpirableLruCache) Get(key interface{}) (v interface{}, found bool) {
 // If the entry existed but expired, it will be purged and the updateFunc will be called.
 // If the updateFunc returns an error, the function will return that error.
 // If the entry existed and not expired, the function will return the existing value.
-func (c *ExpirableLruCache) GetOrUpdate(key interface{}, updateFunc func() (interface{}, error)) (interface{}, error) {
+func (c *ExpirableLruCache) GetOrUpdate(key any, updateFunc func() (any, error)) (any, error) {
 	v, expired, found := c.get(key)
 	if found && !expired {
 		return v, nil
@@ -99,11 +99,11 @@ func (c *ExpirableLruCache) GetOrUpdate(key interface{}, updateFunc func() (inte
 }
 
 // GetWithoutExp looks up a key's value from the cache without expiration action.
-func (c *ExpirableLruCache) GetWithoutExp(key interface{}) (v interface{}, expired, found bool) {
+func (c *ExpirableLruCache) GetWithoutExp(key any) (v any, expired, found bool) {
 	return c.get(key)
 }
 
-func (c *ExpirableLruCache) get(key interface{}) (v interface{}, expired, found bool) {
+func (c *ExpirableLruCache) get(key any) (v any, expired, found bool) {
 	cv, ok := c.lru.Get(key) // not found
 	if !ok {
 		return nil, false, false
@@ -118,7 +118,7 @@ func (c *ExpirableLruCache) get(key interface{}) (v interface{}, expired, found 
 	return ev.value, false, true
 }
 
-func (c *ExpirableLruCache) add(key, value interface{}) bool {
+func (c *ExpirableLruCache) add(key, value any) bool {
 	ev := &expirableValue{
 		value:     value,
 		expiresAt: c.timeNowFunc().Add(c.ttl),

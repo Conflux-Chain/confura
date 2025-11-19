@@ -278,7 +278,7 @@ func (bnps *bnPartitionedStore) expandBnRange(dbTx *gorm.DB, entity string, part
 		)
 	}
 
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"bn_min": gorm.Expr("IFNULL(bn_min, ?)", from),
 		"bn_max": to,
 	}
@@ -316,7 +316,7 @@ func (bnps *bnPartitionedStore) shrinkBnRange(dbTx *gorm.DB, entity string, bn u
 			break
 		}
 
-		updates := make(map[string]interface{})
+		updates := make(map[string]any)
 
 		if bn == 0 || uint64(part.BnMin.Int64) >= bn {
 			updates["bn_max"] = gorm.Expr("NULL")

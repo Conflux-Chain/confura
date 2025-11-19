@@ -45,14 +45,14 @@ type Strategy struct {
 	ID   uint32 // strategy ID
 	Name string // strategy name
 
-	LimitOptions map[string]interface{} // resource => limit option
+	LimitOptions map[string]any // resource => limit option
 }
 
 func NewStrategy(id uint32, name string) *Strategy {
 	return &Strategy{
 		ID:           id,
 		Name:         name,
-		LimitOptions: make(map[string]interface{}),
+		LimitOptions: make(map[string]any),
 	}
 }
 
@@ -113,7 +113,7 @@ func NewTokenBucketOption(r, b int) TokenBucketOption {
 // LimitRule resource limit rule
 type LimitRule struct {
 	Algo   LimitAlgoType
-	Option interface{}
+	Option any
 }
 
 func (r *LimitRule) UnmarshalJSON(data []byte) (err error) {

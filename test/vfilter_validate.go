@@ -411,7 +411,7 @@ type vfValidationContext struct {
 	rBuf    *ring.Ring    // ring buffer to hold data for comparison
 }
 
-func newVFValidationContext(channel interface{}) *vfValidationContext {
+func newVFValidationContext(channel any) *vfValidationContext {
 	// check type of channel first
 	chanVal := reflect.ValueOf(channel)
 	if chanVal.Kind() != reflect.Chan ||
@@ -470,7 +470,7 @@ func (ctx *vfValidationContext) getStatus() bool {
 	return atomic.LoadInt32(&ctx.status) == 0
 }
 
-func (ctx *vfValidationContext) notify(result interface{}) bool {
+func (ctx *vfValidationContext) notify(result any) bool {
 	cases := []reflect.SelectCase{
 		{Dir: reflect.SelectSend, Chan: ctx.channel, Send: reflect.ValueOf(result)},
 		{Dir: reflect.SelectDefault},

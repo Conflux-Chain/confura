@@ -25,14 +25,14 @@ func (api *MetricsAPI) List() []string {
 	return names
 }
 
-func (api *MetricsAPI) Get(name string) map[string]interface{} {
+func (api *MetricsAPI) Get(name string) map[string]any {
 	return metrics.GetAll()[name]
 }
 
-func (api *MetricsAPI) All() map[string]map[string]interface{} {
+func (api *MetricsAPI) All() map[string]map[string]any {
 	names := api.List()
 
-	content := make(map[string]map[string]interface{})
+	content := make(map[string]map[string]any)
 
 	for _, v := range names {
 		content[v] = metrics.GetAll()[v]

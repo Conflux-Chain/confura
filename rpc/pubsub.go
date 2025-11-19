@@ -43,7 +43,7 @@ var (
 	delegateClients util.ConcurrentMap // node name => *delegateClient
 )
 
-type delegateSubFilter func(item interface{}) bool // result filter for delegate subscription
+type delegateSubFilter func(item any) bool // result filter for delegate subscription
 
 // delegateSubscription is a subscription established through the delegateClient's `Subscribe` methods.
 type delegateSubscription struct {
@@ -58,7 +58,7 @@ type delegateSubscription struct {
 }
 
 func newDelegateSubscription(
-	dCtx *delegateContext, subId rpc.ID, channel interface{}, filters ...delegateSubFilter) *delegateSubscription {
+	dCtx *delegateContext, subId rpc.ID, channel any, filters ...delegateSubFilter) *delegateSubscription {
 
 	// check type of channel first
 	chanVal := reflect.ValueOf(channel)
@@ -77,7 +77,7 @@ func newDelegateSubscription(
 	}
 }
 
-func (sub *delegateSubscription) deliver(result interface{}) bool {
+func (sub *delegateSubscription) deliver(result any) bool {
 	// filter result before deliver
 	for _, blacklist := range sub.filters {
 		if blacklist(result) {
@@ -156,7 +156,7 @@ func (dctx *delegateContext) setStatus(status delegateStatus) {
 
 func (dctx *delegateContext) registerDelegateSub(
 	pubsubRunLoop func(dctx *delegateContext) error,
-	subId rpc.ID, channel interface{}, filters ...delegateSubFilter,
+	subId rpc.ID, channel any, filters ...delegateSubFilter,
 ) (*delegateSubscription, error) {
 	dctx.lock.Lock()
 	defer dctx.lock.Unlock()
@@ -199,7 +199,7 @@ func (dctx *delegateContext) cancel(err error) {
 		err = rpc.ErrClientQuit
 	}
 
-	dctx.delegateSubs.Range(func(key, value interface{}) bool {
+	dctx.delegateSubs.Range(func(key, value any) bool {
 		dsub := value.(*delegateSubscription)
 		dsub.err <- err
 
@@ -211,11 +211,11 @@ func (dctx *delegateContext) cancel(err error) {
 }
 
 // notify all delegated subscriptions for new result
-func (dctx *delegateContext) notify(result interface{}) {
+func (dctx *delegateContext) notify(result any) {
 	dctx.lock.RLock()
 	defer dctx.lock.RUnlock()
 
-	dctx.delegateSubs.Range(func(key, value interface{}) bool {
+	dctx.delegateSubs.Range(func(key, value any) bool {
 		dsub := value.(*delegateSubscription)
 		dsub.deliver(result)
 
@@ -352,7 +352,7 @@ func (client *delegateClient) delegateSubscribeLogs(
 		return nil, errDelegateNotReady
 	}
 
-	return dCtx.registerDelegateSub(client.proxySubscribeLogs, subId, channel, func(item interface{}) bool {
+	return dCtx.registerDelegateSub(client.proxySubscribeLogs, subId, channel, func(item any) bool {
 		log, ok := item.(*types.SubscriptionLog)
 		return !ok || !matchPubSubLogFilter(log, &filter)
 	})

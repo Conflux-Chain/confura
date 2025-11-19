@@ -82,7 +82,7 @@ func HookMiddlewares(provider *providers.MiddlewarableProvider, url, space strin
 
 func middlewareMetrics(fullnode, space string) providers.CallContextMiddleware {
 	return func(handler providers.CallContextFunc) providers.CallContextFunc {
-		return func(ctx context.Context, result interface{}, method string, args ...interface{}) error {
+		return func(ctx context.Context, result any, method string, args ...any) error {
 			start := time.Now()
 
 			err := handler(ctx, result, method, args...)
@@ -103,7 +103,7 @@ func middlewareMetrics(fullnode, space string) providers.CallContextMiddleware {
 
 func middlewareLog(fullnode, space string) providers.CallContextMiddleware {
 	return func(handler providers.CallContextFunc) providers.CallContextFunc {
-		return func(ctx context.Context, result interface{}, method string, args ...interface{}) error {
+		return func(ctx context.Context, result any, method string, args ...any) error {
 			if !logrus.IsLevelEnabled(logrus.DebugLevel) {
 				return handler(ctx, result, method, args...)
 			}

@@ -54,9 +54,9 @@ type Readable interface {
 
 type Configurable interface {
 	// LoadConfig load configurations with specified names
-	LoadConfig(confNames ...string) (map[string]interface{}, error)
+	LoadConfig(confNames ...string) (map[string]any, error)
 	// StoreConfig stores configuration name to value pair
-	StoreConfig(confName string, confVal interface{}) error
+	StoreConfig(confName string, confVal any) error
 }
 
 type StackOperable interface {

@@ -312,13 +312,13 @@ func (rs *RedisStore) Flush() error {
 	return rs.rdb.FlushDBAsync(rs.ctx).Err()
 }
 
-func (rs *RedisStore) LoadConfig(confNames ...string) (map[string]interface{}, error) {
+func (rs *RedisStore) LoadConfig(confNames ...string) (map[string]any, error) {
 	iSlice, err := rs.rdb.HMGet(rs.ctx, "conf", confNames...).Result()
 	if err != nil {
 		return nil, err
 	}
 
-	res := make(map[string]interface{}, len(iSlice))
+	res := make(map[string]any, len(iSlice))
 	for i, v := range iSlice {
 		sv, ok := v.(string)
 		if !ok { // field not found
@@ -331,7 +331,7 @@ func (rs *RedisStore) LoadConfig(confNames ...string) (map[string]interface{}, e
 	return res, nil
 }
 
-func (rs *RedisStore) StoreConfig(confName string, confVal interface{}) error {
+func (rs *RedisStore) StoreConfig(confName string, confVal any) error {
 	return rs.rdb.HSet(rs.ctx, "conf", confName, confVal).Err()
 }
 
@@ -359,8 +359,8 @@ func (rs *RedisStore) putOneWithTx(rp redis.Pipeliner, data *store.EpochData) (s
 	opHistory := store.EpochDataOpNumAlters{}
 
 	// Epoch blocks & transactions hash collections
-	epochBlocks := make([]interface{}, 0, len(data.Blocks))
-	epochTxs := make([]interface{}, 0, len(data.Blocks)*2)
+	epochBlocks := make([]any, 0, len(data.Blocks))
+	epochTxs := make([]any, 0, len(data.Blocks)*2)
 
 	for _, block := range data.Blocks {
 		blockHash := block.Hash.String()
@@ -605,7 +605,7 @@ func (rs *RedisStore) dequeueEpochRangeData(rt store.EpochDataType, epochUntil u
 
 func (rs *RedisStore) updateEpochRangeMax(rp redis.Pipeliner, epochNo uint64, growFrom ...uint64) error {
 	cacheKey := getMetaCacheKey("epoch.ranges")
-	batchKVTo := make([]interface{}, 0, 4*2)
+	batchKVTo := make([]any, 0, 4*2)
 	batchKFrom := make([]string, 0, 4)
 
 	opEpochDataTypes := append([]store.EpochDataType{}, store.OpEpochDataTypes...)

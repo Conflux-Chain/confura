@@ -87,7 +87,7 @@ func (api *cfxAPI) UninstallFilter(ctx context.Context, fid rpc.ID) (bool, error
 //
 // For pending transaction and block filters the result is []types.Hash.
 // (pending)Log filters return []types.CfxFilterLog.
-func (api *cfxAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{}, error) {
+func (api *cfxAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (any, error) {
 	if api.VirtualFilterClient != nil {
 		res, err := api.VirtualFilterClient.GetFilterChanges(fid)
 		return res, errVirtualFilterProxyErrorOrNil(err)

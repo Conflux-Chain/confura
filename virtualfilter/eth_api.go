@@ -71,7 +71,7 @@ func (api *ethFilterApi) GetFilterChanges(id w3rpc.ID) (*types.FilterChanges, er
 
 func (api *ethFilterApi) loadOrGetFnClient(nodeUrl string) (*node.Web3goClient, error) {
 	nodeName := rpcutil.Url2NodeName(nodeUrl)
-	client, _, err := api.fnClients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+	client, _, err := api.fnClients.LoadOrStoreFnErr(nodeName, func(any) (any, error) {
 		client, err := rpcutil.NewEthClient(nodeUrl, rpcutil.WithClientHookMetrics(true))
 		if err != nil {
 			logrus.WithField("fnNodeUrl", nodeUrl).

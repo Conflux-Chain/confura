@@ -73,7 +73,7 @@ func newBlockStore(db *gorm.DB) *blockStore {
 	}
 }
 
-func (bs *blockStore) loadBlockSummary(whereClause string, args ...interface{}) (*store.BlockSummary, error) {
+func (bs *blockStore) loadBlockSummary(whereClause string, args ...any) (*store.BlockSummary, error) {
 	var blk block
 	if err := bs.db.Where(whereClause, args...).First(&blk).Error; err != nil {
 		return nil, err

@@ -61,7 +61,7 @@ func newClientProvider[T any](db *mysql.MysqlStore, router Router, defaultGroup 
 
 // getOrRegisterGroup gets or registers node group
 func (p *clientProvider[T]) getOrRegisterGroup(group Group) *util.ConcurrentMap {
-	v, _ := p.clients.LoadOrStoreFn(group, func(k interface{}) interface{} {
+	v, _ := p.clients.LoadOrStoreFn(group, func(k any) any {
 		return &util.ConcurrentMap{}
 	})
 
@@ -163,7 +163,7 @@ func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T,
 	})
 	logger.Trace("Route RPC requests")
 
-	client, loaded, err := clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+	client, loaded, err := clients.LoadOrStoreFnErr(nodeName, func(any) (any, error) {
 		// TODO improvements required
 		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
 		// 2. Different metrics for different full nodes.

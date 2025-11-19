@@ -227,7 +227,7 @@ func (filter *LogFilter) hasTopicsFilter() bool {
 	return false
 }
 
-func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr interface{}) error {
+func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr any) error {
 	if store.IsBoundChecksEnabled(ctx) {
 		if err := filter.validateQuerySetSize(db); err != nil {
 			return err

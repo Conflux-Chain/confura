@@ -10,8 +10,8 @@ type ConcurrentMap struct {
 }
 
 func (m *ConcurrentMap) LoadOrStoreFn(
-	key interface{}, factory func(k interface{}) interface{},
-) (actual interface{}, loaded bool) {
+	key any, factory func(k any) any,
+) (actual any, loaded bool) {
 	if val, ok := m.Load(key); ok {
 		return val, true
 	}
@@ -31,8 +31,8 @@ func (m *ConcurrentMap) LoadOrStoreFn(
 }
 
 func (m *ConcurrentMap) LoadOrStoreFnErr(
-	key interface{}, factory func(k interface{}) (interface{}, error),
-) (actual interface{}, loaded bool, err error) {
+	key any, factory func(k any) (any, error),
+) (actual any, loaded bool, err error) {
 	if val, ok := m.Load(key); ok {
 		return val, true, nil
 	}

@@ -146,7 +146,7 @@ func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, ep
 	return api.stateHandler.GetStorageRoot(ctx, cfx, address, toEpochSlice(epoch)...)
 }
 
-func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (interface{}, error) {
+func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (any, error) {
 	metrics.Registry.RPC.Percentage("cfx_getBlockByHash", "includeTxs").Mark(includeTxs)
 
 	logger := logrus.WithFields(logrus.Fields{"blockHash": blockHash, "includeTxs": includeTxs})
@@ -180,7 +180,7 @@ func (api *cfxAPI) GetBlockByHashWithPivotAssumption(
 	return cfx.GetBlockByHashWithPivotAssumption(blockHash, pivotHash, epoch)
 }
 
-func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (interface{}, error) {
+func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (any, error) {
 	metrics.Registry.RPC.Percentage("cfx_getBlockByEpochNumber", "includeTxs").Mark(includeTxs)
 
 	logger := logrus.WithFields(logrus.Fields{"epoch": epoch, "includeTxs": includeTxs})
@@ -210,7 +210,7 @@ func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch,
 }
 
 func (api *cfxAPI) GetBlockByBlockNumber(
-	ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (interface{}, error) {
+	ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (any, error) {
 	metrics.Registry.RPC.Percentage("cfx_getBlockByBlockNumber", "details").Mark(includeTxs)
 
 	logger := logrus.WithFields(logrus.Fields{"blockNumber": blockNumer, "includeTxs": includeTxs})

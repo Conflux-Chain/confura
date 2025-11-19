@@ -16,7 +16,7 @@ func TestDelegateContextRegister(t *testing.T) {
 
 	// test register
 	rpcSubID := rpc.NewID()
-	dsub, _ := dctx.registerDelegateSub(nil, rpcSubID, make(chan interface{}))
+	dsub, _ := dctx.registerDelegateSub(nil, rpcSubID, make(chan any))
 	assert.NotNil(t, dsub)
 
 	tsub, ok := dctx.delegateSubs.Load(rpcSubID)
@@ -32,7 +32,7 @@ func TestDelegateContextRegister(t *testing.T) {
 	assert.Equal(t, dsub, tsub)
 
 	numDelSubs := 0
-	dctx.delegateSubs.Range(func(key, value interface{}) bool {
+	dctx.delegateSubs.Range(func(key, value any) bool {
 		numDelSubs++
 		return true
 	})

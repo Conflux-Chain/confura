@@ -80,7 +80,7 @@ func (client *ethDelegateClient) delegateSubscribeLogs(
 		return nil, errDelegateNotReady
 	}
 
-	return dCtx.registerDelegateSub(client.proxySubscribeLogs, subId, channel, func(item interface{}) bool {
+	return dCtx.registerDelegateSub(client.proxySubscribeLogs, subId, channel, func(item any) bool {
 		log, ok := item.(*types.Log)
 		return !ok || !matchEthPubSubLogFilter(log, &filter)
 	})

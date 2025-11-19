@@ -34,7 +34,7 @@ func (h *CfxStateHandler) GetBalance(
 	address types.Address,
 	epoch ...*types.EpochOrBlockHash,
 ) (*hexutil.Big, error) {
-	bal, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	bal, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetBalance(address, epoch...)
 	})
 
@@ -53,7 +53,7 @@ func (h *CfxStateHandler) GetNextNonce(
 	address types.Address,
 	epoch ...*types.EpochOrBlockHash,
 ) (*hexutil.Big, error) {
-	nonce, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	nonce, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetNextNonce(address, epoch...)
 	})
 
@@ -73,7 +73,7 @@ func (h *CfxStateHandler) GetStorageAt(
 	position *hexutil.Big,
 	epoch ...*types.EpochOrBlockHash,
 ) (hexutil.Bytes, error) {
-	storage, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	storage, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetStorageAt(address, position, epoch...)
 	})
 
@@ -92,7 +92,7 @@ func (h *CfxStateHandler) GetCode(
 	address types.Address,
 	epoch ...*types.EpochOrBlockHash,
 ) (hexutil.Bytes, error) {
-	code, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	code, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetCode(address, epoch...)
 	})
 
@@ -111,7 +111,7 @@ func (h *CfxStateHandler) Call(
 	request types.CallRequest,
 	epoch *types.EpochOrBlockHash,
 ) (hexutil.Bytes, error) {
-	result, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	result, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Call(request, epoch)
 	})
 
@@ -130,7 +130,7 @@ func (h *CfxStateHandler) EstimateGasAndCollateral(
 	request types.CallRequest,
 	epoch ...*types.Epoch,
 ) (types.Estimate, error) {
-	est, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	est, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.EstimateGasAndCollateral(request, epoch...)
 	})
 
@@ -149,7 +149,7 @@ func (h *CfxStateHandler) GetAdmin(
 	contractAddress types.Address,
 	epoch ...*types.Epoch,
 ) (*types.Address, error) {
-	admin, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	admin, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetAdmin(contractAddress, epoch...)
 	})
 
@@ -168,7 +168,7 @@ func (h *CfxStateHandler) GetSponsorInfo(
 	contractAddress types.Address,
 	epoch ...*types.Epoch,
 ) (sponsor types.SponsorInfo, err error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetSponsorInfo(contractAddress, epoch...)
 	})
 
@@ -187,7 +187,7 @@ func (h *CfxStateHandler) GetStakingBalance(
 	account types.Address,
 	epoch ...*types.Epoch,
 ) (*hexutil.Big, error) {
-	bal, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	bal, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetStakingBalance(account, epoch...)
 	})
 
@@ -206,7 +206,7 @@ func (h *CfxStateHandler) GetDepositList(
 	address types.Address,
 	epoch ...*types.Epoch,
 ) ([]types.DepositInfo, error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetDepositList(address, epoch...)
 	})
 
@@ -225,7 +225,7 @@ func (h *CfxStateHandler) GetVoteList(
 	address types.Address,
 	epoch ...*types.Epoch,
 ) ([]types.VoteStakeInfo, error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetVoteList(address, epoch...)
 	})
 
@@ -243,7 +243,7 @@ func (h *CfxStateHandler) GetCollateralInfo(
 	cfx sdk.ClientOperator,
 	epoch ...*types.Epoch,
 ) (types.StorageCollateralInfo, error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetCollateralInfo(epoch...)
 	})
 
@@ -262,7 +262,7 @@ func (h *CfxStateHandler) GetCollateralForStorage(
 	account types.Address,
 	epoch ...*types.Epoch,
 ) (*hexutil.Big, error) {
-	storage, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	storage, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetCollateralForStorage(account, epoch...)
 	})
 
@@ -281,7 +281,7 @@ func (h *CfxStateHandler) GetStorageRoot(
 	address types.Address,
 	epoch ...*types.Epoch,
 ) (*types.StorageRoot, error) {
-	root, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	root, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetStorageRoot(address, epoch...)
 	})
 
@@ -304,7 +304,7 @@ func (h *CfxStateHandler) CheckBalanceAgainstTransaction(
 	storageLimit *hexutil.Big,
 	epoch ...*types.Epoch,
 ) (types.CheckBalanceAgainstTransactionResponse, error) {
-	check, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	check, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.CheckBalanceAgainstTransaction(
 			accountAddress, contractAddress, gasLimit, gasPrice, storageLimit, epoch...,
 		)
@@ -325,7 +325,7 @@ func (h *CfxStateHandler) GetAccountInfo(
 	account types.Address,
 	epoch ...*types.Epoch,
 ) (types.AccountInfo, error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetAccountInfo(account, epoch...)
 	})
 
@@ -343,7 +343,7 @@ func (h *CfxStateHandler) GetInterestRate(
 	cfx sdk.ClientOperator,
 	epoch ...*types.Epoch,
 ) (*hexutil.Big, error) {
-	rate, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	rate, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetInterestRate(epoch...)
 	})
 
@@ -361,7 +361,7 @@ func (h *CfxStateHandler) GetAccumulateInterestRate(
 	cfx sdk.ClientOperator,
 	epoch ...*types.Epoch,
 ) (*hexutil.Big, error) {
-	rate, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	rate, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetAccumulateInterestRate(epoch...)
 	})
 
@@ -379,7 +379,7 @@ func (h *CfxStateHandler) GetSupplyInfo(
 	cfx sdk.ClientOperator,
 	epoch ...*types.Epoch,
 ) (types.TokenSupplyInfo, error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetSupplyInfo(epoch...)
 	})
 
@@ -397,7 +397,7 @@ func (h *CfxStateHandler) GetPoSEconomics(
 	cfx sdk.ClientOperator,
 	epoch ...*types.Epoch,
 ) (types.PoSEconomics, error) {
-	economics, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	economics, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetPoSEconomics(epoch...)
 	})
 
@@ -415,7 +415,7 @@ func (h *CfxStateHandler) GetParamsFromVote(
 	cfx sdk.ClientOperator,
 	epoch ...*types.Epoch,
 ) (postypes.VoteParamsInfo, error) {
-	vote, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	vote, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.GetParamsFromVote(epoch...)
 	})
 
@@ -434,7 +434,7 @@ func (h *CfxStateHandler) PosGetAccount(
 	address postypes.Address,
 	view ...hexutil.Uint64,
 ) (postypes.Account, error) {
-	account, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	account, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Pos().GetAccount(address, view...)
 	})
 
@@ -453,7 +453,7 @@ func (h *CfxStateHandler) PosGetAccountByPowAddress(
 	address cfxaddress.Address,
 	blockNumber ...hexutil.Uint64,
 ) (postypes.Account, error) {
-	account, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	account, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Pos().GetAccountByPowAddress(address, blockNumber...)
 	})
 
@@ -471,7 +471,7 @@ func (h *CfxStateHandler) PosGetCommittee(
 	cfx sdk.ClientOperator,
 	view ...hexutil.Uint64,
 ) (postypes.CommitteeState, error) {
-	committee, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	committee, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Pos().GetCommittee(view...)
 	})
 
@@ -489,7 +489,7 @@ func (h *CfxStateHandler) PosGetRewardsByEpoch(
 	cfx sdk.ClientOperator,
 	epochNumber hexutil.Uint64,
 ) (postypes.EpochReward, error) {
-	reward, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	reward, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Pos().GetRewardsByEpoch(epochNumber)
 	})
 
@@ -507,7 +507,7 @@ func (h *CfxStateHandler) PosGetEpochState(
 	cfx sdk.ClientOperator,
 	epochNumber hexutil.Uint64,
 ) (*postypes.EpochState, error) {
-	state, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	state, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Pos().GetEpochState(epochNumber)
 	})
 
@@ -525,7 +525,7 @@ func (h *CfxStateHandler) PosGetLedgerInfoByEpoch(
 	cfx sdk.ClientOperator,
 	epochNumber hexutil.Uint64,
 ) (*postypes.LedgerInfoWithSignatures, error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Pos().GetLedgerInfoByEpoch(epochNumber)
 	})
 
@@ -544,7 +544,7 @@ func (h *CfxStateHandler) PosGetLedgerInfosByEpoch(
 	startEpoch hexutil.Uint64,
 	endEpoch hexutil.Uint64,
 ) ([]*postypes.LedgerInfoWithSignatures, error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Pos().GetLedgerInfosByEpoch(startEpoch, endEpoch)
 	})
 
@@ -562,7 +562,7 @@ func (h *CfxStateHandler) PosGetLedgerInfoByBlockNumber(
 	cfx sdk.ClientOperator,
 	blockNumber postypes.BlockNumber,
 ) (*postypes.LedgerInfoWithSignatures, error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Pos().GetLedgerInfoByBlockNumber(blockNumber)
 	})
 
@@ -581,7 +581,7 @@ func (h *CfxStateHandler) PosGetLedgerInfoByEpochAndRound(
 	epochNumber hexutil.Uint64,
 	round hexutil.Uint64,
 ) (*postypes.LedgerInfoWithSignatures, error) {
-	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	info, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Pos().GetLedgerInfoByEpochAndRound(epochNumber, round)
 	})
 
@@ -599,7 +599,7 @@ func (h *CfxStateHandler) DebugGetEpochReceiptProofByTransaction(
 	cfx sdk.ClientOperator,
 	txHash types.Hash,
 ) (*types.EpochReceiptProof, error) {
-	epochRcpt, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	epochRcpt, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Debug().GetEpochReceiptProofByTransaction(txHash)
 	})
 
@@ -617,7 +617,7 @@ func (h *CfxStateHandler) DebugGetTransactionsByEpoch(
 	cfx sdk.ClientOperator,
 	epoch types.Epoch,
 ) ([]types.WrapTransaction, error) {
-	txns, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	txns, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Debug().GetTransactionsByEpoch(epoch)
 	})
 
@@ -635,7 +635,7 @@ func (h *CfxStateHandler) DebugGetTransactionsByBlock(
 	cfx sdk.ClientOperator,
 	blockHash types.Hash,
 ) ([]types.WrapTransaction, error) {
-	txns, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	txns, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Debug().GetTransactionsByBlock(blockHash)
 	})
 
@@ -653,7 +653,7 @@ func (h *CfxStateHandler) TraceBlock(
 	cfx sdk.ClientOperator,
 	blockHash types.Hash,
 ) (*types.LocalizedBlockTrace, error) {
-	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Trace().GetBlockTraces(blockHash)
 	})
 
@@ -671,7 +671,7 @@ func (h *CfxStateHandler) TraceFilter(
 	cfx sdk.ClientOperator,
 	filter types.TraceFilter,
 ) ([]types.LocalizedTrace, error) {
-	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Trace().FilterTraces(filter)
 	})
 
@@ -689,7 +689,7 @@ func (h *CfxStateHandler) TraceTransaction(
 	cfx sdk.ClientOperator,
 	txHash types.Hash,
 ) ([]types.LocalizedTrace, error) {
-	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Trace().GetTransactionTraces(txHash)
 	})
 
@@ -707,7 +707,7 @@ func (h *CfxStateHandler) TraceEpoch(
 	cfx sdk.ClientOperator,
 	epoch types.Epoch,
 ) (types.EpochTrace, error) {
-	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (interface{}, error) {
+	trace, err, usefs := h.doRequest(ctx, cfx, func(cfx sdk.ClientOperator) (any, error) {
 		return cfx.Trace().GetEpochTraces(epoch)
 	})
 
@@ -723,8 +723,8 @@ func (h *CfxStateHandler) TraceEpoch(
 func (h *CfxStateHandler) doRequest(
 	ctx context.Context,
 	initCfx sdk.ClientOperator,
-	clientFunc func(cfx sdk.ClientOperator) (interface{}, error),
-) (interface{}, error, bool) {
+	clientFunc func(cfx sdk.ClientOperator) (any, error),
+) (any, error, bool) {
 	result, err := clientFunc(initCfx)
 	if err == nil || !isStateNotAvailable(err) {
 		return result, err, false

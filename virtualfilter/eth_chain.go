@@ -150,7 +150,7 @@ func (fc *ethFilterChain) pushBack(block *ethFilterBlock) *filterNode {
 }
 
 // onFilterBlockCacheEvict callbacks to clean event logs of evicted full filter block
-func (fc *ethFilterChain) onFilterBlockCacheEvict(key, value interface{}) {
+func (fc *ethFilterChain) onFilterBlockCacheEvict(key, value any) {
 	bh := key.(common.Hash)
 
 	if fn, ok := fc.hashToNodes[bh.String()]; ok {

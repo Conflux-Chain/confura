@@ -23,7 +23,7 @@ func Allowlists(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		}
 
 		if connH, ok := ctx.Value("handler").(*rpc.ConnHandler); ok {
-			aclCtx.ExtractRpcParams = func() ([]interface{}, error) {
+			aclCtx.ExtractRpcParams = func() ([]any, error) {
 				return connH.ParseCallArguments(msg)
 			}
 		}

@@ -67,7 +67,7 @@ func (api *cfxFilterApi) GetFilterChanges(id w3rpc.ID) (*types.CfxFilterChanges,
 
 func (api *cfxFilterApi) loadOrGetFnClient(nodeUrl string) (*sdk.Client, error) {
 	nodeName := rpcutil.Url2NodeName(nodeUrl)
-	client, _, err := api.fnClients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+	client, _, err := api.fnClients.LoadOrStoreFnErr(nodeName, func(any) (any, error) {
 		client, err := rpcutil.NewCfxClient(nodeUrl, rpcutil.WithClientHookMetrics(true))
 		if err != nil {
 			logrus.WithField("fnNodeUrl", nodeUrl).

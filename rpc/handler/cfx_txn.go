@@ -101,7 +101,7 @@ func (h *CfxTxnHandler) replicateRawTxnSendingToNodes(cfx sdk.ClientOperator, no
 			continue
 		}
 
-		c, _, err := h.clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+		c, _, err := h.clients.LoadOrStoreFnErr(nodeName, func(any) (any, error) {
 			return rpcutil.NewCfxClient(url)
 		})
 

@@ -75,7 +75,7 @@ func mustGetTestEpoch(t require.TestingT, epoch *types.Epoch, deltaToLatestState
 	return types.NewEpochNumberBig(big.NewInt(targetEpoch))
 }
 
-func mustMarshalJSON(t require.TestingT, v interface{}) string {
+func mustMarshalJSON(t require.TestingT, v any) string {
 	encoded, err := json.Marshal(v)
 	require.NoError(t, err)
 	return string(encoded)

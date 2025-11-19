@@ -346,10 +346,10 @@ type matchInfo struct {
 }
 
 func (validator *EpochValidator) doValidate(
-	fnCall, infuraCall func() (interface{}, error),
+	fnCall, infuraCall func() (any, error),
 ) (*matchInfo, error) {
 	var wg sync.WaitGroup
-	var res1, res2 interface{}
+	var res1, res2 any
 	var err1, err2 error
 	var json1, json2 []byte
 	var mi *matchInfo
@@ -405,7 +405,7 @@ func (validator *EpochValidator) validateGetTransactionReceipt(
 	var rcpt1, rcpt2 *types.TransactionReceipt
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		if rcpt1, err1 = validator.cfx.GetTransactionReceipt(txn.Hash); err1 != nil {
 			return nil, errors.WithMessage(err1, "failed to query transaction receipts from fullnode")
 		}
@@ -418,7 +418,7 @@ func (validator *EpochValidator) validateGetTransactionReceipt(
 		return rcpt1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		if rcpt2, err2 = validator.infura.GetTransactionReceipt(txn.Hash); err2 != nil {
 			return nil, errors.WithMessage(err2, "failed to query transaction receipts from infura")
 		}
@@ -457,14 +457,14 @@ func (validator *EpochValidator) validateGetTransactionByHash(
 	var tx1, tx2 *types.Transaction
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		if tx1, err1 = validator.cfx.GetTransactionByHash(txn.Hash); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query transaction from fullnode")
 		}
 		return tx1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		if tx2, err2 = validator.infura.GetTransactionByHash(txn.Hash); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query transaction from infura")
 		}
@@ -496,14 +496,14 @@ func (validator *EpochValidator) validateGetBlockByHash(
 	var b1, b2 *types.Block
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		if b1, err1 = validator.cfx.GetBlockByHash(blockHashes[0]); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block by hash from fullnode")
 		}
 		return b1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		if b2, err2 = validator.infura.GetBlockByHash(blockHashes[0]); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block by hash from infura")
 		}
@@ -537,14 +537,14 @@ func (validator *EpochValidator) validateGetBlockSummaryByHash(
 	var bs1, bs2 *types.BlockSummary
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		if bs1, err1 = validator.cfx.GetBlockSummaryByHash(blockHashes[0]); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block summary by hash from fullnode")
 		}
 		return bs1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		if bs2, err2 = validator.infura.GetBlockSummaryByHash(blockHashes[0]); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block summary by hash from infura")
 		}
@@ -582,14 +582,14 @@ func (validator *EpochValidator) validateGetBlockByBlockNumber(
 	var b1, b2 *types.Block
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		if b1, err1 = validator.cfx.GetBlockByBlockNumber(blockNumber); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block from fullnode")
 		}
 		return b1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		if b2, err2 = validator.infura.GetBlockByBlockNumber(blockNumber); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block from infura")
 		}
@@ -627,14 +627,14 @@ func (validator *EpochValidator) validateGetBlockSummaryByBlockNumber(
 	var b1, b2 *types.BlockSummary
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		if b1, err1 = validator.cfx.GetBlockSummaryByBlockNumber(blockNumber); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block summary from fullnode")
 		}
 		return b1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		if b2, err2 = validator.infura.GetBlockSummaryByBlockNumber(blockNumber); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block summary from infura")
 		}
@@ -662,14 +662,14 @@ func (validator *EpochValidator) validateGetBlocksByEpoch(
 	var bhs1, bhs2 []types.Hash
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		if bhs1, err1 = validator.cfx.GetBlocksByEpoch(epoch); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query epoch block hashes from fullnode")
 		}
 		return bhs1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		if bhs2, err2 = validator.infura.GetBlocksByEpoch(epoch); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query epoch block hashes from infura")
 		}
@@ -697,14 +697,14 @@ func (validator *EpochValidator) validateGetBlockByEpoch(
 	var b1, b2 *types.Block
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		if b1, err1 = validator.cfx.GetBlockByEpoch(epoch); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query epoch block from fullnode")
 		}
 		return b1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		if b2, err2 = validator.infura.GetBlockByEpoch(epoch); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query epoch block from infura")
 		}
@@ -731,14 +731,14 @@ func (validator *EpochValidator) validateGetBlockSummaryByEpoch(
 	var bs1, bs2 *types.BlockSummary
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		if bs1, err1 = validator.cfx.GetBlockSummaryByEpoch(epoch); err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query epoch block from fullnode")
 		}
 		return bs1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		if bs2, err2 = validator.infura.GetBlockSummaryByEpoch(epoch); err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query epoch block from infura")
 		}
@@ -896,8 +896,8 @@ func (validator *EpochValidator) validateGetLogs(
 }
 
 func (validator *EpochValidator) doValidateGetLogs(filter types.LogFilter) error {
-	genCall := func(src string, client sdk.ClientOperator) func() (interface{}, error) {
-		return func() (interface{}, error) {
+	genCall := func(src string, client sdk.ClientOperator) func() (any, error) {
+		return func() (any, error) {
 			logs, err := client.GetLogs(filter)
 			if err != nil {
 				return logs, errors.WithMessagef(err, "failed to query logs from %v", src)

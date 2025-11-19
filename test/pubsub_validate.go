@@ -540,7 +540,7 @@ type pubsubValidationContext struct {
 	rBuf    *ring.Ring    // ring buffer to hold data for comparison
 }
 
-func newPubSubValidationContext(channel interface{}) *pubsubValidationContext {
+func newPubSubValidationContext(channel any) *pubsubValidationContext {
 	// check type of channel first
 	chanVal := reflect.ValueOf(channel)
 	if chanVal.Kind() != reflect.Chan ||
@@ -599,7 +599,7 @@ func (ctx *pubsubValidationContext) getStatus() bool {
 	return atomic.LoadInt32(&ctx.status) == 0
 }
 
-func (ctx *pubsubValidationContext) notify(result interface{}) bool {
+func (ctx *pubsubValidationContext) notify(result any) bool {
 	cases := []reflect.SelectCase{
 		{Dir: reflect.SelectSend, Chan: ctx.channel, Send: reflect.ValueOf(result)},
 		{Dir: reflect.SelectDefault},
@@ -624,7 +624,7 @@ func (ctx *pubsubValidationContext) notify(result interface{}) bool {
 // TODO Improve the performance using "Binary Search with Rolling Hash" algorithm if necessary,
 // which can be referenced to:
 // https://massivealgorithms.blogspot.com/2018/12/leetcode-718-maximum-length-of-repeated.html
-func findFirstCommonSubArrayOfLength(a1, a2 []interface{}, length int) (i, j, l int) {
+func findFirstCommonSubArrayOfLength(a1, a2 []any, length int) (i, j, l int) {
 	for i := 0; i < len(a1); i++ {
 		for j := 0; j < len(a2); j++ {
 			k := 0
