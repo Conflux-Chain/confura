@@ -35,7 +35,7 @@ type Server struct {
 }
 
 // MustNewServer creates an instance of Server with specified RPC services.
-func MustNewServer(name string, rpcs map[string]interface{}, middlewares ...handlers.Middleware) *Server {
+func MustNewServer(name string, rpcs map[string]any, middlewares ...handlers.Middleware) *Server {
 	handler := rpc.NewServer()
 	servedApis := make([]string, 0, len(rpcs))
 

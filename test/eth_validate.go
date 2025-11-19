@@ -296,10 +296,10 @@ func (validator *EthValidator) validateEthBlock(blockNo uint64) error {
 }
 
 func (validator *EthValidator) doValidate(
-	fnCall, infuraCall func() (interface{}, error),
+	fnCall, infuraCall func() (any, error),
 ) (*matchInfo, error) {
 	var wg sync.WaitGroup
-	var res1, res2 interface{}
+	var res1, res2 any
 	var err1, err2 error
 	var json1, json2 []byte
 	var mi *matchInfo
@@ -346,7 +346,7 @@ func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) (*typ
 	var b1, b2 *types.Block
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		b1, err1 = validator.fn.Eth.BlockByNumber(types.BlockNumber(blockNumer), true)
 		if err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block from fullnode")
@@ -355,7 +355,7 @@ func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) (*typ
 		return b1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		b2, err2 = validator.infura.Eth.BlockByNumber(types.BlockNumber(blockNumer), true)
 		if err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block from infura")
@@ -382,7 +382,7 @@ func (validator *EthValidator) validateGetBlockByNumber(blockNumer uint64) (*typ
 
 // Validate `eth_getBlockByNumber` (includeTxs = false)
 func (validator *EthValidator) validateGetBlockSummaryByNumber(blockNumer uint64) error {
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		b1, err1 := validator.fn.Eth.BlockByNumber(types.BlockNumber(blockNumer), false)
 		if err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block summary from fullnode")
@@ -390,7 +390,7 @@ func (validator *EthValidator) validateGetBlockSummaryByNumber(blockNumer uint64
 		return b1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		b2, err2 := validator.infura.Eth.BlockByNumber(types.BlockNumber(blockNumer), false)
 		if err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block summary from infura")
@@ -420,7 +420,7 @@ func (validator *EthValidator) validateGetTransactionReceipt(txHash common.Hash)
 	var rcpt1, rcpt2 *types.Receipt
 	var err1, err2 error
 
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		rcpt1, err1 = validator.fn.Eth.TransactionReceipt(txHash)
 		if err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query transaction receipts from fullnode")
@@ -429,7 +429,7 @@ func (validator *EthValidator) validateGetTransactionReceipt(txHash common.Hash)
 		return rcpt1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		rcpt2, err2 = validator.infura.Eth.TransactionReceipt(txHash)
 		if err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query transaction receipts from infura")
@@ -454,7 +454,7 @@ func (validator *EthValidator) validateGetTransactionReceipt(txHash common.Hash)
 
 // Validate `eth_getTransactionByHash`
 func (validator *EthValidator) validateGetTransactionByHash(txHash common.Hash) error {
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		tx1, err1 := validator.fn.Eth.TransactionByHash(txHash)
 		if err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query transaction from fullnode")
@@ -462,7 +462,7 @@ func (validator *EthValidator) validateGetTransactionByHash(txHash common.Hash) 
 		return tx1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		tx2, err2 := validator.infura.Eth.TransactionByHash(txHash)
 		if err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query transaction from infura")
@@ -486,7 +486,7 @@ func (validator *EthValidator) validateGetTransactionByHash(txHash common.Hash) 
 
 // Validate `eth_getBlockByHash` (includeTxs = true)
 func (validator *EthValidator) validateGetBlockByHash(blockHash common.Hash) error {
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		b1, err1 := validator.fn.Eth.BlockByHash(blockHash, true)
 		if err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block by hash from fullnode")
@@ -494,7 +494,7 @@ func (validator *EthValidator) validateGetBlockByHash(blockHash common.Hash) err
 		return b1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		b2, err2 := validator.infura.Eth.BlockByHash(blockHash, true)
 		if err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block by hash from infura")
@@ -518,7 +518,7 @@ func (validator *EthValidator) validateGetBlockByHash(blockHash common.Hash) err
 
 // Validate `eth_getBlockByHash` (includeTxs = false)
 func (validator *EthValidator) validateGetBlockSummaryByHash(blockHash common.Hash) error {
-	fnCall := func() (interface{}, error) {
+	fnCall := func() (any, error) {
 		bs1, err1 := validator.fn.Eth.BlockByHash(blockHash, false)
 		if err1 != nil {
 			err1 = errors.WithMessage(err1, "failed to query block summary by hash from fullnode")
@@ -526,7 +526,7 @@ func (validator *EthValidator) validateGetBlockSummaryByHash(blockHash common.Ha
 		return bs1, err1
 	}
 
-	infuraCall := func() (interface{}, error) {
+	infuraCall := func() (any, error) {
 		bs2, err2 := validator.infura.Eth.BlockByHash(blockHash, false)
 		if err2 != nil {
 			err2 = errors.WithMessage(err2, "failed to query block summary by hash from infura")
@@ -635,8 +635,8 @@ func (validator *EthValidator) validateGetLogs(
 }
 
 func (validator *EthValidator) doValidateGetLogs(filter *types.FilterQuery) error {
-	genCall := func(src string, w3c *web3go.Client) func() (interface{}, error) {
-		return func() (interface{}, error) {
+	genCall := func(src string, w3c *web3go.Client) func() (any, error) {
+		return func() (any, error) {
 			logs, err := w3c.Eth.Logs(*filter)
 			if err != nil {
 				return logs, errors.WithMessagef(err, "failed to query logs from %v", src)

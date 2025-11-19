@@ -185,14 +185,14 @@ func (h topkVisitorHeap) Swap(i, j int) {
 	h[j].index = j
 }
 
-func (h *topkVisitorHeap) Push(x interface{}) {
+func (h *topkVisitorHeap) Push(x any) {
 	n := len(*h)
 	item := x.(*visitorItem)
 	item.index = n
 	*h = append(*h, item)
 }
 
-func (h *topkVisitorHeap) Pop() interface{} {
+func (h *topkVisitorHeap) Pop() any {
 	old := *h
 	n := len(old)
 	item := old[n-1]

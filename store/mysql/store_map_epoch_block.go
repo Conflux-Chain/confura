@@ -112,7 +112,7 @@ func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
 
 // findOneBlockMapping retrieves a single `epochBlockMap` record based on a condition and optional ordering.
 func (e2bms *epochBlockMapStore) findOneBlockMapping(
-	condition string, order string, args ...interface{}) (res epochBlockMap, existed bool, err error) {
+	condition string, order string, args ...any) (res epochBlockMap, existed bool, err error) {
 
 	query := e2bms.db.Where(condition, args...)
 	if order != "" {

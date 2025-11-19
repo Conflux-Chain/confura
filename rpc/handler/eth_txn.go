@@ -99,7 +99,7 @@ func (h *EthTxnHandler) replicateRawTxnSendingToNodes(w3c *node.Web3goClient, no
 			continue
 		}
 
-		c, _, err := h.clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+		c, _, err := h.clients.LoadOrStoreFnErr(nodeName, func(any) (any, error) {
 			return rpcutil.NewEthClient(url)
 		})
 

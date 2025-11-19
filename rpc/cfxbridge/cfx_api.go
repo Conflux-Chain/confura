@@ -115,7 +115,7 @@ func (api *CfxAPI) GetStorageRoot(ctx context.Context, address EthAddress, bn *E
 	return nil, nil
 }
 
-func (api *CfxAPI) GetBlockByHash(ctx context.Context, blockHash common.Hash, includeTxs bool) (interface{}, error) {
+func (api *CfxAPI) GetBlockByHash(ctx context.Context, blockHash common.Hash, includeTxs bool) (any, error) {
 	block, err := api.w3c.WithContext(ctx).Eth.BlockByHash(blockHash, includeTxs)
 	if err != nil {
 		return nil, err
@@ -151,7 +151,7 @@ func (api *CfxAPI) GetBlockByHashWithPivotAssumption(ctx context.Context, blockH
 	return ConvertBlock(block, api.ethNetworkId), nil
 }
 
-func (api *CfxAPI) GetBlockByEpochNumber(ctx context.Context, bn EthBlockNumber, includeTxs bool) (interface{}, error) {
+func (api *CfxAPI) GetBlockByEpochNumber(ctx context.Context, bn EthBlockNumber, includeTxs bool) (any, error) {
 	block, err := api.w3c.WithContext(ctx).Eth.BlockByNumber(bn.Value(), includeTxs)
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (api *CfxAPI) GetBlockByEpochNumber(ctx context.Context, bn EthBlockNumber,
 	return ConvertBlockSummary(block, api.ethNetworkId), nil
 }
 
-func (api *CfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (interface{}, error) {
+func (api *CfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (any, error) {
 	bn := EthBlockNumber{
 		value: ethTypes.BlockNumber(blockNumer),
 	}
@@ -347,7 +347,7 @@ func (api *CfxAPI) GetStatus(ctx context.Context) (status types.Status, err erro
 	} {
 		batchElems = append(batchElems, rpcp.BatchElem{
 			Method: "eth_getBlockByNumber",
-			Args:   []interface{}{bn, false},
+			Args:   []any{bn, false},
 			Result: new(ethTypes.Block),
 		})
 	}

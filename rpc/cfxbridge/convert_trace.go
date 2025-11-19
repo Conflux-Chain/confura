@@ -19,7 +19,7 @@ var (
 	}
 )
 
-func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.TraceType, cfxTraceAction interface{}) *types.LocalizedTrace {
+func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.TraceType, cfxTraceAction any) *types.LocalizedTrace {
 	// transaction position
 	var txPos *hexutil.Uint64
 	if ethTrace.TransactionPosition != nil {
@@ -58,7 +58,7 @@ func convertTraceCall(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32)
 		CallType: types.CallType(ethActionCall.CallType),
 	})
 
-	var cfxCallResult interface{}
+	var cfxCallResult any
 	if ethTrace.Error == nil {
 		ethCallResult := ethTrace.Result.(web3goTypes.CallResult)
 		cfxCallResult = types.CallResult{
@@ -96,7 +96,7 @@ func convertTraceCreate(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint3
 		CreateType: createType,
 	})
 
-	var cfxCreateResult interface{}
+	var cfxCreateResult any
 	if ethTrace.Error == nil {
 		ethCreateResult := ethTrace.Result.(web3goTypes.CreateResult)
 		cfxCreateResult = types.CreateResult{

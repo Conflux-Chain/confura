@@ -99,7 +99,7 @@ func (api *ethAPI) UninstallFilter(ctx context.Context, fid rpc.ID) (bool, error
 //
 // For pending transaction and block filters the result is []common.Hash.
 // (pending) Log filters return []Log.
-func (api *ethAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{}, error) {
+func (api *ethAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (any, error) {
 	if api.VirtualFilterClient != nil {
 		res, err := api.VirtualFilterClient.GetFilterChanges(fid)
 		return res, errVirtualFilterProxyErrorOrNil(err)

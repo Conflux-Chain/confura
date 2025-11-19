@@ -28,7 +28,7 @@ type Context struct {
 	context.Context
 
 	RpcMethod        string
-	ExtractRpcParams func() ([]interface{}, error)
+	ExtractRpcParams func() ([]any, error)
 }
 
 type ValidatorFactory func(al *AllowList) Validator
@@ -38,7 +38,7 @@ type Validator interface {
 }
 
 // parse contract addresses from RPC method params
-type cntAddrParser func(params []interface{}) ([]string, bool)
+type cntAddrParser func(params []any) ([]string, bool)
 
 // allowlist validator. Each allowlist type is "AND"ed together,
 // while multiple entries of the same type are "OR"ed.
@@ -247,7 +247,7 @@ func NewEthValidator(al *AllowList) Validator {
 	return v
 }
 
-func (v *EthValidator) parseCallRequest(params []interface{}) (res []string, ok bool) {
+func (v *EthValidator) parseCallRequest(params []any) (res []string, ok bool) {
 	if len(params) == 0 {
 		return
 	}
@@ -260,7 +260,7 @@ func (v *EthValidator) parseCallRequest(params []interface{}) (res []string, ok 
 	return
 }
 
-func (v *EthValidator) parseFilterQuery(params []interface{}) (res []string, ok bool) {
+func (v *EthValidator) parseFilterQuery(params []any) (res []string, ok bool) {
 	if len(params) == 0 {
 		return
 	}
@@ -275,7 +275,7 @@ func (v *EthValidator) parseFilterQuery(params []interface{}) (res []string, ok 
 	return
 }
 
-func (v *EthValidator) parseAddr(params []interface{}) (res []string, ok bool) {
+func (v *EthValidator) parseAddr(params []any) (res []string, ok bool) {
 	if len(params) == 0 {
 		return
 	}
@@ -325,7 +325,7 @@ func (v *CfxValidator) uniformContractAddrRulesets() {
 	}
 }
 
-func (v *CfxValidator) parseCallRequest(params []interface{}) (res []string, ok bool) {
+func (v *CfxValidator) parseCallRequest(params []any) (res []string, ok bool) {
 	if len(params) == 0 {
 		return
 	}
@@ -338,7 +338,7 @@ func (v *CfxValidator) parseCallRequest(params []interface{}) (res []string, ok 
 	return
 }
 
-func (v *CfxValidator) parseLogFilter(params []interface{}) (res []string, ok bool) {
+func (v *CfxValidator) parseLogFilter(params []any) (res []string, ok bool) {
 	if len(params) == 0 {
 		return
 	}
@@ -353,7 +353,7 @@ func (v *CfxValidator) parseLogFilter(params []interface{}) (res []string, ok bo
 	return
 }
 
-func (v *CfxValidator) parseAddr(params []interface{}) (res []string, ok bool) {
+func (v *CfxValidator) parseAddr(params []any) (res []string, ok bool) {
 	if len(params) == 0 {
 		return
 	}

@@ -58,7 +58,7 @@ func TestGetOrUpdate(t *testing.T) {
 	mt := &mockTime{currentTime: time.Now()}
 	cache := util.NewExpirableLruCache(5, 50*time.Millisecond, mt.Now)
 
-	updateFunc := func() (interface{}, error) {
+	updateFunc := func() (any, error) {
 		return "value1", nil
 	}
 
@@ -69,7 +69,7 @@ func TestGetOrUpdate(t *testing.T) {
 	}
 
 	// Fetch again; since it's not expired, should return cached value
-	value, err = cache.GetOrUpdate("key1", func() (interface{}, error) {
+	value, err = cache.GetOrUpdate("key1", func() (any, error) {
 		return "value2", nil
 	})
 	if err != nil || value != "value1" {
@@ -80,7 +80,7 @@ func TestGetOrUpdate(t *testing.T) {
 	mt.Add(60 * time.Millisecond)
 
 	// Now, updateFunc should be called again
-	value, err = cache.GetOrUpdate("key1", func() (interface{}, error) {
+	value, err = cache.GetOrUpdate("key1", func() (any, error) {
 		return "value3", nil
 	})
 	if err != nil || value != "value3" {
@@ -147,7 +147,7 @@ func TestLRUEviction(t *testing.T) {
 func TestUpdateFuncError(t *testing.T) {
 	mt := &mockTime{currentTime: time.Now()}
 	cache := util.NewExpirableLruCache(5, 50*time.Millisecond, mt.Now)
-	updateFunc := func() (interface{}, error) {
+	updateFunc := func() (any, error) {
 		return nil, errors.New("update failed")
 	}
 

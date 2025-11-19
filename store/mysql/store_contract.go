@@ -176,7 +176,7 @@ func (cs *ContractStore) GetUpdatedContractsSinceEpoch(epoch uint64) ([]*Contrac
 func (cs *ContractStore) UpdateContractStats(
 	dbTx *gorm.DB, cid uint64, countDelta int, latestUpdatedEpoch uint64,
 ) error {
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"latest_updated_epoch": latestUpdatedEpoch,
 	}
 
@@ -192,7 +192,7 @@ func (cs *ContractStore) UpdateContractStats(
 }
 
 // enforceCache enforces to load contract cache from db with specified condition.
-func (cs *ContractStore) enforceCache(whereQuery string, args ...interface{}) (*Contract, bool, error) {
+func (cs *ContractStore) enforceCache(whereQuery string, args ...any) (*Contract, bool, error) {
 	// Could improve when QPS is very high:
 	// 1. Use mutex lock to allow only 1 thread to read from db.
 	// 2. Cache non-existent address.

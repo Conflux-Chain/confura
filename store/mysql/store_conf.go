@@ -53,14 +53,14 @@ func newConfStore(db *gorm.DB) *confStore {
 	}
 }
 
-func (cs *confStore) LoadConfig(confNames ...string) (map[string]interface{}, error) {
+func (cs *confStore) LoadConfig(confNames ...string) (map[string]any, error) {
 	var confs []conf
 
 	if err := cs.db.Where("name IN ?", confNames).Find(&confs).Error; err != nil {
 		return nil, err
 	}
 
-	res := make(map[string]interface{}, len(confs))
+	res := make(map[string]any, len(confs))
 	for _, c := range confs {
 		res[c.Name] = c.Value
 	}
@@ -68,10 +68,10 @@ func (cs *confStore) LoadConfig(confNames ...string) (map[string]interface{}, er
 	return res, nil
 }
 
-func (cs *confStore) StoreConfig(confName string, confVal interface{}) error {
+func (cs *confStore) StoreConfig(confName string, confVal any) error {
 	return cs.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "name"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{
+		DoUpdates: clause.Assignments(map[string]any{
 			"value":      confVal,
 			"updated_at": gorm.Expr("CURRENT_TIMESTAMP"),
 		}),

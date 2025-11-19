@@ -95,7 +95,7 @@ func MustNewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeSe
 
 // MustNewDebugServer new debug RPC server for internal debugging use.
 func MustNewDebugServer() *rpc.Server {
-	servedApis := make(map[string]interface{})
+	servedApis := make(map[string]any)
 	for _, api := range debugApis() {
 		servedApis[api.Namespace] = api.Service
 	}
