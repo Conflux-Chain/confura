@@ -39,14 +39,9 @@ type VipStatus struct {
 	ExpireAt *time.Time `json:"expireAt,omitempty"` // VIP expiration time (optional)
 }
 
-// IsAccessTokenValid checks if access token from the context
-// is at least minimum length and only contains alphanumeric chars.
-func IsAccessTokenValid(ctx context.Context) bool {
-	token, ok := GetAccessTokenFromContext(ctx)
-	if !ok {
-		return false
-	}
-
+// IsAccessTokenValid checks if the access token is at least minimum length and
+// only contains alphanumeric chars.
+func IsAccessTokenValid(token string) bool {
 	if len(token) < minAccessTokenLength {
 		return false // Key length less than minimum
 	}
@@ -63,18 +58,12 @@ func IsAccessTokenValid(ctx context.Context) bool {
 
 // VipStatusFromContext returns VIP status from context
 func VipStatusFromContext(ctx context.Context) (*VipStatus, bool) {
-	var vs *VipStatus
-
 	if ss, ok := web3pay.VipSubscriptionStatusFromContext(ctx); ok {
 		// check VIP subscription status
-		vs, _ = GetVipStatusBySubscriptionStatus(ss)
+		return GetVipStatusBySubscriptionStatus(ss)
 	} else if bs, ok := web3pay.BillingStatusFromContext(ctx); ok {
 		// check billing status
-		vs, _ = GetVipStatusByBillingStatus(bs)
-	}
-
-	if vs != nil && vs.Tier != VipTierNone {
-		return vs, true
+		return GetVipStatusByBillingStatus(bs)
 	}
 
 	return nil, false
@@ -86,16 +75,12 @@ func GetVipStatusBySubscriptionStatus(vss *web3pay.VipSubscriptionStatus) (*VipS
 		return nil, false
 	}
 
-	if tier, ok := GetVipTierBySubscription(vi); ok {
-		expiredAt := time.Unix(vi.ExpireAt.Int64(), 0)
-		return &VipStatus{
-			Tier:     tier,
-			ID:       vi.Account.String(),
-			ExpireAt: &expiredAt,
-		}, true
-	}
-
-	return nil, false
+	expiredAt := time.Unix(vi.ExpireAt.Int64(), 0)
+	return &VipStatus{
+		ID:       vi.Account.String(),
+		Tier:     GetVipTierBySubscription(vi),
+		ExpireAt: &expiredAt,
+	}, true
 }
 
 func GetVipStatusByBillingStatus(bs *web3pay.BillingStatus) (*VipStatus, bool) {
@@ -107,34 +92,30 @@ func GetVipStatusByBillingStatus(bs *web3pay.BillingStatus) (*VipStatus, bool) {
 	return nil, false
 }
 
-func GetVipTierBySubscription(vi *types.VipInfo) (VipTier, bool) {
-	if vi.ExpireAt.Int64() < time.Now().Unix() { // already expired
-		return VipTierNone, false
-	}
-
+func GetVipTierBySubscription(vi *types.VipInfo) VipTier {
 	props := vi.ICardTrackerVipInfo.Props
 	if len(props.Keys) == 0 { // no prop
-		return VipTierNone, false
+		return VipTierNone
 	}
 
 	if len(props.Keys) != len(props.Values) { // malformed kv
-		return VipTierNone, false
+		return VipTierNone
 	}
 
 	if !strings.EqualFold(props.Keys[0], VipSubPropTierKey) { // invalid kv
-		return VipTierNone, false
+		return VipTierNone
 	}
 
 	tier, err := strconv.Atoi(props.Values[0])
 	if err != nil { // no integer value
-		return VipTierNone, false
+		return VipTierNone
 	}
 
 	vt := VipTier(tier)
 	if vt < VipTierSubscription1 || vt >= VipTierSubscriptionEnd {
 		// beyond acceptable range
-		return VipTierNone, false
+		return VipTierNone
 	}
 
-	return vt, true
+	return vt
 }

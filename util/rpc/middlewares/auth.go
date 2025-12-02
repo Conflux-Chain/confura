@@ -2,11 +2,18 @@ package middlewares
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
+)
+
+var (
+	errInvalidApiKey = errors.New("invalid api key")
+	errApiKeyExpired = errors.New("api key is already expired")
 )
 
 func Auth() rpc.HandleCallMsgMiddleware {
@@ -24,16 +31,46 @@ func Auth() rpc.HandleCallMsgMiddleware {
 
 func Authenticate(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 	return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
-		if !handlers.IsAccessTokenValid(ctx) {
+		token, ok := handlers.GetAccessTokenFromContext(ctx)
+		if !ok || len(token) == 0 {
 			return next(ctx, msg)
 		}
 
-		if vs, ok := handlers.VipStatusFromContext(ctx); ok { // access from web3pay VIP user
-			ctx = context.WithValue(ctx, handlers.CtxKeyAuthId, vs.ID)
-		} else if svs, ok := rate.SVipStatusFromContext(ctx); ok { // access from SVIP user
-			ctx = context.WithValue(ctx, handlers.CtxKeyAuthId, svs.Key)
+		if !handlers.IsAccessTokenValid(token) {
+			return msg.ErrorResponse(errInvalidApiKey)
+		}
+
+		authId, err := resolveAuthID(ctx)
+		if err != nil {
+			return msg.ErrorResponse(err)
+		}
+
+		if authId != "" {
+			ctx = context.WithValue(ctx, handlers.CtxKeyAuthId, authId)
 		}
 
 		return next(ctx, msg)
 	}
+}
+
+func resolveAuthID(ctx context.Context) (string, error) {
+	// Web3Pay VIP user
+	if vs, ok := handlers.VipStatusFromContext(ctx); ok {
+		if vs.Tier == handlers.VipTierNone {
+			return "", errInvalidApiKey
+		}
+
+		if vs.ExpireAt.Before(time.Now()) {
+			return "", errApiKeyExpired
+		}
+
+		return vs.ID, nil
+	}
+
+	// SVIP user
+	if svs, ok := rate.SVipStatusFromContext(ctx); ok {
+		return svs.Key, nil
+	}
+
+	return "", errInvalidApiKey
 }
