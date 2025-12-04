@@ -11,9 +11,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	docURL     = "https://doc.confluxnetwork.org/docs/espace/network-endpoints#common-errors"
+	errDocHint = "; see " + docURL + " for more details"
+)
+
 var (
-	errInvalidApiKey = errors.New("invalid api key")
-	errApiKeyExpired = errors.New("api key is already expired")
+	errInvalidApiKey = errors.New("invalid api key" + errDocHint)
+	errApiKeyExpired = errors.New("api key is already expired" + errDocHint)
 )
 
 func Auth() rpc.HandleCallMsgMiddleware {
