@@ -38,7 +38,7 @@ type noopTrafficCollector struct{}
 func (ntc *noopTrafficCollector) MarkHit(source string)        {}
 func (ntc *noopTrafficCollector) TopkVisitors(k int) []Visitor { return nil }
 
-// Visitor visitor traffic such as vistor source and hit count
+// Visitor visitor traffic such as visitor source and hit count
 type Visitor struct {
 	Source string // visitor source
 	Hits   int    // visitor hit count

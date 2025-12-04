@@ -34,7 +34,7 @@ func (api *CfxAPI) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 }
 
 func (api *CfxAPI) EpochNumber(ctx context.Context, epoch *types.Epoch) (*hexutil.Big, error) {
-	// By default, return lastest_state for eth space.
+	// By default, return latest_state for eth space.
 	if epoch == nil {
 		epoch = types.EpochLatestState
 	}
