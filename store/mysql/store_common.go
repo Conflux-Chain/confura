@@ -32,7 +32,7 @@ func (bs *baseStore) Close() error {
 	}
 }
 
-func (bs *baseStore) exists(modelPtr interface{}, whereQuery string, args ...interface{}) (bool, error) {
+func (bs *baseStore) exists(modelPtr any, whereQuery string, args ...any) (bool, error) {
 	err := bs.db.Where(whereQuery, args...).First(modelPtr).Error
 	if err == nil {
 		return true, nil

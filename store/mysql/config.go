@@ -16,7 +16,7 @@ import (
 )
 
 // auto migrating table models
-var allModels = []interface{}{
+var allModels = []any{
 	&transaction{},
 	&block{},
 	&conf{},

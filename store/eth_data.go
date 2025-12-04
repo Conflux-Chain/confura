@@ -78,7 +78,7 @@ type EthReceiptOption struct {
 	Concurrency int
 
 	// Pre-fetched data can be used to accelerate the query eg., block header etc.
-	Prefetched interface{}
+	Prefetched any
 }
 
 // EthReceiptMethodDetector detects the best method for retrieving Ethereum receipts.

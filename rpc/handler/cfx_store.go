@@ -26,7 +26,7 @@ func NewCfxCommonStoreHandler(sname string, store store.Readable, next *CfxStore
 }
 
 func (h *CfxStoreHandler) GetBlockByHash(
-	ctx context.Context, blockHash types.Hash, includeTxs bool) (block interface{}, err error) {
+	ctx context.Context, blockHash types.Hash, includeTxs bool) (block any, err error) {
 	if store.StoreConfig().IsChainBlockDisabled() {
 		return nil, store.ErrUnsupported
 	}
@@ -48,7 +48,7 @@ func (h *CfxStoreHandler) GetBlockByHash(
 
 func (h *CfxStoreHandler) GetBlockByEpochNumber(
 	ctx context.Context, epoch *types.Epoch, includeTxs bool,
-) (block interface{}, err error) {
+) (block any, err error) {
 	epBigInt, ok := epoch.ToInt()
 	if store.StoreConfig().IsChainBlockDisabled() || !ok {
 		return nil, store.ErrUnsupported
@@ -112,7 +112,7 @@ func (h *CfxStoreHandler) GetBlocksByEpoch(
 
 func (h *CfxStoreHandler) GetBlockByBlockNumber(
 	ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool,
-) (block interface{}, err error) {
+) (block any, err error) {
 	if store.StoreConfig().IsChainBlockDisabled() {
 		return nil, store.ErrUnsupported
 	}

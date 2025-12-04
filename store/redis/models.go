@@ -21,7 +21,7 @@ func RedisKey(keyParts ...string) string {
 // Unmarshal RLP raw data read from redis by key
 // key: redis key
 // v: value for unmarshal, e.g. types.transaction, and use pointer type
-func RedisRLPGet(ctx context.Context, rc redis.Cmdable, key string, pVal interface{}) error {
+func RedisRLPGet(ctx context.Context, rc redis.Cmdable, key string, pVal any) error {
 	strBytes, err := rc.Get(ctx, key).Result()
 
 	err = ParseRedisNil(err)

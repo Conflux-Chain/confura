@@ -13,17 +13,17 @@ import (
 
 // API describes the set of methods offered over the RPC interface
 type API struct {
-	Namespace string      // namespace under which the rpc methods of Service are exposed
-	Version   string      // api version
-	Service   interface{} // receiver instance which holds the methods
-	Public    bool        // indication if the methods must be considered safe for public use
+	Namespace string // namespace under which the rpc methods of Service are exposed
+	Version   string // api version
+	Service   any    // receiver instance which holds the methods
+	Public    bool   // indication if the methods must be considered safe for public use
 }
 
 // Filter API modules by exposed modules settings.
 // `exposedModules` is a setting list of API modules to expose via the RPC interface.
 // If the module list is empty, all RPC API endpoints designated public will be exposed.
-func filterExposedApis(allApis []API, exposedModules []string) (map[string]interface{}, error) {
-	servedApis := make(map[string]interface{}, len(allApis))
+func filterExposedApis(allApis []API, exposedModules []string) (map[string]any, error) {
+	servedApis := make(map[string]any, len(allApis))
 
 	for _, api := range allApis {
 		if len(exposedModules) == 0 { // empty module list, use all public RPC APIs
@@ -40,7 +40,7 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 		return servedApis, nil
 	}
 
-	filteredApis := make(map[string]interface{}, len(exposedModules))
+	filteredApis := make(map[string]any, len(exposedModules))
 	for _, m := range exposedModules {
 		if svc, ok := servedApis[m]; ok {
 			filteredApis[m] = svc
@@ -48,7 +48,7 @@ func filterExposedApis(allApis []API, exposedModules []string) (map[string]inter
 		}
 
 		err := errors.Errorf("unknown module %v to be exposed", m)
-		return map[string]interface{}{}, err
+		return map[string]any{}, err
 	}
 
 	return filteredApis, nil

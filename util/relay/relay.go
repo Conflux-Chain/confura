@@ -113,7 +113,7 @@ func (relayer *cfxTxnRelayer) process() {
 func (relayer *cfxTxnRelayer) relay(signedTx hexutil.Bytes) {
 	for _, url := range relayer.NodeUrls {
 		nodeName := rpcutil.Url2NodeName(url)
-		cfx, _, err := relayer.poolClients.LoadOrStoreFnErr(nodeName, func(k interface{}) (interface{}, error) {
+		cfx, _, err := relayer.poolClients.LoadOrStoreFnErr(nodeName, func(k any) (any, error) {
 			return sdk.NewClient(url, sdk.ClientOption{
 				RetryCount:     relayer.Retry,
 				RetryInterval:  relayer.RetryInterval,
@@ -170,7 +170,7 @@ func (relayer *ethTxnRelayer) process() {
 func (relayer *ethTxnRelayer) relay(signedTx hexutil.Bytes) {
 	for _, url := range relayer.EthNodeUrls {
 		nodeName := rpcutil.Url2NodeName(url)
-		w3c, _, err := relayer.poolClients.LoadOrStoreFnErr(nodeName, func(k interface{}) (interface{}, error) {
+		w3c, _, err := relayer.poolClients.LoadOrStoreFnErr(nodeName, func(k any) (any, error) {
 			return rpcutil.NewEthClient(url,
 				rpcutil.WithClientRequestTimeout(relayer.RequestTimeout),
 				rpcutil.WithClientRetryInterval(relayer.RetryInterval),

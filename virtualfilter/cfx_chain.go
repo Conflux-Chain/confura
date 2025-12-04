@@ -145,7 +145,7 @@ func (fc *cfxFilterChain) pushBack(epoch *cfxFilterEpoch) *filterNode {
 }
 
 // onFilterEpochCacheEvict callbacks to clean event logs of evicted full filter epoch
-func (fc *cfxFilterChain) onFilterEpochCacheEvict(key, value interface{}) {
+func (fc *cfxFilterChain) onFilterEpochCacheEvict(key, value any) {
 	bh := key.(types.Hash)
 
 	if fn, ok := fc.hashToNodes[bh.String()]; ok {

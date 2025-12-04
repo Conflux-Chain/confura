@@ -159,7 +159,7 @@ type LogFilter struct {
 	Contracts VariadicValue
 	Topics    []VariadicValue // event hash and indexed data 1, 2, 3
 
-	original interface{} // original log filter
+	original any // original log filter
 }
 
 // Cfx returns original core space log filter

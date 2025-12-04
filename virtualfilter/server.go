@@ -14,7 +14,7 @@ func MustNewEvmSpaceServerFromViper(
 	conf := mustNewEthConfigFromViper()
 	fs := newEthFilterSystem(conf, vfls, shutdownContext)
 
-	srv := rpc.MustNewServer("eth_vfilter", map[string]interface{}{
+	srv := rpc.MustNewServer("eth_vfilter", map[string]any{
 		"eth": newEthFilterApi(fs),
 	})
 
@@ -29,7 +29,7 @@ func MustNewCoreSpaceServerFromViper(
 	conf := mustNewCfxConfigFromViper()
 	fs := newCfxFilterSystem(conf, vfls, shutdownContext)
 
-	srv := rpc.MustNewServer("cfx_vfilter", map[string]interface{}{
+	srv := rpc.MustNewServer("cfx_vfilter", map[string]any{
 		"cfx": newCfxFilterApi(fs),
 	})
 
