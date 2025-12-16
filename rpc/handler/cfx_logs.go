@@ -185,7 +185,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 
 				log, err := v.ToCfxLog()
 				if err != nil {
-					return nil, false, errors.WithMessage(err, "failed to convert db log")
+					return nil, false, errors.WithMessage(err, "failed to convert to cfx log")
 				}
 				logs = append(logs, *log)
 			}

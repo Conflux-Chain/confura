@@ -92,7 +92,7 @@ func (w *slidingPivotWindow[T, H]) Push(node T) error {
 }
 
 // PopTo removes all entries with number >= target (i.e. target is exclusive).
-// Used for chain reorg/rollback.
+// Used for chain reorg/rollback. After PopTo, valid range is [start, target).
 func (w *slidingPivotWindow[T, H]) PopTo(target uint64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -138,7 +138,7 @@ func (b cfxPivotBlockWrapper) ParentHash() types.Hash { return b.Block.ParentHas
 type cfxSlidingPivotWindow = slidingPivotWindow[cfxPivotBlockWrapper, types.Hash]
 
 func newCfxSlidingPivotWindow(capacity uint32) *cfxSlidingPivotWindow {
-	return newSlidingPivotWindow[cfxPivotBlockWrapper, types.Hash](capacity)
+	return newSlidingPivotWindow[cfxPivotBlockWrapper](capacity)
 }
 
 type evmPivotBlockWrapper struct {
@@ -152,5 +152,5 @@ func (b evmPivotBlockWrapper) ParentHash() common.Hash { return b.Block.ParentHa
 type evmSlidingPivotWindow = slidingPivotWindow[evmPivotBlockWrapper, common.Hash]
 
 func newEvmSlidingPivotWindow(capacity uint32) *evmSlidingPivotWindow {
-	return newSlidingPivotWindow[evmPivotBlockWrapper, common.Hash](capacity)
+	return newSlidingPivotWindow[evmPivotBlockWrapper](capacity)
 }

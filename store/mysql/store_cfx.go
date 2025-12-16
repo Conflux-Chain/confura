@@ -20,6 +20,10 @@ func NewCfxStore(db *gorm.DB, config *Config, filter store.ChainDataFilter) *Cfx
 }
 
 func (cs *CfxStore) GetTransaction(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
+	if cs.filter.IsTxnDisabled() {
+		return nil, store.ErrUnsupported
+	}
+
 	var txn types.Transaction
 	hashId := util.GetShortIdOfHash(txHash.String())
 
@@ -31,6 +35,10 @@ func (cs *CfxStore) GetTransaction(ctx context.Context, txHash types.Hash) (*typ
 }
 
 func (cs *CfxStore) GetReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
+	if cs.filter.IsReceiptDisabled() {
+		return nil, store.ErrUnsupported
+	}
+
 	var rcpt types.TransactionReceipt
 	hashId := util.GetShortIdOfHash(txHash.String())
 

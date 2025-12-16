@@ -377,7 +377,7 @@ func (syncer *EthSyncer) reorgRevert(ctx context.Context, revertTo uint64) error
 	}
 
 	// remove block hash of reverted block from cache window
-	syncer.pivotWin.PopTo(revertTo - 1)
+	syncer.pivotWin.PopTo(revertTo)
 	// update syncer start block
 	syncer.fromBlock = revertTo
 

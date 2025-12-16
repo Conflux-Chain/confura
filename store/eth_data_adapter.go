@@ -53,7 +53,6 @@ func (e EthData) ExtractLogs() []LogLike {
 	return logs
 }
 
-// EthBlockAdapter 适配器
 type EthBlockAdapter struct {
 	*types.Block
 }
@@ -90,7 +89,6 @@ func (a EthBlockAdapter) MarshalJSON() ([]byte, error) {
 	return json.Marshal(blockCopy)
 }
 
-// EthTransactionAdapter 适配器
 type EthTransactionAdapter struct {
 	*types.TransactionDetail
 }
@@ -120,7 +118,6 @@ func (a *EthTransactionAdapter) Executed() bool {
 			*a.Status == geth.ReceiptStatusFailed)
 }
 
-// EthReceiptAdapter 适配器
 type EthReceiptAdapter struct {
 	*types.Receipt
 }
@@ -141,7 +138,6 @@ func (a EthReceiptAdapter) Logs() []LogLike {
 	return logs
 }
 
-// EthLogAdapter 适配器
 type EthLogAdapter struct {
 	*types.Log
 }

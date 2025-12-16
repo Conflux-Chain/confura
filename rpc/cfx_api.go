@@ -5,6 +5,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc/handler"
+	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
@@ -12,7 +13,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	postypes "github.com/Conflux-Chain/go-conflux-sdk/types/pos"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/sirupsen/logrus"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -146,31 +147,55 @@ func (api *cfxAPI) GetStorageRoot(ctx context.Context, address types.Address, ep
 	return api.stateHandler.GetStorageRoot(ctx, cfx, address, toEpochSlice(epoch)...)
 }
 
-func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (interface{}, error) {
+func (api *cfxAPI) GetBlockByHash(ctx context.Context, blockHash types.Hash, includeTxs bool) (any, error) {
 	metrics.Registry.RPC.Percentage("cfx_getBlockByHash", "includeTxs").Mark(includeTxs)
 
-	logger := logrus.WithFields(logrus.Fields{"blockHash": blockHash, "includeTxs": includeTxs})
-
-	if !util.IsInterfaceValNil(api.StoreHandler) {
-		block, err := api.StoreHandler.GetBlockByHash(ctx, blockHash, includeTxs)
-
-		logger.WithError(err).Debug("Delegated `cfx_getBlockByHash` to store handler")
-		api.collectHitStats("cfx_getBlockByHash", err == nil)
-
-		if err == nil {
-			return block, nil
-		}
+	idx := blockIndex{blockHash: &blockHash}
+	if block, ok := api.tryGetBlockFromStore(ctx, idx, includeTxs); ok && block != nil {
+		return block, nil
 	}
 
 	cfx := GetCfxClientFromContext(ctx)
 
-	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getBlockByHash` to fullnode")
-
 	if includeTxs {
 		return cfx.GetBlockByHash(blockHash)
 	}
-
 	return cfx.GetBlockSummaryByHash(blockHash)
+}
+
+type blockIndex struct {
+	blockHash   *types.Hash
+	epoch       *types.Epoch
+	blockNumber hexutil.Uint64
+}
+
+func (api *cfxAPI) tryGetBlockFromStore(ctx context.Context, idx blockIndex, includeTxs bool) (any, bool) {
+	if util.IsInterfaceValNil(api.StoreHandler) {
+		return nil, false
+	}
+
+	var (
+		block  any
+		method string
+		err    error
+	)
+	if idx.blockHash != nil {
+		method = "cfx_getBlockByHash"
+		block, err = api.StoreHandler.GetBlockByHash(ctx, *idx.blockHash, includeTxs)
+	} else if idx.epoch != nil {
+		method = "cfx_getBlockByEpochNumber"
+		block, err = api.StoreHandler.GetBlockByEpochNumber(ctx, idx.epoch, includeTxs)
+	} else {
+		method = "cfx_getBlockByBlockNumber"
+		block, err = api.StoreHandler.GetBlockByBlockNumber(ctx, idx.blockNumber, includeTxs)
+	}
+
+	if errors.Is(err, store.ErrUnsupported) {
+		return nil, false
+	}
+
+	metrics.Registry.RPC.StoreHit(method, "store").Mark(err == nil)
+	return block, err == nil
 }
 
 func (api *cfxAPI) GetBlockByHashWithPivotAssumption(
@@ -180,62 +205,40 @@ func (api *cfxAPI) GetBlockByHashWithPivotAssumption(
 	return cfx.GetBlockByHashWithPivotAssumption(blockHash, pivotHash, epoch)
 }
 
-func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (interface{}, error) {
-	metrics.Registry.RPC.Percentage("cfx_getBlockByEpochNumber", "includeTxs").Mark(includeTxs)
-
-	logger := logrus.WithFields(logrus.Fields{"epoch": epoch, "includeTxs": includeTxs})
-
+func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (any, error) {
 	cfx := GetCfxClientFromContext(ctx)
-
 	api.inputEpochMetric.Update(&epoch, "cfx_getBlockByEpochNumber", cfx)
 
-	if !util.IsInterfaceValNil(api.StoreHandler) {
-		block, err := api.StoreHandler.GetBlockByEpochNumber(ctx, &epoch, includeTxs)
+	metrics.Registry.RPC.Percentage("cfx_getBlockByEpochNumber", "includeTxs").Mark(includeTxs)
 
-		logger.WithError(err).Debug("Delegated `cfx_getBlockByEpochNumber` to store handler")
-		api.collectHitStats("cfx_getBlockByEpochNumber", err == nil)
-
-		if err == nil {
-			return block, nil
-		}
+	idx := blockIndex{epoch: &epoch}
+	if block, ok := api.tryGetBlockFromStore(ctx, idx, includeTxs); ok && block != nil {
+		return block, nil
 	}
-
-	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getBlockByEpochNumber` to fullnode")
 
 	if includeTxs {
 		return cfx.GetBlockByEpoch(&epoch)
 	}
-
 	return cfx.GetBlockSummaryByEpoch(&epoch)
 }
 
 func (api *cfxAPI) GetBlockByBlockNumber(
-	ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (interface{}, error) {
+	ctx context.Context, blockNumber hexutil.Uint64, includeTxs bool,
+) (any, error) {
 	metrics.Registry.RPC.Percentage("cfx_getBlockByBlockNumber", "details").Mark(includeTxs)
 
-	logger := logrus.WithFields(logrus.Fields{"blockNumber": blockNumer, "includeTxs": includeTxs})
-
-	if !util.IsInterfaceValNil(api.StoreHandler) {
-		block, err := api.StoreHandler.GetBlockByBlockNumber(ctx, blockNumer, includeTxs)
-
-		logger.WithError(err).Debug("Delegated `cfx_getBlockByBlockNumber` to store handler")
-		api.collectHitStats("cfx_getBlockByBlockNumber", err == nil)
-
-		if err == nil {
-			return block, nil
-		}
+	idx := blockIndex{blockNumber: blockNumber}
+	if block, ok := api.tryGetBlockFromStore(ctx, idx, includeTxs); ok && block != nil {
+		return block, nil
 	}
 
 	cfx := GetCfxClientFromContext(ctx)
-
-	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getBlockByBlockNumber` to fullnode")
-
 	if includeTxs {
-		return cfx.GetBlockByBlockNumber(blockNumer)
+		return cfx.GetBlockByBlockNumber(blockNumber)
 	}
-
-	return cfx.GetBlockSummaryByBlockNumber(blockNumer)
+	return cfx.GetBlockSummaryByBlockNumber(blockNumber)
 }
+
 func (api *cfxAPI) GetBestBlockHash(ctx context.Context) (types.Hash, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	return cfx.GetBestBlockHash()
@@ -301,23 +304,26 @@ func (api *cfxAPI) getLogs(
 }
 
 func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
-	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
-
-	if !util.IsInterfaceValNil(api.StoreHandler) {
-		txn, err := api.StoreHandler.GetTransactionByHash(ctx, txHash)
-
-		logger.WithError(err).Debug("Delegated `cfx_getTransactionByHash` to store handler")
-		api.collectHitStats("cfx_getTransactionByHash", err == nil)
-
-		if err == nil {
-			return txn, nil
-		}
+	if txn, ok := api.tryGetTxnFromStore(ctx, txHash); ok && txn != nil {
+		return txn, nil
 	}
 
-	cfx := GetCfxClientFromContext(ctx)
+	eth := GetCfxClientFromContext(ctx)
+	return eth.GetTransactionByHash(txHash)
+}
 
-	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getTransactionByHash` to fullnode")
-	return cfx.GetTransactionByHash(txHash)
+func (api *cfxAPI) tryGetTxnFromStore(ctx context.Context, txHash types.Hash) (*types.Transaction, bool) {
+	if util.IsInterfaceValNil(api.StoreHandler) {
+		return nil, false
+	}
+
+	txn, err := api.StoreHandler.GetTransactionByHash(ctx, txHash)
+	if errors.Is(err, store.ErrUnsupported) {
+		return nil, false
+	}
+
+	metrics.Registry.RPC.StoreHit("cfx_getTransactionByHash", "store").Mark(err == nil)
+	return txn, err == nil
 }
 
 func (api *cfxAPI) EstimateGasAndCollateral(ctx context.Context, request types.CallRequest, epoch *types.Epoch) (types.Estimate, error) {
@@ -335,25 +341,28 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(
 }
 
 func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {
-	logger := logrus.WithFields(logrus.Fields{"epoch": epoch})
-
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(&epoch, "cfx_getBlocksByEpoch", cfx)
 
-	if !util.IsInterfaceValNil(api.StoreHandler) {
-		blocks, err := api.StoreHandler.GetBlocksByEpoch(ctx, &epoch)
-
-		logger.WithError(err).Debug("Delegated `cfx_getBlocksByEpoch` to store handler")
-		api.collectHitStats("cfx_getBlocksByEpoch", err == nil)
-
-		if err == nil {
-			return blocks, nil
-		}
+	if hashes, ok := api.tryGetBlockHashesFromStore(ctx, epoch); ok && len(hashes) > 0 {
+		return hashes, nil
 	}
 
-	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getBlocksByEpoch` to fullnode")
-
 	return cfx.GetBlocksByEpoch(&epoch)
+}
+
+func (api *cfxAPI) tryGetBlockHashesFromStore(ctx context.Context, epoch types.Epoch) ([]types.Hash, bool) {
+	if util.IsInterfaceValNil(api.StoreHandler) {
+		return nil, false
+	}
+
+	txn, err := api.StoreHandler.GetBlocksByEpoch(ctx, &epoch)
+	if errors.Is(err, store.ErrUnsupported) {
+		return nil, false
+	}
+
+	metrics.Registry.RPC.StoreHit("cfx_getBlocksByEpoch", "store").Mark(err == nil)
+	return txn, err == nil
 }
 
 func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {
@@ -363,27 +372,31 @@ func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch types.Epoc
 }
 
 func (api *cfxAPI) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
-	logger := logrus.WithFields(logrus.Fields{"txHash": txHash})
-
-	if !util.IsInterfaceValNil(api.StoreHandler) {
-		rcpt, err := api.StoreHandler.GetTransactionReceipt(ctx, txHash)
-
-		logger.WithError(err).Debug("Delegated `cfx_getTransactionReceipt` to store handler")
-		api.collectHitStats("cfx_getTransactionReceipt", err == nil)
-
-		if err == nil {
-			return rcpt, nil
-		}
+	if receipt, ok := api.tryGetReceiptFromStore(ctx, txHash); ok && receipt != nil {
+		return receipt, nil
 	}
 
 	cfx := GetCfxClientFromContext(ctx)
-	logger.WithField("nodeUrl", cfx.GetNodeURL()).Debug("Delegating `cfx_getTransactionReceipt` to fullnode")
 	receipt, err := cfx.GetTransactionReceipt(txHash)
 	if err == nil {
 		metrics.Registry.RPC.Percentage("cfx_getTransactionReceipt", "notfound").Mark(receipt == nil)
 	}
 
 	return receipt, err
+}
+
+func (api *cfxAPI) tryGetReceiptFromStore(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, bool) {
+	if util.IsInterfaceValNil(api.StoreHandler) {
+		return nil, false
+	}
+
+	receipt, err := api.StoreHandler.GetTransactionReceipt(ctx, txHash)
+	if errors.Is(err, store.ErrUnsupported) {
+		return nil, false
+	}
+
+	metrics.Registry.RPC.StoreHit("cfx_getTransactionReceipt", "store").Mark(err == nil)
+	return receipt, err == nil
 }
 
 func (api *cfxAPI) GetAccount(ctx context.Context, address types.Address, epoch *types.Epoch) (types.AccountInfo, error) {

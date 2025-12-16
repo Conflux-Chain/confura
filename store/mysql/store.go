@@ -13,20 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TODO: add interface implementation check
-// var (
-// 	_ store.Readable      = (*MysqlStore)(nil)
-// 	_ store.StackOperable = (*MysqlStore)(nil)
-// 	_ store.Configurable  = (*MysqlStore)(nil)
-// 	_ io.Closer           = (*MysqlStore)(nil)
-// )
-
-// type EthStore MysqlStore[store.EthData]
-
-// func NewEthStore(db *gorm.DB, config *Config, option StoreOption) *EthStore {
-// 	return NewMysqlStore[store.EthData](db, config, option)
-// }
-
 type CommonStores struct {
 	*confStore
 	*UserStore

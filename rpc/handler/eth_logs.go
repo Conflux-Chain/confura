@@ -16,14 +16,14 @@ import (
 
 // EthLogsApiHandler RPC handler to get evm space event logs from store or fullnode.
 type EthLogsApiHandler struct {
-	cs *mysql.EthStore
+	es *mysql.EthStore
 
 	networkId          atomic.Value
 	maxSuggestAttempts int
 }
 
-func NewEthLogsApiHandler(cs *mysql.EthStore, maxAttempts int) *EthLogsApiHandler {
-	return &EthLogsApiHandler{cs: cs, maxSuggestAttempts: maxAttempts}
+func NewEthLogsApiHandler(es *mysql.EthStore, maxAttempts int) *EthLogsApiHandler {
+	return &EthLogsApiHandler{es: es, maxSuggestAttempts: maxAttempts}
 }
 
 func (handler *EthLogsApiHandler) GetLogs(
@@ -33,7 +33,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
 	// record the reorg version before query to ensure data consistence
-	lastReorgVersion, err := handler.cs.GetReorgVersion()
+	lastReorgVersion, err := handler.es.GetReorgVersion()
 	if err != nil {
 		return nil, false, err
 	}
@@ -70,7 +70,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 		}
 
 		// check the reorg version after query
-		reorgVersion, err := handler.cs.GetReorgVersion()
+		reorgVersion, err := handler.es.GetReorgVersion()
 		if err != nil {
 			return nil, false, err
 		}
@@ -127,7 +127,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		// query data from database
-		dbLogs, err := handler.cs.GetLogs(ctx, *dbFilter)
+		dbLogs, err := handler.es.GetLogs(ctx, *dbFilter)
 		if err != nil {
 			// TODO ErrPrunedAlready
 			return nil, false, err
@@ -196,7 +196,7 @@ func (handler *EthLogsApiHandler) splitLogFilter(
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
 ) (*store.LogFilter, *types.FilterQuery, error) {
-	maxBlock, ok, err := handler.cs.MaxEpoch()
+	maxBlock, ok, err := handler.es.MaxEpoch()
 	if err != nil {
 		return nil, nil, err
 	}

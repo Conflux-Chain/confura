@@ -34,7 +34,7 @@ func (w *worker[T]) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epo
 		case <-ctx.Done():
 			return
 		default:
-			epochData, err := w.client.QueryChainData(context.Background(), eno, eno)
+			data, err := w.client.QueryChainData(ctx, eno, eno)
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
 					"epochNo":    eno,
@@ -47,7 +47,7 @@ func (w *worker[T]) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epo
 			select {
 			case <-ctx.Done():
 				return
-			case w.resultChan <- epochData[0]:
+			case w.resultChan <- data[0]:
 				eno += stepN
 			}
 		}

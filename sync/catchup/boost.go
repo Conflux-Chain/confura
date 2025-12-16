@@ -92,9 +92,9 @@ func (pq *syncTaskPriorityQueue) Pop() interface{} {
 
 // syncTaskResult holds the result of a completed syncTask.
 type syncTaskResult[T store.ChainData] struct {
-	task      syncTask
-	err       error
-	epochData []T
+	task   syncTask
+	err    error
+	result []T
 }
 
 // coordinator orchestrates the synchronization process by:
@@ -197,19 +197,19 @@ func (c *coordinator[T]) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup
 				time.Sleep(time.Second)
 				continue
 			case task := <-c.pendingTaskQueue:
-				epochData, err := w.queryChainData(task.From, task.To)
+				data, err := w.queryChainData(task.From, task.To)
 				if logrus.IsLevelEnabled(logrus.DebugLevel) {
 					logrus.WithFields(logrus.Fields{
 						"worker":          w.name,
 						"task":            task,
-						"numEpochData":    len(epochData),
+						"numEpochData":    len(data),
 						"numPendingTasks": len(c.pendingTaskQueue),
 					}).WithError(err).Debug("Catch-up boost worker processed task")
 				}
 				c.taskResultQueue <- syncTaskResult[T]{
-					task:      task,
-					epochData: epochData,
-					err:       err,
+					task:   task,
+					result: data,
+					err:    err,
 				}
 			}
 		}
@@ -258,11 +258,11 @@ func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 					}
 
 					// Collect epoch data
-					if err := c.collectEpochData(ctx, r.epochData); err != nil {
+					if err := c.collectResult(ctx, r.result); err != nil {
 						return
 					}
 					resultHistory = append(resultHistory, r)
-					r.epochData = nil // free memory
+					r.result = nil // free memory
 				}
 				// Sort the task result history
 				sort.Slice(resultHistory, func(i, j int) bool {
@@ -311,8 +311,8 @@ func (c *coordinator[T]) estimateTaskSize(results []syncTaskResult[T]) uint64 {
 	return newTaskSize
 }
 
-// collectEpochData accumulates epoch data in memory until contiguous and flushes them in order.
-func (c *coordinator[T]) collectEpochData(ctx context.Context, result []T) error {
+// collectResult accumulates results in memory until contiguous and flushes them in order.
+func (c *coordinator[T]) collectResult(ctx context.Context, result []T) error {
 	// Cache store epoch data
 	for _, data := range result {
 		c.epochDataStore[data.Number()] = data

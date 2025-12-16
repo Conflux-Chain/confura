@@ -46,7 +46,6 @@ func (e EpochData) ExtractLogs() (logs []LogLike) {
 	return logs
 }
 
-// EpochBlockAdapter 适配器
 type EpochBlockAdapter struct {
 	*types.Block
 }
@@ -81,7 +80,6 @@ func (a EpochBlockAdapter) MarshalJSON() ([]byte, error) {
 	return json.Marshal(blockSummary)
 }
 
-// EpochTransactionAdapter 适配器
 type EpochTransactionAdapter struct {
 	*types.Transaction
 }
@@ -109,7 +107,6 @@ func (a EpochTransactionAdapter) Executed() bool {
 	return util.IsTxExecutedInBlock(a.Transaction)
 }
 
-// EpochReceiptAdapter 适配器
 type EpochReceiptAdapter struct {
 	*types.TransactionReceipt
 }
@@ -130,7 +127,6 @@ func (a EpochReceiptAdapter) Logs() []LogLike {
 	return logs
 }
 
-// EpochLogAdapter 适配器
 type EpochLogAdapter struct {
 	*types.Log
 }

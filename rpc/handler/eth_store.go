@@ -55,7 +55,7 @@ func (h *EthStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"filter": filter,
-		}).WithError(err).Info("ethStoreHandler failed to get logs from store")
+		}).WithError(err).Debug("ethStoreHandler failed to get logs from store")
 		return nil, err
 	}
 

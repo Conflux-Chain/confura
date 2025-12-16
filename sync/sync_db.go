@@ -404,7 +404,7 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(ctx context.Context, revertTo ui
 	}
 
 	// remove pivot data of reverted epoch from cache window
-	syncer.pivotWin.PopTo(revertTo - 1)
+	syncer.pivotWin.PopTo(revertTo)
 	// update syncer start epoch
 	syncer.epochFrom = revertTo
 
