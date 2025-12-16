@@ -7,7 +7,6 @@ import (
 	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc/handler"
-	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
@@ -98,7 +97,7 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 func (api *ethAPI) GetBlockByHash(ctx context.Context, blockHash common.Hash, fullTx bool) (any, error) {
 	metrics.Registry.RPC.Percentage("eth_getBlockByHash", "fullTx").Mark(fullTx)
 
-	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
+	if !util.IsInterfaceValNil(api.StoreHandler) {
 		block, err := api.StoreHandler.GetBlockByHash(ctx, blockHash, fullTx)
 		metrics.Registry.RPC.StoreHit("eth_getBlockByHash", "store").Mark(err == nil)
 		if err == nil {
@@ -146,8 +145,8 @@ func (api *ethAPI) GetBlockByNumber(
 	metrics.Registry.RPC.Percentage("eth_getBlockByNumber", "fullTx").Mark(fullTx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c.Eth)
 
-	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		block, err := api.StoreHandler.GetBlockByNumber(ctx, &blockNum, fullTx)
+	if !util.IsInterfaceValNil(api.StoreHandler) {
+		block, err := api.StoreHandler.GetBlockByNumber(ctx, blockNum, fullTx)
 		metrics.Registry.RPC.StoreHit("eth_getBlockByNumber", "store").Mark(err == nil)
 		if err == nil {
 			return block, nil
@@ -280,7 +279,7 @@ func (api *ethAPI) EstimateGas(
 
 // GetTransactionByHash returns the transaction with the given hash.
 func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (any, error) {
-	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
+	if !util.IsInterfaceValNil(api.StoreHandler) {
 		tx, err := api.StoreHandler.GetTransactionByHash(ctx, hash)
 		metrics.Registry.RPC.StoreHit("eth_getTransactionByHash", "store").Mark(err == nil)
 		if err == nil {
@@ -302,7 +301,7 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 		}
 	}()
 
-	if !store.EthStoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
+	if !util.IsInterfaceValNil(api.StoreHandler) {
 		var receipt *web3Types.Receipt
 		receipt, err = api.StoreHandler.GetTransactionReceipt(ctx, txHash)
 		metrics.Registry.RPC.StoreHit("eth_getTransactionReceipt", "store").Mark(err == nil)

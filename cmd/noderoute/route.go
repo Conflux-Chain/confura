@@ -61,7 +61,7 @@ func addRoute(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs, err := storeCtx.GetMysqlStore(routeCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(routeCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get MySQL store by network")
 		return
@@ -111,7 +111,7 @@ func delRoute(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs, err := storeCtx.GetMysqlStore(routeCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(routeCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get MySQL store by network")
 		return
@@ -142,7 +142,7 @@ func listRoutes(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	dbs, err := storeCtx.GetMysqlStore(routeCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(routeCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get MySQL store by network")
 		return

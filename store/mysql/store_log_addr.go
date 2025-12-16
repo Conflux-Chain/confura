@@ -6,7 +6,6 @@ import (
 	"hash/fnv"
 
 	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -33,7 +32,7 @@ func (AddressIndexedLog) TableName() string {
 }
 
 // AddressIndexedLogStore is used to store address indexed event logs in N partitions, e.g. logs_1, logs_2, ..., logs_n.
-type AddressIndexedLogStore struct {
+type AddressIndexedLogStore[T store.ChainData] struct {
 	partitionedStore
 	db         *gorm.DB
 	cs         *ContractStore
@@ -41,8 +40,8 @@ type AddressIndexedLogStore struct {
 	partitions uint32
 }
 
-func NewAddressIndexedLogStore(db *gorm.DB, cs *ContractStore, partitions uint32) *AddressIndexedLogStore {
-	return &AddressIndexedLogStore{
+func NewAddressIndexedLogStore[T store.ChainData](db *gorm.DB, cs *ContractStore, partitions uint32) *AddressIndexedLogStore[T] {
+	return &AddressIndexedLogStore[T]{
 		db:         db,
 		cs:         cs,
 		partitions: partitions,
@@ -50,12 +49,12 @@ func NewAddressIndexedLogStore(db *gorm.DB, cs *ContractStore, partitions uint32
 }
 
 // CreatePartitionedTables initializes partitioned tables.
-func (ls *AddressIndexedLogStore) CreatePartitionedTables() (int, error) {
+func (ls *AddressIndexedLogStore[T]) CreatePartitionedTables() (int, error) {
 	return ls.createPartitionedTables(ls.db, &ls.model, 0, ls.partitions)
 }
 
 // getPartitionByAddress returns the partition by specified contract address.
-func (ls *AddressIndexedLogStore) getPartitionByAddress(contract string) uint32 {
+func (ls *AddressIndexedLogStore[T]) getPartitionByAddress(contract string) uint32 {
 	hasher := fnv.New32()
 	hasher.Write([]byte(contract))
 	// could use consistent hashing if repartition supported
@@ -63,32 +62,31 @@ func (ls *AddressIndexedLogStore) getPartitionByAddress(contract string) uint32 
 }
 
 // convertToPartitionedLogs converts the specified epoch data into partitioned event logs.
-func (ls *AddressIndexedLogStore) convertToPartitionedLogs(
-	data *store.EpochData, bigContractIds map[uint64]bool,
+func (ls *AddressIndexedLogStore[T]) convertToPartitionedLogs(
+	data T, bigContractIds map[uint64]bool,
 ) (map[uint32][]*AddressIndexedLog, map[uint64]int, error) {
 	contract2LogCount := make(map[uint64]int)
 	partition2Logs := make(map[uint32][]*AddressIndexedLog)
 
 	// divide event logs into different partitions by address
-	for _, block := range data.Blocks {
-		bn := block.BlockNumber.ToInt().Uint64()
+	for _, block := range data.ExtractBlocks() {
+		bn := block.Number()
+		receipts := data.ExtractReceipts()
 
-		for _, tx := range block.Transactions {
-			// ignore txs that not executed in current block
-			if !util.IsTxExecutedInBlock(&tx) {
+		for _, tx := range block.Transactions() {
+			// ignore txs that are not executed in current block
+			if !tx.Executed() {
 				continue
 			}
 
-			receipt, ok := data.Receipts[tx.Hash]
+			receipt, ok := receipts[tx.Hash()]
 			if !ok {
 				// This could happen if there are no event logs for this transaction.
 				continue
 			}
 
-			receiptExt := data.ReceiptExts[tx.Hash]
-
-			for i, v := range receipt.Logs {
-				cid, _, err := ls.cs.AddContractIfAbsent(v.Address.MustGetBase32Address())
+			for _, v := range receipt.Logs() {
+				cid, _, err := ls.cs.AddContractIfAbsent(v.Address())
 				if err != nil {
 					return nil, nil, err
 				}
@@ -98,14 +96,11 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(
 					continue
 				}
 
-				var logext *store.LogExtra
-				if receiptExt != nil {
-					logext = receiptExt.LogExts[i]
-				}
+				slog := v.AsStoreLog(cid)
+				slog.BlockNumber = bn
 
-				log := store.ParseCfxLog(&v, cid, bn, logext)
-				partition := ls.getPartitionByAddress(v.Address.MustGetBase32Address())
-				partition2Logs[partition] = append(partition2Logs[partition], (*AddressIndexedLog)(log))
+				partition := ls.getPartitionByAddress(v.Address())
+				partition2Logs[partition] = append(partition2Logs[partition], (*AddressIndexedLog)(slog))
 
 				contract2LogCount[cid]++
 			}
@@ -116,7 +111,7 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(
 }
 
 // Add inserts event logs from a batch of epochs into partitioned tables, while ignoring logs from big contracts.
-func (ls *AddressIndexedLogStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, bigContractIds map[uint64]bool) error {
+func (ls *AddressIndexedLogStore[T]) Add(dbTx *gorm.DB, dataSlice []T, bigContractIds map[uint64]bool) error {
 	var (
 		allContract2LogCount      = make(map[uint64]int)
 		allContract2UpdatedEpochs = make(map[uint64]uint64)
@@ -147,7 +142,7 @@ func (ls *AddressIndexedLogStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochDat
 
 		// Update the updated epoch for each contract into `allContract2UpdatedEpochs`
 		for cid := range contract2LogCount {
-			allContract2UpdatedEpochs[cid] = data.Number
+			allContract2UpdatedEpochs[cid] = data.Number()
 		}
 	}
 
@@ -173,7 +168,7 @@ func (ls *AddressIndexedLogStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochDat
 // DeleteAddressIndexedLogs removes event logs of specified epoch number range.
 //
 // Generally, this is used when pivot chain switched for confirmed blocks.
-func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
+func (ls *AddressIndexedLogStore[T]) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
 	contracts, err := ls.cs.GetUpdatedContractsSinceEpoch(epochFrom)
 	if err != nil {
 		return errors.WithMessage(err, "failed to get updated contracts since start epoch")
@@ -206,7 +201,7 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 }
 
 // GetAddressIndexedLogs returns event logs for the specified filter.
-func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(
+func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 	ctx context.Context,
 	filter AddressIndexedLogFilter,
 	contract string,
@@ -217,7 +212,7 @@ func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(
 
 // GetPartitionedTableName returns partitioned table name with specified
 // contract address hashed partition index
-func (ls *AddressIndexedLogStore) GetPartitionedTableName(contract string) string {
+func (ls *AddressIndexedLogStore[T]) GetPartitionedTableName(contract string) string {
 	partition := ls.getPartitionByAddress(contract)
 	return ls.getPartitionedTableName(&ls.model, partition)
 }

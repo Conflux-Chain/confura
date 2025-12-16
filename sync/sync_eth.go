@@ -6,14 +6,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/catchup"
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"github.com/Conflux-Chain/go-conflux-util/health"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
@@ -39,7 +37,7 @@ type EthSyncer struct {
 	// EVM space chain id
 	chainId uint32
 	// db store
-	db *mysql.MysqlStore
+	db *mysql.EthStore
 	// block number to sync chaindata from
 	fromBlock uint64
 	// maximum number of blocks to sync once
@@ -49,7 +47,7 @@ type EthSyncer struct {
 	// interval to sync data in catching up mode
 	syncIntervalCatchUp time.Duration
 	// window to cache block info
-	epochPivotWin *epochPivotWindow
+	pivotWin *evmSlidingPivotWindow
 	// HA leader/follower election
 	elm election.LeaderManager
 	// sync monitor
@@ -57,7 +55,7 @@ type EthSyncer struct {
 }
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
-func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.MysqlStore) *EthSyncer {
+func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.EthStore) *EthSyncer {
 	if len(ethClients) == 0 {
 		logrus.Fatal("No web3go client provided")
 	}
@@ -97,7 +95,7 @@ func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.MysqlStore) *EthSyn
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		monitor:             monitor,
-		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
+		pivotWin:            newEvmSlidingPivotWindow(syncPivotInfoWinCapacity),
 		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.eth"),
 	}
 	monitor.SetObserver(syncer)
@@ -304,14 +302,7 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	// reuse db store logic by converting eth data to epoch data
-	epochDataSlice := make([]*store.EpochData, 0, len(ethDataSlice))
-	for i := 0; i < len(ethDataSlice); i++ {
-		epochData := cfxbridge.ConvertToEpochData(ethDataSlice[i], syncer.chainId)
-		epochDataSlice = append(epochDataSlice, epochData)
-	}
-
-	err = syncer.db.PushnWithFinalizer(epochDataSlice, func(d *gorm.DB) error {
+	err = syncer.db.PushnWithFinalizer(ethDataSlice, func(d *gorm.DB) error {
 		return syncer.elm.Extend(ctx)
 	})
 
@@ -328,14 +319,13 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	}
 
 	for _, edata := range ethDataSlice { // cache eth block info for late use
-		cfxbh := cfxbridge.ConvertBlockHeader(edata.Block, syncer.chainId)
-		err := syncer.epochPivotWin.Push(&cfxtypes.Block{BlockHeader: *cfxbh})
+		err := syncer.pivotWin.Push(evmPivotBlockWrapper{edata.Block})
 		if err != nil {
 			logger.WithField("blockNumber", edata.Number).WithError(err).Info(
 				"ETH syncer failed to push block into cache window",
 			)
 
-			syncer.epochPivotWin.Reset()
+			syncer.pivotWin.Reset()
 			break
 		}
 	}
@@ -387,7 +377,7 @@ func (syncer *EthSyncer) reorgRevert(ctx context.Context, revertTo uint64) error
 	}
 
 	// remove block hash of reverted block from cache window
-	syncer.epochPivotWin.Popn(revertTo)
+	syncer.pivotWin.PopTo(revertTo - 1)
 	// update syncer start block
 	syncer.fromBlock = revertTo
 
@@ -429,8 +419,8 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 	latestBlockNo := syncer.latestStoreBlock()
 
 	// load from in-memory cache first
-	if blockHash, ok := syncer.epochPivotWin.GetPivotHash(latestBlockNo); ok {
-		return string(blockHash), nil
+	if blockHash, ok := syncer.pivotWin.Get(latestBlockNo); ok {
+		return blockHash.String(), nil
 	}
 
 	pivotHash, _, err := syncer.db.PivotHash(latestBlockNo)
@@ -447,7 +437,7 @@ func (syncer *EthSyncer) latestStoreBlock() uint64 {
 
 func (syncer *EthSyncer) onLeadershipChanged(
 	ctx context.Context, lm election.LeaderManager, gainedOrLost bool) {
-	syncer.epochPivotWin.Reset()
+	syncer.pivotWin.Reset()
 	if !gainedOrLost && ctx.Err() != context.Canceled {
 		logrus.WithField("leaderID", lm.Identity()).Warn("ETH syncer lost HA leadership")
 	}

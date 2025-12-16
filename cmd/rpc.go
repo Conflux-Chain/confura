@@ -87,7 +87,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	var rateReg *rate.Registry
 
 	router := node.Factory().CreateRouter()
-	clientProvider := node.NewCfxClientProvider(storeCtx.CfxDB, router)
+	clientProvider := node.NewCfxClientProvider(storeCtx.CfxDB.CommonStores, router)
 	relayer := relay.MustNewTxnRelayerFromViper()
 
 	option := rpc.CfxAPIOption{
@@ -101,17 +101,13 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 	// initialize store handler
 	if storeCtx.CfxDB != nil {
-		option.StoreHandler = handler.NewCfxCommonStoreHandler("db", storeCtx.CfxDB, option.StoreHandler)
+		option.StoreHandler = handler.NewCfxStoreHandler("db", storeCtx.CfxDB)
 
 		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyInfos)
 		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewCfxValidator)
 
 		// periodically reload rate limit settings from db
 		go rateReg.AutoReload(15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs)
-	}
-
-	if storeCtx.CfxCache != nil {
-		option.StoreHandler = handler.NewCfxCommonStoreHandler("cache", storeCtx.CfxCache, option.StoreHandler)
 	}
 
 	// initialize gas station handler
@@ -160,7 +156,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 
 	router := node.EthFactory().CreateRouter()
 	dataCache := rpcutil.MustNewEthDataCacheClientFromViper()
-	clientProvider := node.NewEthClientProvider(dataCache, storeCtx.EthDB, router)
+	clientProvider := node.NewEthClientProvider(dataCache, storeCtx.EthDB.CommonStores, router)
 	relayer := relay.MustNewEthTxnRelayerFromViper()
 
 	option := rpc.EthAPIOption{
@@ -177,7 +173,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 
 	if storeCtx.EthDB != nil {
 		// initialize store handler
-		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.EthDB, nil)
+		option.StoreHandler = handler.NewEthStoreHandler(storeCtx.EthDB)
 		// initialize logs api handler
 		maxAttempts := viper.GetInt("requestControl.maxGetLogsSuggestionAttempts")
 		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB, maxAttempts)

@@ -2,9 +2,7 @@ package catchup
 
 import (
 	"context"
-	"sync/atomic"
 
-	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -17,8 +15,8 @@ import (
 )
 
 var (
-	_ IRpcClient = (*CoreRpcClient)(nil)
-	_ IRpcClient = (*EvmRpcClient)(nil)
+	_ IRpcClient[*store.EpochData] = (*CoreRpcClient)(nil)
+	_ IRpcClient[*store.EthData]   = (*EvmRpcClient)(nil)
 )
 
 type FinalizationStatus struct {
@@ -26,10 +24,10 @@ type FinalizationStatus struct {
 	LatestCheckpoint uint64
 }
 
-type IRpcClient interface {
+type IRpcClient[T store.ChainData] interface {
 	GetFinalizationStatus(ctx context.Context) (*FinalizationStatus, error)
-	QueryEpochData(ctx context.Context, from, to uint64) ([]*store.EpochData, error)
-	BoostQueryEpochData(ctx context.Context, from, to uint64) ([]*store.EpochData, error)
+	QueryChainData(ctx context.Context, from, to uint64) ([]T, error)
+	BoostQueryChainData(ctx context.Context, from, to uint64) ([]T, error)
 	Space() string
 	Close()
 }
@@ -38,7 +36,7 @@ type CoreRpcClient struct {
 	sdk.ClientOperator
 }
 
-func MustNewCoreRpcClient(nodeUrl string) IRpcClient {
+func MustNewCoreRpcClient(nodeUrl string) IRpcClient[*store.EpochData] {
 	return NewCoreRpcClient(rpc.MustNewCfxClient(nodeUrl))
 }
 
@@ -62,7 +60,7 @@ func (c *CoreRpcClient) Space() string {
 	return "cfx"
 }
 
-func (c *CoreRpcClient) QueryEpochData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
+func (c *CoreRpcClient) QueryChainData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
 	if fromEpoch > toEpoch {
 		return nil, errors.New("invalid epoch range")
 	}
@@ -107,7 +105,7 @@ func (c *CoreRpcClient) getPivotBlock(epochNum uint64) (*cfxTypes.Block, error) 
 	return block, nil
 }
 
-func (c *CoreRpcClient) BoostQueryEpochData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
+func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
 	if fromEpoch > toEpoch {
 		return nil, errors.New("invalid epoch range")
 	}
@@ -126,7 +124,7 @@ func (c *CoreRpcClient) BoostQueryEpochData(ctx context.Context, fromEpoch, toEp
 	for epochNum := fromEpoch; epochNum <= toEpoch; epochNum++ {
 		// Initialize epoch data for the current epoch
 		epochData := &store.EpochData{
-			Number:   epochNum,
+			EpochNo:  epochNum,
 			Receipts: make(map[cfxTypes.Hash]*cfxTypes.TransactionReceipt),
 		}
 
@@ -187,7 +185,7 @@ func (c *CoreRpcClient) BoostQueryEpochData(ctx context.Context, fromEpoch, toEp
 			if err != nil {
 				return nil, errors.WithMessagef(err, "failed to get the pivot block of epoch #%v", epochNum)
 			}
-			epochData.Hash = &block.Hash
+			epochData.PivotHash = &block.Hash
 			if _, ok := blockCache[block.Hash]; !ok {
 				epochData.Blocks = append(epochData.Blocks, block)
 			}
@@ -207,28 +205,14 @@ func (c *CoreRpcClient) BoostQueryEpochData(ctx context.Context, fromEpoch, toEp
 
 type EvmRpcClient struct {
 	*web3go.Client
-	chainId atomic.Value
 }
 
-func MustNewEvmRpcClient(nodeUrl string) IRpcClient {
+func MustNewEvmRpcClient(nodeUrl string) IRpcClient[*store.EthData] {
 	return NewEvmRpcClient(rpc.MustNewEthClient(nodeUrl))
 }
 
 func NewEvmRpcClient(w3c *web3go.Client) *EvmRpcClient {
 	return &EvmRpcClient{Client: w3c}
-}
-
-func (e *EvmRpcClient) ChainId() (uint64, error) {
-	if v, ok := e.chainId.Load().(*uint64); ok {
-		return *v, nil
-	}
-
-	ethChainId, err := e.Eth.ChainId()
-	if err != nil {
-		return 0, err
-	}
-	e.chainId.Store(ethChainId)
-	return *ethChainId, nil
 }
 
 func (e *EvmRpcClient) GetFinalizationStatus(ctx context.Context) (*FinalizationStatus, error) {
@@ -242,17 +226,12 @@ func (e *EvmRpcClient) GetFinalizationStatus(ctx context.Context) (*Finalization
 }
 
 func (c *EvmRpcClient) Space() string {
-	return "eth"
+	return "evm"
 }
 
-func (c *EvmRpcClient) QueryEpochData(ctx context.Context, fromBlock, toBlock uint64) ([]*store.EpochData, error) {
+func (c *EvmRpcClient) QueryChainData(ctx context.Context, fromBlock, toBlock uint64) ([]*store.EthData, error) {
 	if fromBlock > toBlock {
 		return nil, errors.New("invalid block range")
-	}
-
-	chainId, err := c.ChainId()
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to get chain ID")
 	}
 
 	ethDataSlice := make([]*store.EthData, 0, toBlock-fromBlock+1)
@@ -264,14 +243,7 @@ func (c *EvmRpcClient) QueryEpochData(ctx context.Context, fromBlock, toBlock ui
 		ethDataSlice = append(ethDataSlice, data)
 	}
 
-	// Convert eth data to epoch data
-	epochDataSlice := make([]*store.EpochData, 0, len(ethDataSlice))
-	for i := 0; i < len(ethDataSlice); i++ {
-		epochData := cfxbridge.ConvertToEpochData(ethDataSlice[i], uint32(chainId))
-		epochDataSlice = append(epochDataSlice, epochData)
-	}
-
-	return epochDataSlice, nil
+	return ethDataSlice, nil
 }
 
 func (c *EvmRpcClient) getBlockByNumber(blockNum uint64) (*ethTypes.Block, error) {
@@ -285,14 +257,9 @@ func (c *EvmRpcClient) getBlockByNumber(blockNum uint64) (*ethTypes.Block, error
 	return block, nil
 }
 
-func (c *EvmRpcClient) BoostQueryEpochData(ctx context.Context, fromBlock, toBlock uint64) ([]*store.EpochData, error) {
+func (c *EvmRpcClient) BoostQueryChainData(ctx context.Context, fromBlock, toBlock uint64) ([]*store.EthData, error) {
 	if fromBlock > toBlock {
 		return nil, errors.New("invalid block range")
-	}
-
-	chainId, err := c.ChainId()
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to get chain ID")
 	}
 
 	// Retrieve event logs within the specified block range
@@ -309,7 +276,7 @@ func (c *EvmRpcClient) BoostQueryEpochData(ctx context.Context, fromBlock, toBlo
 	for blockNum := fromBlock; blockNum <= toBlock; blockNum++ {
 		// Initialize ETH data for the current block
 		ethData := &store.EthData{
-			Number:   blockNum,
+			BlockNo:  blockNum,
 			Receipts: make(map[common.Hash]*ethTypes.Receipt),
 		}
 
@@ -372,12 +339,5 @@ func (c *EvmRpcClient) BoostQueryEpochData(ctx context.Context, fromBlock, toBlo
 		return nil, err
 	}
 
-	// Convert eth data to epoch data
-	res := make([]*store.EpochData, 0, len(ethDataSlice))
-	for i := 0; i < len(ethDataSlice); i++ {
-		epochData := cfxbridge.ConvertToEpochData(ethDataSlice[i], uint32(chainId))
-		res = append(res, epochData)
-	}
-
-	return res, nil
+	return ethDataSlice, nil
 }

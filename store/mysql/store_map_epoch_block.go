@@ -31,15 +31,15 @@ func (epochBlockMap) TableName() string {
 }
 
 // epochBlockMapStore used to get epoch to block map data.
-type epochBlockMapStore struct {
+type epochBlockMapStore[T store.ChainData] struct {
 	*baseStore
 
 	// help partitioner
 	partitioner *mysqlRangePartitioner
 }
 
-func newEpochBlockMapStore(db *gorm.DB, config *Config) *epochBlockMapStore {
-	return &epochBlockMapStore{
+func newEpochBlockMapStore[T store.ChainData](db *gorm.DB, config *Config) *epochBlockMapStore[T] {
+	return &epochBlockMapStore[T]{
 		baseStore: newBaseStore(db),
 		partitioner: newMysqlRangePartitioner(
 			config.Database, epochBlockMap{}.TableName(), "epoch",
@@ -48,7 +48,7 @@ func newEpochBlockMapStore(db *gorm.DB, config *Config) *epochBlockMapStore {
 }
 
 // preparePartition creates new table partition if necessary.
-func (ebms *epochBlockMapStore) preparePartition(dataSlice []*store.EpochData) error {
+func (ebms *epochBlockMapStore[T]) preparePartition(dataSlice []T) error {
 	var latestPartitionIndex int
 
 	partition, err := ebms.partitioner.latestPartition(ebms.db)
@@ -60,7 +60,7 @@ func (ebms *epochBlockMapStore) preparePartition(dataSlice []*store.EpochData) e
 		latestPartitionIndex = ebms.partitioner.indexOfPartition(partition)
 	} else {
 		// create initial partition
-		initPartitionIndex := int(dataSlice[0].Number / epochToBlockMappingPartitionSize)
+		initPartitionIndex := int(dataSlice[0].Number() / epochToBlockMappingPartitionSize)
 		threshold := uint64(initPartitionIndex+1) * epochToBlockMappingPartitionSize
 
 		err = ebms.partitioner.convert(ebms.db, initPartitionIndex, threshold)
@@ -72,12 +72,12 @@ func (ebms *epochBlockMapStore) preparePartition(dataSlice []*store.EpochData) e
 	}
 
 	for _, data := range dataSlice {
-		if data.Number%epochToBlockMappingPartitionSize != 0 {
+		if data.Number()%epochToBlockMappingPartitionSize != 0 {
 			continue
 		}
 
 		// create new partition if necessary
-		partitionIndex := int(data.Number / epochToBlockMappingPartitionSize)
+		partitionIndex := int(data.Number() / epochToBlockMappingPartitionSize)
 		if int(partitionIndex) <= latestPartitionIndex { // partition already exists
 			continue
 		}
@@ -95,7 +95,7 @@ func (ebms *epochBlockMapStore) preparePartition(dataSlice []*store.EpochData) e
 }
 
 // MaxEpoch returns the max epoch within the map store.
-func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
+func (e2bms *epochBlockMapStore[T]) MaxEpoch() (uint64, bool, error) {
 	var maxEpoch sql.NullInt64
 
 	db := e2bms.db.Model(&epochBlockMap{}).Select("MAX(epoch)")
@@ -111,7 +111,7 @@ func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
 }
 
 // findOneBlockMapping retrieves a single `epochBlockMap` record based on a condition and optional ordering.
-func (e2bms *epochBlockMapStore) findOneBlockMapping(
+func (e2bms *epochBlockMapStore[T]) findOneBlockMapping(
 	condition string, order string, args ...interface{}) (res epochBlockMap, existed bool, err error) {
 
 	query := e2bms.db.Where(condition, args...)
@@ -129,22 +129,22 @@ func (e2bms *epochBlockMapStore) findOneBlockMapping(
 }
 
 // FloorBlockMapping finds the `epochBlockMap` for the largest epoch ≤ the given epoch.
-func (e2bms *epochBlockMapStore) FloorBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
+func (e2bms *epochBlockMapStore[T]) FloorBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
 	return e2bms.findOneBlockMapping("epoch <= ?", "epoch DESC", epoch)
 }
 
 // CeilBlockMapping finds the `epochBlockMap` for the smallest epoch ≥ the given epoch.
-func (e2bms *epochBlockMapStore) CeilBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
+func (e2bms *epochBlockMapStore[T]) CeilBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
 	return e2bms.findOneBlockMapping("epoch >= ?", "epoch ASC", epoch)
 }
 
 // BlockMapping retrieves the `epochBlockMap` for the exact given epoch.
-func (e2bms *epochBlockMapStore) BlockMapping(epoch uint64) (epochBlockMap, bool, error) {
+func (e2bms *epochBlockMapStore[T]) BlockMapping(epoch uint64) (epochBlockMap, bool, error) {
 	return e2bms.findOneBlockMapping("epoch = ?", "", epoch)
 }
 
 // LatestEpochBeforeBlock finds the latest epoch ≤ maxEpochNumber where BnMax ≤ blockNumber.
-func (e2bms *epochBlockMapStore) LatestEpochBeforeBlock(maxEpochNumber, blockNumber uint64) (uint64, bool, error) {
+func (e2bms *epochBlockMapStore[T]) LatestEpochBeforeBlock(maxEpochNumber, blockNumber uint64) (uint64, bool, error) {
 	res, existed, err := e2bms.findOneBlockMapping("epoch <= ? AND bn_max <= ?", "epoch DESC", maxEpochNumber, blockNumber)
 	if err != nil || !existed {
 		return 0, false, err
@@ -153,7 +153,7 @@ func (e2bms *epochBlockMapStore) LatestEpochBeforeBlock(maxEpochNumber, blockNum
 }
 
 // PivotHash returns the pivot hash of the given epoch.
-func (e2bms *epochBlockMapStore) PivotHash(epoch uint64) (string, bool, error) {
+func (e2bms *epochBlockMapStore[T]) PivotHash(epoch uint64) (string, bool, error) {
 	var e2bmap epochBlockMap
 
 	existed, err := e2bms.exists(&e2bmap, "epoch = ?", epoch)
@@ -165,24 +165,22 @@ func (e2bms *epochBlockMapStore) PivotHash(epoch uint64) (string, bool, error) {
 }
 
 // Add batch saves epoch to block mapping data to db store.
-func (e2bms *epochBlockMapStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
+func (e2bms *epochBlockMapStore[T]) Add(dbTx *gorm.DB, dataSlice []T) error {
 	var mappings []*epochBlockMap
 
 	for _, data := range dataSlice {
-		if len(data.Blocks) == 0 {
+		blocks := data.ExtractBlocks()
+		if len(blocks) == 0 {
 			continue
 		}
 
-		var pivotHash string
-		if data.Hash != nil {
-			pivotHash = string(*data.Hash)
-		}
+		pivotHash := data.Hash()
 
-		firstBlock, endBlock := data.Blocks[0], data.Blocks[len(data.Blocks)-1]
+		firstBlock, endBlock := blocks[0], blocks[len(blocks)-1]
 		mappings = append(mappings, &epochBlockMap{
-			Epoch:     data.Number,
-			BnMin:     firstBlock.BlockNumber.ToInt().Uint64(),
-			BnMax:     endBlock.BlockNumber.ToInt().Uint64(),
+			Epoch:     data.Number(),
+			BnMin:     firstBlock.Number(),
+			BnMax:     endBlock.Number(),
 			PivotHash: pivotHash,
 		})
 	}
@@ -195,6 +193,6 @@ func (e2bms *epochBlockMapStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData
 }
 
 // Remove remove epoch to block mappings of specific epoch range from db store.
-func (e2bms *epochBlockMapStore) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
+func (e2bms *epochBlockMapStore[T]) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
 	return dbTx.Where("epoch >= ? AND epoch <= ?", epochFrom, epochTo).Delete(&epochBlockMap{}).Error
 }

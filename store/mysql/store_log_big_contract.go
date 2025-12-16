@@ -7,7 +7,6 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -41,23 +40,23 @@ func (cl contractLog) TableName() string {
 
 // bigContractLogStore partitioned store for big contract which has considerable amount of
 // event logs.
-type bigContractLogStore struct {
+type bigContractLogStore[T store.ChainData] struct {
 	*bnPartitionedStore
 	cs   *ContractStore
-	ebms *epochBlockMapStore
-	ails *AddressIndexedLogStore
+	ebms *epochBlockMapStore[T]
+	ails *AddressIndexedLogStore[T]
 	// notify channel for new bn partition created
 	bnPartitionNotifyChan chan<- *bnPartition
 }
 
-func newBigContractLogStore(
+func newBigContractLogStore[T store.ChainData](
 	db *gorm.DB,
 	cs *ContractStore,
-	ebms *epochBlockMapStore,
-	ails *AddressIndexedLogStore,
+	ebms *epochBlockMapStore[T],
+	ails *AddressIndexedLogStore[T],
 	notifyChan chan<- *bnPartition,
-) *bigContractLogStore {
-	return &bigContractLogStore{
+) *bigContractLogStore[T] {
+	return &bigContractLogStore[T]{
 		bnPartitionedStore:    newBnPartitionedStore(db),
 		bnPartitionNotifyChan: notifyChan, cs: cs, ebms: ebms, ails: ails,
 	}
@@ -66,7 +65,7 @@ func newBigContractLogStore(
 // preparePartitions create new contract log partitions for the big contract if necessary.
 // Also migrates event logs from address indexed table to separate contract specified log table
 // for the initial partitioning.
-func (bcls *bigContractLogStore) preparePartitions(dataSlice []*store.EpochData) (map[uint64]bnPartition, error) {
+func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bnPartition, error) {
 	contractAddrs := extractUniqueContractAddresses(dataSlice...)
 	contract2BnPartitions := make(map[uint64]bnPartition)
 
@@ -123,7 +122,7 @@ func (bcls *bigContractLogStore) preparePartitions(dataSlice []*store.EpochData)
 }
 
 // migrate migrates address indexed event logs for the big contract to separate log table partition.
-func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartition) error {
+func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPartition) error {
 	aiTableName := bcls.ails.GetPartitionedTableName(contract.Address)
 
 	clEntity, clTabler := bcls.contractEntity(contract.ID), bcls.contractTabler(contract.ID)
@@ -197,41 +196,38 @@ func (bcls *bigContractLogStore) migrate(contract *Contract, partition bnPartiti
 }
 
 // contractEntity gets partition entity of contract logs
-func (bcls *bigContractLogStore) contractEntity(cid uint64) string {
+func (bcls *bigContractLogStore[T]) contractEntity(cid uint64) string {
 	return contractLog{ContractID: cid}.TableName()
 }
 
 // contractTabler get partition tabler of contract logs
-func (bcls *bigContractLogStore) contractTabler(cid uint64) *contractLog {
+func (bcls *bigContractLogStore[T]) contractTabler(cid uint64) *contractLog {
 	return &contractLog{ContractID: cid}
 }
 
-func (bcls *bigContractLogStore) Add(
-	dbTx *gorm.DB, dataSlice []*store.EpochData, contract2BnPartitions map[uint64]bnPartition,
+func (bcls *bigContractLogStore[T]) Add(
+	dbTx *gorm.DB, dataSlice []T, contract2BnPartitions map[uint64]bnPartition,
 ) error {
 	bnMin, bnMax := uint64(math.MaxUint64), uint64(0)
 	contract2Logs := make(map[uint64][]*contractLog, len(contract2BnPartitions))
 
 	for _, data := range dataSlice {
-		for _, block := range data.Blocks {
-			bn := block.BlockNumber.ToInt().Uint64()
+		receipts := data.ExtractReceipts()
+
+		for _, block := range data.ExtractBlocks() {
+			bn := block.Number()
 			bnMin, bnMax = min(bnMin, bn), max(bnMax, bn)
 
-			for _, tx := range block.Transactions {
-				receipt := data.Receipts[tx.Hash]
+			for _, tx := range block.Transactions() {
+				receipt := receipts[tx.Hash()]
 
 				// Skip transactions that unexecuted in block.
-				if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
+				if receipt == nil || !tx.Executed() {
 					continue
 				}
 
-				var rcptExt *store.ReceiptExtra
-				if len(data.ReceiptExts) > 0 {
-					rcptExt = data.ReceiptExts[tx.Hash]
-				}
-
-				for k, log := range receipt.Logs {
-					cid, _, err := bcls.cs.AddContractIfAbsent(log.Address.MustGetBase32Address())
+				for _, log := range receipt.Logs() {
+					cid, _, err := bcls.cs.AddContractIfAbsent(log.Address())
 					if err != nil {
 						return errors.WithMessage(err, "failed to add contract")
 					}
@@ -241,13 +237,10 @@ func (bcls *bigContractLogStore) Add(
 						continue
 					}
 
-					var logExt *store.LogExtra
-					if rcptExt != nil && k < len(rcptExt.LogExts) {
-						logExt = rcptExt.LogExts[k]
-					}
+					slog := log.AsStoreLog(cid)
+					slog.BlockNumber = bn
 
-					log := store.ParseCfxLog(&log, cid, bn, logExt)
-					contract2Logs[cid] = append(contract2Logs[cid], (*contractLog)(log))
+					contract2Logs[cid] = append(contract2Logs[cid], (*contractLog)(slog))
 				}
 			}
 		}
@@ -289,7 +282,7 @@ func (bcls *bigContractLogStore) Add(
 	return nil
 }
 
-func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
+func (bcls *bigContractLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	contracts, err := bcls.cs.GetUpdatedContractsSinceEpoch(epochUntil)
 	if err != nil {
 		return errors.WithMessage(err, "failed to get updated contracts since start epoch")
@@ -352,7 +345,7 @@ func (bcls *bigContractLogStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 }
 
 // IsBigContract check if the contract is big contract or not.
-func (bcls *bigContractLogStore) IsBigContract(cid uint64) (bool, error) {
+func (bcls *bigContractLogStore[T]) IsBigContract(cid uint64) (bool, error) {
 	contractEntity := bcls.contractEntity(cid)
 	partition, existed, err := bcls.oldestPartition(contractEntity)
 	if err != nil {
@@ -370,7 +363,7 @@ func (bcls *bigContractLogStore) IsBigContract(cid uint64) (bool, error) {
 }
 
 // GetContractLogs get contract logs for the specified filter.
-func (bcls *bigContractLogStore) GetContractLogs(
+func (bcls *bigContractLogStore[T]) GetContractLogs(
 	ctx context.Context, cid uint64, storeFilter store.LogFilter,
 ) ([]*store.Log, error) {
 	contractEntity := bcls.contractEntity(cid)
@@ -423,7 +416,7 @@ func (bcls *bigContractLogStore) GetContractLogs(
 
 // GetContractBnPartitionedLogs returns contract event logs for the log filter from
 // specified table partition ranged by block number.
-func (bcls *bigContractLogStore) GetContractBnPartitionedLogs(
+func (bcls *bigContractLogStore[T]) GetContractBnPartitionedLogs(
 	ctx context.Context, cid uint64, filter LogFilter, partition bnPartition,
 ) ([]*contractLog, error) {
 	contractTabler := bcls.contractTabler(cid)

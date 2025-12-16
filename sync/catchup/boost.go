@@ -91,10 +91,10 @@ func (pq *syncTaskPriorityQueue) Pop() interface{} {
 }
 
 // syncTaskResult holds the result of a completed syncTask.
-type syncTaskResult struct {
+type syncTaskResult[T store.ChainData] struct {
 	task      syncTask
 	err       error
-	epochData []*store.EpochData
+	epochData []T
 }
 
 // coordinator orchestrates the synchronization process by:
@@ -102,12 +102,12 @@ type syncTaskResult struct {
 //   - Adjusting task sizes dynamically
 //   - Handling backpressure based on memory usage
 //   - Collecting and ordering results for final persistence
-type coordinator struct {
+type coordinator[T store.ChainData] struct {
 	// Configuration
 	boostConfig
 
 	// List of workers
-	workers []*boostWorker
+	workers []*boostWorker[T]
 
 	// Full epoch range for synchronization
 	fullEpochRange types.RangeUint64
@@ -119,43 +119,44 @@ type coordinator struct {
 	recallTaskPq syncTaskPriorityQueue
 
 	// Task result queue
-	taskResultQueue chan syncTaskResult
+	taskResultQueue chan syncTaskResult[T]
 
 	// Synchronization state
 	nextAssignEpoch uint64
 
 	// Result pipeline
 	nextWriteEpoch  uint64
-	epochDataStore  map[uint64]*store.EpochData
-	epochResultChan chan<- *store.EpochData
+	epochDataStore  map[uint64]T
+	epochResultChan chan<- T
 
 	// Backpressure control
 	backpressureControl *atomic.Value
 }
 
-func newCoordinator(cfg boostConfig, workers []*boostWorker, fullRange types.RangeUint64, resultChan chan<- *store.EpochData) *coordinator {
+func newCoordinator[T store.ChainData](
+	cfg boostConfig, workers []*boostWorker[T], fullRange types.RangeUint64, resultChan chan<- T) *coordinator[T] {
 	backpressureControl := new(atomic.Value)
 	backpressureControl.Store(make(chan struct{}))
-	return &coordinator{
+	return &coordinator[T]{
 		boostConfig:         cfg,
 		workers:             workers,
 		fullEpochRange:      fullRange,
 		nextAssignEpoch:     fullRange.From,
 		nextWriteEpoch:      fullRange.From,
 		epochResultChan:     resultChan,
-		epochDataStore:      make(map[uint64]*store.EpochData),
+		epochDataStore:      make(map[uint64]T),
 		pendingTaskQueue:    make(chan syncTask, cfg.TaskQueueSize),
-		taskResultQueue:     make(chan syncTaskResult, cfg.ResultQueueSize),
+		taskResultQueue:     make(chan syncTaskResult[T], cfg.ResultQueueSize),
 		backpressureControl: backpressureControl,
 	}
 }
 
 // backpressureChan returns the backpressure control channel
-func (c *coordinator) backpressureChan() chan struct{} {
+func (c *coordinator[T]) backpressureChan() chan struct{} {
 	return c.backpressureControl.Load().(chan struct{})
 }
 
-func (c *coordinator) run(ctx context.Context, wg *sync.WaitGroup) {
+func (c *coordinator[T]) run(ctx context.Context, wg *sync.WaitGroup) {
 	var innerWg sync.WaitGroup
 	defer wg.Done()
 
@@ -176,7 +177,7 @@ func (c *coordinator) run(ctx context.Context, wg *sync.WaitGroup) {
 }
 
 // boostWorkerLoop continuously processes tasks assigned to the boostWorker.
-func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w *boostWorker) {
+func (c *coordinator[T]) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w *boostWorker[T]) {
 	logrus.WithField("worker", w.name).Info("Catch-up boost worker started")
 	defer logrus.WithField("worker", w.name).Info("Catch-up boost worker stopped")
 
@@ -196,7 +197,7 @@ func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w
 				time.Sleep(time.Second)
 				continue
 			case task := <-c.pendingTaskQueue:
-				epochData, err := w.queryEpochData(task.From, task.To)
+				epochData, err := w.queryChainData(task.From, task.To)
 				if logrus.IsLevelEnabled(logrus.DebugLevel) {
 					logrus.WithFields(logrus.Fields{
 						"worker":          w.name,
@@ -205,7 +206,7 @@ func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w
 						"numPendingTasks": len(c.pendingTaskQueue),
 					}).WithError(err).Debug("Catch-up boost worker processed task")
 				}
-				c.taskResultQueue <- syncTaskResult{
+				c.taskResultQueue <- syncTaskResult[T]{
 					task:      task,
 					epochData: epochData,
 					err:       err,
@@ -216,11 +217,11 @@ func (c *coordinator) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup, w
 }
 
 // dispatchLoop collects results from workers, adjusts task sizes, and dispatches new tasks.
-func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
+func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 	logrus.Info("Catch-up boost coordinator dispatch loop started")
 	defer logrus.Info("Catch-up boost coordinator dispatch loop stopped")
 
-	var resultHistory []syncTaskResult
+	var resultHistory []syncTaskResult[T]
 	defer wg.Done()
 	for {
 		select {
@@ -238,7 +239,7 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				continue
 			case result := <-c.taskResultQueue:
 				// Collect a batch of results
-				taskResults := []syncTaskResult{result}
+				taskResults := []syncTaskResult[T]{result}
 				for i := 0; i < len(c.taskResultQueue); i++ {
 					taskResults = append(taskResults, <-c.taskResultQueue)
 				}
@@ -286,7 +287,7 @@ func (c *coordinator) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 }
 
 // estimateTaskSize dynamically adjusts task size based on recent history.
-func (c *coordinator) estimateTaskSize(results []syncTaskResult) uint64 {
+func (c *coordinator[T]) estimateTaskSize(results []syncTaskResult[T]) uint64 {
 	if len(results) == 0 {
 		return c.DefaultTaskSize
 	}
@@ -311,10 +312,10 @@ func (c *coordinator) estimateTaskSize(results []syncTaskResult) uint64 {
 }
 
 // collectEpochData accumulates epoch data in memory until contiguous and flushes them in order.
-func (c *coordinator) collectEpochData(ctx context.Context, result []*store.EpochData) error {
+func (c *coordinator[T]) collectEpochData(ctx context.Context, result []T) error {
 	// Cache store epoch data
 	for _, data := range result {
-		c.epochDataStore[data.Number] = data
+		c.epochDataStore[data.Number()] = data
 	}
 
 	// Flush any stored epochs that are now contiguous
@@ -335,7 +336,7 @@ func (c *coordinator) collectEpochData(ctx context.Context, result []*store.Epoc
 		case <-ctx.Done():
 			return ctx.Err()
 		case c.epochResultChan <- data:
-			delete(c.epochDataStore, data.Number)
+			delete(c.epochDataStore, data.Number())
 			c.nextWriteEpoch++
 		}
 	}
@@ -343,7 +344,7 @@ func (c *coordinator) collectEpochData(ctx context.Context, result []*store.Epoc
 }
 
 // assignTasks schedules tasks for workers, handling recall tasks first if any.
-func (c *coordinator) assignTasks(ctx context.Context, taskSize uint64) error {
+func (c *coordinator[T]) assignTasks(ctx context.Context, taskSize uint64) error {
 	for numPendingTasks := len(c.pendingTaskQueue); numPendingTasks < len(c.workers); numPendingTasks++ {
 		// Handle recall tasks by splitting them into sub-tasks if possible
 		if len(c.recallTaskPq) > 0 {
@@ -375,7 +376,7 @@ func (c *coordinator) assignTasks(ctx context.Context, taskSize uint64) error {
 	return nil
 }
 
-func (c *coordinator) addPendingTask(ctx context.Context, start, end uint64) error {
+func (c *coordinator[T]) addPendingTask(ctx context.Context, start, end uint64) error {
 	task := newSyncTask(start, end)
 	if len(c.pendingTaskQueue) >= c.TaskQueueSize {
 		logrus.WithFields(logrus.Fields{
@@ -393,7 +394,7 @@ func (c *coordinator) addPendingTask(ctx context.Context, start, end uint64) err
 }
 
 // enableBackpressure toggles backpressure by closing or resetting the control channel.
-func (c *coordinator) enableBackpressure(enabled bool) {
+func (c *coordinator[T]) enableBackpressure(enabled bool) {
 	if enabled {
 		close(c.backpressureChan())
 	} else {
@@ -401,41 +402,41 @@ func (c *coordinator) enableBackpressure(enabled bool) {
 	}
 }
 
-type boostSyncer struct {
-	*Syncer
+type boostSyncer[T store.ChainData] struct {
+	*Syncer[T]
 
 	// List of boost workers
-	workers []*boostWorker
+	workers []*boostWorker[T]
 
 	// Result channel
-	resultChan chan *store.EpochData
+	resultChan chan T
 }
 
-func newBoostSyncer(s *Syncer) *boostSyncer {
-	workers := make([]*boostWorker, len(s.workers))
+func newBoostSyncer[T store.ChainData](s *Syncer[T]) *boostSyncer[T] {
+	workers := make([]*boostWorker[T], len(s.workers))
 	for i, w := range s.workers {
-		workers[i] = &boostWorker{w}
+		workers[i] = &boostWorker[T]{w}
 	}
-	return &boostSyncer{
+	return &boostSyncer[T]{
 		Syncer:     s,
 		workers:    workers,
-		resultChan: make(chan *store.EpochData, s.boostConf.WriteBufferSize),
+		resultChan: make(chan T, s.Boost.WriteBufferSize),
 	}
 }
 
-func (s *boostSyncer) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
+func (s *boostSyncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 
 	// Start coordinator
 	fullEpochRange := types.RangeUint64{From: start, To: end}
-	coord := newCoordinator(s.boostConf, s.workers, fullEpochRange, s.resultChan)
+	coord := newCoordinator(s.Boost, s.workers, fullEpochRange, s.resultChan)
 
 	wg.Add(1)
 	go coord.run(ctx, &wg)
 
 	// Start memory monitor
-	if s.boostConf.MemoryThreshold > 0 {
+	if s.Boost.MemoryThreshold > 0 {
 		go s.memoryMonitorLoop(ctx, coord)
 	}
 
@@ -466,8 +467,8 @@ func (s *boostSyncer) doSync(ctx context.Context, bmarker *benchmarker, start, e
 }
 
 // memoryMonitorLoop checks memory periodically and applies backpressure when memory is high.
-func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
-	ticker := time.NewTicker(s.boostConf.MemoryCheckInterval)
+func (s *boostSyncer[T]) memoryMonitorLoop(ctx context.Context, c *coordinator[T]) {
+	ticker := time.NewTicker(s.Boost.MemoryCheckInterval)
 	defer ticker.Stop()
 
 	// Counter to track memory health status
@@ -482,11 +483,11 @@ func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
 
 			logger := logrus.WithFields(logrus.Fields{
 				"memory":    memStats.Alloc,
-				"threshold": s.boostConf.MemoryThreshold,
+				"threshold": s.Boost.MemoryThreshold,
 			})
 
 			// Backpressure control according to memory usage
-			if memStats.Alloc < s.boostConf.MemoryThreshold {
+			if memStats.Alloc < s.Boost.MemoryThreshold {
 				// Memory usage is below the threshold, try to lift backpressure.
 				if recovered, _ := healthStatus.OnSuccess(); recovered {
 					logger.Warn("Catch-up boost sync memory usage has recovered below threshold")
@@ -507,12 +508,12 @@ func (s *boostSyncer) memoryMonitorLoop(ctx context.Context, c *coordinator) {
 }
 
 // fetchAndPersistResults retrieves completed epoch data and persists them into the database.
-func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uint64, bmarker *benchmarker) error {
-	forceInterval := s.boostConf.ForcePersistenceInterval
+func (s *boostSyncer[T]) fetchAndPersistResults(ctx context.Context, start, end uint64, bmarker *benchmarker) error {
+	forceInterval := s.Boost.ForcePersistenceInterval
 	timer := time.NewTimer(forceInterval)
 	defer timer.Stop()
 
-	var state persistState
+	var state persistState[T]
 	for eno := start; eno <= end; {
 		forcePersist := false
 		startTime := time.Now()
@@ -522,8 +523,8 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 			return ctx.Err()
 		case epochData := <-s.resultChan:
 			// collect epoch data
-			if epochData.Number != eno {
-				return errors.Errorf("unexpected epoch collected, expected %v got %v", eno, epochData.Number)
+			if epochData.Number() != eno {
+				return errors.Errorf("unexpected epoch collected, expected %v got %v", eno, epochData.Number())
 			}
 			if bmarker != nil {
 				bmarker.metricFetchPerEpochDuration(startTime)
@@ -535,7 +536,7 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 			if logrus.IsLevelEnabled(logrus.DebugLevel) {
 				logrus.WithFields(logrus.Fields{
 					"resultBufLen":       len(s.resultChan),
-					"epochNo":            epochData.Number,
+					"epochNo":            epochData.Number(),
 					"epochDbRows":        epochDbRows,
 					"storeDbRows":        storeDbRows,
 					"state.insertDbRows": state.insertDbRows,
@@ -548,7 +549,7 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 		}
 
 		// Batch insert into db if `forcePersist` is true or enough db rows collected.
-		if forcePersist || state.insertDbRows >= s.minBatchDbRows {
+		if forcePersist || state.insertDbRows >= s.DbRowsThreshold {
 			if err := s.persist(ctx, &state, bmarker); err != nil {
 				return err
 			}
@@ -562,13 +563,13 @@ func (s *boostSyncer) fetchAndPersistResults(ctx context.Context, start, end uin
 	return s.persist(ctx, &state, bmarker)
 }
 
-type boostWorker struct {
-	*worker
+type boostWorker[T store.ChainData] struct {
+	*worker[T]
 }
 
-// queryEpochData fetches blocks and logs for a given epoch range to construct a minimal `EpochData`
-// using `cfx_getLogs` for best performance.
-func (w *boostWorker) queryEpochData(fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
+// queryChainData fetches blocks and logs for a given epoch range to construct a minimal chain data struct
+// using `getLogs` rpc for best performance.
+func (w *boostWorker[T]) queryChainData(fromEpoch, toEpoch uint64) (res []T, err error) {
 	space := w.client.Space()
 	startTime := time.Now()
 
@@ -580,6 +581,6 @@ func (w *boostWorker) queryEpochData(fromEpoch, toEpoch uint64) (res []*store.Ep
 		}
 	}()
 
-	res, err = w.client.BoostQueryEpochData(context.Background(), fromEpoch, toEpoch)
+	res, err = w.client.BoostQueryChainData(context.Background(), fromEpoch, toEpoch)
 	return
 }

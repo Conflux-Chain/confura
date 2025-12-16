@@ -23,23 +23,23 @@ var (
 	errTxsReceiptValidationFailed = errors.New("transaction receipt validation failed")
 )
 
-func RequireContinuous(slice []*EpochData, currentEpoch uint64) error {
+func RequireContinuous[T ChainData](slice []T, currentEpoch uint64) error {
 	if len(slice) == 0 {
 		return nil
 	}
 
 	var nextEpoch uint64
 	if currentEpoch == citypes.EpochNumberNil {
-		nextEpoch = slice[0].Number
+		nextEpoch = slice[0].Number()
 	} else {
 		nextEpoch = currentEpoch + 1
 	}
 
 	for _, v := range slice {
-		if v.Number != nextEpoch {
+		if epochNo := v.Number(); epochNo != nextEpoch {
 			return errors.WithMessagef(ErrContinousEpochRequired,
-				"Epoch not continuous, expected %v, but got %v",
-				nextEpoch, v.Number)
+				"Epoch not continuous, expected %v, but got %v", nextEpoch, epochNo,
+			)
 		}
 
 		nextEpoch++
@@ -50,14 +50,10 @@ func RequireContinuous(slice []*EpochData, currentEpoch uint64) error {
 
 // EpochData wraps the blockchain data of an epoch.
 type EpochData struct {
-	Number   uint64         // epoch number
-	Hash     *types.Hash    // pivot hash
-	Blocks   []*types.Block // blocks in order and the last one is pivot block
-	Receipts map[types.Hash]*types.TransactionReceipt
-
-	// custom extra extensions
-	BlockExts   []*BlockExtra
-	ReceiptExts map[types.Hash]*ReceiptExtra
+	EpochNo   uint64         // epoch number
+	PivotHash *types.Hash    // pivot hash
+	Blocks    []*types.Block // blocks in order and the last one is pivot block
+	Receipts  map[types.Hash]*types.TransactionReceipt
 }
 
 func (epoch *EpochData) GetPivotBlock() *types.Block {
@@ -263,10 +259,10 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 	}
 
 	return EpochData{
-		Number:   epochNumber,
-		Hash:     &pivotHash,
-		Blocks:   blocks,
-		Receipts: receipts,
+		EpochNo:   epochNumber,
+		PivotHash: &pivotHash,
+		Blocks:    blocks,
+		Receipts:  receipts,
 	}, nil
 }
 

@@ -9,24 +9,24 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type worker struct {
+type worker[T store.ChainData] struct {
 	// worker name
 	name string
 	// result channel to collect queried epoch data
-	resultChan chan *store.EpochData
+	resultChan chan T
 	// RPC client delegated to fetch blockchain data
-	client IRpcClient
+	client IRpcClient[T]
 }
 
-func mustNewWorker(name string, client IRpcClient, chanSize int) *worker {
-	return &worker{
+func mustNewWorker[T store.ChainData](name string, client IRpcClient[T], chanSize int) *worker[T] {
+	return &worker[T]{
 		name:       name,
-		resultChan: make(chan *store.EpochData, chanSize),
+		resultChan: make(chan T, chanSize),
 		client:     client,
 	}
 }
 
-func (w *worker) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epochTo, stepN uint64) {
+func (w *worker[T]) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epochTo, stepN uint64) {
 	defer wg.Done()
 
 	for eno := epochFrom; eno <= epochTo; {
@@ -34,7 +34,7 @@ func (w *worker) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epochT
 		case <-ctx.Done():
 			return
 		default:
-			epochData, err := w.fetchEpoch(eno)
+			epochData, err := w.client.QueryChainData(context.Background(), eno, eno)
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
 					"epochNo":    eno,
@@ -47,27 +47,18 @@ func (w *worker) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epochT
 			select {
 			case <-ctx.Done():
 				return
-			case w.resultChan <- epochData:
+			case w.resultChan <- epochData[0]:
 				eno += stepN
 			}
 		}
 	}
 }
 
-func (w *worker) Close() {
+func (w *worker[T]) Close() {
 	w.client.Close()
 	close(w.resultChan)
 }
 
-func (w *worker) Data() <-chan *store.EpochData {
+func (w *worker[T]) Data() <-chan T {
 	return w.resultChan
-}
-
-func (w *worker) fetchEpoch(epochNo uint64) (*store.EpochData, error) {
-	epochData, err := w.client.QueryEpochData(context.Background(), epochNo, epochNo)
-	if err == nil {
-		return epochData[0], nil
-	}
-
-	return nil, err
 }

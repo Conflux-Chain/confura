@@ -1,0 +1,352 @@
+package benchmark
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
+	"github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/syndtr/goleveldb/leveldb"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+)
+
+const (
+	DB_BATCH_SIZE = 2000
+)
+
+var (
+	storageCmd = &cobra.Command{
+		Use:   "storage",
+		Short: "Start storage benchmark testing",
+		Run:   runStorageBenchmark,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}
+)
+
+func init() {
+	Cmd.AddCommand(storageCmd)
+}
+
+type blockTraces struct {
+	BlockNumber uint64
+	Traces      []types.LocalizedTrace
+}
+
+func runStorageBenchmark(cmd *cobra.Command, args []string) {
+	var (
+		blockCount uint64 = 1000
+		startBlock uint64 = 85490000
+		nodeUrl    string = "https://evm-internal.confluxrpc.com"
+	)
+
+	client, err := rpcutil.NewEthClient(nodeUrl, rpcutil.WithClientHookMetrics(true))
+	if err != nil {
+		logrus.WithError(err).Panic("failed to create web3go client")
+	}
+
+	mysqlDsn := "root:root@tcp(127.0.0.1:3306)/storage_benchmark?parseTime=true"
+	db, err := newMysqlDb(mysqlDsn)
+	if err != nil {
+		logrus.WithError(err).Panic("failed to open mysql db")
+	}
+	defer func() {
+		rdb, _ := db.DB()
+		defer rdb.Close()
+	}()
+
+	leveldb, err := newLeveldb("./leveldb_data")
+	if err != nil {
+		logrus.WithError(err).Panic("failed to open leveldb")
+	}
+	defer leveldb.Close()
+
+	mongoClient, collection, err := newMongodbCollection("mongodb://localhost:27017")
+	if err != nil {
+		logrus.WithError(err).Panic("failed to open mongodb")
+	}
+	defer mongoClient.Disconnect(context.Background())
+	defer collection.Drop(context.Background())
+
+	totalTraceCnt := 0
+	for i := uint64(0); i < blockCount; i++ {
+		blockNo := startBlock + i
+		traces, err := client.Trace.Blocks(types.BlockNumberOrHashWithNumber(types.BlockNumber(blockNo)))
+		if err != nil {
+			logrus.WithError(err).Error("failed to get block traces")
+			i--
+			continue
+		}
+
+		if len(traces) == 0 {
+			continue
+		}
+
+		totalTraceCnt += len(traces)
+		btraces := &blockTraces{
+			BlockNumber: blockNo,
+			Traces:      traces,
+		}
+
+		if err := persistMysql(db, btraces); err != nil {
+			logrus.WithError(err).Panic("failed to persist traces to mysql")
+		}
+
+		if err := persistLeveldb(leveldb, btraces); err != nil {
+			logrus.WithError(err).Panic("failed to persist traces to rocksdb")
+		}
+
+		if err := persistMongodb(collection, btraces); err != nil {
+			logrus.WithError(err).Panic("failed to persist traces to mongodb")
+		}
+	}
+
+	for i := uint64(0); i < blockCount; i++ {
+		blockNo := startBlock + i
+
+		if _, err := readMysql(db, blockNo); err != nil {
+			logrus.WithError(err).Panic("failed to read traces from mysql")
+		}
+
+		if _, err := readLeveldb(leveldb, blockNo); err != nil {
+			logrus.WithError(err).Panic("failed to read traces from leveldb")
+		}
+
+		if _, err := readMongodb(collection, blockNo); err != nil {
+			logrus.WithError(err).Panic("failed to read traces from mongodb")
+		}
+	}
+
+	fmt.Println("// ------ Summary --------")
+	fmt.Printf("// StartBlock: %v\n", startBlock)
+	fmt.Printf("// BlockCount: %v\n", blockCount)
+	fmt.Printf("// TotalTraceCnt: %v\n", totalTraceCnt)
+	fmt.Printf("// NodeUrl: %v\n", nodeUrl)
+
+	dumpMetrics("mysql")
+	dumpMetrics("leveldb")
+	dumpMetrics("mongodb")
+}
+
+func newMysqlDb(dsn string) (*gorm.DB, error) {
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to connect to mysql")
+	}
+	db.Migrator().DropTable(&mysqlBlockTraces{})
+	err = db.Migrator().CreateTable(&mysqlBlockTraces{})
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to create table")
+	}
+	return db, nil
+}
+
+type mysqlBlockTraces struct {
+	ID          uint64
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn_txh"`
+	TxnHash     string `gorm:"not null;index:idx_bn_txh"`
+	ActionType  string
+	Data        []byte `gorm:"type:mediumText"`
+}
+
+func persistMysql(db *gorm.DB, btraces *blockTraces) error {
+	start := time.Now()
+	defer metricUtil.GetOrRegisterTimer("mysql:write").UpdateSince(start)
+
+	var dtraces []mysqlBlockTraces
+	for _, t := range btraces.Traces {
+		rawData, err := json.Marshal(t)
+		if err != nil {
+			return errors.WithMessage(err, "failed to marshal trace")
+		}
+		dtraces = append(dtraces, mysqlBlockTraces{
+			BlockNumber: btraces.BlockNumber,
+			TxnHash:     t.TransactionHash.String(),
+			ActionType:  string(t.Type),
+			Data:        rawData,
+		})
+	}
+	return db.CreateInBatches(dtraces, DB_BATCH_SIZE).Error
+}
+
+func readMysql(db *gorm.DB, blockNo uint64) (*blockTraces, error) {
+	start := time.Now()
+	defer metricUtil.GetOrRegisterTimer("mysql:read").UpdateSince(start)
+
+	var dtraces []mysqlBlockTraces
+	err := db.Where("bn = ?", blockNo).Find(&dtraces).Error
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to read traces")
+	}
+	var traces []types.LocalizedTrace
+	for _, t := range dtraces {
+		var trace types.LocalizedTrace
+		if err := json.Unmarshal(t.Data, &trace); err != nil {
+			return nil, errors.WithMessage(err, "failed to unmarshal trace")
+		}
+		traces = append(traces, trace)
+	}
+	return &blockTraces{BlockNumber: blockNo, Traces: traces}, nil
+}
+
+func newLeveldb(dbPath string) (*leveldb.DB, error) {
+	dbPath, err := filepath.Abs(dbPath) // Ensure path is absolute
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get absolute path for leveldb")
+	}
+
+	os.Remove(dbPath)
+
+	db, err := leveldb.OpenFile(dbPath, nil)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to open leveldb")
+	}
+	return db, nil
+}
+
+func persistLeveldb(db *leveldb.DB, btraces *blockTraces) error {
+	start := time.Now()
+	defer metricUtil.GetOrRegisterTimer("leveldb:write").UpdateSince(start)
+
+	data, err := json.Marshal(btraces.Traces)
+	if err != nil {
+		return errors.WithMessage(err, "failed to marshal trace")
+	}
+
+	key := fmt.Sprintf("%v", btraces.BlockNumber)
+	if err := db.Put([]byte(key), data, nil); err != nil {
+		return errors.WithMessage(err, "failed to write to leveldb")
+	}
+	return nil
+}
+
+func readLeveldb(db *leveldb.DB, blockNo uint64) (*blockTraces, error) {
+	start := time.Now()
+	defer metricUtil.GetOrRegisterTimer("leveldb:read").UpdateSince(start)
+
+	key := fmt.Sprintf("%v", blockNo)
+	data, err := db.Get([]byte(key), nil)
+	if err != nil {
+		if errors.Is(err, leveldb.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, errors.WithMessage(err, "failed to read from leveldb")
+	}
+
+	var traces []types.LocalizedTrace
+	if err := json.Unmarshal(data, &traces); err != nil {
+		return nil, errors.WithMessage(err, "failed to unmarshal trace")
+	}
+	return &blockTraces{BlockNumber: blockNo, Traces: traces}, nil
+}
+
+func newMongodbCollection(dsn string) (*mongo.Client, *mongo.Collection, error) {
+	mongoClient, err := mongo.Connect(options.Client().ApplyURI(dsn))
+	if err != nil {
+		return nil, nil, errors.WithMessage(err, "failed to connect to mongodb")
+	}
+	collection := mongoClient.Database("storage_benchmark").Collection("traces")
+
+	indexModel := mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "blocknumber", Value: 1},
+			{Key: "trace.transactionhash", Value: 1},
+		},
+		Options: options.Index().SetName("blockNumber_transactionHash_idx"),
+	}
+	if _, err := collection.Indexes().CreateOne(context.Background(), indexModel); err != nil {
+		return nil, nil, errors.WithMessage(err, "failed to create index")
+	}
+
+	return mongoClient, collection, nil
+}
+
+type mongodbBlockTraces struct {
+	BlockNumber uint64
+	Trace       types.LocalizedTrace
+}
+
+func persistMongodb(collection *mongo.Collection, btraces *blockTraces) error {
+	start := time.Now()
+	defer metricUtil.GetOrRegisterTimer("mongodb:write").UpdateSince(start)
+
+	mongodbTraces := make([]mongodbBlockTraces, 0, len(btraces.Traces))
+	for i := range btraces.Traces {
+		mongodbTraces = append(mongodbTraces, mongodbBlockTraces{
+			BlockNumber: btraces.BlockNumber,
+			Trace:       btraces.Traces[i],
+		})
+	}
+
+	_, err := collection.InsertMany(context.Background(), mongodbTraces)
+	if err != nil {
+		return errors.WithMessage(err, "failed to write to mongodb")
+	}
+	return nil
+}
+
+func readMongodb(collection *mongo.Collection, blockNo uint64) (*blockTraces, error) {
+	start := time.Now()
+	defer metricUtil.GetOrRegisterTimer("mongodb:read").UpdateSince(start)
+
+	var mongodbTraces []mongodbBlockTraces
+	cursor, err := collection.Find(context.Background(), bson.M{"blocknumber": blockNo})
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to read from mongodb")
+	}
+	if err := cursor.All(context.Background(), &mongodbTraces); err != nil {
+		return nil, errors.WithMessage(err, "failed to read from mongodb")
+	}
+
+	traces := make([]types.LocalizedTrace, 0, len(mongodbTraces))
+	for i := range mongodbTraces {
+		traces = append(traces, mongodbTraces[i].Trace)
+	}
+
+	return &blockTraces{BlockNumber: blockNo, Traces: traces}, nil
+}
+
+func dumpMetrics(strType string) {
+	fmt.Printf("// ------ begin %s operations --------\n", strType)
+
+	writeTimer := metricUtil.GetOrRegisterTimer("%s:write", strType)
+	writeLatency := writeTimer.Snapshot().Percentiles([]float64{0.5, 0.75, 0.9, 0.95, 0.99})
+	fmt.Println("// ### Write durations ###")
+	fmt.Printf("total duration: %.2f(ms)\n", float64(writeTimer.Snapshot().Sum())/1e6)
+	fmt.Printf("  max duration: %.2f(ms)\n", float64(writeTimer.Snapshot().Max())/1e6)
+	fmt.Printf("  min duration: %.2f(ms)\n", float64(writeTimer.Snapshot().Min())/1e6)
+	fmt.Printf(" mean duration: %.2f(ms)\n", float64(writeTimer.Snapshot().Mean())/1e6)
+	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(writeLatency[4]/1e6))
+	fmt.Printf("  p95 duration: %.2f(ms)\n", float64(writeLatency[3]/1e6))
+	fmt.Printf("  p90 duration: %.2f(ms)\n", float64(writeLatency[2]/1e6))
+	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(writeLatency[1]/1e6))
+	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(writeLatency[0]/1e6))
+
+	readTimer := metricUtil.GetOrRegisterTimer("%s:read", strType)
+	readLatency := readTimer.Snapshot().Percentiles([]float64{0.5, 0.75, 0.9, 0.95, 0.99})
+	fmt.Println("// ### Read durations ###")
+	fmt.Printf("total duration: %.2f(ms)\n", float64(readTimer.Snapshot().Sum())/1e6)
+	fmt.Printf("  max duration: %.2f(ms)\n", float64(readTimer.Snapshot().Max())/1e6)
+	fmt.Printf("  min duration: %.2f(ms)\n", float64(readTimer.Snapshot().Min())/1e6)
+	fmt.Printf(" mean duration: %.2f(ms)\n", float64(readTimer.Snapshot().Mean())/1e6)
+	fmt.Printf("  p99 duration: %.2f(ms)\n", float64(readLatency[4]/1e6))
+	fmt.Printf("  p95 duration: %.2f(ms)\n", float64(readLatency[3]/1e6))
+	fmt.Printf("  p90 duration: %.2f(ms)\n", float64(readLatency[2]/1e6))
+	fmt.Printf("  p75 duration: %.2f(ms)\n", float64(readLatency[1]/1e6))
+	fmt.Printf("  p50 duration: %.2f(ms)\n", float64(readLatency[0]/1e6))
+
+	fmt.Printf("// ------ end %s operations --------\n", strType)
+}

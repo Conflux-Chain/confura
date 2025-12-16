@@ -159,7 +159,7 @@ func wrapDetectionError(err error) error {
 
 // EthData wraps the evm space blockchain data.
 type EthData struct {
-	Number   uint64                         // block number
+	BlockNo  uint64                         // block number
 	Block    *types.Block                   // block body
 	Receipts map[common.Hash]*types.Receipt // receipts
 }
@@ -173,9 +173,9 @@ func (current *EthData) IsContinuousTo(prev *EthData) (continuous bool, desc str
 		return
 	}
 
-	if prev.Number+1 != current.Number {
+	if prev.BlockNo+1 != current.BlockNo {
 		desc = fmt.Sprintf(
-			"block number not continuous, expect %v got %v", prev.Number+1, current.Number,
+			"block number not continuous, expect %v got %v", prev.BlockNo+1, current.BlockNo,
 		)
 		return
 	}
@@ -236,7 +236,7 @@ func QueryEthReceipt(
 
 type QueryOption struct {
 	ReceiptConfig          EthReceiptOption
-	Disabler               ChainDataDisabler
+	Filter                 ChainDataFilter
 	EnableLogsOptimization bool // use `eth_getLogs` for better performance if possible
 }
 
@@ -256,7 +256,7 @@ func QueryEthData(
 	} else {
 		opt = QueryOption{
 			ReceiptConfig: DefaultReceiptOption,
-			Disabler:      &ethStoreConfig,
+			Filter:        &ethStoreConfig,
 		}
 	}
 
@@ -290,19 +290,19 @@ func queryEthData(
 	// If the block has no transactions, there is no need to query receipts or logs.
 	if len(blockTxs) == 0 {
 		return &EthData{
-			Number:   blockNumber,
+			BlockNo:  blockNumber,
 			Block:    block,
 			Receipts: txnReceipts,
 		}, nil
 	}
 
 	// Check if ChainReceipts are disabled
-	if opt.Disabler != nil && opt.Disabler.IsChainReceiptDisabled() {
+	if opt.Filter != nil && opt.Filter.IsReceiptDisabled() {
 		// If both ChainReceipt and ChainLog are disabled, return only the block data
-		if opt.Disabler.IsChainLogDisabled() {
+		if opt.Filter.IsLogDisabled() {
 			return &EthData{
-				Number: blockNumber,
-				Block:  block,
+				BlockNo: blockNumber,
+				Block:   block,
 			}, nil
 		}
 
@@ -333,7 +333,7 @@ func queryEthData(
 			}
 
 			return &EthData{
-				Number:   blockNumber,
+				BlockNo:  blockNumber,
 				Block:    block,
 				Receipts: txnReceipts,
 			}, nil
@@ -371,7 +371,7 @@ func queryEthData(
 	}
 
 	return &EthData{
-		Number:   blockNumber,
+		BlockNo:  blockNumber,
 		Block:    block,
 		Receipts: txnReceipts,
 	}, nil

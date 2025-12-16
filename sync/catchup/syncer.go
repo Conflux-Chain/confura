@@ -20,86 +20,44 @@ import (
 
 // Syncer accelerates core space epoch data catch-up using concurrently workers.
 // Specifically, each worker will be dispatched as round-robin load balancing.
-type Syncer struct {
+type Syncer[T store.ChainData] struct {
+	config
 	// goroutine workers to fetch epoch data concurrently
-	workers []*worker
+	workers []*worker[T]
 	// rpc clients delegated to get network status
-	rpcClients []IRpcClient
+	rpcClients []IRpcClient[T]
 	// db store to persist epoch data
-	db *mysql.MysqlStore
-	// min num of db rows per batch persistence
-	minBatchDbRows int
-	// max num of db rows collected before persistence
-	maxDbRows int
-	// benchmark catch-up sync performance
-	benchmark bool
+	db *mysql.MysqlStore[T]
 	// HA leader/follower election
 	elm election.LeaderManager
 	// sync monitor
 	monitor *monitor.Monitor
 	// epoch to start sync
 	epochFrom uint64
-	// configuration for boost mode
-	boostConf boostConfig
-}
-
-// functional options for syncer
-type SyncOption func(*Syncer)
-
-func WithMinBatchDbRows(dbRows int) SyncOption {
-	return func(s *Syncer) {
-		s.minBatchDbRows = dbRows
-	}
-}
-
-func WithMaxDbRows(dbRows int) SyncOption {
-	return func(s *Syncer) {
-		s.maxDbRows = dbRows
-	}
-}
-
-func WithWorkers(workers []*worker) SyncOption {
-	return func(s *Syncer) {
-		s.workers = workers
-	}
-}
-
-func WithBenchmark(benchmark bool) SyncOption {
-	return func(s *Syncer) {
-		s.benchmark = benchmark
-	}
-}
-
-func WithBoostConfig(config boostConfig) SyncOption {
-	return func(s *Syncer) {
-		s.boostConf = config
-	}
 }
 
 func MustNewCfxSyncer(
 	clients []*sdk.Client,
-	dbs *mysql.MysqlStore,
+	dbs *mysql.CfxStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
-	epochFrom uint64,
-	opts ...SyncOption) *Syncer {
-
+	epochFrom uint64) *Syncer[*store.EpochData] {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
-	var rpcClients []IRpcClient
+	var rpcClients []IRpcClient[*store.EpochData]
 	for _, cfx := range clients {
 		rpcClients = append(rpcClients, NewCoreRpcClient(cfx))
 	}
 
-	var workers []*worker
+	var workers []*worker[*store.EpochData]
 	for i, nodeUrl := range conf.NodePool.Cfx { // initialize workers
 		name := fmt.Sprintf("CUWorker#%v", i)
 		worker := mustNewWorker(name, MustNewCoreRpcClient(nodeUrl), conf.WorkerChanSize)
 		workers = append(workers, worker)
 	}
 
-	syncer, err := newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	syncer, err := newSyncer(conf, rpcClients, workers, dbs.MysqlStore, elm, monitor, epochFrom)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to initialize CFX catch-up syncer")
 	}
@@ -108,63 +66,49 @@ func MustNewCfxSyncer(
 
 func MustNewEthSyncer(
 	clients []*web3go.Client,
-	dbs *mysql.MysqlStore,
+	dbs *mysql.EthStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
-	opts ...SyncOption) *Syncer {
-
+) *Syncer[*store.EthData] {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
-	var rpcClients []IRpcClient
+	var rpcClients []IRpcClient[*store.EthData]
 	for _, w3c := range clients {
 		rpcClients = append(rpcClients, NewEvmRpcClient(w3c))
 	}
 
-	var workers []*worker
+	var workers []*worker[*store.EthData]
 	for i, nodeUrl := range conf.NodePool.Eth { // initialize workers
 		name := fmt.Sprintf("CUWorker#%v", i)
 		worker := mustNewWorker(name, MustNewEvmRpcClient(nodeUrl), conf.WorkerChanSize)
 		workers = append(workers, worker)
 	}
 
-	syncer, err := newSyncer(conf, rpcClients, workers, dbs, elm, monitor, epochFrom, opts...)
+	syncer, err := newSyncer(conf, rpcClients, workers, dbs.MysqlStore, elm, monitor, epochFrom)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to initialize ETH catch-up syncer")
 	}
 	return syncer
 }
 
-func newSyncer(
+func newSyncer[T store.ChainData](
 	conf config,
-	clients []IRpcClient,
-	workers []*worker,
-	dbs *mysql.MysqlStore,
+	clients []IRpcClient[T],
+	workers []*worker[T],
+	dbs *mysql.MysqlStore[T],
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
-	opts ...SyncOption) (*Syncer, error) {
-
-	var cOpts []SyncOption
-	cOpts = append(cOpts,
-		WithMaxDbRows(conf.MaxDbRows),
-		WithMinBatchDbRows(conf.DbRowsThreshold),
-		WithWorkers(workers),
-		WithBenchmark(conf.Benchmark),
-		WithBoostConfig(conf.Boost),
-	)
-	cOpts = append(cOpts, opts...)
-
-	syncer := &Syncer{
-		elm:            elm,
-		rpcClients:     clients,
-		monitor:        monitor,
-		epochFrom:      epochFrom,
-		minBatchDbRows: 1_500,
-	}
-	for _, opt := range cOpts {
-		opt(syncer)
+) (*Syncer[T], error) {
+	syncer := &Syncer[T]{
+		config:     conf,
+		elm:        elm,
+		rpcClients: clients,
+		monitor:    monitor,
+		epochFrom:  epochFrom,
+		workers:    workers,
 	}
 
 	// Check boost mode eligibility
@@ -172,8 +116,8 @@ func newSyncer(
 		// Boost mode is an optimization focused solely on syncing event logs.
 		// To achieve this, it requires disabling the syncing of blocks, transactions, and receipts.
 		// This is because boost mode skips fetching these data types for faster event log processing.
-		disabler := store.StoreConfig()
-		if !disabler.IsChainBlockDisabled() || !disabler.IsChainTxnDisabled() || !disabler.IsChainReceiptDisabled() {
+		filter := store.StoreConfig()
+		if !filter.IsBlockDisabled() || !filter.IsTxnDisabled() || !filter.IsReceiptDisabled() {
 			return nil, errors.New("boost mode is incompatible with syncing data types other than event logs")
 		}
 	}
@@ -189,11 +133,11 @@ func newSyncer(
 	return syncer, nil
 }
 
-func (s *Syncer) UseBoost() bool {
-	return s.boostConf.Enabled
+func (s *Syncer[T]) UseBoost() bool {
+	return s.Boost.Enabled
 }
 
-func (s *Syncer) Close() error {
+func (s *Syncer[T]) Close() error {
 	for _, w := range s.workers {
 		w.Close()
 	}
@@ -201,7 +145,7 @@ func (s *Syncer) Close() error {
 	return s.db.Close()
 }
 
-func (s *Syncer) Sync(ctx context.Context) {
+func (s *Syncer[T]) Sync(ctx context.Context) {
 	if len(s.workers) == 0 { // no workers configured?
 		logrus.Debug("Catch-up syncer skipped due to no workers configured")
 		return
@@ -226,9 +170,9 @@ func (s *Syncer) Sync(ctx context.Context) {
 	}
 }
 
-func (s *Syncer) SyncOnce(ctx context.Context, start, end uint64) {
+func (s *Syncer[T]) SyncOnce(ctx context.Context, start, end uint64) {
 	var bmarker *benchmarker
-	if s.benchmark {
+	if s.Benchmark {
 		bmarker = newBenchmarker()
 
 		bmarker.markStart()
@@ -252,7 +196,7 @@ func (s *Syncer) SyncOnce(ctx context.Context, start, end uint64) {
 	}
 }
 
-func (s *Syncer) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
+func (s *Syncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -289,9 +233,9 @@ func (s *Syncer) doSync(ctx context.Context, bmarker *benchmarker, start, end ui
 	wg.Wait()
 }
 
-func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *benchmarker) error {
-	var epochData *store.EpochData
-	var state persistState
+func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker *benchmarker) error {
+	var data T
+	var state persistState[T]
 
 	for eno := start; eno <= end; {
 		for i := 0; i < len(s.workers) && eno <= end; i++ {
@@ -300,7 +244,7 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case epochData = <-w.Data():
+			case data = <-w.Data():
 				if bmarker != nil {
 					bmarker.metricFetchPerEpochDuration(startTime)
 				}
@@ -311,11 +255,11 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 				s.monitor.Update(eno)
 			}
 
-			epochDbRows, storeDbRows := state.update(epochData)
+			epochDbRows, storeDbRows := state.update(data)
 
 			logrus.WithFields(logrus.Fields{
 				"workerName":         w.name,
-				"epochNo":            epochData.Number,
+				"epochNo":            data.Number,
 				"epochDbRows":        epochDbRows,
 				"storeDbRows":        storeDbRows,
 				"state.insertDbRows": state.insertDbRows,
@@ -324,7 +268,7 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 
 			// Batch insert into db if enough db rows collected, also use total db rows here to
 			// restrict memory usage.
-			if state.insertDbRows >= s.minBatchDbRows || (s.maxDbRows > 0 && state.totalDbRows >= s.maxDbRows) {
+			if state.insertDbRows >= s.DbRowsThreshold || (s.MaxDbRows > 0 && state.totalDbRows >= s.MaxDbRows) {
 				err := s.persist(ctx, &state, bmarker)
 				if err != nil {
 					return err
@@ -339,40 +283,40 @@ func (s *Syncer) fetchResult(ctx context.Context, start, end uint64, bmarker *be
 	return s.persist(ctx, &state, bmarker)
 }
 
-type persistState struct {
-	totalDbRows  int                // total db rows for collected epochs
-	insertDbRows int                // total db rows to be inserted for collected epochs
-	epochs       []*store.EpochData // all collected epochs
+type persistState[T store.ChainData] struct {
+	totalDbRows  int // total db rows for collected epochs
+	insertDbRows int // total db rows to be inserted for collected epochs
+	chainData    []T // all collected block chain data
 }
 
-func (s *persistState) reset() {
+func (s *persistState[T]) reset() {
 	s.totalDbRows = 0
 	s.insertDbRows = 0
-	s.epochs = []*store.EpochData{}
+	s.chainData = []T{}
 }
 
-func (s *persistState) numEpochs() int {
-	return len(s.epochs)
+func (s *persistState[T]) numEpochs() int {
+	return len(s.chainData)
 }
 
-func (s *persistState) update(epochData *store.EpochData) (int, int) {
-	totalDbRows, storeDbRows := countDbRows(epochData)
+func (s *persistState[T]) update(data T) (int, int) {
+	totalDbRows, storeDbRows := countDbRows(data)
 
-	s.epochs = append(s.epochs, epochData)
+	s.chainData = append(s.chainData, data)
 	s.totalDbRows += totalDbRows
 	s.insertDbRows += storeDbRows
 
 	return totalDbRows, storeDbRows
 }
 
-func (s *Syncer) persist(ctx context.Context, state *persistState, bmarker *benchmarker) error {
+func (s *Syncer[T]) persist(ctx context.Context, state *persistState[T], bmarker *benchmarker) error {
 	numEpochs := state.numEpochs()
 	if numEpochs == 0 {
 		return nil
 	}
 
 	start := time.Now()
-	err := s.db.PushnWithFinalizer(state.epochs, func(d *gorm.DB) error {
+	err := s.db.PushnWithFinalizer(state.chainData, func(d *gorm.DB) error {
 		return s.elm.Extend(ctx)
 	})
 
@@ -381,7 +325,7 @@ func (s *Syncer) persist(ctx context.Context, state *persistState, bmarker *benc
 	}
 
 	if bmarker != nil {
-		bmarker.metricPersistDb(start, state)
+		bmarker.metricPersistDb(start, state.insertDbRows, numEpochs)
 	}
 
 	return nil
@@ -389,7 +333,7 @@ func (s *Syncer) persist(ctx context.Context, state *persistState, bmarker *benc
 
 // nextSyncRange gets the sync range by loading max epoch number from the database as the start
 // and fetching the maximum epoch of the latest finalized or the latest checkpoint epoch as the end
-func (s *Syncer) nextSyncRange() (uint64, uint64, error) {
+func (s *Syncer[T]) nextSyncRange() (uint64, uint64, error) {
 	start, ok, err := s.db.MaxEpoch()
 	if err != nil {
 		return 0, 0, errors.WithMessage(err, "failed to get max epoch from epoch to block mapping")
@@ -414,29 +358,31 @@ func (s *Syncer) nextSyncRange() (uint64, uint64, error) {
 }
 
 // countDbRows count total db rows and to be stored db row from epoch data.
-func countDbRows(epoch *store.EpochData) (totalDbRows int, storeDbRows int) {
-	storeDisabler := store.StoreConfig()
+func countDbRows[T store.ChainData](data T) (totalDbRows int, storeDbRows int) {
+	filter := store.StoreConfig()
 
 	// db rows for block
-	totalDbRows += len(epoch.Blocks)
-	if !storeDisabler.IsChainBlockDisabled() {
-		storeDbRows += len(epoch.Blocks)
+	blocks := data.ExtractBlocks()
+	totalDbRows += len(blocks)
+	if !filter.IsBlockDisabled() {
+		storeDbRows += len(blocks)
 	}
 
 	// db rows for txs
-	totalDbRows += len(epoch.Receipts)
-	if !storeDisabler.IsChainReceiptDisabled() || !storeDisabler.IsChainTxnDisabled() {
-		storeDbRows += len(epoch.Receipts)
+	receipts := data.ExtractReceipts()
+	totalDbRows += len(receipts)
+	if !filter.IsReceiptDisabled() || !filter.IsTxnDisabled() {
+		storeDbRows += len(receipts)
 	}
 
 	numLogs := 0
-	for _, rcpt := range epoch.Receipts {
-		numLogs += len(rcpt.Logs)
+	for _, rcpt := range receipts {
+		numLogs += len(rcpt.Logs())
 	}
 
 	// db rows for logs
 	totalDbRows += numLogs
-	if !storeDisabler.IsChainLogDisabled() {
+	if !filter.IsLogDisabled() {
 		storeDbRows += numLogs
 	}
 

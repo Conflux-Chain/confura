@@ -1,22 +1,20 @@
 package util
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
-	"github.com/Conflux-Chain/confura/store/redis"
 	"github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/openweb3/web3go"
+	"github.com/pkg/errors"
 )
 
 // StoreContext context to hold store instances
 type StoreContext struct {
-	CfxDB    *mysql.MysqlStore
-	EthDB    *mysql.MysqlStore
-	CfxCache *redis.RedisStore
+	CfxDB *mysql.CfxStore
+	EthDB *mysql.EthStore
 }
 
 func MustInitStoreContext() StoreContext {
@@ -24,21 +22,14 @@ func MustInitStoreContext() StoreContext {
 
 	// prepare core space db store
 	if config := mysql.MustNewConfigFromViper(); config.Enabled {
-		ctx.CfxDB = config.MustOpenOrCreate(mysql.StoreOption{
-			Disabler: store.StoreConfig(),
-		})
+		db := config.MustOpenOrCreate()
+		ctx.CfxDB = mysql.NewCfxStore(db, config, store.StoreConfig())
 	}
 
 	// prepare evm space db store
 	if ethConfig := mysql.MustNewEthStoreConfigFromViper(); ethConfig.Enabled {
-		ctx.EthDB = ethConfig.MustOpenOrCreate(mysql.StoreOption{
-			Disabler: store.EthStoreConfig(),
-		})
-	}
-
-	// prepare redis store
-	if redis, ok := redis.MustNewRedisStoreFromViper(store.StoreConfig()); ok {
-		ctx.CfxCache = redis
+		db := ethConfig.MustOpenOrCreate()
+		ctx.EthDB = mysql.NewEthStore(db, ethConfig, store.EthStoreConfig())
 	}
 
 	return ctx
@@ -52,22 +43,23 @@ func (ctx *StoreContext) Close() {
 	if ctx.EthDB != nil {
 		ctx.EthDB.Close()
 	}
-
-	if ctx.CfxCache != nil {
-		ctx.CfxCache.Close()
-	}
 }
 
-// GetMysqlStore returns mysql store by network space
-func (ctx *StoreContext) GetMysqlStore(network string) (store *mysql.MysqlStore, err error) {
+func (ctx *StoreContext) GetCommonStore(network string) (*mysql.CommonStores, error) {
 	switch {
 	case strings.EqualFold(network, "eth"):
-		return ctx.EthDB, nil
+		if ctx.EthDB != nil {
+			return ctx.EthDB.CommonStores, nil
+		}
 	case strings.EqualFold(network, "cfx"):
-		return ctx.CfxDB, nil
+		if ctx.CfxDB != nil {
+			return ctx.CfxDB.CommonStores, nil
+		}
 	default:
-		return nil, errors.New("invalid network space (only `cfx` and `eth` acceptable)")
+		return nil, errors.Errorf("invalid network space %s", network)
 	}
+
+	return nil, errors.New("mysql store is unavailable")
 }
 
 // SyncContext context to hold sdk clients for blockchain interoperation.
@@ -81,7 +73,7 @@ type SyncContext struct {
 func MustInitSyncContext(storeCtx StoreContext) SyncContext {
 	sc := SyncContext{StoreContext: storeCtx}
 
-	if storeCtx.CfxDB != nil || storeCtx.CfxCache != nil {
+	if storeCtx.CfxDB != nil {
 		sc.SyncCfxs = rpc.MustNewCfxClientsFromViper(rpc.WithClientHookMetrics(true))
 	}
 

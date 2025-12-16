@@ -1,147 +1,110 @@
 package mysql
 
 import (
-	"context"
-	"math/big"
+	"encoding/json"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
-	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
 
 type transaction struct {
-	ID                uint64
-	Epoch             uint64 `gorm:"not null;index"`
-	HashId            uint64 `gorm:"not null;index"` // as an index, number is better than long string
-	Hash              string `gorm:"size:66;not null"`
-	TxRawData         []byte `gorm:"type:MEDIUMBLOB"`
-	TxRawDataLen      uint64 `gorm:"not null"`
-	ReceiptRawData    []byte `gorm:"type:MEDIUMBLOB"`
-	ReceiptRawDataLen uint64 `gorm:"not null"`
-	NumReceiptLogs    int    `gorm:"not null"`
-	Extra             []byte `gorm:"type:text"` // txn extension json field
-	ReceiptExtra      []byte `gorm:"type:text"` // receipt extension json field
+	ID             uint64
+	Epoch          uint64 `gorm:"not null;index"`
+	HashId         uint64 `gorm:"not null;index"` // as an index, number is better than long string
+	Hash           string `gorm:"size:66;not null"`
+	NumReceiptLogs int    `gorm:"not null"`
+	Extra          []byte `gorm:"type:text"` // json representation for transaction
+	ReceiptExtra   []byte `gorm:"type:text"` // json representation for transaction receipt
 }
 
 func (transaction) TableName() string {
 	return "txs"
 }
 
-func newTx(
-	tx *types.Transaction, receipt *types.TransactionReceipt, txExtra *store.TransactionExtra,
-	rcptExtra *store.ReceiptExtra, skipTx, skipReceipt bool,
-) *transaction {
+func newTx[T store.ChainData](
+	epochNumber uint64,
+	tx store.TransactionLike,
+	receipt store.ReceiptLike,
+	skipTx, skipReceipt bool,
+) (*transaction, error) {
 	result := &transaction{
-		Epoch: uint64(*receipt.EpochNumber),
-		Hash:  tx.Hash.String(),
+		Epoch: epochNumber,
+		Hash:  tx.Hash(),
 	}
 
 	if !skipTx {
-		result.TxRawData = util.MustMarshalRLP(tx)
+		bytes, err := json.Marshal(tx)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to json marshal transaction")
+		}
+		result.Extra = bytes
 	}
 
 	if !skipReceipt {
-		result.ReceiptRawData = util.MustMarshalRLP(receipt)
+		bytes, err := json.Marshal(receipt)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to json marshal receipt")
+		}
+		result.ReceiptExtra = bytes
 	}
 
 	result.HashId = util.GetShortIdOfHash(result.Hash)
-	result.TxRawDataLen = uint64(len(result.TxRawData))
-	result.ReceiptRawDataLen = uint64(len(result.ReceiptRawData))
-	result.NumReceiptLogs = len(receipt.Logs)
+	result.NumReceiptLogs = len(receipt.Logs())
 
-	if !skipTx && txExtra != nil {
-		// no need to store block number since epoch number can be used instead
-		txExtra.BlockNumber = nil
-		result.Extra = util.MustMarshalJson(txExtra)
-	}
-
-	if !skipReceipt && rcptExtra != nil {
-		result.ReceiptExtra = util.MustMarshalJson(rcptExtra)
-	}
-
-	return result
+	return result, nil
 }
 
-func (tx *transaction) parseTxExtra() *store.TransactionExtra {
-	if len(tx.Extra) == 0 {
-		return nil
-	}
-
-	var extra store.TransactionExtra
-	util.MustUnmarshalJson(tx.Extra, &extra)
-
-	// To save space, we don't save blockNumber within extra fields.
-	// Here we restore the block number from epoch number.
-	extra.BlockNumber = (*hexutil.Big)(big.NewInt(int64(tx.Epoch)))
-	return &extra
-}
-
-func (tx *transaction) parseTxReceiptExtra() *store.ReceiptExtra {
-	if len(tx.ReceiptExtra) == 0 {
-		return nil
-	}
-
-	var extra store.ReceiptExtra
-	util.MustUnmarshalJson(tx.ReceiptExtra, &extra)
-
-	return &extra
-}
-
-type txStore struct {
+type txStore[T store.ChainData] struct {
 	db *gorm.DB
 }
 
-func newTxStore(db *gorm.DB) *txStore {
-	return &txStore{
-		db: db,
-	}
+func newTxStore[T store.ChainData](db *gorm.DB) *txStore[T] {
+	return &txStore[T]{db: db}
 }
 
-func (ts *txStore) loadTx(txHash types.Hash) (*transaction, error) {
-	hashId := util.GetShortIdOfHash(txHash.String())
-
-	var tx transaction
-	if err := ts.db.Where("hash_id = ? AND hash = ?", hashId, txHash).First(&tx).Error; err != nil {
-		return nil, err
+func (ts *txStore[T]) loadTx(selects []string, whereClause string, args ...interface{}) (*transaction, error) {
+	db := ts.db
+	if len(selects) > 0 {
+		db = db.Select(selects)
 	}
 
+	var tx transaction
+	if err := db.Where(whereClause, args...).First(&tx).Error; err != nil {
+		return nil, err
+	}
 	return &tx, nil
 }
 
-func (ts *txStore) GetTransaction(ctx context.Context, txHash types.Hash) (*store.Transaction, error) {
-	tx, err := ts.loadTx(txHash)
+func decodeTransactionFromStore[D store.ChainData, T any](
+	ts *txStore[D], result *T, whereClause string, args ...interface{}) error {
+	tx, err := ts.loadTx([]string{"extra"}, whereClause, args...)
 	if err != nil {
-		return nil, err
+		return errors.WithMessage(err, "failed to load transaction")
 	}
 
-	var rpcTx types.Transaction
-	util.MustUnmarshalRLP(tx.TxRawData, &rpcTx)
-
-	return &store.Transaction{
-		CfxTransaction: &rpcTx, Extra: tx.parseTxExtra(),
-	}, nil
+	if err := json.Unmarshal(tx.Extra, &result); err != nil {
+		return errors.WithMessage(err, "failed to unmarshal transaction")
+	}
+	return nil
 }
 
-func (ts *txStore) GetReceipt(ctx context.Context, txHash types.Hash) (*store.TransactionReceipt, error) {
-	tx, err := ts.loadTx(txHash)
+func decodeReceiptFromStore[D store.ChainData, T any](
+	ts *txStore[D], result *T, whereClause string, args ...interface{}) error {
+	tx, err := ts.loadTx([]string{"receipt_extra"}, whereClause, args...)
 	if err != nil {
-		return nil, err
+		return errors.WithMessage(err, "failed to load transaction")
 	}
 
-	var receipt types.TransactionReceipt
-	util.MustUnmarshalRLP(tx.ReceiptRawData, &receipt)
-
-	ptrRcptExtra := tx.parseTxReceiptExtra()
-
-	return &store.TransactionReceipt{
-		CfxReceipt: &receipt, Extra: ptrRcptExtra,
-	}, nil
+	if err := json.Unmarshal(tx.ReceiptExtra, &result); err != nil {
+		return errors.WithMessage(err, "failed to unmarshal transaction receipt")
+	}
+	return nil
 }
 
 // Add batch save epoch transactions into db store.
-func (ts *txStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, skipTx, skipRcpt bool) error {
+func (ts *txStore[T]) Add(dbTx *gorm.DB, dataSlice []T, skipTx, skipRcpt bool) error {
 	if skipTx && skipRcpt {
 		return nil
 	}
@@ -150,34 +113,23 @@ func (ts *txStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, skipTx, skip
 	var txns []*transaction
 
 	for _, data := range dataSlice {
-		for i, block := range data.Blocks {
-			var blockExt *store.BlockExtra
-			if i < len(data.BlockExts) {
-				blockExt = data.BlockExts[i]
-			}
-
-			for j, tx := range block.Transactions {
-				receipt := data.Receipts[tx.Hash]
+		for _, block := range data.ExtractBlocks() {
+			receipts := data.ExtractReceipts()
+			for _, tx := range block.Transactions() {
+				receipt := receipts[tx.Hash()]
 
 				// Skip transactions that unexecuted in block.
 				// !!! Still need to check BlockHash and Status in case more than one transactions
 				// of the same hash appeared in the same epoch.
-				if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
+				if receipt == nil || !tx.Executed() {
 					continue
 				}
 
-				var txExt *store.TransactionExtra
-				if blockExt != nil && j < len(blockExt.TxnExts) {
-					txExt = blockExt.TxnExts[j]
-				}
-
-				var rcptExt *store.ReceiptExtra
-				if len(data.ReceiptExts) > 0 {
-					rcptExt = data.ReceiptExts[tx.Hash]
-				}
-
 				if !skipTx || !skipRcpt {
-					txn := newTx(&tx, receipt, txExt, rcptExt, skipTx, skipRcpt)
+					txn, err := newTx[T](data.Number(), tx, receipt, skipTx, skipRcpt)
+					if err != nil {
+						return errors.WithMessage(err, "failed to new transaction")
+					}
 					txns = append(txns, txn)
 				}
 			}
@@ -192,6 +144,6 @@ func (ts *txStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, skipTx, skip
 }
 
 // Remove remove transactions of specific epoch range from db store.
-func (ts *txStore) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
+func (ts *txStore[T]) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
 	return dbTx.Where("epoch >= ? AND epoch <= ?", epochFrom, epochTo).Delete(&transaction{}).Error
 }

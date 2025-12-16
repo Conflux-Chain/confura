@@ -291,20 +291,6 @@ eth:
 #       # in 'atMobiles' are mentioned.
 #       isAtAll: false
 
-# # Prune configurations
-# prune:
-#   # Cache prune configurations
-#   cache:
-#     # Monitoring interval
-#     interval: 30s
-#     # Max number of epochs to prune per time in case of IO hogging
-#     maxEpochs: 10
-#     # Threshold to trigger data prune
-#     threshold:
-#       maxBlocks: 100000
-#       maxTxs: 100000
-#       maxLogs: 100000
-
 # Node management configurations
 node:
   # Group `cfxhttp` fullnodes

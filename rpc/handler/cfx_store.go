@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/util"
+	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -14,23 +14,16 @@ import (
 // CfxStoreHandler RPC handler to get block/txn/receipt data from store.
 type CfxStoreHandler struct {
 	sname string // store name
-	store store.Readable
-
-	next *CfxStoreHandler
+	store *mysql.CfxStore
 }
 
-func NewCfxCommonStoreHandler(sname string, store store.Readable, next *CfxStoreHandler) *CfxStoreHandler {
-	return &CfxStoreHandler{
-		sname: sname, store: store, next: next,
-	}
+func NewCfxStoreHandler(sname string, store *mysql.CfxStore) *CfxStoreHandler {
+	return &CfxStoreHandler{sname: sname, store: store}
 }
 
 func (h *CfxStoreHandler) GetBlockByHash(
-	ctx context.Context, blockHash types.Hash, includeTxs bool) (block interface{}, err error) {
-	if store.StoreConfig().IsChainBlockDisabled() {
-		return nil, store.ErrUnsupported
-	}
-
+	ctx context.Context, blockHash types.Hash, includeTxs bool,
+) (block interface{}, err error) {
 	if includeTxs {
 		block, err = h.store.GetBlockByHash(ctx, blockHash)
 	} else {
@@ -38,11 +31,6 @@ func (h *CfxStoreHandler) GetBlockByHash(
 	}
 
 	h.collectHitStats("cfx_getBlockByHash", err)
-
-	if err != nil && !util.IsInterfaceValNil(h.next) {
-		return h.next.GetBlockByHash(ctx, blockHash, includeTxs)
-	}
-
 	return
 }
 
@@ -50,12 +38,11 @@ func (h *CfxStoreHandler) GetBlockByEpochNumber(
 	ctx context.Context, epoch *types.Epoch, includeTxs bool,
 ) (block interface{}, err error) {
 	epBigInt, ok := epoch.ToInt()
-	if store.StoreConfig().IsChainBlockDisabled() || !ok {
+	if !ok { // epoch tags are not supported
 		return nil, store.ErrUnsupported
 	}
 
 	epochNo := epBigInt.Uint64()
-
 	if includeTxs {
 		block, err = h.store.GetBlockByEpoch(ctx, epochNo)
 	} else {
@@ -63,60 +50,23 @@ func (h *CfxStoreHandler) GetBlockByEpochNumber(
 	}
 
 	h.collectHitStats("cfx_getBlockByEpochNumber", err)
-
-	if err != nil && h.next != nil {
-		return h.next.GetBlockByEpochNumber(ctx, epoch, includeTxs)
-	}
-
 	return
 }
 
-func (h *CfxStoreHandler) GetTransactionByHash(ctx context.Context, txHash types.Hash) (txn *types.Transaction, err error) {
-	if store.StoreConfig().IsChainTxnDisabled() {
-		return nil, store.ErrUnsupported
-	}
-
-	stxn, err := h.store.GetTransaction(ctx, txHash)
-	if err == nil {
-		txn = stxn.CfxTransaction
-	}
-
-	h.collectHitStats("cfx_getTransactionByHash", err)
-
-	if err != nil && h.next != nil {
-		return h.next.GetTransactionByHash(ctx, txHash)
-	}
-
-	return
-}
-
-func (h *CfxStoreHandler) GetBlocksByEpoch(
-	ctx context.Context, epoch *types.Epoch,
-) (blockHashes []types.Hash, err error) {
+func (h *CfxStoreHandler) GetBlocksByEpoch(ctx context.Context, epoch *types.Epoch) ([]types.Hash, error) {
 	epBigInt, ok := epoch.ToInt()
-	if store.StoreConfig().IsChainBlockDisabled() || !ok {
+	if !ok { // epoch tags are not supported
 		return nil, store.ErrUnsupported
 	}
 
-	epochNo := epBigInt.Uint64()
-	blockHashes, err = h.store.GetBlocksByEpoch(ctx, epochNo)
-
+	blockHashes, err := h.store.GetBlocksByEpoch(ctx, epBigInt.Uint64())
 	h.collectHitStats("cfx_getBlocksByEpoch", err)
-
-	if err != nil && h.next != nil {
-		return h.next.GetBlocksByEpoch(ctx, epoch)
-	}
-
-	return
+	return blockHashes, err
 }
 
 func (h *CfxStoreHandler) GetBlockByBlockNumber(
 	ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool,
 ) (block interface{}, err error) {
-	if store.StoreConfig().IsChainBlockDisabled() {
-		return nil, store.ErrUnsupported
-	}
-
 	if includeTxs {
 		block, err = h.store.GetBlockByBlockNumber(ctx, uint64(blockNumer))
 	} else {
@@ -124,33 +74,19 @@ func (h *CfxStoreHandler) GetBlockByBlockNumber(
 	}
 
 	h.collectHitStats("cfx_getBlockByBlockNumber", err)
-
-	if err != nil && h.next != nil {
-		return h.next.GetBlockByBlockNumber(ctx, blockNumer, includeTxs)
-	}
-
 	return
 }
 
-func (h *CfxStoreHandler) GetTransactionReceipt(
-	ctx context.Context, txHash types.Hash,
-) (rcpt *types.TransactionReceipt, err error) {
-	if store.StoreConfig().IsChainReceiptDisabled() {
-		return nil, store.ErrUnsupported
-	}
+func (h *CfxStoreHandler) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
+	txn, err := h.store.GetTransaction(ctx, txHash)
+	h.collectHitStats("cfx_getTransactionByHash", err)
+	return txn, err
+}
 
-	stxRcpt, err := h.store.GetReceipt(ctx, txHash)
-	if err == nil {
-		rcpt = stxRcpt.CfxReceipt
-	}
-
+func (h *CfxStoreHandler) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
+	rcpt, err := h.store.GetReceipt(ctx, txHash)
 	h.collectHitStats("cfx_getTransactionReceipt", err)
-
-	if err != nil && h.next != nil {
-		return h.next.GetTransactionReceipt(ctx, txHash)
-	}
-
-	return
+	return rcpt, err
 }
 
 func (h *CfxStoreHandler) collectHitStats(method string, err error) {

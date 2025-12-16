@@ -3,150 +3,91 @@ package handler
 import (
 	"context"
 
-	"github.com/Conflux-Chain/confura/rpc/cfxbridge"
-	"github.com/Conflux-Chain/confura/rpc/ethbridge"
 	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/util"
+	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/ethereum/go-ethereum/common"
 	web3Types "github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 // EthStoreHandler RPC handler to get block/txn/receipt data from store.
 type EthStoreHandler struct {
-	store store.Readable
-	next  *EthStoreHandler
+	store *mysql.EthStore
 }
 
-func NewEthStoreHandler(store store.Readable, next *EthStoreHandler) *EthStoreHandler {
-	return &EthStoreHandler{store: store, next: next}
+func NewEthStoreHandler(store *mysql.EthStore) *EthStoreHandler {
+	return &EthStoreHandler{store: store}
 }
 
-func (h *EthStoreHandler) GetBlockByHash(ctx context.Context, blockHash common.Hash, includeTxs bool) (
-	block *web3Types.Block, err error,
-) {
-	logger := logrus.WithFields(logrus.Fields{
-		"blockHash": blockHash, "includeTxs": includeTxs,
-	})
-
-	var sblock *store.Block
-	var sblocksum *store.BlockSummary
-
-	cfxBlockHash := cfxbridge.ConvertHash(blockHash)
-
-	if includeTxs {
-		sblock, err = h.store.GetBlockByHash(ctx, cfxBlockHash)
-	} else {
-		sblocksum, err = h.store.GetBlockSummaryByHash(ctx, cfxBlockHash)
-	}
-
+func (h *EthStoreHandler) GetBlockByHash(
+	ctx context.Context, blockHash common.Hash, includeTxs bool,
+) (*web3Types.Block, error) {
+	block, err := h.store.GetBlockByHash(blockHash, includeTxs)
 	if err != nil {
-		logger.WithError(err).Debug("ETH handler failed to handle GetBlockByHash")
-		if !util.IsInterfaceValNil(h.next) {
-			return h.next.GetBlockByHash(ctx, blockHash, includeTxs)
-		}
+		logrus.WithFields(logrus.Fields{
+			"blockHash": blockHash, "includeTxs": includeTxs,
+		}).WithError(err).Debug("ETH handler failed to handle GetBlockByHash")
 	}
 
-	if sblock != nil {
-		return ethbridge.ConvertBlock(sblock.CfxBlock, sblock.Extra), nil
-	}
-
-	if sblocksum != nil {
-		return ethbridge.ConvertBlockSummary(sblocksum.CfxBlockSummary, sblocksum.Extra), nil
-	}
-
-	return
+	return block, err
 }
 
-func (h *EthStoreHandler) GetBlockByNumber(ctx context.Context, blockNum *web3Types.BlockNumber, includeTxs bool) (
-	block *web3Types.Block, err error,
-) {
-	logger := logrus.WithFields(logrus.Fields{
-		"blockNum": *blockNum, "includeTxs": includeTxs,
-	})
-
-	if *blockNum <= 0 {
+func (h *EthStoreHandler) GetBlockByNumber(
+	ctx context.Context, blockNum web3Types.BlockNumber, includeTxs bool,
+) (*web3Types.Block, error) {
+	if blockNum <= 0 { // block tags are not supported
 		return nil, store.ErrUnsupported
 	}
 
-	var sblock *store.Block
-	var sblocksum *store.BlockSummary
-
-	if includeTxs {
-		sblock, err = h.store.GetBlockByBlockNumber(ctx, uint64(*blockNum))
-	} else {
-		sblocksum, err = h.store.GetBlockSummaryByBlockNumber(ctx, uint64(*blockNum))
-	}
-
+	block, err := h.store.GetBlockByNumber(blockNum, includeTxs)
 	if err != nil {
-		logger.WithError(err).Debug("ETH handler failed to handle GetBlockByNumber")
-
-		if !util.IsInterfaceValNil(h.next) {
-			return h.next.GetBlockByNumber(ctx, blockNum, includeTxs)
-		}
+		logrus.WithFields(logrus.Fields{
+			"blockNum": blockNum, "includeTxs": includeTxs,
+		}).WithError(err).Debug("ETH handler failed to handle GetBlockByNumber")
 	}
 
-	if sblock != nil {
-		return ethbridge.ConvertBlock(sblock.CfxBlock, sblock.Extra), nil
-	}
-
-	if sblocksum != nil {
-		return ethbridge.ConvertBlockSummary(sblocksum.CfxBlockSummary, sblocksum.Extra), nil
-	}
-
-	return
+	return block, err
 }
 
 func (h *EthStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (logs []web3Types.Log, err error) {
-	if store.EthStoreConfig().IsChainLogDisabled() {
-		return nil, store.ErrUnsupported
-	}
-
 	slogs, err := h.store.GetLogs(ctx, filter)
-	if err == nil {
-		logs = make([]web3Types.Log, len(slogs))
-		for i := 0; i < len(slogs); i++ {
-			logs[i] = *ethbridge.ConvertLog(slogs[i].ToCfxLog())
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"filter": filter,
+		}).WithError(err).Info("ethStoreHandler failed to get logs from store")
+		return nil, err
+	}
+
+	logs = make([]web3Types.Log, len(slogs))
+	for i := 0; i < len(slogs); i++ {
+		log, err := slogs[i].ToEthLog()
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to convert to eth log")
 		}
-
-		return logs, nil
+		logs[i] = *log
 	}
-
-	logrus.WithError(err).Info("ethStoreHandler failed to get logs from store")
-
-	if !util.IsInterfaceValNil(h.next) {
-		return h.next.GetLogs(ctx, filter)
-	}
-
-	return
+	return logs, nil
 }
 
 func (h *EthStoreHandler) GetTransactionByHash(ctx context.Context, txHash common.Hash) (*web3Types.TransactionDetail, error) {
-	cfxTxHash := cfxbridge.ConvertHash(txHash)
-
-	stx, err := h.store.GetTransaction(ctx, cfxTxHash)
-	if err == nil {
-		return ethbridge.ConvertTx(stx.CfxTransaction, stx.Extra), nil
+	txn, err := h.store.GetTransactionByHash(txHash)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"txHash": txHash,
+		}).WithError(err).Debug("ETH handler failed to handle GetTransactionByHash")
 	}
 
-	if !util.IsInterfaceValNil(h.next) {
-		return h.next.GetTransactionByHash(ctx, txHash)
-	}
-
-	return nil, err
+	return txn, err
 }
 
 func (h *EthStoreHandler) GetTransactionReceipt(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, error) {
-	cfxTxHash := cfxbridge.ConvertHash(txHash)
-
-	stxRcpt, err := h.store.GetReceipt(ctx, cfxTxHash)
-	if err == nil {
-		return ethbridge.ConvertReceipt(stxRcpt.CfxReceipt, stxRcpt.Extra), nil
+	rcpt, err := h.store.GetTransactionReceipt(txHash)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"txHash": txHash,
+		}).WithError(err).Debug("ETH handler failed to handle GetTransactionReceipt")
 	}
 
-	if !util.IsInterfaceValNil(h.next) {
-		return h.next.GetTransactionReceipt(ctx, txHash)
-	}
-
-	return nil, err
+	return rcpt, err
 }

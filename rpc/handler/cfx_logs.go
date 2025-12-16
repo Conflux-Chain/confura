@@ -41,13 +41,13 @@ func MustInitFromViper() {
 
 // CfxLogsApiHandler RPC handler to get core space event logs from store or fullnode.
 type CfxLogsApiHandler struct {
-	ms *mysql.MysqlStore
+	ms *mysql.CfxStore
 
 	prunedHandler      *CfxPrunedLogsHandler // optional
 	maxSuggestAttempts int
 }
 
-func NewCfxLogsApiHandler(ms *mysql.MysqlStore, prunedHandler *CfxPrunedLogsHandler, maxAttempts int) *CfxLogsApiHandler {
+func NewCfxLogsApiHandler(ms *mysql.CfxStore, prunedHandler *CfxPrunedLogsHandler, maxAttempts int) *CfxLogsApiHandler {
 	return &CfxLogsApiHandler{ms: ms, prunedHandler: prunedHandler, maxSuggestAttempts: maxAttempts}
 }
 
@@ -183,7 +183,10 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 					return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, v)
 				}
 
-				log, _ := v.ToCfxLog()
+				log, err := v.ToCfxLog()
+				if err != nil {
+					return nil, false, errors.WithMessage(err, "failed to convert db log")
+				}
 				logs = append(logs, *log)
 			}
 

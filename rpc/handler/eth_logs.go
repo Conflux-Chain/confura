@@ -2,29 +2,28 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"sync/atomic"
 
-	"github.com/Conflux-Chain/confura/rpc/ethbridge"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 // EthLogsApiHandler RPC handler to get evm space event logs from store or fullnode.
 type EthLogsApiHandler struct {
-	ms *mysql.MysqlStore
+	cs *mysql.EthStore
 
 	networkId          atomic.Value
 	maxSuggestAttempts int
 }
 
-func NewEthLogsApiHandler(ms *mysql.MysqlStore, maxAttempts int) *EthLogsApiHandler {
-	return &EthLogsApiHandler{ms: ms, maxSuggestAttempts: maxAttempts}
+func NewEthLogsApiHandler(cs *mysql.EthStore, maxAttempts int) *EthLogsApiHandler {
+	return &EthLogsApiHandler{cs: cs, maxSuggestAttempts: maxAttempts}
 }
 
 func (handler *EthLogsApiHandler) GetLogs(
@@ -34,7 +33,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
 	// record the reorg version before query to ensure data consistence
-	lastReorgVersion, err := handler.ms.GetReorgVersion()
+	lastReorgVersion, err := handler.cs.GetReorgVersion()
 	if err != nil {
 		return nil, false, err
 	}
@@ -71,7 +70,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 		}
 
 		// check the reorg version after query
-		reorgVersion, err := handler.ms.GetReorgVersion()
+		reorgVersion, err := handler.cs.GetReorgVersion()
 		if err != nil {
 			return nil, false, err
 		}
@@ -128,7 +127,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		// query data from database
-		dbLogs, err := handler.ms.GetLogs(ctx, *dbFilter)
+		dbLogs, err := handler.cs.GetLogs(ctx, *dbFilter)
 		if err != nil {
 			// TODO ErrPrunedAlready
 			return nil, false, err
@@ -139,8 +138,11 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, v.BlockNumber)
 			}
 
-			cfxLog, ext := v.ToCfxLog()
-			logs = append(logs, *ethbridge.ConvertLog(cfxLog, ext))
+			log, err := v.ToEthLog()
+			if err != nil {
+				return nil, false, errors.WithMessage(err, "failed to convert to eth log")
+			}
+			logs = append(logs, *log)
 		}
 	}
 
@@ -194,7 +196,7 @@ func (handler *EthLogsApiHandler) splitLogFilter(
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
 ) (*store.LogFilter, *types.FilterQuery, error) {
-	maxBlock, ok, err := handler.ms.MaxEpoch()
+	maxBlock, ok, err := handler.cs.MaxEpoch()
 	if err != nil {
 		return nil, nil, err
 	}

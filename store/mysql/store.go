@@ -2,7 +2,6 @@ package mysql
 
 import (
 	"context"
-	"io"
 	"slices"
 	"sort"
 	"time"
@@ -14,64 +13,77 @@ import (
 	"gorm.io/gorm"
 )
 
-var (
-	_ store.Readable      = (*MysqlStore)(nil)
-	_ store.StackOperable = (*MysqlStore)(nil)
-	_ store.Configurable  = (*MysqlStore)(nil)
-	_ io.Closer           = (*MysqlStore)(nil)
-)
+// TODO: add interface implementation check
+// var (
+// 	_ store.Readable      = (*MysqlStore)(nil)
+// 	_ store.StackOperable = (*MysqlStore)(nil)
+// 	_ store.Configurable  = (*MysqlStore)(nil)
+// 	_ io.Closer           = (*MysqlStore)(nil)
+// )
 
-type StoreOption struct {
-	Disabler store.ChainDataDisabler
-}
+// type EthStore MysqlStore[store.EthData]
 
-// MysqlStore aggregation store for chain data persistence operation.
-type MysqlStore struct {
-	*baseStore
-	*epochBlockMapStore
-	*txStore
-	*blockStore
+// func NewEthStore(db *gorm.DB, config *Config, option StoreOption) *EthStore {
+// 	return NewMysqlStore[store.EthData](db, config, option)
+// }
+
+type CommonStores struct {
 	*confStore
 	*UserStore
 	*RateLimitStore
-	*VirtualFilterLogStore
 	*NodeRouteStore
-	ls   *logStore
-	ails *AddressIndexedLogStore
-	bcls *bigContractLogStore
-	cs   *ContractStore
-
-	// config
-	config *Config
-	// store chaindata disabler
-	disabler store.ChainDataDisabler
-	// store pruner
-	pruner *storePruner
+	*VirtualFilterLogStore
 }
 
-func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
-	pruner := newStorePruner(db)
-	cs := NewContractStore(db)
-	ebms := newEpochBlockMapStore(db, config)
-	ails := NewAddressIndexedLogStore(db, cs, config.AddressIndexedLogPartitions)
-
-	return &MysqlStore{
-		baseStore:             newBaseStore(db),
-		epochBlockMapStore:    ebms,
-		txStore:               newTxStore(db),
-		blockStore:            newBlockStore(db),
+func newCommonStores(db *gorm.DB) *CommonStores {
+	return &CommonStores{
 		confStore:             newConfStore(db),
 		UserStore:             newUserStore(db),
 		RateLimitStore:        NewRateLimitStore(db),
 		VirtualFilterLogStore: NewVirtualFilterLogStore(db),
 		NodeRouteStore:        NewNodeRouteStore(db),
-		ls:                    newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
-		bcls:                  newBigContractLogStore(db, cs, ebms, ails, pruner.newBnPartitionObsChan),
-		ails:                  ails,
-		cs:                    cs,
-		config:                config,
-		disabler:              option.Disabler,
-		pruner:                pruner,
+	}
+}
+
+// MysqlStore aggregation store for chain data persistence operation.
+type MysqlStore[T store.ChainData] struct {
+	*baseStore
+	*CommonStores
+	*epochBlockMapStore[T]
+	*txStore[T]
+	*blockStore[T]
+	ls   *logStore[T]
+	ails *AddressIndexedLogStore[T]
+	bcls *bigContractLogStore[T]
+	cs   *ContractStore
+
+	// config
+	config *Config
+	// chain data filter
+	filter store.ChainDataFilter
+	// store pruner
+	pruner *storePruner
+}
+
+func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.ChainDataFilter) *MysqlStore[T] {
+	pruner := newStorePruner(db)
+	cs := NewContractStore(db)
+	bms := newEpochBlockMapStore[T](db, config)
+	ails := NewAddressIndexedLogStore[T](db, cs, config.AddressIndexedLogPartitions)
+
+	return &MysqlStore[T]{
+		epochBlockMapStore: bms,
+		baseStore:          newBaseStore(db),
+		CommonStores:       newCommonStores(db),
+		txStore:            newTxStore[T](db),
+		blockStore:         newBlockStore[T](db),
+		ls:                 newLogStore[T](db, cs, bms, pruner.newBnPartitionObsChan),
+		bcls:               newBigContractLogStore(db, cs, bms, ails, pruner.newBnPartitionObsChan),
+		ails:               ails,
+		cs:                 cs,
+		config:             config,
+		filter:             filter,
+		pruner:             pruner,
 	}
 }
 
@@ -82,25 +94,25 @@ func mustNewStore(db *gorm.DB, config *Config, option StoreOption) *MysqlStore {
 // affect the original store.
 //
 // The returned store will also have the same disabler as the current store.
-func (ms *MysqlStore) Clone() (*MysqlStore, error) {
+func (ms *MysqlStore[T]) Clone() (*MysqlStore[T], error) {
 	newDb, err := gorm.Open(ms.DB().Dialector, ms.DB().Config)
 	if err != nil {
 		return nil, errors.WithMessagef(err, "failed to open gorm db connection")
 	}
 	conf := *ms.config
-	return mustNewStore(newDb, &conf, StoreOption{Disabler: ms.disabler}), nil
+	return NewMysqlStore[T](newDb, &conf, ms.filter), nil
 }
 
-func (ms *MysqlStore) Push(data *store.EpochData) error {
-	return ms.Pushn([]*store.EpochData{data})
+func (ms *MysqlStore[T]) Push(data T) error {
+	return ms.Pushn([]T{data})
 }
 
-func (ms *MysqlStore) Pushn(dataSlice []*store.EpochData) error {
+func (ms *MysqlStore[T]) Pushn(dataSlice []T) error {
 	return ms.PushnWithFinalizer(dataSlice, nil)
 }
 
 // PushnWithFinalizer saves multiple epoch data into db with an extra finalizer to commit or rollback the transaction.
-func (ms *MysqlStore) PushnWithFinalizer(dataSlice []*store.EpochData, finalizer func(*gorm.DB) error) error {
+func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.DB) error) error {
 	if len(dataSlice) == 0 {
 		return nil
 	}
@@ -126,11 +138,11 @@ func (ms *MysqlStore) PushnWithFinalizer(dataSlice []*store.EpochData, finalizer
 	// the log partition to write event logs for specified big contract
 	var contract2BnPartitions map[uint64]bnPartition
 
-	if !ms.disabler.IsChainLogDisabled() {
+	if !ms.filter.IsLogDisabled() {
 		// add log contract address
 		if ms.config.AddressIndexedLogEnabled {
 			// Note, even if failed to insert event logs afterward, no need to rollback the inserted contract records.
-			_, err := ms.cs.AddContractByEpochData(dataSlice...)
+			_, err := ms.cs.AddContract(extractUniqueContractAddresses(dataSlice...))
 			if err != nil {
 				return errors.WithMessage(err, "failed to add contracts for specified epoch data slice")
 			}
@@ -154,15 +166,15 @@ func (ms *MysqlStore) PushnWithFinalizer(dataSlice []*store.EpochData, finalizer
 	}
 
 	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
-		if !ms.disabler.IsChainBlockDisabled() {
+		if !ms.filter.IsBlockDisabled() {
 			// save blocks
 			if err := ms.blockStore.Add(dbTx, dataSlice); err != nil {
 				return errors.WithMessagef(err, "failed to save blocks")
 			}
 		}
 
-		skipTxn := ms.disabler.IsChainTxnDisabled()
-		skipRcpt := ms.disabler.IsChainReceiptDisabled()
+		skipTxn := ms.filter.IsTxnDisabled()
+		skipRcpt := ms.filter.IsReceiptDisabled()
 		if !skipRcpt || !skipTxn {
 			// save transactions or receipts
 			if err := ms.txStore.Add(dbTx, dataSlice, skipTxn, skipRcpt); err != nil {
@@ -170,7 +182,7 @@ func (ms *MysqlStore) PushnWithFinalizer(dataSlice []*store.EpochData, finalizer
 			}
 		}
 
-		if !ms.disabler.IsChainLogDisabled() {
+		if !ms.filter.IsLogDisabled() {
 			if ms.config.AddressIndexedLogEnabled {
 				bigContractIds := make(map[uint64]bool, len(contract2BnPartitions))
 				for cid := range contract2BnPartitions {
@@ -208,12 +220,12 @@ func (ms *MysqlStore) PushnWithFinalizer(dataSlice []*store.EpochData, finalizer
 }
 
 // Popn pops multiple epoch data from database.
-func (ms *MysqlStore) Popn(epochUntil uint64) error {
+func (ms *MysqlStore[T]) Popn(epochUntil uint64) error {
 	return ms.PopnWithFinalizer(epochUntil, nil)
 }
 
 // PopnWithFinalizer pops multiple epoch data from database with an extra finalizer to commit or rollback the transaction.
-func (ms *MysqlStore) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.DB) error) error {
+func (ms *MysqlStore[T]) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.DB) error) error {
 	maxEpoch, ok, err := ms.MaxEpoch()
 	if err != nil {
 		return errors.WithMessage(err, "failed to get max epoch")
@@ -227,15 +239,15 @@ func (ms *MysqlStore) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.
 	defer metrics.Registry.Store.Pop("mysql").UpdateSince(startTime)
 
 	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
-		if !ms.disabler.IsChainBlockDisabled() {
+		if !ms.filter.IsBlockDisabled() {
 			// remove blocks
 			if err := ms.blockStore.Remove(dbTx, epochUntil, maxEpoch); err != nil {
 				return errors.WithMessage(err, "failed to remove blocks")
 			}
 		}
 
-		skipTxn := ms.disabler.IsChainTxnDisabled()
-		skipRcpt := ms.disabler.IsChainReceiptDisabled()
+		skipTxn := ms.filter.IsTxnDisabled()
+		skipRcpt := ms.filter.IsReceiptDisabled()
 		if !skipRcpt || !skipTxn {
 			// remove transactions or receipts
 			if err := ms.txStore.Remove(dbTx, epochUntil, maxEpoch); err != nil {
@@ -243,7 +255,7 @@ func (ms *MysqlStore) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.
 			}
 		}
 
-		if !ms.disabler.IsChainLogDisabled() {
+		if !ms.filter.IsLogDisabled() {
 			// remove address indexed event logs
 			if ms.config.AddressIndexedLogEnabled {
 				if err := ms.ails.DeleteAddressIndexedLogs(dbTx, epochUntil, maxEpoch); err != nil {
@@ -279,7 +291,7 @@ func (ms *MysqlStore) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.
 	})
 }
 
-func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([]*store.Log, error) {
+func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([]*store.Log, error) {
 	startTime := time.Now()
 	defer metrics.Registry.Store.GetLogs().UpdateSince(startTime)
 
@@ -369,12 +381,12 @@ func (ms *MysqlStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) 
 }
 
 // Prune prune data from db store.
-func (ms *MysqlStore) Prune() {
+func (ms *MysqlStore[T]) Prune() {
 	go ms.pruner.schedulePrune(ms.config)
 }
 
 // SetTxnBatchSize sets the transaction batch size for db insertion.
-func (ms *MysqlStore) SetTxnBatchSize(size int) {
+func (ms *MysqlStore[T]) SetTxnBatchSize(size int) {
 	ms.config.CreateBatchSize = size
 	ms.DB().CreateBatchSize = size
 }
