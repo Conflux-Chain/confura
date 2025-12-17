@@ -135,7 +135,7 @@ func (f *ethLogFilter) fetch() (filterChanges, error) {
 		startTime := time.Now()
 		defer metrics.Registry.VirtualFilter.QueryFilterChanges("eth", f.nodeName(), "mysql").UpdateSince(startTime)
 
-		sfilter := store.ParseEthLogFilterRaw(bnMin, bnMax, &f.crit)
+		sfilter := store.ParseEthLogFilter(bnMin, bnMax, &f.crit)
 		logs, err := f.logStore.GetLogs(timeoutCtx, string(pchanges.fid), sfilter, missingBlockhashes...)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{

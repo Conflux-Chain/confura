@@ -7,7 +7,6 @@ import (
 
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	web3Types "github.com/openweb3/web3go/types"
 
@@ -188,23 +187,8 @@ func ParseCfxLogFilter(blockFrom, blockTo uint64, filter *types.LogFilter) LogFi
 	}
 }
 
-// ParseEthLogFilter parses store log filter from eSpace log filter but also with contract address bridged to core space
-func ParseEthLogFilter(blockFrom, blockTo uint64, filter *web3Types.FilterQuery, networkId uint32) LogFilter {
-	sfilter := ParseEthLogFilterRaw(blockFrom, blockTo, filter)
-
-	var contracts []string
-	for i := range filter.Addresses {
-		// convert eth hex40 address to cfx base32 address
-		addr, _ := cfxaddress.NewFromCommon(filter.Addresses[i], networkId)
-		contracts = append(contracts, addr.MustGetBase32Address())
-	}
-
-	sfilter.Contracts = NewVariadicValue(contracts...)
-	return sfilter
-}
-
-// ParseEthLogFilterRaw parses store log filter from eSpace log filter without any bridge or mod
-func ParseEthLogFilterRaw(blockFrom, blockTo uint64, filter *web3Types.FilterQuery) LogFilter {
+// ParseEthLogFilter parses store log filter from eSpace log filter
+func ParseEthLogFilter(blockFrom, blockTo uint64, filter *web3Types.FilterQuery) LogFilter {
 	var contracts []string
 	for _, addr := range filter.Addresses {
 		contracts = append(contracts, addr.String())

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"sync/atomic"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
@@ -18,7 +17,6 @@ import (
 type EthLogsApiHandler struct {
 	es *mysql.EthStore
 
-	networkId          atomic.Value
 	maxSuggestAttempts int
 }
 
@@ -232,12 +230,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, filter, nil
 	}
 
-	networkId, err := handler.GetNetworkId(eth)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	dbFilter := store.ParseEthLogFilter(bn, bn, filter, networkId)
+	dbFilter := store.ParseEthLogFilter(bn, bn, filter)
 	return &dbFilter, nil, err
 }
 
@@ -261,19 +254,14 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
 		return nil, filter, nil
 	}
 
-	networkId, err := handler.GetNetworkId(eth)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	// all data in database
 	if blockTo <= maxBlock {
-		dbFilter := store.ParseEthLogFilter(blockFrom, blockTo, filter, networkId)
+		dbFilter := store.ParseEthLogFilter(blockFrom, blockTo, filter)
 		return &dbFilter, nil, nil
 	}
 
 	// otherwise, partial data in database
-	dbFilter := store.ParseEthLogFilter(blockFrom, maxBlock, filter, networkId)
+	dbFilter := store.ParseEthLogFilter(blockFrom, maxBlock, filter)
 	fnBlockFrom := types.BlockNumber(maxBlock + 1)
 	fnFilter := types.FilterQuery{
 		FromBlock: &fnBlockFrom,
@@ -283,22 +271,6 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
 	}
 
 	return &dbFilter, &fnFilter, nil
-}
-
-func (handler *EthLogsApiHandler) GetNetworkId(eth *client.RpcEthClient) (uint32, error) {
-	if val := handler.networkId.Load(); val != nil {
-		return val.(uint32), nil
-	}
-
-	chainId, err := eth.ChainId()
-	if err != nil {
-		return 0, err
-	}
-
-	networkId := uint32(*chainId)
-	handler.networkId.Store(networkId)
-
-	return networkId, nil
 }
 
 // checkFnEthLogFilter checks if the eth log filter is rational for fullnode delegation.

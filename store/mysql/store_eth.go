@@ -56,8 +56,10 @@ func (es *EthStore) GetTransactionByHash(txHash common.Hash) (*types.Transaction
 	}
 
 	var txn types.TransactionDetail
+	txnStr := txHash.String()
+
 	err := decodeTransactionFromStore(
-		es.txStore, &txn, "hash_id = ? AND hash = ?", util.GetShortIdOfHash(txHash.String()), txHash,
+		es.txStore, &txn, "hash_id = ? AND hash = ?", util.GetShortIdOfHash(txnStr), txnStr,
 	)
 	if err != nil {
 		return nil, err
@@ -71,8 +73,10 @@ func (es *EthStore) GetTransactionReceipt(txHash common.Hash) (*types.Receipt, e
 	}
 
 	var rcpt types.Receipt
+	txnStr := txHash.String()
+
 	err := decodeReceiptFromStore(
-		es.txStore, &rcpt, "hash_id = ? AND hash = ?", util.GetShortIdOfHash(txHash.String()), txHash,
+		es.txStore, &rcpt, "hash_id = ? AND hash = ?", util.GetShortIdOfHash(txnStr), txnStr,
 	)
 	if err != nil {
 		return nil, err
