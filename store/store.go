@@ -1,37 +1,37 @@
 package store
 
 import (
-	"strings"
-
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/sirupsen/logrus"
 )
 
 var (
-	cfxStoreConfig storeConfig
-	ethStoreConfig storeConfig
+	cfxStoreConfig persistConfig
+	ethStoreConfig persistConfig
 )
+
+type persistType string
 
 const (
-	IndexTypeBlock       = "block"
-	IndexTypeTransaction = "transaction"
-	IndexTypeReceipt     = "receipt"
-	IndexTypeLog         = "log"
+	PersistTypeBlock       persistType = "block"
+	PersistTypeTransaction persistType = "transaction"
+	PersistTypeReceipt     persistType = "receipt"
+	PersistTypeLog         persistType = "log"
 )
 
-// All supported index types
-var AllIndexTypes = []string{
-	IndexTypeBlock,
-	IndexTypeTransaction,
-	IndexTypeReceipt,
-	IndexTypeLog,
+// All supported persist types
+var AllPersistTypes = []persistType{
+	PersistTypeBlock,
+	PersistTypeTransaction,
+	PersistTypeReceipt,
+	PersistTypeLog,
 }
 
-func StoreConfig() *storeConfig {
+func StoreConfig() *persistConfig {
 	return &cfxStoreConfig
 }
 
-func EthStoreConfig() *storeConfig {
+func EthStoreConfig() *persistConfig {
 	return &ethStoreConfig
 }
 
@@ -42,40 +42,38 @@ type ChainDataFilter interface {
 	IsLogDisabled() bool
 }
 
-type storeConfig struct {
-	// Disabled chain data types: block, transaction, receipt, log
-	DisabledTypes []string `default:"[block,transaction,receipt]"`
-	disabledSet   map[string]bool
+type persistConfig struct {
+	Types       []persistType `default:"[log]"`
+	disabledSet map[persistType]bool
 }
 
-func (c *storeConfig) mustInit(viperRoot string) {
+func (c *persistConfig) mustInit(viperRoot string) {
 	viper.MustUnmarshalKey(viperRoot, c)
 
-	disabled := make(map[string]bool, len(AllIndexTypes))
-	for _, t := range AllIndexTypes {
-		disabled[t] = false
+	disabled := make(map[persistType]bool, len(AllPersistTypes))
+	for _, t := range AllPersistTypes {
+		disabled[t] = true
 	}
 
-	for _, t := range c.DisabledTypes {
-		key := strings.ToLower(t)
-		if _, ok := disabled[key]; !ok {
+	for _, t := range c.Types {
+		if _, ok := disabled[t]; !ok {
 			logrus.WithField("dataType", t).
-				Fatal("Failed to init store config due to invalid disabled data type")
+				Fatal("Failed to init store config due to invalid persistence data type")
 		}
-		disabled[key] = true
+		disabled[t] = false
 	}
 
 	c.disabledSet = disabled
 }
 
-func (c *storeConfig) IsBlockDisabled() bool   { return c.disabledSet[IndexTypeBlock] }
-func (c *storeConfig) IsTxnDisabled() bool     { return c.disabledSet[IndexTypeTransaction] }
-func (c *storeConfig) IsReceiptDisabled() bool { return c.disabledSet[IndexTypeReceipt] }
-func (c *storeConfig) IsLogDisabled() bool     { return c.disabledSet[IndexTypeLog] }
+func (c *persistConfig) IsBlockDisabled() bool   { return c.disabledSet[PersistTypeBlock] }
+func (c *persistConfig) IsTxnDisabled() bool     { return c.disabledSet[PersistTypeTransaction] }
+func (c *persistConfig) IsReceiptDisabled() bool { return c.disabledSet[PersistTypeReceipt] }
+func (c *persistConfig) IsLogDisabled() bool     { return c.disabledSet[PersistTypeLog] }
 
 func MustInit() {
-	cfxStoreConfig.mustInit("store")
-	ethStoreConfig.mustInit("ethstore")
+	cfxStoreConfig.mustInit("store.persistence")
+	ethStoreConfig.mustInit("ethstore.persistence")
 
 	initLogFilter()
 	initEth()

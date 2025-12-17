@@ -249,9 +249,11 @@ eth:
 #     # Cache expiry duration
 #     cacheTime: 12h
 #     url: redis://<user>:<pass>@localhost:6379/<db>
-#   # Chain data types ignored to be persisted within store, available options are:
-#   # `block`, `transaction`, `receipt` and `log`
-#   disables: [block,transaction,receipt]
+#   # Persistence configurations
+#   persistence:
+#     # Chain data types to be persisted within store, available options are:
+#     # `block`, `transaction`, `receipt` and `log`
+#     types: [log]
 
 # EVM space store configurations
 # Please refer to core space store configurations
@@ -266,7 +268,8 @@ eth:
 #     addressIndexedLogEnabled: true
 #     addressIndexedLogPartitions: 100
 #     maxBnRangedArchiveLogPartitions: 5
-#   disables: [block,transaction,receipt]
+#   persistence:
+#     types: [log]
 
 # # Alert configurations
 # alert:
