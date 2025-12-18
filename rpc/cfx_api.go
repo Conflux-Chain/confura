@@ -356,13 +356,13 @@ func (api *cfxAPI) tryGetBlockHashesFromStore(ctx context.Context, epoch types.E
 		return nil, false
 	}
 
-	txn, err := api.StoreHandler.GetBlocksByEpoch(ctx, &epoch)
+	blockHashes, err := api.StoreHandler.GetBlocksByEpoch(ctx, &epoch)
 	if errors.Is(err, store.ErrUnsupported) {
 		return nil, false
 	}
 
 	metrics.Registry.RPC.StoreHit("cfx_getBlocksByEpoch", "store").Mark(err == nil)
-	return txn, err == nil
+	return blockHashes, err == nil
 }
 
 func (api *cfxAPI) GetSkippedBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {

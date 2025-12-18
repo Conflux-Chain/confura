@@ -15,7 +15,6 @@ type ChainData interface {
 type BlockLike interface {
 	Hash() string
 	Number() uint64
-	Epoch() uint64
 	Transactions() []TransactionLike
 }
 

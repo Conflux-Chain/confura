@@ -16,17 +16,17 @@ type block struct {
 	HashId      uint64 `gorm:"not null;index"`
 	Hash        string `gorm:"size:66;not null"`
 	Pivot       bool   `gorm:"not null"`
-	Extra       []byte `gorm:"type:text"` // json representation of the block
+	Extra       []byte `gorm:"type:mediumText"` // json representation of the block
 }
 
-func newBlock(data store.BlockLike, pivot bool) (*block, error) {
+func newBlock(epochNo uint64, data store.BlockLike, pivot bool) (*block, error) {
 	bytes, err := json.Marshal(data)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to json marshal block")
 	}
 
 	return &block{
-		Epoch:       data.Epoch(),
+		Epoch:       epochNo,
 		BlockNumber: data.Number(),
 		Hash:        data.Hash(),
 		HashId:      util.GetShortIdOfHash(data.Hash()),
@@ -78,7 +78,7 @@ func (bs *blockStore[T]) Add(dbTx *gorm.DB, dataSlice []T) error {
 		pivotIndex := len(dblocks) - 1
 
 		for i, block := range dblocks {
-			block, err := newBlock(block, i == pivotIndex)
+			block, err := newBlock(data.Number(), block, i == pivotIndex)
 			if err != nil {
 				return errors.WithMessage(err, "failed to new block")
 			}

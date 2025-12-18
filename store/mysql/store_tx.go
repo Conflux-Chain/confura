@@ -15,8 +15,8 @@ type transaction struct {
 	HashId         uint64 `gorm:"not null;index"` // as an index, number is better than long string
 	Hash           string `gorm:"size:66;not null"`
 	NumReceiptLogs int    `gorm:"not null"`
-	Extra          []byte `gorm:"type:text"` // json representation for transaction
-	ReceiptExtra   []byte `gorm:"type:text"` // json representation for transaction receipt
+	Extra          []byte `gorm:"type:mediumText"` // json representation for transaction
+	ReceiptExtra   []byte `gorm:"type:mediumText"` // json representation for transaction receipt
 }
 
 func (transaction) TableName() string {
@@ -84,7 +84,7 @@ func decodeTransactionFromStore[D store.ChainData, T any](
 		return errors.WithMessage(err, "failed to load transaction")
 	}
 
-	if err := json.Unmarshal(tx.Extra, &result); err != nil {
+	if err := json.Unmarshal(tx.Extra, result); err != nil {
 		return errors.WithMessage(err, "failed to unmarshal transaction")
 	}
 	return nil
@@ -97,7 +97,7 @@ func decodeReceiptFromStore[D store.ChainData, T any](
 		return errors.WithMessage(err, "failed to load transaction")
 	}
 
-	if err := json.Unmarshal(tx.ReceiptExtra, &result); err != nil {
+	if err := json.Unmarshal(tx.ReceiptExtra, result); err != nil {
 		return errors.WithMessage(err, "failed to unmarshal transaction receipt")
 	}
 	return nil
@@ -113,8 +113,9 @@ func (ts *txStore[T]) Add(dbTx *gorm.DB, dataSlice []T, skipTx, skipRcpt bool) e
 	var txns []*transaction
 
 	for _, data := range dataSlice {
+		receipts := data.ExtractReceipts()
+
 		for _, block := range data.ExtractBlocks() {
-			receipts := data.ExtractReceipts()
 			for _, tx := range block.Transactions() {
 				receipt := receipts[tx.Hash()]
 

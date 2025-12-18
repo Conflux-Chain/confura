@@ -61,10 +61,6 @@ func (a EthBlockAdapter) Hash() string {
 	return a.Block.Hash.String()
 }
 
-func (a EthBlockAdapter) Epoch() uint64 {
-	return a.Number()
-}
-
 func (a EthBlockAdapter) Number() uint64 {
 	return a.Block.Number.Uint64()
 }

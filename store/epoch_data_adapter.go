@@ -58,10 +58,6 @@ func (a EpochBlockAdapter) Number() uint64 {
 	return a.BlockNumber.ToInt().Uint64()
 }
 
-func (a EpochBlockAdapter) Epoch() uint64 {
-	return a.Block.EpochNumber.ToInt().Uint64()
-}
-
 func (a EpochBlockAdapter) Transactions() []TransactionLike {
 	txs := make([]TransactionLike, 0, len(a.Block.Transactions))
 	for _, t := range a.Block.Transactions {

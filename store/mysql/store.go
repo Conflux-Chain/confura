@@ -54,17 +54,17 @@ type MysqlStore[T store.ChainData] struct {
 func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.ChainDataFilter) *MysqlStore[T] {
 	pruner := newStorePruner(db)
 	cs := NewContractStore(db)
-	bms := newEpochBlockMapStore[T](db, config)
+	ebms := newEpochBlockMapStore[T](db, config)
 	ails := NewAddressIndexedLogStore[T](db, cs, config.AddressIndexedLogPartitions)
 
 	return &MysqlStore[T]{
-		epochBlockMapStore: bms,
+		epochBlockMapStore: ebms,
 		baseStore:          newBaseStore(db),
 		CommonStores:       newCommonStores(db),
 		txStore:            newTxStore[T](db),
 		blockStore:         newBlockStore[T](db),
-		ls:                 newLogStore[T](db, cs, bms, pruner.newBnPartitionObsChan),
-		bcls:               newBigContractLogStore(db, cs, bms, ails, pruner.newBnPartitionObsChan),
+		ls:                 newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
+		bcls:               newBigContractLogStore(db, cs, ebms, ails, pruner.newBnPartitionObsChan),
 		ails:               ails,
 		cs:                 cs,
 		config:             config,
@@ -141,7 +141,7 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 		}
 
 		// prepare for new log partitions if necessary before saving epoch data
-		if logPartition, err = ms.ls.preparePartition(dataSlice); err != nil {
+		if logPartition, err = ms.ls.preparePartition(); err != nil {
 			return errors.WithMessage(err, "failed to prepare log partition")
 		}
 	}

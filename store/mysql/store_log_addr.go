@@ -68,10 +68,11 @@ func (ls *AddressIndexedLogStore[T]) convertToPartitionedLogs(
 	contract2LogCount := make(map[uint64]int)
 	partition2Logs := make(map[uint32][]*AddressIndexedLog)
 
+	receipts := data.ExtractReceipts()
+
 	// divide event logs into different partitions by address
 	for _, block := range data.ExtractBlocks() {
 		bn := block.Number()
-		receipts := data.ExtractReceipts()
 
 		for _, tx := range block.Transactions() {
 			// ignore txs that are not executed in current block

@@ -26,7 +26,8 @@ func (h *EthStoreHandler) GetBlockByHash(
 	block, err := h.store.GetBlockByHash(blockHash, includeTxs)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"blockHash": blockHash, "includeTxs": includeTxs,
+			"blockHash":  blockHash,
+			"includeTxs": includeTxs,
 		}).WithError(err).Debug("ETH handler failed to handle GetBlockByHash")
 	}
 
@@ -43,7 +44,8 @@ func (h *EthStoreHandler) GetBlockByNumber(
 	block, err := h.store.GetBlockByNumber(blockNum, includeTxs)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"blockNum": blockNum, "includeTxs": includeTxs,
+			"blockNum":   blockNum,
+			"includeTxs": includeTxs,
 		}).WithError(err).Debug("ETH handler failed to handle GetBlockByNumber")
 	}
 
@@ -55,13 +57,13 @@ func (h *EthStoreHandler) GetLogs(ctx context.Context, filter store.LogFilter) (
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"filter": filter,
-		}).WithError(err).Debug("ethStoreHandler failed to get logs from store")
+		}).WithError(err).Debug("ETH handler failed to handle GetLogs")
 		return nil, err
 	}
 
 	logs = make([]web3Types.Log, len(slogs))
-	for i := 0; i < len(slogs); i++ {
-		log, err := slogs[i].ToEthLog()
+	for i, slog := range slogs {
+		log, err := slog.ToEthLog()
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to convert to eth log")
 		}

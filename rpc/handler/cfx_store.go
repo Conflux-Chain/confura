@@ -2,13 +2,12 @@ package handler
 
 import (
 	"context"
-	"errors"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
-	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/sirupsen/logrus"
 )
 
 // CfxStoreHandler RPC handler to get block/txn/receipt data from store.
@@ -30,7 +29,12 @@ func (h *CfxStoreHandler) GetBlockByHash(
 		block, err = h.store.GetBlockSummaryByHash(ctx, blockHash)
 	}
 
-	h.collectHitStats("cfx_getBlockByHash", err)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"blockHash":  blockHash,
+			"includeTxs": includeTxs,
+		}).WithError(err).Debug("CFX handler failed to handle GetBlockByHash")
+	}
 	return
 }
 
@@ -49,7 +53,12 @@ func (h *CfxStoreHandler) GetBlockByEpochNumber(
 		block, err = h.store.GetBlockSummaryByEpoch(ctx, epochNo)
 	}
 
-	h.collectHitStats("cfx_getBlockByEpochNumber", err)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"epoch":      epoch,
+			"includeTxs": includeTxs,
+		}).WithError(err).Debug("CFX handler failed to handle GetBlockByEpochNumber")
+	}
 	return
 }
 
@@ -60,7 +69,12 @@ func (h *CfxStoreHandler) GetBlocksByEpoch(ctx context.Context, epoch *types.Epo
 	}
 
 	blockHashes, err := h.store.GetBlocksByEpoch(ctx, epBigInt.Uint64())
-	h.collectHitStats("cfx_getBlocksByEpoch", err)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"epoch": epoch,
+		}).WithError(err).Debug("CFX handler failed to handle GetBlocksByEpoch")
+	}
+
 	return blockHashes, err
 }
 
@@ -73,24 +87,33 @@ func (h *CfxStoreHandler) GetBlockByBlockNumber(
 		block, err = h.store.GetBlockSummaryByBlockNumber(ctx, uint64(blockNumer))
 	}
 
-	h.collectHitStats("cfx_getBlockByBlockNumber", err)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"blockNumer": blockNumer,
+			"includeTxs": includeTxs,
+		}).WithError(err).Debug("CFX handler failed to handle GetBlockByBlockNumber")
+	}
 	return
 }
 
 func (h *CfxStoreHandler) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {
 	txn, err := h.store.GetTransaction(ctx, txHash)
-	h.collectHitStats("cfx_getTransactionByHash", err)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"txHash": txHash,
+		}).WithError(err).Debug("CFX handler failed to handle GetTransactionByHash")
+	}
+
 	return txn, err
 }
 
 func (h *CfxStoreHandler) GetTransactionReceipt(ctx context.Context, txHash types.Hash) (*types.TransactionReceipt, error) {
 	rcpt, err := h.store.GetReceipt(ctx, txHash)
-	h.collectHitStats("cfx_getTransactionReceipt", err)
-	return rcpt, err
-}
-
-func (h *CfxStoreHandler) collectHitStats(method string, err error) {
-	if !errors.Is(err, store.ErrUnsupported) { // ignore unsupported samples
-		metrics.Registry.RPC.StoreHit(method, h.sname).Mark(err == nil)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"txHash": txHash,
+		}).WithError(err).Debug("CFX handler failed to handle GetTransactionReceipt")
 	}
+
+	return rcpt, err
 }

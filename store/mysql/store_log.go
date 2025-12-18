@@ -56,7 +56,7 @@ func newLogStore[T store.ChainData](
 }
 
 // preparePartition create new log partitions if necessary.
-func (ls *logStore[T]) preparePartition(dataSlice []T) (bnPartition, error) {
+func (ls *logStore[T]) preparePartition() (bnPartition, error) {
 	partition, newCreated, err := ls.autoPartition(bnPartitionedLogEntity, &ls.model, bnPartitionedLogVolumeSize)
 	if err == nil && newCreated {
 		partition.tabler = &ls.model
