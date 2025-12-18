@@ -150,7 +150,7 @@ func (l *DlockLeaderManager) Extend(ctx context.Context) error {
 	return store.ErrLeaderRenewal
 }
 
-// Campaign starts the election process, which will run in a goroutine until contex canceled.
+// Campaign starts the election process, which will run in a goroutine until context canceled.
 func (l *DlockLeaderManager) Campaign(ctx context.Context) {
 	newCtx, cancelFn := context.WithCancel(ctx)
 	l.cancel.Store(cancelFn)

@@ -97,7 +97,7 @@ func ConvertTxStatusNullable(value *uint64) (status *hexutil.Uint64) {
 	return
 }
 
-// Deduce transaction type from other transaction fields but without furthur validation.
+// Deduce transaction type from other transaction fields but without further validation.
 func DeduceTxnType(txn *ethTypes.TransactionDetail) *hexutil.Uint64 {
 	switch {
 	case txn.MaxFeePerGas != nil || txn.MaxPriorityFeePerGas != nil:
