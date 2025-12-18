@@ -52,7 +52,7 @@ func init() {
 		&syncServerEnabled, "sync", false, "whether to start data sync/prune service",
 	)
 
-	// boot flat for virtual filter service
+	// boot flag for virtual filter service
 	rootCmd.Flags().BoolVar(
 		&vfilterServerEnabled, "vf", false, "whether to start virtual filter service",
 	)

@@ -58,7 +58,7 @@ func (ctx *StoreContext) Close() {
 	}
 }
 
-// GetMysqlStore returns mysql store by network space
+// GetMysqlStore returns MySQL store by network space
 func (ctx *StoreContext) GetMysqlStore(network string) (store *mysql.MysqlStore, err error) {
 	switch {
 	case strings.EqualFold(network, "eth"):
