@@ -20,6 +20,10 @@ func (e EthData) Hash() string {
 }
 
 func (e EthData) ExtractBlocks() []BlockLike {
+	if e.Block == nil {
+		return nil
+	}
+
 	// Transaction `status` field is not a standard field for evm-compatible chain, so we have
 	// to manually fill this field from their receipt.
 	txs := e.Block.Transactions.Transactions()

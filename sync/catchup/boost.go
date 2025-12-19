@@ -532,7 +532,7 @@ func (s *boostSyncer[T]) fetchAndPersistResults(ctx context.Context, start, end 
 			eno++
 			s.monitor.Update(eno)
 
-			epochDbRows, storeDbRows := state.update(epochData)
+			epochDbRows, storeDbRows := state.update(s.filter, epochData)
 			if logrus.IsLevelEnabled(logrus.DebugLevel) {
 				logrus.WithFields(logrus.Fields{
 					"resultBufLen":       len(s.resultChan),

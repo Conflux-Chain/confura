@@ -34,6 +34,8 @@ type Syncer[T store.ChainData] struct {
 	monitor *monitor.Monitor
 	// epoch to start sync
 	epochFrom uint64
+	// chain data filter
+	filter store.ChainDataFilter
 }
 
 func MustNewCfxSyncer(
@@ -41,7 +43,8 @@ func MustNewCfxSyncer(
 	dbs *mysql.CfxStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
-	epochFrom uint64) *Syncer[*store.EpochData] {
+	epochFrom uint64,
+) *Syncer[*store.EpochData] {
 	var conf config
 	viperutil.MustUnmarshalKey("sync.catchup", &conf)
 
@@ -57,7 +60,9 @@ func MustNewCfxSyncer(
 		workers = append(workers, worker)
 	}
 
-	syncer, err := newSyncer(conf, rpcClients, workers, dbs.MysqlStore, elm, monitor, epochFrom)
+	syncer, err := newSyncer(
+		conf, rpcClients, workers, dbs.MysqlStore, elm, monitor, epochFrom, store.StoreConfig(),
+	)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to initialize CFX catch-up syncer")
 	}
@@ -86,7 +91,9 @@ func MustNewEthSyncer(
 		workers = append(workers, worker)
 	}
 
-	syncer, err := newSyncer(conf, rpcClients, workers, dbs.MysqlStore, elm, monitor, epochFrom)
+	syncer, err := newSyncer(
+		conf, rpcClients, workers, dbs.MysqlStore, elm, monitor, epochFrom, store.EthStoreConfig(),
+	)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to initialize ETH catch-up syncer")
 	}
@@ -101,6 +108,7 @@ func newSyncer[T store.ChainData](
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
+	filter store.ChainDataFilter,
 ) (*Syncer[T], error) {
 	syncer := &Syncer[T]{
 		config:     conf,
@@ -109,6 +117,7 @@ func newSyncer[T store.ChainData](
 		monitor:    monitor,
 		epochFrom:  epochFrom,
 		workers:    workers,
+		filter:     filter,
 	}
 
 	// Check boost mode eligibility
@@ -116,7 +125,6 @@ func newSyncer[T store.ChainData](
 		// Boost mode is an optimization focused solely on syncing event logs.
 		// To achieve this, it requires disabling the syncing of blocks, transactions, and receipts.
 		// This is because boost mode skips fetching these data types for faster event log processing.
-		filter := store.StoreConfig()
 		if !filter.IsBlockDisabled() || !filter.IsTxnDisabled() || !filter.IsReceiptDisabled() {
 			return nil, errors.New("boost mode is incompatible with syncing data types other than event logs")
 		}
@@ -255,7 +263,7 @@ func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker 
 				s.monitor.Update(eno)
 			}
 
-			epochDbRows, storeDbRows := state.update(data)
+			epochDbRows, storeDbRows := state.update(s.filter, data)
 
 			logrus.WithFields(logrus.Fields{
 				"workerName":         w.name,
@@ -299,8 +307,8 @@ func (s *persistState[T]) numEpochs() int {
 	return len(s.chainData)
 }
 
-func (s *persistState[T]) update(data T) (int, int) {
-	totalDbRows, storeDbRows := countDbRows(data)
+func (s *persistState[T]) update(filter store.ChainDataFilter, data T) (int, int) {
+	totalDbRows, storeDbRows := countDbRows(filter, data)
 
 	s.chainData = append(s.chainData, data)
 	s.totalDbRows += totalDbRows
@@ -358,9 +366,7 @@ func (s *Syncer[T]) nextSyncRange() (uint64, uint64, error) {
 }
 
 // countDbRows count total db rows and to be stored db row from epoch data.
-func countDbRows[T store.ChainData](data T) (totalDbRows int, storeDbRows int) {
-	filter := store.StoreConfig()
-
+func countDbRows[T store.ChainData](filter store.ChainDataFilter, data T) (totalDbRows int, storeDbRows int) {
 	// db rows for block
 	blocks := data.ExtractBlocks()
 	totalDbRows += len(blocks)
