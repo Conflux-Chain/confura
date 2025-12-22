@@ -25,7 +25,7 @@ import (
 
 const (
 	// default capacity setting for pivot info window
-	syncPivotInfoWinCapacity = 50
+	syncPivotInfoWinCapacity = 100
 )
 
 // core space sync configuration
@@ -44,7 +44,7 @@ type DatabaseSyncer struct {
 	// selected sdk client index
 	cfxIdx atomic.Uint32
 	// db store
-	db *mysql.MysqlStore
+	db *mysql.CfxStore
 	// epoch number to sync data from
 	epochFrom uint64
 	// maximum number of epochs to sync once
@@ -54,7 +54,7 @@ type DatabaseSyncer struct {
 	// interval to sync data in catching up mode
 	syncIntervalCatchUp time.Duration
 	// window to cache epoch pivot info
-	epochPivotWin *epochPivotWindow
+	pivotWin *cfxSlidingPivotWindow
 	// HA leader/follower election manager
 	elm election.LeaderManager
 	// sync monitor
@@ -62,7 +62,7 @@ type DatabaseSyncer struct {
 }
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
-func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.MysqlStore) *DatabaseSyncer {
+func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.CfxStore) *DatabaseSyncer {
 	if len(cfxClients) == 0 {
 		logrus.Fatal("No sdk client provided")
 	}
@@ -95,7 +95,7 @@ func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.MysqlStore) *Data
 		syncIntervalNormal:  time.Second,
 		syncIntervalCatchUp: time.Millisecond,
 		monitor:             monitor,
-		epochPivotWin:       newEpochPivotWindow(syncPivotInfoWinCapacity),
+		pivotWin:            newCfxSlidingPivotWindow(syncPivotInfoWinCapacity),
 		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.cfx"),
 	}
 	monitor.SetObserver(syncer)
@@ -110,11 +110,6 @@ func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.MysqlStore) *Data
 		syncer.monitor.Stop()
 		syncer.onLeadershipChanged(ctx, lm, false)
 	})
-
-	// Ensure epoch data validity in database
-	if err := ensureStoreEpochDataOk(cfxClients[0], db); err != nil {
-		logrus.WithError(err).Fatal("Db sync failed to ensure epoch data validity in db")
-	}
 
 	// Load last sync epoch information
 	syncer.mustLoadLastSyncEpoch()
@@ -322,13 +317,13 @@ func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 	syncer.monitor.Update(syncer.epochFrom)
 
 	for _, epdata := range epochDataSlice { // cache epoch pivot info for late use
-		err := syncer.epochPivotWin.Push(epdata.GetPivotBlock())
+		err := syncer.pivotWin.Push(cfxPivotBlockWrapper{epdata.GetPivotBlock()})
 		if err != nil {
 			logger.WithField("pivotBlockEpoch", epdata.Number).WithError(err).Info(
 				"Db syncer failed to push pivot block into epoch cache window",
 			)
 
-			syncer.epochPivotWin.Reset()
+			syncer.pivotWin.Reset()
 			break
 		}
 	}
@@ -409,7 +404,7 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(ctx context.Context, revertTo ui
 	}
 
 	// remove pivot data of reverted epoch from cache window
-	syncer.epochPivotWin.Popn(revertTo)
+	syncer.pivotWin.PopTo(revertTo)
 	// update syncer start epoch
 	syncer.epochFrom = revertTo
 
@@ -424,7 +419,7 @@ func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
 	latestEpochNo := syncer.latestStoreEpoch()
 
 	// load from in-memory cache first
-	if pivotHash, ok := syncer.epochPivotWin.GetPivotHash(latestEpochNo); ok {
+	if pivotHash, ok := syncer.pivotWin.Get(latestEpochNo); ok {
 		return pivotHash, nil
 	}
 
@@ -442,7 +437,7 @@ func (syncer *DatabaseSyncer) latestStoreEpoch() uint64 {
 
 func (syncer *DatabaseSyncer) onLeadershipChanged(
 	ctx context.Context, lm election.LeaderManager, gainedOrLost bool) {
-	syncer.epochPivotWin.Reset()
+	syncer.pivotWin.Reset()
 	if !gainedOrLost && ctx.Err() != context.Canceled {
 		logrus.WithField("leaderID", lm.Identity()).Warn("DB syncer lost HA leadership")
 	}

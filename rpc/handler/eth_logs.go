@@ -2,29 +2,26 @@ package handler
 
 import (
 	"context"
-	"errors"
-	"sync/atomic"
 
-	"github.com/Conflux-Chain/confura/rpc/ethbridge"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 // EthLogsApiHandler RPC handler to get evm space event logs from store or fullnode.
 type EthLogsApiHandler struct {
-	ms *mysql.MysqlStore
+	es *mysql.EthStore
 
-	networkId          atomic.Value
 	maxSuggestAttempts int
 }
 
-func NewEthLogsApiHandler(ms *mysql.MysqlStore, maxAttempts int) *EthLogsApiHandler {
-	return &EthLogsApiHandler{ms: ms, maxSuggestAttempts: maxAttempts}
+func NewEthLogsApiHandler(es *mysql.EthStore, maxAttempts int) *EthLogsApiHandler {
+	return &EthLogsApiHandler{es: es, maxSuggestAttempts: maxAttempts}
 }
 
 func (handler *EthLogsApiHandler) GetLogs(
@@ -34,7 +31,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
 	// record the reorg version before query to ensure data consistence
-	lastReorgVersion, err := handler.ms.GetReorgVersion()
+	lastReorgVersion, err := handler.es.GetReorgVersion()
 	if err != nil {
 		return nil, false, err
 	}
@@ -71,7 +68,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 		}
 
 		// check the reorg version after query
-		reorgVersion, err := handler.ms.GetReorgVersion()
+		reorgVersion, err := handler.es.GetReorgVersion()
 		if err != nil {
 			return nil, false, err
 		}
@@ -128,7 +125,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		// query data from database
-		dbLogs, err := handler.ms.GetLogs(ctx, *dbFilter)
+		dbLogs, err := handler.es.GetLogs(ctx, *dbFilter)
 		if err != nil {
 			// TODO ErrPrunedAlready
 			return nil, false, err
@@ -139,8 +136,11 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, v.BlockNumber)
 			}
 
-			cfxLog, ext := v.ToCfxLog()
-			logs = append(logs, *ethbridge.ConvertLog(cfxLog, ext))
+			log, err := v.ToEthLog()
+			if err != nil {
+				return nil, false, errors.WithMessage(err, "failed to convert to eth log")
+			}
+			logs = append(logs, *log)
 		}
 	}
 
@@ -194,7 +194,7 @@ func (handler *EthLogsApiHandler) splitLogFilter(
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
 ) (*store.LogFilter, *types.FilterQuery, error) {
-	maxBlock, ok, err := handler.ms.MaxEpoch()
+	maxBlock, ok, err := handler.es.MaxEpoch()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -230,12 +230,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, filter, nil
 	}
 
-	networkId, err := handler.GetNetworkId(eth)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	dbFilter := store.ParseEthLogFilter(bn, bn, filter, networkId)
+	dbFilter := store.ParseEthLogFilter(bn, bn, filter)
 	return &dbFilter, nil, err
 }
 
@@ -259,19 +254,14 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
 		return nil, filter, nil
 	}
 
-	networkId, err := handler.GetNetworkId(eth)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	// all data in database
 	if blockTo <= maxBlock {
-		dbFilter := store.ParseEthLogFilter(blockFrom, blockTo, filter, networkId)
+		dbFilter := store.ParseEthLogFilter(blockFrom, blockTo, filter)
 		return &dbFilter, nil, nil
 	}
 
 	// otherwise, partial data in database
-	dbFilter := store.ParseEthLogFilter(blockFrom, maxBlock, filter, networkId)
+	dbFilter := store.ParseEthLogFilter(blockFrom, maxBlock, filter)
 	fnBlockFrom := types.BlockNumber(maxBlock + 1)
 	fnFilter := types.FilterQuery{
 		FromBlock: &fnBlockFrom,
@@ -281,22 +271,6 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
 	}
 
 	return &dbFilter, &fnFilter, nil
-}
-
-func (handler *EthLogsApiHandler) GetNetworkId(eth *client.RpcEthClient) (uint32, error) {
-	if val := handler.networkId.Load(); val != nil {
-		return val.(uint32), nil
-	}
-
-	chainId, err := eth.ChainId()
-	if err != nil {
-		return 0, err
-	}
-
-	networkId := uint32(*chainId)
-	handler.networkId.Store(networkId)
-
-	return networkId, nil
 }
 
 // checkFnEthLogFilter checks if the eth log filter is rational for fullnode delegation.

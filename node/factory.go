@@ -66,7 +66,7 @@ func newFactory(nf nodeFactory, rpcSrvEndpoint, gRpcSrvEndpoint string, groupCon
 }
 
 // MustStartServer starts node manager RPC server
-func (f *factory) MustStartServer(ctx context.Context, wg *sync.WaitGroup, db *mysql.MysqlStore) {
+func (f *factory) MustStartServer(ctx context.Context, wg *sync.WaitGroup, db *mysql.CommonStores) {
 	handler := MustNewApiHandler(db, f.nodeFactory, f.groupConf)
 
 	// start RPC server

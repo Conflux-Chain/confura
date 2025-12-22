@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	gosql "github.com/go-sql-driver/mysql"
@@ -85,8 +86,8 @@ func MustNewEthStoreConfigFromViper() *Config {
 	return mustNewConfigFromViper("ethstore.mysql")
 }
 
-// MustOpenOrCreate creates an instance of store or exits on any error.
-func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
+// MustOpenOrCreate creates an instance of gorm database or exits on any error.
+func (config *Config) MustOpenOrCreate() *gorm.DB {
 	newCreated := config.mustCreateDatabaseIfAbsent()
 
 	db := config.mustNewDB(config.Database)
@@ -107,7 +108,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 			logrus.WithError(err).Fatal("Failed to create tables")
 		}
 
-		ls := NewAddressIndexedLogStore(db, NewContractStore(db), config.AddressIndexedLogPartitions)
+		ls := NewAddressIndexedLogStore[store.ChainData](db, NewContractStore(db), config.AddressIndexedLogPartitions)
 		if _, err := ls.CreatePartitionedTables(); err != nil {
 			logrus.WithError(err).
 				WithField("partitions", config.AddressIndexedLogPartitions).
@@ -124,8 +125,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 	}
 
 	logrus.Info("MySQL database initialized")
-
-	return mustNewStore(db, config, option)
+	return db
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {

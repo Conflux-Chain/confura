@@ -81,10 +81,10 @@ type apiHandler struct {
 	// node pool
 	pool *nodePool
 	// db store to save node route configs
-	dbs *mysql.MysqlStore
+	dbs *mysql.CommonStores
 }
 
-func MustNewApiHandler(db *mysql.MysqlStore, nf nodeFactory, grpConf map[Group]UrlConfig) *apiHandler {
+func MustNewApiHandler(db *mysql.CommonStores, nf nodeFactory, grpConf map[Group]UrlConfig) *apiHandler {
 	npool := newNodePool(nf)
 
 	if db != nil {

@@ -82,7 +82,7 @@ func addKey(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs, err := storeCtx.GetMysqlStore(keysetCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(keysetCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return
@@ -153,7 +153,7 @@ func delKey(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs, err := storeCtx.GetMysqlStore(keysetCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(keysetCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return
@@ -191,7 +191,7 @@ func listKeys(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs, err := storeCtx.GetMysqlStore(keysetCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(keysetCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return

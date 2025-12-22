@@ -12,6 +12,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 type CatchUpCmdConfig struct {
@@ -95,8 +96,16 @@ func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
 	return &storeCtx, &syncCtx, nil
 }
 
+type catchupSyncer interface {
+	UseBoost() bool
+	SyncOnce(context.Context, uint64, uint64)
+	Close() error
+}
+
 // createCatchUpSyncer initializes the catch-up syncer with the necessary dependencies.
-func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext) *catchup.Syncer {
+func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext) catchupSyncer {
+	viper.Set("sync.catchup.benchmark", true)
+
 	if catchUpConfig.Network == "eth" {
 		return catchup.MustNewEthSyncer(
 			syncCtx.SyncEths,
@@ -104,7 +113,6 @@ func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext)
 			election.NewNoopLeaderManager(),
 			&monitor.Monitor{},
 			catchUpConfig.Start,
-			catchup.WithBenchmark(true),
 		)
 	}
 
@@ -114,7 +122,6 @@ func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext)
 		election.NewNoopLeaderManager(),
 		&monitor.Monitor{},
 		catchUpConfig.Start,
-		catchup.WithBenchmark(true),
 	)
 }
 
