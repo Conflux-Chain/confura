@@ -81,6 +81,10 @@ func (cs *CfxStore) GetBlockSummaryByEpoch(ctx context.Context, epochNumber uint
 	if err != nil {
 		return nil, err
 	}
+
+	if bs.Transactions == nil {
+		bs.Transactions = []types.Hash{}
+	}
 	return &bs, nil
 }
 
@@ -101,6 +105,10 @@ func (cs *CfxStore) GetBlockSummaryByHash(ctx context.Context, blockHash types.H
 	if err != nil {
 		return nil, err
 	}
+
+	if bs.Transactions == nil {
+		bs.Transactions = []types.Hash{}
+	}
 	return &bs, nil
 }
 
@@ -118,6 +126,10 @@ func (cs *CfxStore) GetBlockSummaryByBlockNumber(ctx context.Context, blockNumbe
 	err := decodeBlockFromStore(cs.blockStore, &bs, "block_number = ?", blockNumber)
 	if err != nil {
 		return nil, err
+	}
+
+	if bs.Transactions == nil {
+		bs.Transactions = []types.Hash{}
 	}
 	return &bs, nil
 }
