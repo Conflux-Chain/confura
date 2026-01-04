@@ -45,6 +45,16 @@ func (ctx *StoreContext) Close() {
 	}
 }
 
+func (ctx *StoreContext) GetEthCommonStore() *mysql.CommonStores {
+	store, _ := ctx.GetCommonStore("eth")
+	return store
+}
+
+func (ctx *StoreContext) GetCfxCommonStore() *mysql.CommonStores {
+	store, _ := ctx.GetCommonStore("cfx")
+	return store
+}
+
 func (ctx *StoreContext) GetCommonStore(network string) (*mysql.CommonStores, error) {
 	switch {
 	case strings.EqualFold(network, "eth"):
@@ -58,8 +68,7 @@ func (ctx *StoreContext) GetCommonStore(network string) (*mysql.CommonStores, er
 	default:
 		return nil, errors.Errorf("invalid network space %s", network)
 	}
-
-	return nil, errors.New("mysql store is unavailable")
+	return nil, nil
 }
 
 // SyncContext context to hold sdk clients for blockchain interoperation.

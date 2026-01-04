@@ -87,7 +87,7 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 	var rateReg *rate.Registry
 
 	router := node.Factory().CreateRouter()
-	clientProvider := node.NewCfxClientProvider(storeCtx.CfxDB.CommonStores, router)
+	clientProvider := node.NewCfxClientProvider(storeCtx.GetCfxCommonStore(), router)
 	relayer := relay.MustNewTxnRelayerFromViper()
 
 	option := rpc.CfxAPIOption{
@@ -156,7 +156,7 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 
 	router := node.EthFactory().CreateRouter()
 	dataCache := rpcutil.MustNewEthDataCacheClientFromViper()
-	clientProvider := node.NewEthClientProvider(dataCache, storeCtx.EthDB.CommonStores, router)
+	clientProvider := node.NewEthClientProvider(dataCache, storeCtx.GetEthCommonStore(), router)
 	relayer := relay.MustNewEthTxnRelayerFromViper()
 
 	option := rpc.EthAPIOption{
