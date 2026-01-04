@@ -42,7 +42,9 @@ func (e EthData) ExtractBlocks() []BlockLike {
 func (e EthData) ExtractReceipts() map[string]ReceiptLike {
 	receipts := make(map[string]ReceiptLike, len(e.Receipts))
 	for _, r := range e.Receipts {
-		receipts[r.TransactionHash.String()] = EthReceiptAdapter{r}
+		receipts[r.TransactionHash.String()] = EthReceiptAdapter{
+			Receipt: r, blockTimeStamp: e.Block.Timestamp,
+		}
 	}
 	return receipts
 }
@@ -51,6 +53,9 @@ func (e EthData) ExtractLogs() []LogLike {
 	var logs []LogLike
 	for _, r := range e.Receipts {
 		for _, l := range r.Logs {
+			if l.BlockTimestamp == 0 {
+				l.BlockTimestamp = e.Block.Timestamp
+			}
 			logs = append(logs, EthLogAdapter{l})
 		}
 	}
@@ -120,6 +125,7 @@ func (a *EthTransactionAdapter) Executed() bool {
 
 type EthReceiptAdapter struct {
 	*types.Receipt
+	blockTimeStamp uint64
 }
 
 func (a EthReceiptAdapter) TransactionHash() string {
@@ -133,6 +139,9 @@ func (a EthReceiptAdapter) Status() *uint64 {
 func (a EthReceiptAdapter) Logs() []LogLike {
 	logs := make([]LogLike, 0, len(a.Receipt.Logs))
 	for _, l := range a.Receipt.Logs {
+		if l.BlockTimestamp == 0 {
+			l.BlockTimestamp = a.blockTimeStamp
+		}
 		logs = append(logs, EthLogAdapter{l})
 	}
 	return logs
