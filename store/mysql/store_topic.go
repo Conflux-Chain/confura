@@ -9,11 +9,11 @@ import (
 
 const defaultTopicCacheSize = 4096
 
-// Topic represents log topic signature entry with metadata.
+// Topic represents the topic0 signature entry of an event log and its associated metadata.
 type Topic struct {
-	// id and topic0 are immutable once created.
-	ID     uint64 `gorm:"primaryKey;autoIncrement"`
-	Topic0 string `gorm:"size:66;not null;unique"`
+	// id and hash are immutable once created.
+	ID   uint64 `gorm:"primaryKey;autoIncrement"`
+	Hash string `gorm:"size:66;not null;unique"`
 
 	// num of persisted event logs
 	LogCount int `gorm:"not null;default:0"`
@@ -50,7 +50,7 @@ func NewTopicStore(db *gorm.DB, cacheSize ...int) *TopicStore {
 
 func (s *TopicStore) cache(t *Topic) {
 	s.idCache.Add(t.ID, t)
-	s.hashCache.Add(t.Topic0, t)
+	s.hashCache.Add(t.Hash, t)
 }
 
 // GetByID retrieves topic by id from cache or db.
@@ -66,19 +66,19 @@ func (s *TopicStore) GetByHash(hash string) (*Topic, bool, error) {
 	if v, ok := s.hashCache.Get(hash); ok {
 		return v.(*Topic), true, nil
 	}
-	return s.load("topic0 = ?", hash)
+	return s.load("hash = ?", hash)
 }
 
-// GetHash returns the topic0 hash for a given id.
+// GetHash returns the hash for a given id.
 func (s *TopicStore) GetHash(id uint64) (string, bool, error) {
 	t, ok, err := s.GetByID(id)
 	if !ok || err != nil {
 		return "", ok, err
 	}
-	return t.Topic0, true, nil
+	return t.Hash, true, nil
 }
 
-// GetID returns the id for a given topic0 hash.
+// GetID returns the id for a given hash.
 func (s *TopicStore) GetID(hash string) (uint64, bool, error) {
 	t, ok, err := s.GetByHash(hash)
 	if !ok || err != nil {
@@ -94,7 +94,7 @@ func (s *TopicStore) GetOrCreate(hash string) (uint64, bool, error) {
 		return id, false, err
 	}
 
-	t := &Topic{Topic0: hash}
+	t := &Topic{Hash: hash}
 	if err := s.db.Create(t).Error; err != nil {
 		return 0, false, err
 	}
@@ -113,7 +113,7 @@ func (s *TopicStore) BatchAdd(hashes map[string]bool) (int, error) {
 		}
 
 		if !ok {
-			newTopics = append(newTopics, Topic{Topic0: h})
+			newTopics = append(newTopics, Topic{Hash: h})
 		}
 	}
 
@@ -143,7 +143,7 @@ func (s *TopicStore) GetUpdatedSince(epoch uint64) ([]*Topic, error) {
 
 // UpdateStats updates log count and last epoch for the specified topic.
 func (s *TopicStore) UpdateStats(tx *gorm.DB, id uint64, delta int, epoch uint64) error {
-	updates := map[string]interface{}{"latest_updated_epoch": epoch}
+	updates := map[string]any{"latest_updated_epoch": epoch}
 
 	if delta > 0 {
 		updates["log_count"] = gorm.Expr("log_count + ?", delta)
