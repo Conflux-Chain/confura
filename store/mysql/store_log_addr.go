@@ -2,7 +2,6 @@ package mysql
 
 import (
 	"context"
-	"fmt"
 	"hash/fnv"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -166,9 +165,19 @@ func (ls *AddressIndexedLogStore[T]) Add(dbTx *gorm.DB, dataSlice []T, bigContra
 	return nil
 }
 
-// DeleteAddressIndexedLogs removes event logs of specified epoch number range.
+// DeleteAddressIndexedLogs removes address-indexed event logs within the specified epoch range.
 //
-// Generally, this is used when pivot chain switched for confirmed blocks.
+// This is primarily used during pivot chain switches for confirmed blocks.
+//
+// DESIGN NOTES:
+//
+// 1. Deletion is performed at partition granularity for efficiency.
+// 2. Contract statistics (log_count, latest_updated_epoch) are intentionally NOT updated here.
+//   - log_count is a monotonic upper bound used for migration/sharding decisions and must not be rolled back.
+//   - latest_updated_epoch represents a historical upper bound and is updated only on forward sync (ingest).
+//
+// 3. This function may delete logs multiple times for the same contract across reorgs, which is acceptable and safe,
+// while missing a deletion is not.
 func (ls *AddressIndexedLogStore[T]) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
 	contracts, err := ls.cs.GetUpdatedContractsSinceEpoch(epochFrom)
 	if err != nil {
@@ -179,22 +188,23 @@ func (ls *AddressIndexedLogStore[T]) DeleteAddressIndexedLogs(dbTx *gorm.DB, epo
 		return nil
 	}
 
-	// Delete logs for all possible contracts in batches.
-	for _, contract := range contracts {
-		partition := ls.getPartitionByAddress(contract.Address)
+	// Collect affected partitions.
+	partitions := make(map[uint32]struct{}, len(contracts))
+	for _, c := range contracts {
+		p := ls.getPartitionByAddress(c.Address)
+		partitions[p] = struct{}{}
+	}
+
+	// Bulk delete event logs per partition.
+	for partition := range partitions {
 		tableName := ls.getPartitionedTableName(&ls.model, partition)
-
-		sql := fmt.Sprintf("DELETE FROM %v WHERE epoch BETWEEN ? AND ?", tableName)
-		res := dbTx.Exec(sql, epochFrom, epochTo)
+		res := dbTx.Table(tableName).Where("epoch BETWEEN ? AND ?", epochFrom, epochTo).Delete(nil)
 		if err := res.Error; err != nil {
-			return err
-		}
-
-		// Update contract statistics (log count and latest updated epoch).
-		// A rough estimation of the number of logs deleted from the contract, not accounting for other contracts in the same partition
-		// since the accuracy is not critical and it happens rarely.
-		if err := ls.cs.UpdateContractStats(dbTx, contract.ID, int(-res.RowsAffected), epochFrom); err != nil {
-			return errors.WithMessage(err, "failed to update contract statistics")
+			return errors.WithMessagef(
+				err,
+				"failed to delete address indexed logs from %s [epoch %d-%d]",
+				tableName, epochFrom, epochTo,
+			)
 		}
 	}
 
