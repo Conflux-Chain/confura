@@ -49,6 +49,9 @@ type Config struct {
 	AddressIndexedLogEnabled    bool   `default:"true"`
 	AddressIndexedLogPartitions uint32 `default:"100"`
 
+	TopicIndexedLogEnabled    bool   `default:"true"`
+	TopicIndexedLogPartitions uint32 `default:"10"`
+
 	MaxBnRangedArchiveLogPartitions uint32 `default:"5"`
 }
 
@@ -108,11 +111,22 @@ func (config *Config) MustOpenOrCreate() *gorm.DB {
 			logrus.WithError(err).Fatal("Failed to create tables")
 		}
 
-		ls := NewAddressIndexedLogStore[store.ChainData](db, NewContractStore(db), config.AddressIndexedLogPartitions)
-		if _, err := ls.CreatePartitionedTables(); err != nil {
-			logrus.WithError(err).
-				WithField("partitions", config.AddressIndexedLogPartitions).
-				Fatal("Failed to create address indexed log tables")
+		if config.AddressIndexedLogEnabled {
+			ls := NewAddressIndexedLogStore[store.ChainData](db, NewContractStore(db), config.AddressIndexedLogPartitions)
+			if _, err := ls.CreatePartitionedTables(); err != nil {
+				logrus.WithError(err).
+					WithField("partitions", config.AddressIndexedLogPartitions).
+					Fatal("Failed to create address indexed log tables")
+			}
+		}
+
+		if config.TopicIndexedLogEnabled {
+			tls := NewTopicIndexedLogStore[store.ChainData](db, NewTopicStore(db), config.TopicIndexedLogPartitions)
+			if _, err := tls.CreatePartitionedTables(); err != nil {
+				logrus.WithError(err).
+					WithField("partitions", config.TopicIndexedLogPartitions).
+					Fatal("Failed to create topic indexed log tables")
+			}
 		}
 	}
 
