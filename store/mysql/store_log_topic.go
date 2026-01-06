@@ -125,10 +125,10 @@ func (s *TopicIndexedLogStore[T]) Add(tx *gorm.DB, dataSlice []T, bigTopicIDs ma
 		}
 	}
 
-	// 3. Update stats per topic
+	// Update stats per topic
 	for tid, stat := range statsByTopic {
 		if err := s.ts.UpdateStats(tx, tid, stat.count, stat.epoch); err != nil {
-			return errors.WithMessagef(err, "failed to update stats for topic %d", tid)
+			return errors.WithMessagef(err, "failed to update stats for topic %s", tid)
 		}
 	}
 
@@ -146,7 +146,7 @@ func (s *TopicIndexedLogStore[T]) Add(tx *gorm.DB, dataSlice []T, bigTopicIDs ma
 //   - log_count is a monotonic upper bound used for migration/sharding decisions and must not be rolled back.
 //   - latest_updated_epoch represents a historical upper bound and is updated only on forward sync (ingest).
 //
-// 3. This function may delete logs multiple times for the same contract across reorgs, which is acceptable and safe,
+// 3. This function may delete logs multiple times for the same topic0 across reorgs, which is acceptable and safe,
 // while missing a deletion is not.
 func (s *TopicIndexedLogStore[T]) DeleteTopicIndexedLogs(tx *gorm.DB, fromEpoch, toEpoch uint64) error {
 	updatedTopics, err := s.ts.GetUpdatedSince(fromEpoch)
@@ -183,15 +183,15 @@ func (s *TopicIndexedLogStore[T]) DeleteTopicIndexedLogs(tx *gorm.DB, fromEpoch,
 func (s *TopicIndexedLogStore[T]) GetTopicIndexedLogs(
 	ctx context.Context,
 	f TopicIndexedLogFilter,
-	topicHash string,
+	topic string,
 ) ([]*TopicIndexedLog, error) {
-	f.TableName = s.GetPartitionedTableName(topicHash)
+	f.TableName = s.GetPartitionedTableName(topic)
 	return f.Find(ctx, s.db)
 }
 
 // GetPartitionedTableName returns the physical table name for a given topic hash.
-func (s *TopicIndexedLogStore[T]) GetPartitionedTableName(topicHash string) string {
-	return s.getPartitionedTableName(&TopicIndexedLog{}, s.getPartitionByHash(topicHash))
+func (s *TopicIndexedLogStore[T]) GetPartitionedTableName(topic string) string {
+	return s.getPartitionedTableName(&TopicIndexedLog{}, s.getPartitionByHash(topic))
 }
 
 // getPartitionByHash returns the partition by topic hash.
