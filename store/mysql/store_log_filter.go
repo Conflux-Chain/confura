@@ -46,10 +46,11 @@ func applyContractFilter(db *gorm.DB, contract store.VariadicValue) *gorm.DB {
 	return applyVariadicFilter(db, logColumnTypeContract, contract)
 }
 
-func applyTopicsFilter(db *gorm.DB, topics []store.VariadicValue) *gorm.DB {
+func applyTopicsFilter(db *gorm.DB, topics []store.VariadicValue, skipTopics ...bool) *gorm.DB {
 	numTopics := len(topics)
+	skipTopic0 := len(skipTopics) > 0 && skipTopics[0]
 
-	if numTopics > 0 {
+	if numTopics > 0 && !skipTopic0 {
 		db = applyVariadicFilter(db, logColumnTypeTopic0, topics[0])
 	}
 
@@ -270,6 +271,39 @@ func (filter *AddressIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([
 	db = applyTopicsFilter(db, filter.Topics)
 
 	var result []*AddressIndexedLog
+	if err := db.Find(&result).Error; err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// TopicIndexedLogFilter is used to query event logs indexed by topic id and block number.
+type TopicIndexedLogFilter struct {
+	LogFilter
+	TopicId uint64
+}
+
+func (filter *TopicIndexedLogFilter) validateCount(db *gorm.DB) error {
+	db = db.Where("tid = ?", filter.TopicId)
+	return filter.LogFilter.validateCount(db)
+}
+
+func (filter *TopicIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([]*TopicIndexedLog, error) {
+	if store.IsBoundChecksEnabled(ctx) {
+		if err := filter.validateCount(db); err != nil {
+			return nil, err
+		}
+	}
+
+	db = db.Table(filter.TableName).
+		Where("tid = ?", filter.TopicId).
+		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
+		Order("bn ASC").
+		Limit(int(store.MaxLogLimit) + 1)
+	db = applyTopicsFilter(db, filter.Topics, true)
+
+	var result []*TopicIndexedLog
 	if err := db.Find(&result).Error; err != nil {
 		return nil, err
 	}
