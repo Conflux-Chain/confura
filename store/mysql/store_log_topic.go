@@ -128,7 +128,7 @@ func (s *TopicIndexedLogStore[T]) Add(tx *gorm.DB, dataSlice []T, bigTopicIDs ma
 	// Update stats per topic
 	for tid, stat := range statsByTopic {
 		if err := s.ts.UpdateStats(tx, tid, stat.count, stat.epoch); err != nil {
-			return errors.WithMessagef(err, "failed to update stats for topic %s", tid)
+			return errors.WithMessagef(err, "failed to update stats for topic %v", tid)
 		}
 	}
 
