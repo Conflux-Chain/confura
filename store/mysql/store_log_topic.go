@@ -76,7 +76,7 @@ func (s *TopicIndexedLogStore[T]) Add(tx *gorm.DB, dataSlice []T, bigTopicIDs ma
 
 				for _, log := range receipt.Logs() {
 					topics := log.Topics()
-					if len(topics) == 0 {
+					if len(topics) == 0 || topics[0] == "" {
 						continue
 					}
 
