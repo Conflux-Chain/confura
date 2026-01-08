@@ -53,63 +53,67 @@ func (s *TopicStore) cache(t *Topic) {
 	s.hashCache.Add(t.Hash, t)
 }
 
-// GetByID retrieves topic by id from cache or db.
-func (s *TopicStore) GetByID(id uint64) (*Topic, bool, error) {
-	if v, ok := s.idCache.Get(id); ok {
-		return v.(*Topic), true, nil
-	}
+// GetTopicById retrieves topic by id from db and also loads the cache.
+func (s *TopicStore) GetTopicById(id uint64) (*Topic, bool, error) {
 	return s.load("id = ?", id)
 }
 
-// GetByHash retrieves topic by hash from cache or db.
-func (s *TopicStore) GetByHash(hash string) (*Topic, bool, error) {
-	if v, ok := s.hashCache.Get(hash); ok {
-		return v.(*Topic), true, nil
-	}
+// GetTopicByHash retrieves topic by hash from db and also loads the cache.
+func (s *TopicStore) GetTopicByHash(hash string) (*Topic, bool, error) {
 	return s.load("hash = ?", hash)
 }
 
-// GetHash returns the hash for a given id.
+// GetHash returns the hash for a given id from cache or db if not found.
 func (s *TopicStore) GetHash(id uint64) (string, bool, error) {
-	t, ok, err := s.GetByID(id)
-	if !ok || err != nil {
-		return "", ok, err
+	if v, ok := s.idCache.Get(id); ok {
+		return v.(*Topic).Hash, true, nil
 	}
-	return t.Hash, true, nil
+
+	topic, ok, err := s.load("id = ?", id)
+	if !ok || err != nil {
+		return "", false, err
+	}
+	return topic.Hash, true, nil
 }
 
-// GetID returns the id for a given hash.
+// GetID returns the id for a given hash from cache or db if not found.
 func (s *TopicStore) GetID(hash string) (uint64, bool, error) {
-	t, ok, err := s.GetByHash(hash)
-	if !ok || err != nil {
-		return 0, ok, err
+	if v, ok := s.hashCache.Get(hash); ok {
+		return v.(*Topic).ID, true, nil
 	}
-	return t.ID, true, nil
+
+	topic, ok, err := s.load("hash = ?", hash)
+	if !ok || err != nil {
+		return 0, false, err
+	}
+	return topic.ID, true, nil
 }
 
 // GetOrCreate returns existing topic or creates new one.
 // Returns (id, isNew, error). Not thread-safe.
 func (s *TopicStore) GetOrCreate(hash string) (uint64, bool, error) {
 	if id, ok, err := s.GetID(hash); ok || err != nil {
-		return id, false, err
+		return id, false, errors.WithMessagef(err, "failed to get topic id for hash %s", hash)
 	}
 
 	t := &Topic{Hash: hash}
 	if err := s.db.Create(t).Error; err != nil {
-		return 0, false, err
+		return 0, false, errors.WithMessagef(err, "failed to create topic for hash %s", hash)
 	}
 
 	s.cache(t)
 	return t.ID, true, nil
 }
 
-// BatchAdd adds multiple topics and returns count of newly added.
+// BatchAdd adds absent topics in batch and returns the number of new added.
 func (s *TopicStore) BatchAdd(hashes map[string]bool) (int, error) {
 	var newTopics []Topic
+
+	// Skip topics that already exists
 	for h := range hashes {
 		_, ok, err := s.GetID(h)
 		if err != nil {
-			return 0, errors.WithMessage(err, "failed to get topic by hash")
+			return 0, errors.WithMessage(err, "failed to get topic id by hash")
 		}
 
 		if !ok {
@@ -121,12 +125,14 @@ func (s *TopicStore) BatchAdd(hashes map[string]bool) (int, error) {
 		return 0, nil
 	}
 
+	// create in batch
 	if err := s.db.Create(&newTopics).Error; err != nil {
-		return 0, err
+		return 0, errors.WithMessage(err, "failed to batch create topics")
 	}
 
-	logrus.WithField("count", len(newTopics)).Debug("Added new topics to db")
+	logrus.WithField("newTopics", newTopics).Debug("Succeeded to add new topics into db")
 
+	// update cache
 	for i := range newTopics {
 		s.cache(&newTopics[i])
 	}

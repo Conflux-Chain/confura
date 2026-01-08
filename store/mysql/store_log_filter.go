@@ -79,6 +79,9 @@ type LogFilter struct {
 
 	// event hash and indexed data 1, 2, 3
 	Topics []store.VariadicValue
+
+	// whether to skip topic0 filter when applying topics filter
+	SkipTopic0 bool
 }
 
 // calculateQuerySetSize estimates the number of event logs matching the log filter, ignoring topics.
@@ -195,7 +198,7 @@ func (filter *LogFilter) validateCount(db *gorm.DB) error {
 		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
 		Order("bn ASC").
 		Offset(int(store.MaxLogLimit))
-	db = applyTopicsFilter(db, filter.Topics)
+	db = applyTopicsFilter(db, filter.Topics, filter.SkipTopic0)
 
 	// fetch info on the first block exceeding `store.MaxLogLimit`
 	var exceedingBlock struct{ Bn, Epoch uint64 }
@@ -219,7 +222,11 @@ func (filter *LogFilter) validateCount(db *gorm.DB) error {
 }
 
 func (filter *LogFilter) hasTopicsFilter() bool {
-	for _, v := range filter.Topics {
+	for i, v := range filter.Topics {
+		if i == 0 && filter.SkipTopic0 {
+			continue
+		}
+
 		if !v.IsNull() {
 			return true
 		}
@@ -237,7 +244,7 @@ func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr int
 
 	db = db.Table(filter.TableName)
 	db = db.Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
-	db = applyTopicsFilter(db, filter.Topics)
+	db = applyTopicsFilter(db, filter.Topics, filter.SkipTopic0)
 	db = db.Order("bn ASC")
 	db = db.Limit(int(store.MaxLogLimit) + 1)
 

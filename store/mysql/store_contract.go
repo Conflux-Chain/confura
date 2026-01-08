@@ -92,6 +92,10 @@ func (cs *ContractStore) GetContractById(cid uint64) (*Contract, bool, error) {
 	return cs.enforceCache("id = ?", cid)
 }
 
+func (cs *ContractStore) GetContractByAddr(addr string) (*Contract, bool, error) {
+	return cs.enforceCache("address = ?", addr)
+}
+
 // AddContractIfAbsent add new contract if absent. Note, this method is thread unsafe.
 // Generally, it is used by data sync thread.
 func (cs *ContractStore) AddContractIfAbsent(address string) (uint64, bool, error) {

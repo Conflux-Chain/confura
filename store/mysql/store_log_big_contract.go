@@ -57,8 +57,9 @@ func newBigContractLogStore[T store.ChainData](
 	notifyChan chan<- *bnPartition,
 ) *bigContractLogStore[T] {
 	return &bigContractLogStore[T]{
+		cs: cs, ebms: ebms, ails: ails,
 		bnPartitionedStore:    newBnPartitionedStore(db),
-		bnPartitionNotifyChan: notifyChan, cs: cs, ebms: ebms, ails: ails,
+		bnPartitionNotifyChan: notifyChan,
 	}
 }
 
@@ -70,18 +71,13 @@ func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T) (map[uint64
 	contract2BnPartitions := make(map[uint64]bnPartition)
 
 	for caddr := range contractAddrs {
-		cid, _, err := bcls.cs.GetContractIdByAddress(caddr)
+		contract, ok, err := bcls.cs.GetContractByAddr(caddr)
 		if err != nil {
-			return nil, errors.WithMessage(err, "failed to get contract id by addr")
-		}
-
-		contract, ok, err := bcls.cs.GetContractById(cid)
-		if err != nil {
-			return nil, errors.WithMessage(err, "failed to get contract by id")
+			return nil, errors.WithMessage(err, "failed to get contract by address")
 		}
 
 		if !ok {
-			return nil, errors.WithMessage(store.ErrNotFound, "contract not found")
+			return nil, errors.New("contract not found")
 		}
 
 		if contract.LogCount < thresholdBigContractLogCount {
@@ -154,7 +150,7 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 			}
 
 			// delete from address indexed log table
-			delRes := dbTx.Table(aiTableName).Where("id IN (?)", deleteIds).Delete(&contractLog{})
+			delRes := dbTx.Table(aiTableName).Where("id IN (?)", deleteIds).Delete(nil)
 			if err := delRes.Error; err != nil {
 				return errors.WithMessage(err, "failed to delete address indexed log")
 			}
@@ -219,10 +215,13 @@ func (bcls *bigContractLogStore[T]) Add(
 			bnMin, bnMax = min(bnMin, bn), max(bnMax, bn)
 
 			for _, tx := range block.Transactions() {
-				receipt := receipts[tx.Hash()]
+				// Skip transactions that is unexecuted in block.
+				if !tx.Executed() {
+					continue
+				}
 
-				// Skip transactions that unexecuted in block.
-				if receipt == nil || !tx.Executed() {
+				receipt, ok := receipts[tx.Hash()]
+				if !ok {
 					continue
 				}
 
@@ -315,8 +314,6 @@ func (bcls *bigContractLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error
 			continue
 		}
 
-		totalRowsAffected := int64(0)
-
 		for i := len(partitions) - 1; i >= 0; i-- {
 			partition := partitions[i]
 			tblName := bcls.getPartitionedTableName(contractTabler, partition.Index)
@@ -331,13 +328,6 @@ func (bcls *bigContractLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error
 			if err != nil {
 				return errors.WithMessage(err, "failed to delta update partition size")
 			}
-
-			totalRowsAffected += res.RowsAffected
-		}
-
-		// update contract statistics (log count and latest updated epoch).
-		if err := bcls.cs.UpdateContractStats(dbTx, contract.ID, int(-totalRowsAffected), epochUntil); err != nil {
-			return errors.WithMessage(err, "failed to update contract statistics")
 		}
 	}
 
@@ -348,12 +338,8 @@ func (bcls *bigContractLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error
 func (bcls *bigContractLogStore[T]) IsBigContract(cid uint64) (bool, error) {
 	contractEntity := bcls.contractEntity(cid)
 	partition, existed, err := bcls.oldestPartition(contractEntity)
-	if err != nil {
-		return false, errors.WithMessage(err, "failed to check contract partition")
-	}
-
-	if !existed {
-		return false, nil
+	if err != nil || !existed {
+		return false, errors.WithMessage(err, "failed to get oldest partition")
 	}
 
 	// regarded as big contract with the following two cases:
