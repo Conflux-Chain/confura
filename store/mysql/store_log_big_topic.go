@@ -94,15 +94,15 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 
 		topic2Partitions[topic0.ID] = partition
 
-		// contract is considered as migrated already for the following cases:
+		// Topic is considered as migrated already for the following cases:
 		// 1. write partition is not the initial one;
 		// 2. write partition is the initial one but has data already.
 		if !partition.IsInitial() || partition.Count > 0 {
 			continue
 		}
 
-		// Migrate event logs of new big topic to separate log table partition.
-		// We assume the possibility of migration for more than one big topic
+		// Migrate event logs of new big topic to a dedicated log table partition.
+		// We assume the possibility of migration for more than one big topics
 		// at the same time is very small, otherwise the migration process might
 		// collapse the sync progress.
 		if err := btls.migrate(topic0, partition); err != nil {
@@ -310,10 +310,10 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 
 	// delete event logs for all possible topics.
 	for _, topic := range topics {
-		topicEntity := btls.topicEntity(topic.ID)
-		topicTabler := btls.topicTabler(topic.ID)
+		tlEntity := btls.topicEntity(topic.ID)
+		tlTabler := btls.topicTabler(topic.ID)
 
-		partitions, existed, err := btls.shrinkBnRange(dbTx, topicEntity, e2bmap.BnMin)
+		partitions, existed, err := btls.shrinkBnRange(dbTx, tlEntity, e2bmap.BnMin)
 		if err != nil {
 			return errors.WithMessage(err, "failed to shrink partition bn range")
 		}
@@ -324,7 +324,7 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 
 		for i := len(partitions) - 1; i >= 0; i-- {
 			partition := partitions[i]
-			tblName := btls.getPartitionedTableName(topicTabler, partition.Index)
+			tblName := btls.getPartitionedTableName(tlTabler, partition.Index)
 
 			res := dbTx.Table(tblName).Where("bn >= ?", e2bmap.BnMin).Delete(nil)
 			if res.Error != nil {
@@ -332,7 +332,7 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 			}
 
 			// update partition data count
-			err = btls.deltaUpdateCount(dbTx, topicEntity, int(partition.Index), -int(res.RowsAffected))
+			err = btls.deltaUpdateCount(dbTx, tlEntity, int(partition.Index), -int(res.RowsAffected))
 			if err != nil {
 				return errors.WithMessage(err, "failed to delta update partition size")
 			}
@@ -342,7 +342,7 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	return nil
 }
 
-// IsBigTopic check if the topic is big topic or not.
+// IsBigTopic check if the topic is a big topic managed by this store.
 func (btls *bigTopicLogStore[T]) IsBigTopic(tid uint64) (bool, error) {
 	partition, existed, err := btls.oldestPartition(btls.topicEntity(tid))
 	if err != nil || !existed {
@@ -356,9 +356,13 @@ func (btls *bigTopicLogStore[T]) IsBigTopic(tid uint64) (bool, error) {
 }
 
 // GetTopicLogs queries logs for a specific big topic with specified filter.
-func (btls *bigTopicLogStore[T]) GetTopicLogs(ctx context.Context, tid uint64, storeFilter store.LogFilter) ([]*store.Log, error) {
-	bnRange := types.RangeUint64{From: storeFilter.BlockFrom, To: storeFilter.BlockTo}
-	partitions, _, err := btls.searchPartitions(btls.topicEntity(tid), bnRange)
+func (btls *bigTopicLogStore[T]) GetTopicLogs(
+	ctx context.Context, tid uint64, storeFilter store.LogFilter) ([]*store.Log, error) {
+
+	partitions, _, err := btls.searchPartitions(btls.topicEntity(tid), types.RangeUint64{
+		From: storeFilter.BlockFrom,
+		To:   storeFilter.BlockTo,
+	})
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to search partitions")
 	}
