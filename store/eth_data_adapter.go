@@ -183,6 +183,6 @@ func (a EthLogAdapter) Data() []byte {
 	return a.Log.Data
 }
 
-func (a EthLogAdapter) AsStoreLog(cid uint64) *Log {
-	return ParseEthLog(a.Log, cid, a.Log.BlockNumber)
+func (a EthLogAdapter) AsStoreLog() *Log {
+	return ParseEthLog(a.Log)
 }

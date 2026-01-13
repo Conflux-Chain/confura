@@ -14,7 +14,6 @@ import (
 
 type Log struct {
 	ID          uint64
-	ContractID  uint64
 	BlockNumber uint64
 	Epoch       uint64
 	Topic0      string
@@ -67,9 +66,8 @@ type cfxLogExtra struct {
 	Data                hexutil.Bytes      `json:"data,omitempty"`
 }
 
-func ParseCfxLog(log *types.Log, cid, bn uint64) *Log {
+func ParseCfxLog(log *types.Log, bn uint64) *Log {
 	return &Log{
-		ContractID:  cid,
 		BlockNumber: bn,
 		Epoch:       log.EpochNumber.ToInt().Uint64(),
 		Topic0:      getTopic(log.Topics, 0),
@@ -126,11 +124,10 @@ type ethLogExtra struct {
 	BlockTimestamp      uint64         `json:"bts,omitempty"`
 }
 
-func ParseEthLog(log *web3go.Log, cid, bn uint64) *Log {
+func ParseEthLog(log *web3go.Log) *Log {
 	return &Log{
-		ContractID:  cid,
-		BlockNumber: bn,
-		Epoch:       bn,
+		BlockNumber: log.BlockNumber,
+		Epoch:       log.BlockNumber,
 		Topic0:      getTopic(log.Topics, 0),
 		Topic1:      getTopic(log.Topics, 1),
 		Topic2:      getTopic(log.Topics, 2),

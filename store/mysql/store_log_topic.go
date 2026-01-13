@@ -14,14 +14,14 @@ import (
 // For high-frequency topics (e.g., Transfer) are typically stored in separate special tables.
 type TopicIndexedLog struct {
 	ID          uint64
-	TopicID     uint64 `gorm:"column:tid;not null;index:idx_tid_bn,priority:1"` // topic0 id
 	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_tid_bn,priority:2"`
-	Epoch       uint64 `gorm:"not null;index"` // to support pop logs when reorg
+	Epoch       uint64 `gorm:"not null;index"`                                  // to support pop logs when reorg
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn,priority:1"` // topic0 id
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
 	LogIndex    uint64 `gorm:"not null"`
-	Extra       []byte `gorm:"type:mediumText"` // extension json field
+	Extra       []byte `gorm:"type:MEDIUMBLOB"` // extension json field
 }
 
 func (TopicIndexedLog) TableName() string {
@@ -91,15 +91,14 @@ func (s *TopicIndexedLogStore[T]) Add(tx *gorm.DB, dataSlice []T, bigTopicIDs ma
 						continue
 					}
 
-					slog := log.AsStoreLog(0)
-					slog.BlockNumber = bn
+					slog := log.AsStoreLog()
 
 					// Assign to partition
 					p := s.getPartitionByHash(topics[0])
 					logsByPartition[p] = append(logsByPartition[p], &TopicIndexedLog{
-						TopicID:     tid,
-						BlockNumber: slog.BlockNumber,
-						Epoch:       slog.Epoch,
+						BlockNumber: bn,
+						Epoch:       epoch,
+						Topic0ID:    tid,
 						Topic1:      slog.Topic1,
 						Topic2:      slog.Topic2,
 						Topic3:      slog.Topic3,
@@ -182,11 +181,24 @@ func (s *TopicIndexedLogStore[T]) DeleteTopicIndexedLogs(tx *gorm.DB, fromEpoch,
 // GetTpoicIndexedLogs executes the filter query against the correct partition table.
 func (s *TopicIndexedLogStore[T]) GetTopicIndexedLogs(
 	ctx context.Context,
-	f TopicIndexedLogFilter,
+	tid uint64,
 	topic string,
+	sfilter store.LogFilter,
 ) ([]*TopicIndexedLog, error) {
-	f.TableName = s.GetPartitionedTableName(topic)
-	return f.Find(ctx, s.db)
+	filter := LogFilter{
+		TableName: s.GetPartitionedTableName(topic),
+		BlockFrom: sfilter.BlockFrom,
+		BlockTo:   sfilter.BlockTo,
+		Topics:    store.ToVariadicValuers(sfilter.Topics...),
+		Schema:    &SecondaryOnlyTopicSchema,
+	}
+
+	topicFilter := TopicIndexedLogFilter{filter, tid}
+	topicLogs, err := topicFilter.Find(ctx, s.db)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get topic indexed logs")
+	}
+	return topicLogs, nil
 }
 
 // GetPartitionedTableName returns the physical table name for a given topic hash.

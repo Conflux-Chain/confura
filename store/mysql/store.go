@@ -54,8 +54,9 @@ type MysqlStore[T store.ChainData] struct {
 func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.ChainDataFilter) *MysqlStore[T] {
 	pruner := newStorePruner(db)
 	cs := NewContractStore(db)
+	ts := NewTopicStore(db)
 	ebms := newEpochBlockMapStore[T](db, config)
-	ails := NewAddressIndexedLogStore[T](db, cs, config.AddressIndexedLogPartitions)
+	ails := NewAddressIndexedLogStore[T](db, cs, ts, config.AddressIndexedLogPartitions)
 
 	return &MysqlStore[T]{
 		epochBlockMapStore: ebms,
@@ -64,7 +65,7 @@ func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.
 		txStore:            newTxStore[T](db),
 		blockStore:         newBlockStore[T](db),
 		ls:                 newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
-		bcls:               newBigContractLogStore(db, cs, ebms, ails, pruner.newBnPartitionObsChan),
+		bcls:               newBigContractLogStore(db, cs, ts, ebms, ails, pruner.newBnPartitionObsChan),
 		ails:               ails,
 		cs:                 cs,
 		config:             config,
@@ -290,18 +291,12 @@ func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilte
 		return ms.ls.GetLogs(ctx, storeFilter)
 	}
 
-	filter := LogFilter{
-		BlockFrom: storeFilter.BlockFrom,
-		BlockTo:   storeFilter.BlockTo,
-		Topics:    storeFilter.Topics,
-	}
-
 	var result []*store.Log
 	for _, addr := range contracts {
 		// convert contract address to id
 		cid, exists, err := ms.cs.GetContractIdByAddress(addr)
 		if err != nil {
-			return nil, err
+			return nil, errors.WithMessage(err, "failed to get contract id")
 		}
 
 		if !exists {
@@ -339,19 +334,9 @@ func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilte
 		}
 
 		// query from address indexed logs
-		addrFilter := AddressIndexedLogFilter{
-			LogFilter:  filter,
-			ContractId: cid,
-		}
-
-		logs, err := ms.ails.GetAddressIndexedLogs(ctx, addrFilter, addr)
+		result, err := ms.ails.GetAddressIndexedLogs(ctx, cid, addr, storeFilter)
 		if err != nil {
 			return nil, err
-		}
-
-		// convert to common store log
-		for _, v := range logs {
-			result = append(result, (*store.Log)(v))
 		}
 
 		// check log count

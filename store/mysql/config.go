@@ -112,7 +112,7 @@ func (config *Config) MustOpenOrCreate() *gorm.DB {
 		}
 
 		if config.AddressIndexedLogEnabled {
-			ls := NewAddressIndexedLogStore[store.ChainData](db, NewContractStore(db), config.AddressIndexedLogPartitions)
+			ls := NewAddressIndexedLogStore[store.ChainData](db, NewContractStore(db), NewTopicStore(db), config.AddressIndexedLogPartitions)
 			if _, err := ls.CreatePartitionedTables(); err != nil {
 				logrus.WithError(err).
 					WithField("partitions", config.AddressIndexedLogPartitions).

@@ -28,7 +28,7 @@ type VirtualFilterLog struct {
 	Topic2          string `gorm:"size:66"`
 	Topic3          string `gorm:"size:66"`
 	LogIndex        uint64 `gorm:"not null"`
-	JsonRepr        []byte `gorm:"type:mediumText"` // marshalled json representation
+	JsonRepr        []byte `gorm:"type:MEDIUMBLOB"` // marshalled json representation
 	IsDel           bool   `gorm:"default:false"`   // soft delete flag
 
 	fid string `gorm:"-"` // virtual filter ID
@@ -48,12 +48,12 @@ type vfLogFilter struct {
 	LogFilter
 
 	BlockHashes []string
-	Contracts   store.VariadicValue
+	Contracts   store.VariadicValue[string]
 }
 
 func (filter *vfLogFilter) validateCount(db *gorm.DB) error {
 	db = db.Where("is_del <> ?", true)
-	db = applyContractFilter(db, filter.Contracts)
+	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
 
 	if len(filter.BlockHashes) > 0 {
 		db = db.Where("bh IN (?)", filter.BlockHashes)
@@ -77,7 +77,7 @@ func (filter *vfLogFilter) Find(db *gorm.DB) ([]VirtualFilterLog, error) {
 	}
 
 	db = applyTopicsFilter(db, filter.Topics)
-	db = applyContractFilter(db, filter.Contracts)
+	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
 
 	var result []VirtualFilterLog
 	if err := db.Find(&result).Error; err != nil {
@@ -200,7 +200,9 @@ func (vfls *VirtualFilterLogStore) GetLogs(
 
 	filter := &vfLogFilter{
 		LogFilter: LogFilter{
-			BlockFrom: sfilter.BlockFrom, BlockTo: sfilter.BlockTo, Topics: sfilter.Topics,
+			BlockFrom: sfilter.BlockFrom,
+			BlockTo:   sfilter.BlockTo,
+			Topics:    store.ToVariadicValuers(sfilter.Topics...),
 		},
 		Contracts:   sfilter.Contracts,
 		BlockHashes: blockHashes,

@@ -23,18 +23,18 @@ const (
 // topicLog represents a log entry stored in a dedicated topic table.
 type topicLog struct {
 	ID          uint64
-	TopicID     uint64 `gorm:"-"` // not persisted, used for table naming
 	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn"`
 	Epoch       uint64 `gorm:"not null"`
+	Topic0ID    uint64 `gorm:"-"` // topic0 id (not persisted, used for table naming)
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
 	LogIndex    uint64 `gorm:"not null"`
-	Extra       []byte `gorm:"type:mediumText"` // extension json field
+	Extra       []byte `gorm:"type:MEDIUMBLOB"` // extension json field
 }
 
 func (l topicLog) TableName() string {
-	return fmt.Sprintf("tlogs_%d", l.TopicID)
+	return fmt.Sprintf("tlogs_%d", l.Topic0ID)
 }
 
 // bigTopicLogStore manages partitioned storage for topics with large log volumes.
@@ -188,12 +188,12 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 
 // topicEntity gets partition entity for dedicated topic logs table
 func (bcls *bigTopicLogStore[T]) topicEntity(tid uint64) string {
-	return topicLog{TopicID: tid}.TableName()
+	return topicLog{Topic0ID: tid}.TableName()
 }
 
 // topicTabler get partition tabler for dedicated topic logs table
 func (bcls *bigTopicLogStore[T]) topicTabler(tid uint64) *topicLog {
-	return &topicLog{TopicID: tid}
+	return &topicLog{Topic0ID: tid}
 }
 
 func (btls *bigTopicLogStore[T]) Add(dbTx *gorm.DB, dataSlice []T, topic2BnPartitions map[uint64]bnPartition) error {
@@ -234,13 +234,12 @@ func (btls *bigTopicLogStore[T]) Add(dbTx *gorm.DB, dataSlice []T, topic2BnParti
 						continue
 					}
 
-					slog := log.AsStoreLog(0)
-					slog.BlockNumber = bn
+					slog := log.AsStoreLog()
 
 					topic2Logs[tid] = append(topic2Logs[tid], &topicLog{
-						TopicID:     tid,
-						BlockNumber: slog.BlockNumber,
-						Epoch:       slog.Epoch,
+						Topic0ID:    tid,
+						BlockNumber: bn,
+						Epoch:       data.Number(),
 						Topic1:      slog.Topic1,
 						Topic2:      slog.Topic2,
 						Topic3:      slog.Topic3,
@@ -357,7 +356,11 @@ func (btls *bigTopicLogStore[T]) IsBigTopic(tid uint64) (bool, error) {
 
 // GetTopicLogs queries logs for a specific big topic with specified filter.
 func (btls *bigTopicLogStore[T]) GetTopicLogs(
-	ctx context.Context, tid uint64, storeFilter store.LogFilter) ([]*store.Log, error) {
+	ctx context.Context,
+	tid uint64,
+	topic string,
+	storeFilter store.LogFilter,
+) ([]*store.Log, error) {
 
 	partitions, _, err := btls.searchPartitions(btls.topicEntity(tid), types.RangeUint64{
 		From: storeFilter.BlockFrom,
@@ -367,16 +370,11 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 		return nil, errors.WithMessage(err, "failed to search partitions")
 	}
 
-	topic0, _, err := btls.ts.GetHash(tid)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to get topic0 hash")
-	}
-
 	filter := LogFilter{
-		BlockFrom:  storeFilter.BlockFrom,
-		BlockTo:    storeFilter.BlockTo,
-		Topics:     storeFilter.Topics,
-		SkipTopic0: true,
+		BlockFrom: storeFilter.BlockFrom,
+		BlockTo:   storeFilter.BlockTo,
+		Topics:    store.ToVariadicValuers(storeFilter.Topics...),
+		Schema:    &SecondaryOnlyTopicSchema,
 	}
 
 	var result []*store.Log
@@ -402,7 +400,7 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 			result = append(result, &store.Log{
 				BlockNumber: v.BlockNumber,
 				Epoch:       v.Epoch,
-				Topic0:      topic0,
+				Topic0:      topic,
 				Topic1:      v.Topic1,
 				Topic2:      v.Topic2,
 				Topic3:      v.Topic3,
