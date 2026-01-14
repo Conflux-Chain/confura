@@ -21,10 +21,9 @@ var (
 
 func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.TraceType, cfxTraceAction interface{}) *types.LocalizedTrace {
 	// transaction position
-	var txPos *hexutil.Uint64
+	var txPos hexutil.Uint64
 	if ethTrace.TransactionPosition != nil {
-		txPosU64 := hexutil.Uint64(*ethTrace.TransactionPosition)
-		txPos = &txPosU64
+		txPos = hexutil.Uint64(*ethTrace.TransactionPosition)
 	}
 
 	var valid bool
@@ -38,11 +37,11 @@ func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.Trace
 		Action:              cfxTraceAction,
 		Valid:               valid,
 		Type:                cfxTraceType,
-		EpochHash:           ConvertHashNullable(&ethTrace.BlockHash),
-		EpochNumber:         types.NewBigInt(ethTrace.BlockNumber),
-		BlockHash:           ConvertHashNullable(&ethTrace.BlockHash),
+		EpochHash:           types.Hash(ethTrace.BlockHash.Hex()),
+		EpochNumber:         *types.NewBigInt(ethTrace.BlockNumber),
+		BlockHash:           types.Hash(ethTrace.BlockHash.Hex()),
 		TransactionPosition: txPos,
-		TransactionHash:     ConvertHashNullable(ethTrace.TransactionHash),
+		TransactionHash:     types.Hash(ethTrace.TransactionHash.Hex()),
 	}
 }
 
