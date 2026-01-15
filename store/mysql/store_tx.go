@@ -34,7 +34,7 @@ func newTx(
 	rcptExtra *store.ReceiptExtra, skipTx, skipReceipt bool,
 ) *transaction {
 	result := &transaction{
-		Epoch: uint64(*receipt.EpochNumber),
+		Epoch: uint64(receipt.EpochNumber),
 		Hash:  tx.Hash.String(),
 	}
 

@@ -281,7 +281,7 @@ func ConvertReceipt(receipt *ethTypes.Receipt, ethNetworkId uint32) *types.Trans
 		TransactionHash:         types.Hash(receipt.TransactionHash.Hex()),
 		Index:                   hexutil.Uint64(receipt.TransactionIndex),
 		BlockHash:               types.Hash(receipt.BlockHash.Hex()),
-		EpochNumber:             types.NewUint64(receipt.BlockNumber),
+		EpochNumber:             *types.NewUint64(receipt.BlockNumber),
 		From:                    ConvertAddress(receipt.From, ethNetworkId),
 		To:                      ConvertAddressNullable(receipt.To, ethNetworkId),
 		GasUsed:                 types.NewBigInt(receipt.GasUsed),

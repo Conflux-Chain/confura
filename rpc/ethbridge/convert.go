@@ -253,7 +253,7 @@ func ConvertReceipt(value *cfxtypes.TransactionReceipt, rcptExtra *store.Receipt
 
 	receipt := &types.Receipt{
 		BlockHash:         ConvertHash(value.BlockHash),
-		BlockNumber:       uint64(*value.EpochNumber),
+		BlockNumber:       uint64(value.EpochNumber),
 		ContractAddress:   contractAddr,
 		CumulativeGasUsed: cumulativeGasUsed,
 		EffectiveGasPrice: value.EffectiveGasPrice.ToInt(),
