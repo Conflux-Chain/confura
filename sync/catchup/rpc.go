@@ -167,7 +167,7 @@ func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEp
 			txnReceipt, ok := epochData.Receipts[*txnHash]
 			if !ok {
 				txnReceipt = &cfxTypes.TransactionReceipt{
-					EpochNumber:     (*hexutil.Uint64)(&epochNum),
+					EpochNumber:     (hexutil.Uint64)(epochNum),
 					BlockHash:       *blockHash,
 					TransactionHash: *txnHash,
 				}

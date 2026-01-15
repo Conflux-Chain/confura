@@ -153,7 +153,8 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 	var epochReceipts [][]types.TransactionReceipt
 	if anyBlockExecuted && useBatch {
 		// Batch get epoch receipts.
-		epochReceipts, err = cfx.GetEpochReceiptsByPivotBlockHash(pivotHash)
+		epochHash := types.NewEpochOrBlockHashWithBlockHash(pivotHash, true)
+		epochReceipts, err = cfx.GetEpochReceipts(*epochHash)
 		if checkPivotSwitchWithError(err) {
 			logger.WithError(err).Info(
 				"Failed to get epoch receipts with pivot assumption (regarded as pivot switch)",
@@ -237,7 +238,7 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 			logs := make([]types.Log, 0, len(receipt.Logs))
 			for _, log := range receipt.Logs {
 				log.BlockHash = &receipt.BlockHash
-				log.EpochNumber = types.NewBigInt(uint64(*receipt.EpochNumber))
+				log.EpochNumber = types.NewBigInt(uint64(receipt.EpochNumber))
 				log.TransactionHash = &receipt.TransactionHash
 				log.TransactionIndex = types.NewBigInt(uint64(receipt.Index))
 				log.LogIndex = types.NewBigInt(logIndex)
@@ -295,7 +296,7 @@ func validateTxsReceipt(
 	block *types.Block, tx *types.Transaction,
 ) error {
 	// Check receipt epoch number
-	rcptEpochNumber := uint64(*receipt.EpochNumber)
+	rcptEpochNumber := uint64(receipt.EpochNumber)
 	if rcptEpochNumber != epochNumber {
 		errMsg := fmt.Sprintf(
 			"epoch number mismatched, expect %v got %v", epochNumber, rcptEpochNumber,
