@@ -96,17 +96,9 @@ func (ls *AddressIndexedLogStore[T]) convertToPartitionedLogs(
 				}
 
 				slog := v.AsStoreLog()
-
-				var topic0Id uint64
-				if slog.Topic0 != "" {
-					tid, ok, err := ls.ts.GetID(slog.Topic0)
-					if err != nil {
-						return nil, nil, errors.WithMessage(err, "failed to get topic id")
-					}
-					if !ok {
-						return nil, nil, errors.Errorf("topic id not found for topic0 %s", slog.Topic0)
-					}
-					topic0Id = tid
+				tid, err := resolveTopic0ID(ls.ts, slog.Topic0)
+				if err != nil {
+					return nil, nil, errors.WithMessagef(err, "failed to resolve id for topic %s", slog.Topic0)
 				}
 
 				partition := ls.getPartitionByAddress(v.Address())
@@ -114,7 +106,7 @@ func (ls *AddressIndexedLogStore[T]) convertToPartitionedLogs(
 					ContractID:  cid,
 					BlockNumber: bn,
 					Epoch:       slog.Epoch,
-					Topic0ID:    topic0Id,
+					Topic0ID:    tid,
 					Topic1:      slog.Topic1,
 					Topic2:      slog.Topic2,
 					Topic3:      slog.Topic3,
@@ -263,16 +255,9 @@ func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 
 	var result []*store.Log
 	for _, v := range addrLogs {
-		var topic0 string
-		if v.Topic0ID != 0 {
-			t0, ok, err := ls.ts.GetHash(v.Topic0ID)
-			if err != nil {
-				return nil, errors.WithMessage(err, "failed to get topic0 by id")
-			}
-			if !ok {
-				return nil, errors.Errorf("topic0 not found for id %v", v.Topic0ID)
-			}
-			topic0 = t0
+		topic0, err := resolveTopic0Hash(ls.ts, v.Topic0ID)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
 		}
 
 		result = append(result, &store.Log{
@@ -317,4 +302,34 @@ func normalizeTopicsToIDs(
 		}
 	}
 	return store.NewVariadicValue(tids...), nil
+}
+
+func resolveTopic0ID(ts *TopicStore, topic0 string) (uint64, error) {
+	if topic0 == "" {
+		return 0, nil
+	}
+
+	tid, ok, err := ts.GetID(topic0)
+	if err != nil {
+		return 0, errors.WithMessage(err, "failed to get topic id")
+	}
+	if !ok {
+		return 0, errors.Errorf("topic id not found for topic0 %s", topic0)
+	}
+	return tid, nil
+}
+
+func resolveTopic0Hash(ts *TopicStore, topic0ID uint64) (string, error) {
+	if topic0ID == 0 {
+		return "", nil
+	}
+
+	hash, ok, err := ts.GetHash(topic0ID)
+	if err != nil {
+		return "", errors.WithMessage(err, "failed to get topic0 by id")
+	}
+	if !ok {
+		return "", errors.Errorf("topic0 not found for id %v", topic0ID)
+	}
+	return hash, nil
 }

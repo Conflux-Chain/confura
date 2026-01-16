@@ -239,23 +239,15 @@ func (bcls *bigContractLogStore[T]) Add(
 					}
 
 					slog := log.AsStoreLog()
-
-					var topic0Id uint64
-					if slog.Topic0 != "" {
-						tid, ok, err := bcls.ts.GetID(slog.Topic0)
-						if err != nil {
-							return errors.WithMessage(err, "failed to get topic id")
-						}
-						if !ok {
-							return errors.Errorf("topic id not found for topic0 %s", slog.Topic0)
-						}
-						topic0Id = tid
+					tid, err := resolveTopic0ID(bcls.ts, slog.Topic0)
+					if err != nil {
+						return errors.WithMessagef(err, "failed to resolve id for topic %s", slog.Topic0)
 					}
 
 					contract2Logs[cid] = append(contract2Logs[cid], &contractLog{
 						BlockNumber: bn,
 						Epoch:       data.Number(),
-						Topic0ID:    topic0Id,
+						Topic0ID:    tid,
 						Topic1:      slog.Topic1,
 						Topic2:      slog.Topic2,
 						Topic3:      slog.Topic3,
@@ -424,16 +416,9 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 
 		// convert to common store log
 		for _, v := range clogs {
-			var topic0 string
-			if v.Topic0ID != 0 {
-				t0, existed, err := bcls.ts.GetHash(v.Topic0ID)
-				if err != nil {
-					return nil, errors.WithMessage(err, "failed to get topic0 by id")
-				}
-				if !existed {
-					return nil, errors.Errorf("topic not found with id %v", v.Topic0ID)
-				}
-				topic0 = t0
+			topic0, err := resolveTopic0Hash(bcls.ts, v.Topic0ID)
+			if err != nil {
+				return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
 			}
 
 			result = append(result, &store.Log{
