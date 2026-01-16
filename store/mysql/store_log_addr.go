@@ -15,10 +15,10 @@ import (
 
 type AddressIndexedLog struct {
 	ID          uint64
-	ContractID  uint64 `gorm:"column:cid;size:64;not null;index:idx_cid_bn,priority:1"`
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_cid_bn,priority:2"`
+	ContractID  uint64 `gorm:"column:cid;not null;index:idx_cid_bn,priority:1;index:idx_cid_tid_bn,priority:1"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_cid_bn,priority:2;index:idx_cid_tid_bn,priority:3"`
 	Epoch       uint64 `gorm:"not null;index"` // to support pop logs when reorg
-	Topic0      string `gorm:"size:66;not null"`
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_cid_tid_bn,priority:2"`
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
@@ -34,17 +34,16 @@ func (AddressIndexedLog) TableName() string {
 type AddressIndexedLogStore[T store.ChainData] struct {
 	partitionedStore
 	db         *gorm.DB
+	ts         *TopicStore
 	cs         *ContractStore
 	model      AddressIndexedLog
 	partitions uint32
 }
 
-func NewAddressIndexedLogStore[T store.ChainData](db *gorm.DB, cs *ContractStore, partitions uint32) *AddressIndexedLogStore[T] {
-	return &AddressIndexedLogStore[T]{
-		db:         db,
-		cs:         cs,
-		partitions: partitions,
-	}
+func NewAddressIndexedLogStore[T store.ChainData](
+	db *gorm.DB, cs *ContractStore, ts *TopicStore, partitions uint32,
+) *AddressIndexedLogStore[T] {
+	return &AddressIndexedLogStore[T]{db: db, cs: cs, ts: ts, partitions: partitions}
 }
 
 // CreatePartitionedTables initializes partitioned tables.
@@ -96,11 +95,24 @@ func (ls *AddressIndexedLogStore[T]) convertToPartitionedLogs(
 					continue
 				}
 
-				slog := v.AsStoreLog(cid)
-				slog.BlockNumber = bn
+				slog := v.AsStoreLog()
+				tid, err := resolveTopic0ID(ls.ts, slog.Topic0)
+				if err != nil {
+					return nil, nil, errors.WithMessagef(err, "failed to resolve id for topic %s", slog.Topic0)
+				}
 
 				partition := ls.getPartitionByAddress(v.Address())
-				partition2Logs[partition] = append(partition2Logs[partition], (*AddressIndexedLog)(slog))
+				partition2Logs[partition] = append(partition2Logs[partition], &AddressIndexedLog{
+					ContractID:  cid,
+					BlockNumber: bn,
+					Epoch:       slog.Epoch,
+					Topic0ID:    tid,
+					Topic1:      slog.Topic1,
+					Topic2:      slog.Topic2,
+					Topic3:      slog.Topic3,
+					LogIndex:    slog.LogIndex,
+					Extra:       slog.Extra,
+				})
 
 				contract2LogCount[cid]++
 			}
@@ -214,11 +226,53 @@ func (ls *AddressIndexedLogStore[T]) DeleteAddressIndexedLogs(dbTx *gorm.DB, epo
 // GetAddressIndexedLogs returns event logs for the specified filter.
 func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 	ctx context.Context,
-	filter AddressIndexedLogFilter,
+	cid uint64,
 	contract string,
-) ([]*AddressIndexedLog, error) {
-	filter.TableName = ls.GetPartitionedTableName(contract)
-	return filter.Find(ctx, ls.db)
+	sfilter store.LogFilter,
+) ([]*store.Log, error) {
+	filter := LogFilter{
+		TableName: ls.GetPartitionedTableName(contract),
+		BlockFrom: sfilter.BlockFrom,
+		BlockTo:   sfilter.BlockTo,
+		Topics:    store.ToVariadicValuers(sfilter.Topics...),
+		Schema:    &PrimaryIDTopicSchema,
+	}
+
+	// Normalize topic0 hashes to ids
+	if len(sfilter.Topics) > 0 {
+		normalized, err := normalizeTopicsToIDs(ls.ts, sfilter.Topics[0])
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to normalize topic to ids")
+		}
+		filter.Topics[0] = normalized
+	}
+
+	addrFilter := AddressIndexedLogFilter{filter, cid}
+	addrLogs, err := addrFilter.Find(ctx, ls.db)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get address indexed logs")
+	}
+
+	var result []*store.Log
+	for _, v := range addrLogs {
+		topic0, err := resolveTopic0Hash(ls.ts, v.Topic0ID)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
+		}
+
+		result = append(result, &store.Log{
+			BlockNumber: v.BlockNumber,
+			Epoch:       v.Epoch,
+			Topic0:      topic0,
+			Topic1:      v.Topic1,
+			Topic2:      v.Topic2,
+			Topic3:      v.Topic3,
+			LogIndex:    v.LogIndex,
+			Extra:       v.Extra,
+		})
+	}
+
+	return result, nil
 }
 
 // GetPartitionedTableName returns partitioned table name with specified
@@ -226,4 +280,56 @@ func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 func (ls *AddressIndexedLogStore[T]) GetPartitionedTableName(contract string) string {
 	partition := ls.getPartitionByAddress(contract)
 	return ls.getPartitionedTableName(&ls.model, partition)
+}
+
+func normalizeTopicsToIDs(
+	ts *TopicStore,
+	topics store.VariadicValue[string],
+) (res store.VariadicValue[uint64], err error) {
+	hashes := topics.ToSlice()
+	if len(hashes) == 0 {
+		return
+	}
+
+	tids := make([]uint64, 0, len(hashes))
+	for _, topic := range hashes {
+		tid, exists, err := ts.GetID(topic)
+		if err != nil {
+			return res, errors.WithMessagef(err, "failed to get topic id for %s", topic)
+		}
+		if exists {
+			tids = append(tids, tid)
+		}
+	}
+	return store.NewVariadicValue(tids...), nil
+}
+
+func resolveTopic0ID(ts *TopicStore, topic0 string) (uint64, error) {
+	if topic0 == "" {
+		return 0, nil
+	}
+
+	tid, ok, err := ts.GetID(topic0)
+	if err != nil {
+		return 0, errors.WithMessage(err, "failed to get topic id")
+	}
+	if !ok {
+		return 0, errors.Errorf("topic id not found for topic0 %s", topic0)
+	}
+	return tid, nil
+}
+
+func resolveTopic0Hash(ts *TopicStore, topic0ID uint64) (string, error) {
+	if topic0ID == 0 {
+		return "", nil
+	}
+
+	hash, ok, err := ts.GetHash(topic0ID)
+	if err != nil {
+		return "", errors.WithMessage(err, "failed to get topic0 by id")
+	}
+	if !ok {
+		return "", errors.Errorf("topic0 not found for id %v", topic0ID)
+	}
+	return hash, nil
 }

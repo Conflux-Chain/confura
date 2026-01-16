@@ -1,25 +1,43 @@
 package store
 
-import "github.com/Conflux-Chain/go-conflux-sdk/types"
+import (
+	"github.com/Conflux-Chain/go-conflux-sdk/types"
+)
 
-// VariadicValue represents an union value, including null, single value or multiple values.
-type VariadicValue struct {
-	count    int
-	single   string
-	multiple map[string]bool
+type VariadicValuer interface {
+	IsNull() bool
+	Count() int
+	Values() []any
 }
 
-func NewVariadicValue(values ...string) VariadicValue {
+func ToVariadicValuers[T comparable](vals ...VariadicValue[T]) []VariadicValuer {
+	res := make([]VariadicValuer, 0, len(vals))
+	for i := range vals {
+		res = append(res, &vals[i])
+	}
+	return res
+}
+
+// VariadicValue represents an union value, including null, single value or multiple values.
+type VariadicValue[T comparable] struct {
+	count    int
+	single   T
+	multiple map[T]bool
+}
+
+func NewVariadicValue[T comparable](values ...T) VariadicValue[T] {
+	var zero T
+
 	count := len(values)
 	if count == 0 {
-		return VariadicValue{0, "", nil}
+		return VariadicValue[T]{0, zero, nil}
 	}
 
 	if count == 1 {
-		return VariadicValue{1, values[0], nil}
+		return VariadicValue[T]{1, values[0], nil}
 	}
 
-	multiple := make(map[string]bool)
+	multiple := make(map[T]bool)
 
 	for _, v := range values {
 		multiple[v] = true
@@ -27,20 +45,20 @@ func NewVariadicValue(values ...string) VariadicValue {
 
 	count = len(multiple)
 	if count == 1 {
-		return VariadicValue{1, values[0], nil}
+		return VariadicValue[T]{1, values[0], nil}
 	}
 
-	return VariadicValue{count, "", multiple}
+	return VariadicValue[T]{count, zero, multiple}
 }
 
-func newVariadicValueByHashes(hashes []types.Hash) VariadicValue {
+func newVariadicValueByHashes(hashes []types.Hash) VariadicValue[string] {
 	count := len(hashes)
 	if count == 0 {
-		return VariadicValue{0, "", nil}
+		return VariadicValue[string]{0, "", nil}
 	}
 
 	if count == 1 {
-		return VariadicValue{1, hashes[0].String(), nil}
+		return VariadicValue[string]{1, hashes[0].String(), nil}
 	}
 
 	values := make(map[string]bool)
@@ -51,20 +69,20 @@ func newVariadicValueByHashes(hashes []types.Hash) VariadicValue {
 
 	count = len(values)
 	if count == 1 {
-		return VariadicValue{1, hashes[0].String(), nil}
+		return VariadicValue[string]{1, hashes[0].String(), nil}
 	}
 
-	return VariadicValue{count, "", values}
+	return VariadicValue[string]{count, "", values}
 }
 
-func newVariadicValueByAddress(addresses []types.Address) VariadicValue {
+func newVariadicValueByAddress(addresses []types.Address) VariadicValue[string] {
 	count := len(addresses)
 	if count == 0 {
-		return VariadicValue{0, "", nil}
+		return VariadicValue[string]{0, "", nil}
 	}
 
 	if count == 1 {
-		return VariadicValue{1, addresses[0].MustGetBase32Address(), nil}
+		return VariadicValue[string]{1, addresses[0].MustGetBase32Address(), nil}
 	}
 
 	values := make(map[string]bool)
@@ -75,18 +93,18 @@ func newVariadicValueByAddress(addresses []types.Address) VariadicValue {
 
 	count = len(values)
 	if count == 1 {
-		return VariadicValue{1, addresses[0].MustGetBase32Address(), nil}
+		return VariadicValue[string]{1, addresses[0].MustGetBase32Address(), nil}
 	}
 
-	return VariadicValue{count, "", values}
+	return VariadicValue[string]{count, "", values}
 }
 
-func (vv *VariadicValue) ToSlice() []string {
+func (vv *VariadicValue[T]) ToSlice() []T {
 	if vv.count == 1 {
-		return []string{vv.single}
+		return []T{vv.single}
 	}
 
-	result := make([]string, 0, vv.count)
+	result := make([]T, 0, vv.count)
 	for k := range vv.multiple {
 		result = append(result, k)
 	}
@@ -94,32 +112,46 @@ func (vv *VariadicValue) ToSlice() []string {
 	return result
 }
 
-func (vv *VariadicValue) Count() int {
+func (vv VariadicValue[T]) Count() int {
 	return vv.count
 }
 
-func (vv *VariadicValue) IsNull() bool {
+func (vv VariadicValue[T]) IsNull() bool {
 	return vv.count == 0
 }
 
-func (vv *VariadicValue) Single() (string, bool) {
+func (vv *VariadicValue[T]) Single() (v T, _ bool) {
 	if vv.count == 1 {
 		return vv.single, true
 	}
 
-	return "", false
+	return v, false
 }
 
-func (vv *VariadicValue) FlatMultiple() ([]string, bool) {
+func (vv *VariadicValue[T]) FlatMultiple() ([]T, bool) {
 	if vv.count < 2 {
 		return nil, false
 	}
 
-	result := make([]string, 0, vv.count)
+	result := make([]T, 0, vv.count)
 
 	for k := range vv.multiple {
 		result = append(result, k)
 	}
 
 	return result, true
+}
+
+func (vv VariadicValue[T]) Values() []any {
+	vals := vv.ToSlice()
+	if len(vals) == 0 {
+		return nil
+	}
+
+	res := make([]any, 0, len(vals))
+	for _, v := range vals {
+		res = append(res, v)
+	}
+
+	return res
 }

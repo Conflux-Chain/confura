@@ -10,66 +10,49 @@ import (
 	"gorm.io/gorm"
 )
 
-type logColumnType int
-
 const (
-	logColumnTypeContract logColumnType = 0
-	logColumnTypeTopic0   logColumnType = 1
-	logColumnTypeTopic1   logColumnType = 2
-	logColumnTypeTopic2   logColumnType = 3
-	logColumnTypeTopic3   logColumnType = 4
-
 	maxLogQuerySetSize = 100_000
 )
 
-var logWhereQueries = map[logColumnType]struct{ single, multiple string }{
-	logColumnTypeContract: {"contract_address = ?", "contract_address IN (?)"},
-	logColumnTypeTopic0:   {"topic0 = ?", "topic0 IN (?)"},
-	logColumnTypeTopic1:   {"topic1 = ?", "topic1 IN (?)"},
-	logColumnTypeTopic2:   {"topic2 = ?", "topic2 IN (?)"},
-	logColumnTypeTopic3:   {"topic3 = ?", "topic3 IN (?)"},
+// TopicColumn defines the configuration of a single topic column
+type TopicColumn struct {
+	Name string // Column name, e.g. "topic0", "tid", this filter will be disabled if name is empty
 }
 
-func applyVariadicFilter(db *gorm.DB, column logColumnType, value store.VariadicValue) *gorm.DB {
-	if single, ok := value.Single(); ok {
-		return db.Where(logWhereQueries[column].single, single)
+// TopicSchema defines topic column mappings
+type TopicSchema [4]TopicColumn
+
+var (
+	StandardTopicSchema      = TopicSchema{{"topic0"}, {"topic1"}, {"topic2"}, {"topic3"}}
+	PrimaryIDTopicSchema     = TopicSchema{{"tid"}, {"topic1"}, {"topic2"}, {"topic3"}}
+	SecondaryOnlyTopicSchema = TopicSchema{{}, {"topic1"}, {"topic2"}, {"topic3"}}
+)
+
+func applyVariadicFilter(db *gorm.DB, column string, value store.VariadicValuer) *gorm.DB {
+	if column == "" || value.IsNull() {
+		return db
 	}
 
-	if multiple, ok := value.FlatMultiple(); ok {
-		return db.Where(logWhereQueries[column].multiple, multiple)
+	if vals := value.Values(); len(vals) == 1 {
+		return db.Where(fmt.Sprintf("%s = ?", column), vals[0])
+	} else {
+		return db.Where(fmt.Sprintf("%s IN (?)", column), vals)
+	}
+}
+
+func applyTopicsFilter(db *gorm.DB, topics []store.VariadicValuer, schemas ...*TopicSchema) *gorm.DB {
+	schema := StandardTopicSchema
+	if len(schemas) > 0 && schemas[0] != nil {
+		schema = *schemas[0]
 	}
 
+	for i := 0; i < len(topics) && i < 4; i++ {
+		db = applyVariadicFilter(db, schema[i].Name, topics[i])
+	}
 	return db
 }
 
-func applyContractFilter(db *gorm.DB, contract store.VariadicValue) *gorm.DB {
-	return applyVariadicFilter(db, logColumnTypeContract, contract)
-}
-
-func applyTopicsFilter(db *gorm.DB, topics []store.VariadicValue, skipTopics ...bool) *gorm.DB {
-	numTopics := len(topics)
-	skipTopic0 := len(skipTopics) > 0 && skipTopics[0]
-
-	if numTopics > 0 && !skipTopic0 {
-		db = applyVariadicFilter(db, logColumnTypeTopic0, topics[0])
-	}
-
-	if numTopics > 1 {
-		db = applyVariadicFilter(db, logColumnTypeTopic1, topics[1])
-	}
-
-	if numTopics > 2 {
-		db = applyVariadicFilter(db, logColumnTypeTopic2, topics[2])
-	}
-
-	if numTopics > 3 {
-		db = applyVariadicFilter(db, logColumnTypeTopic3, topics[3])
-	}
-
-	return db
-}
-
-// LogFilter is used to query event logs with specified table, block number range and topics.
+// LogFilter is used to builds conditions to query event logs with specified table, block number range and topics.
 type LogFilter struct {
 	TableName string
 
@@ -78,10 +61,10 @@ type LogFilter struct {
 	BlockTo   uint64
 
 	// event hash and indexed data 1, 2, 3
-	Topics []store.VariadicValue
+	Topics []store.VariadicValuer
 
-	// whether to skip topic0 filter when applying topics filter
-	SkipTopic0 bool
+	// topic columns schema
+	Schema *TopicSchema
 }
 
 // calculateQuerySetSize estimates the number of event logs matching the log filter, ignoring topics.
@@ -198,7 +181,7 @@ func (filter *LogFilter) validateCount(db *gorm.DB) error {
 		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
 		Order("bn ASC").
 		Offset(int(store.MaxLogLimit))
-	db = applyTopicsFilter(db, filter.Topics, filter.SkipTopic0)
+	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
 
 	// fetch info on the first block exceeding `store.MaxLogLimit`
 	var exceedingBlock struct{ Bn, Epoch uint64 }
@@ -222,12 +205,13 @@ func (filter *LogFilter) validateCount(db *gorm.DB) error {
 }
 
 func (filter *LogFilter) hasTopicsFilter() bool {
-	for i, v := range filter.Topics {
-		if i == 0 && filter.SkipTopic0 {
-			continue
-		}
+	schema := StandardTopicSchema
+	if filter.Schema != nil {
+		schema = *filter.Schema
+	}
 
-		if !v.IsNull() {
+	for i, v := range filter.Topics {
+		if !v.IsNull() && i < len(schema) && schema[i].Name != "" {
 			return true
 		}
 	}
@@ -244,7 +228,7 @@ func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr int
 
 	db = db.Table(filter.TableName)
 	db = db.Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
-	db = applyTopicsFilter(db, filter.Topics, filter.SkipTopic0)
+	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
 	db = db.Order("bn ASC")
 	db = db.Limit(int(store.MaxLogLimit) + 1)
 
@@ -275,7 +259,7 @@ func (filter *AddressIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([
 		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
 		Order("bn ASC").
 		Limit(int(store.MaxLogLimit) + 1)
-	db = applyTopicsFilter(db, filter.Topics)
+	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
 
 	var result []*AddressIndexedLog
 	if err := db.Find(&result).Error; err != nil {
@@ -308,7 +292,7 @@ func (filter *TopicIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([]*
 		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
 		Order("bn ASC").
 		Limit(int(store.MaxLogLimit) + 1)
-	db = applyTopicsFilter(db, filter.Topics, true)
+	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
 
 	var result []*TopicIndexedLog
 	if err := db.Find(&result).Error; err != nil {

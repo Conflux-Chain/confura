@@ -23,10 +23,10 @@ const (
 // contractLog event logs for specified contract
 type contractLog struct {
 	ID          uint64
-	ContractID  uint64 `gorm:"-"` // ignored
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn"`
+	ContractID  uint64 `gorm:"-"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn;index:idx_tid_bn,priority:2"`
 	Epoch       uint64 `gorm:"not null"`
-	Topic0      string `gorm:"size:66;not null"`
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn,priority:1"`
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
@@ -43,6 +43,7 @@ func (cl contractLog) TableName() string {
 type bigContractLogStore[T store.ChainData] struct {
 	*bnPartitionedStore
 	cs   *ContractStore
+	ts   *TopicStore
 	ebms *epochBlockMapStore[T]
 	ails *AddressIndexedLogStore[T]
 	// notify channel for new bn partition created
@@ -52,12 +53,13 @@ type bigContractLogStore[T store.ChainData] struct {
 func newBigContractLogStore[T store.ChainData](
 	db *gorm.DB,
 	cs *ContractStore,
+	ts *TopicStore,
 	ebms *epochBlockMapStore[T],
 	ails *AddressIndexedLogStore[T],
 	notifyChan chan<- *bnPartition,
 ) *bigContractLogStore[T] {
 	return &bigContractLogStore[T]{
-		cs: cs, ebms: ebms, ails: ails,
+		cs: cs, ts: ts, ebms: ebms, ails: ails,
 		bnPartitionedStore:    newBnPartitionedStore(db),
 		bnPartitionNotifyChan: notifyChan,
 	}
@@ -236,10 +238,22 @@ func (bcls *bigContractLogStore[T]) Add(
 						continue
 					}
 
-					slog := log.AsStoreLog(cid)
-					slog.BlockNumber = bn
+					slog := log.AsStoreLog()
+					tid, err := resolveTopic0ID(bcls.ts, slog.Topic0)
+					if err != nil {
+						return errors.WithMessagef(err, "failed to resolve id for topic %s", slog.Topic0)
+					}
 
-					contract2Logs[cid] = append(contract2Logs[cid], (*contractLog)(slog))
+					contract2Logs[cid] = append(contract2Logs[cid], &contractLog{
+						BlockNumber: bn,
+						Epoch:       data.Number(),
+						Topic0ID:    tid,
+						Topic1:      slog.Topic1,
+						Topic2:      slog.Topic2,
+						Topic3:      slog.Topic3,
+						LogIndex:    slog.LogIndex,
+						Extra:       slog.Extra,
+					})
 				}
 			}
 		}
@@ -350,7 +364,9 @@ func (bcls *bigContractLogStore[T]) IsBigContract(cid uint64) (bool, error) {
 
 // GetContractLogs get contract logs for the specified filter.
 func (bcls *bigContractLogStore[T]) GetContractLogs(
-	ctx context.Context, cid uint64, storeFilter store.LogFilter,
+	ctx context.Context,
+	cid uint64,
+	storeFilter store.LogFilter,
 ) ([]*store.Log, error) {
 	contractEntity := bcls.contractEntity(cid)
 	partitions, _, err := bcls.searchPartitions(
@@ -367,7 +383,17 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 	filter := LogFilter{
 		BlockFrom: storeFilter.BlockFrom,
 		BlockTo:   storeFilter.BlockTo,
-		Topics:    storeFilter.Topics,
+		Topics:    store.ToVariadicValuers(storeFilter.Topics...),
+		Schema:    &PrimaryIDTopicSchema,
+	}
+
+	// Normalize topic0 hashes to ids
+	if len(storeFilter.Topics) > 0 {
+		normalized, err := normalizeTopicsToIDs(bcls.ts, storeFilter.Topics[0])
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to normalize topic to ids")
+		}
+		filter.Topics[0] = normalized
 	}
 
 	var result []*store.Log
@@ -379,16 +405,32 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 		default:
 		}
 
-		logs, err := bcls.GetContractBnPartitionedLogs(ctx, cid, filter, *partition)
+		contractTabler := bcls.contractTabler(cid)
+		filter.TableName = bcls.getPartitionedTableName(contractTabler, partition.Index)
+
+		var clogs []*contractLog
+		err := filter.find(ctx, bcls.db, &clogs)
 		if err != nil {
 			return nil, err
 		}
 
 		// convert to common store log
-		for _, v := range logs {
-			// fill contract id since it's not persisted in db
-			v.ContractID = cid
-			result = append(result, (*store.Log)(v))
+		for _, v := range clogs {
+			topic0, err := resolveTopic0Hash(bcls.ts, v.Topic0ID)
+			if err != nil {
+				return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
+			}
+
+			result = append(result, &store.Log{
+				BlockNumber: v.BlockNumber,
+				Epoch:       v.Epoch,
+				Topic0:      topic0,
+				Topic1:      v.Topic1,
+				Topic2:      v.Topic2,
+				Topic3:      v.Topic3,
+				LogIndex:    v.LogIndex,
+				Extra:       v.Extra,
+			})
 		}
 
 		// check log count
@@ -398,18 +440,4 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 	}
 
 	return result, nil
-}
-
-// GetContractBnPartitionedLogs returns contract event logs for the log filter from
-// specified table partition ranged by block number.
-func (bcls *bigContractLogStore[T]) GetContractBnPartitionedLogs(
-	ctx context.Context, cid uint64, filter LogFilter, partition bnPartition,
-) ([]*contractLog, error) {
-	contractTabler := bcls.contractTabler(cid)
-	filter.TableName = bcls.getPartitionedTableName(contractTabler, partition.Index)
-
-	var res []*contractLog
-	err := filter.find(ctx, bcls.db, &res)
-
-	return res, err
 }

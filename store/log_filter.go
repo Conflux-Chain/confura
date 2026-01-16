@@ -155,8 +155,8 @@ func initLogFilter() {
 type LogFilter struct {
 	BlockFrom uint64
 	BlockTo   uint64
-	Contracts VariadicValue
-	Topics    []VariadicValue // event hash and indexed data 1, 2, 3
+	Contracts VariadicValue[string]
+	Topics    []VariadicValue[string] // event hash and indexed data 1, 2, 3
 
 	original interface{} // original log filter
 }
@@ -172,7 +172,7 @@ func (f LogFilter) Cfx() *types.LogFilter {
 }
 
 func ParseCfxLogFilter(blockFrom, blockTo uint64, filter *types.LogFilter) LogFilter {
-	var vvs []VariadicValue
+	var vvs []VariadicValue[string]
 
 	for _, hashes := range filter.Topics {
 		vvs = append(vvs, newVariadicValueByHashes(hashes))
@@ -194,7 +194,7 @@ func ParseEthLogFilter(blockFrom, blockTo uint64, filter *web3Types.FilterQuery)
 		contracts = append(contracts, addr.String())
 	}
 
-	var vvs []VariadicValue
+	var vvs []VariadicValue[string]
 	for _, topic := range filter.Topics {
 		var hashes []string
 		for _, hash := range topic {

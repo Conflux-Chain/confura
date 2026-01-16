@@ -155,6 +155,6 @@ func (a EpochLogAdapter) Data() []byte {
 	return a.Log.Data
 }
 
-func (a EpochLogAdapter) AsStoreLog(cid uint64) *Log {
-	return ParseCfxLog(a.Log, cid, 0)
+func (a EpochLogAdapter) AsStoreLog() *Log {
+	return ParseCfxLog(a.Log, 0)
 }

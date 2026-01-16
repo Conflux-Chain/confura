@@ -36,5 +36,5 @@ type LogLike interface {
 	Address() string
 	Topics() []string
 	Data() []byte
-	AsStoreLog(cid uint64) *Log
+	AsStoreLog() *Log
 }

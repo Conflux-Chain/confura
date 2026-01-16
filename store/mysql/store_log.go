@@ -19,7 +19,6 @@ const (
 
 type log struct {
 	ID          uint64
-	ContractID  uint64 `gorm:"column:cid;size:64;not null"`
 	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn"`
 	Epoch       uint64 `gorm:"not null"`
 	Topic0      string `gorm:"size:66;not null"`
@@ -86,15 +85,18 @@ func (ls *logStore[T]) Add(dbTx *gorm.DB, dataSlice []T, logPartition bnPartitio
 				}
 
 				for _, rlog := range receipt.Logs() {
-					cid, _, err := ls.cs.AddContractIfAbsent(rlog.Address())
-					if err != nil {
-						return errors.WithMessage(err, "failed to add contract")
-					}
+					slog := rlog.AsStoreLog()
 
-					slog := rlog.AsStoreLog(cid)
-					slog.BlockNumber = bn
-
-					logs = append(logs, (*log)(slog))
+					logs = append(logs, &log{
+						BlockNumber: bn,
+						Epoch:       data.Number(),
+						Topic0:      slog.Topic0,
+						Topic1:      slog.Topic1,
+						Topic2:      slog.Topic2,
+						Topic3:      slog.Topic3,
+						LogIndex:    slog.LogIndex,
+						Extra:       slog.Extra,
+					})
 				}
 			}
 		}
@@ -180,7 +182,7 @@ func (ls *logStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilter)
 	filter := LogFilter{
 		BlockFrom: storeFilter.BlockFrom,
 		BlockTo:   storeFilter.BlockTo,
-		Topics:    storeFilter.Topics,
+		Topics:    store.ToVariadicValuers(storeFilter.Topics...),
 	}
 
 	var result []*store.Log
