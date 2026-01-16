@@ -31,7 +31,7 @@ type contractLog struct {
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
 	LogIndex    uint64 `gorm:"not null"`
-	Extra       []byte `gorm:"type:MEDIUMBLOB"` // extension json field
+	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
 func (cl contractLog) TableName() string {
