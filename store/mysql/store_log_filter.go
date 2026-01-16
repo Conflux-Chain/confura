@@ -29,12 +29,13 @@ var (
 )
 
 func applyVariadicFilter(db *gorm.DB, column string, value store.VariadicValuer) *gorm.DB {
-	switch vals := value.Values(); len(vals) {
-	case 0:
+	if column == "" || value.IsNull() {
 		return db
-	case 1:
+	}
+
+	if vals := value.Values(); len(vals) == 1 {
 		return db.Where(fmt.Sprintf("%s = ?", column), vals[0])
-	default:
+	} else {
 		return db.Where(fmt.Sprintf("%s IN (?)", column), vals)
 	}
 }
@@ -46,9 +47,7 @@ func applyTopicsFilter(db *gorm.DB, topics []store.VariadicValuer, schemas ...*T
 	}
 
 	for i := 0; i < len(topics) && i < 4; i++ {
-		if schema[i].Name != "" {
-			db = applyVariadicFilter(db, schema[i].Name, topics[i])
-		}
+		db = applyVariadicFilter(db, schema[i].Name, topics[i])
 	}
 	return db
 }
