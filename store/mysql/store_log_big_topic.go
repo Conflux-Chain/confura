@@ -361,7 +361,6 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 	topic string,
 	storeFilter store.LogFilter,
 ) ([]*store.Log, error) {
-
 	partitions, _, err := btls.searchPartitions(btls.topicEntity(tid), types.RangeUint64{
 		From: storeFilter.BlockFrom,
 		To:   storeFilter.BlockTo,

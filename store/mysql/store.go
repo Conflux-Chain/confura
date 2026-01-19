@@ -42,6 +42,9 @@ type MysqlStore[T store.ChainData] struct {
 	ails *AddressIndexedLogStore[T]
 	bcls *bigContractLogStore[T]
 	cs   *ContractStore
+	tils *TopicIndexedLogStore[T]
+	btls *bigTopicLogStore[T]
+	ts   *TopicStore
 
 	// config
 	config *Config
@@ -57,6 +60,7 @@ func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.
 	ts := NewTopicStore(db)
 	ebms := newEpochBlockMapStore[T](db, config)
 	ails := NewAddressIndexedLogStore[T](db, cs, ts, config.AddressIndexedLogPartitions)
+	tils := NewTopicIndexedLogStore[T](db, ts, config.TopicIndexedLogPartitions)
 
 	return &MysqlStore[T]{
 		epochBlockMapStore: ebms,
@@ -66,8 +70,11 @@ func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.
 		blockStore:         newBlockStore[T](db),
 		ls:                 newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
 		bcls:               newBigContractLogStore(db, cs, ts, ebms, ails, pruner.newBnPartitionObsChan),
+		btls:               newBigTopicLogStore(db, ts, ebms, tils, pruner.newBnPartitionObsChan),
 		ails:               ails,
 		cs:                 cs,
+		tils:               tils,
+		ts:                 ts,
 		config:             config,
 		filter:             filter,
 		pruner:             pruner,
@@ -124,21 +131,27 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 	var logPartition bnPartition
 	// the log partition to write event logs for specified big contract
 	var contract2BnPartitions map[uint64]bnPartition
+	// the log partition to write event logs for specified big topic
+	var topic2BnPartitions map[uint64]bnPartition
 
 	if !ms.filter.IsLogDisabled() {
 		// add log contract address
-		if ms.config.AddressIndexedLogEnabled {
-			// Note, even if failed to insert event logs afterward, no need to rollback the inserted contract records.
-			_, err := ms.cs.AddContract(extractUniqueContractAddresses(dataSlice...))
-			if err != nil {
-				return errors.WithMessage(err, "failed to add contracts for specified epoch data slice")
-			}
+		// Note, even if failed to insert event logs afterward, no need to rollback the inserted contract records.
+		_, err := ms.cs.AddContract(extractUniqueContractAddresses(dataSlice...))
+		if err != nil {
+			return errors.WithMessage(err, "failed to add contracts for specified epoch data slice")
+		}
 
-			// prepare for big contract log partitions if necessary
-			contract2BnPartitions, err = ms.bcls.preparePartitions(dataSlice)
-			if err != nil {
-				return errors.WithMessage(err, "failed to prepare big contract log partitions")
-			}
+		// prepare for big contract log partitions if necessary
+		contract2BnPartitions, err = ms.bcls.preparePartitions(dataSlice)
+		if err != nil {
+			return errors.WithMessage(err, "failed to prepare big contract log partitions")
+		}
+
+		// prepare for big topic log partitions if necessary
+		topic2BnPartitions, err = ms.btls.preparePartitions(dataSlice)
+		if err != nil {
+			return errors.WithMessage(err, "failed to prepare big topic log partitions")
 		}
 
 		// prepare for new log partitions if necessary before saving epoch data
@@ -170,21 +183,34 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 		}
 
 		if !ms.filter.IsLogDisabled() {
-			if ms.config.AddressIndexedLogEnabled {
-				bigContractIds := make(map[uint64]bool, len(contract2BnPartitions))
-				for cid := range contract2BnPartitions {
-					bigContractIds[cid] = true
-				}
+			bigContractIds := make(map[uint64]bool, len(contract2BnPartitions))
+			for cid := range contract2BnPartitions {
+				bigContractIds[cid] = true
+			}
 
-				// save address indexed event logs
-				if err := ms.ails.Add(dbTx, dataSlice, bigContractIds); err != nil {
-					return errors.WithMessage(err, "failed to save address indexed event logs")
-				}
+			// save address indexed event logs
+			if err := ms.ails.Add(dbTx, dataSlice, bigContractIds); err != nil {
+				return errors.WithMessage(err, "failed to save address indexed event logs")
+			}
 
-				// save contract specified event logs
-				if err := ms.bcls.Add(dbTx, dataSlice, contract2BnPartitions); err != nil {
-					return errors.WithMessage(err, "failed to save big contract logs")
-				}
+			// save contract specified event logs
+			if err := ms.bcls.Add(dbTx, dataSlice, contract2BnPartitions); err != nil {
+				return errors.WithMessage(err, "failed to save big contract logs")
+			}
+
+			bigTopics := make(map[uint64]bool, len(topic2BnPartitions))
+			for tid := range topic2BnPartitions {
+				bigTopics[tid] = true
+			}
+
+			// save topic indexed event logs
+			if err := ms.tils.Add(dbTx, dataSlice, bigTopics); err != nil {
+				return errors.WithMessage(err, "failed to save topic indexed event logs")
+			}
+
+			// save big topic specified event logs
+			if err := ms.btls.Add(dbTx, dataSlice, topic2BnPartitions); err != nil {
+				return errors.WithMessage(err, "failed to save big topic logs")
 			}
 
 			// save event logs
@@ -244,14 +270,21 @@ func (ms *MysqlStore[T]) PopnWithFinalizer(epochUntil uint64, finalizer func(*go
 
 		if !ms.filter.IsLogDisabled() {
 			// remove address indexed event logs
-			if ms.config.AddressIndexedLogEnabled {
-				if err := ms.ails.DeleteAddressIndexedLogs(dbTx, epochUntil, maxEpoch); err != nil {
-					return errors.WithMessage(err, "failed to remove address indexed event logs")
-				}
+			if err := ms.ails.DeleteAddressIndexedLogs(dbTx, epochUntil, maxEpoch); err != nil {
+				return errors.WithMessage(err, "failed to remove address indexed event logs")
+			}
 
-				if err := ms.bcls.Popn(dbTx, epochUntil); err != nil {
-					return errors.WithMessage(err, "failed to remove big contract logs")
-				}
+			if err := ms.bcls.Popn(dbTx, epochUntil); err != nil {
+				return errors.WithMessage(err, "failed to remove big contract logs")
+			}
+
+			// remove topic indexed event logs
+			if err := ms.tils.DeleteTopicIndexedLogs(dbTx, epochUntil, maxEpoch); err != nil {
+				return errors.WithMessage(err, "failed to remove topic indexed event logs")
+			}
+
+			if err := ms.btls.Popn(dbTx, epochUntil); err != nil {
+				return errors.WithMessage(err, "failed to remove big topic logs")
 			}
 
 			// pop universal event logs
@@ -282,16 +315,92 @@ func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilte
 	startTime := time.Now()
 	defer metrics.Registry.Store.GetLogs().UpdateSince(startTime)
 
-	contracts := storeFilter.Contracts.ToSlice()
-	slices.Sort(contracts)
+	// if address specified, query from address indexed or big contract event log table
+	if !storeFilter.Contracts.IsNull() {
+		contracts := storeFilter.Contracts.ToSlice()
+		slices.Sort(contracts)
 
-	// if address not specified, query from universal event log table partition
-	// ranged by block number.
-	if len(contracts) == 0 {
-		return ms.ls.GetLogs(ctx, storeFilter)
+		return ms.getContractLogs(ctx, contracts, storeFilter)
 	}
 
+	// if topic0 specified, query from topic indexed or big topic event log table
+	if len(storeFilter.Topics) > 0 && !storeFilter.Topics[0].IsNull() {
+		topics := storeFilter.Topics[0].ToSlice()
+		slices.Sort(topics)
+
+		return ms.getTopicLogs(ctx, topics, storeFilter)
+	}
+
+	// otherwise, query from universal event log table
+	return ms.ls.GetLogs(ctx, storeFilter)
+}
+
+func (ms *MysqlStore[T]) getTopicLogs(ctx context.Context, topics []string, storeFilter store.LogFilter) ([]*store.Log, error) {
 	var result []*store.Log
+
+	for _, topic := range topics {
+		// convert topic hash to id
+		tid, exists, err := ms.ts.GetID(topic)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to get topic id")
+		}
+
+		if !exists {
+			continue
+		}
+
+		// check if the topic is a big topic or not
+		isBigTopic, err := ms.btls.IsBigTopic(tid)
+		if err != nil {
+			return nil, err
+		}
+
+		// if the topic is a big topic, find the event logs from separate table.
+		if isBigTopic {
+			logs, err := ms.btls.GetTopicLogs(ctx, tid, topic, storeFilter)
+			if err != nil {
+				return nil, err
+			}
+
+			result = append(result, logs...)
+
+			// check log count
+			if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
+				return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, false)
+			}
+
+			continue
+		}
+
+		// check timeout before query
+		select {
+		case <-ctx.Done():
+			return nil, store.ErrGetLogsTimeout
+		default:
+		}
+
+		// query from topic indexed logs
+		logs, err := ms.tils.GetTopicIndexedLogs(ctx, tid, topic, storeFilter)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, logs...)
+
+		// check log count
+		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
+			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, false)
+		}
+	}
+
+	// merge && sort log result
+	sort.Sort(store.LogSlice(result))
+	return result, nil
+}
+
+func (ms *MysqlStore[T]) getContractLogs(ctx context.Context, contracts []string, storeFilter store.LogFilter) ([]*store.Log, error) {
+	var result []*store.Log
+
 	for _, addr := range contracts {
 		// convert contract address to id
 		cid, exists, err := ms.cs.GetContractIdByAddress(addr)
@@ -334,10 +443,12 @@ func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilte
 		}
 
 		// query from address indexed logs
-		result, err := ms.ails.GetAddressIndexedLogs(ctx, cid, addr, storeFilter)
+		logs, err := ms.ails.GetAddressIndexedLogs(ctx, cid, addr, storeFilter)
 		if err != nil {
 			return nil, err
 		}
+
+		result = append(result, logs...)
 
 		// check log count
 		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
@@ -347,7 +458,6 @@ func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilte
 
 	// merge && sort log result
 	sort.Sort(store.LogSlice(result))
-
 	return result, nil
 }
 

@@ -184,7 +184,7 @@ func (s *TopicIndexedLogStore[T]) GetTopicIndexedLogs(
 	tid uint64,
 	topic string,
 	sfilter store.LogFilter,
-) ([]*TopicIndexedLog, error) {
+) ([]*store.Log, error) {
 	filter := LogFilter{
 		TableName: s.GetPartitionedTableName(topic),
 		BlockFrom: sfilter.BlockFrom,
@@ -198,7 +198,23 @@ func (s *TopicIndexedLogStore[T]) GetTopicIndexedLogs(
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to get topic indexed logs")
 	}
-	return topicLogs, nil
+
+	// convert to common store log
+	var result []*store.Log
+	for _, v := range topicLogs {
+		result = append(result, &store.Log{
+			BlockNumber: v.BlockNumber,
+			Epoch:       v.Epoch,
+			Topic0:      topic,
+			Topic1:      v.Topic1,
+			Topic2:      v.Topic2,
+			Topic3:      v.Topic3,
+			LogIndex:    v.LogIndex,
+			Extra:       v.Extra,
+		})
+	}
+
+	return result, nil
 }
 
 // GetPartitionedTableName returns the physical table name for a given topic hash.
