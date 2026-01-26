@@ -24,6 +24,7 @@ var allModels = []interface{}{
 	&RateLimit{},
 	&User{},
 	&Contract{},
+	&Topic{},
 	&epochBlockMap{},
 	&bnPartition{},
 	&NodeRoute{},

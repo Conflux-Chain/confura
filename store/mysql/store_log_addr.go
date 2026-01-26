@@ -239,10 +239,15 @@ func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 	}
 
 	// Normalize topic0 hashes to ids
-	if len(sfilter.Topics) > 0 {
+	if len(sfilter.Topics) > 0 && !sfilter.Topics[0].IsNull() {
 		normalized, err := normalizeTopicsToIDs(ls.ts, sfilter.Topics[0])
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to normalize topic to ids")
+		}
+
+		if normalized.IsNull() {
+			// The specified topic0 hashes do not exist.
+			return nil, nil
 		}
 		filter.Topics[0] = normalized
 	}
