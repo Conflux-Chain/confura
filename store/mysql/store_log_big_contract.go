@@ -388,10 +388,14 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 	}
 
 	// Normalize topic0 hashes to ids
-	if len(storeFilter.Topics) > 0 {
+	if len(storeFilter.Topics) > 0 && !storeFilter.Topics[0].IsNull() {
 		normalized, err := normalizeTopicsToIDs(bcls.ts, storeFilter.Topics[0])
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to normalize topic to ids")
+		}
+		if normalized.IsNull() {
+			// The specified topic0 hashes do not exist.
+			return nil, nil
 		}
 		filter.Topics[0] = normalized
 	}

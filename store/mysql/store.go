@@ -142,6 +142,13 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 			return errors.WithMessage(err, "failed to add contracts for specified epoch data slice")
 		}
 
+		// add log topic hash
+		// Note, even if failed to insert event logs afterward, no need to rollback the inserted topic records.
+		_, err = ms.ts.BatchAdd(extractUniqueTopic0Signatures(dataSlice...))
+		if err != nil {
+			return errors.WithMessage(err, "failed to add topics for specified epoch data slice")
+		}
+
 		// prepare for big contract log partitions if necessary
 		contract2BnPartitions, err = ms.bcls.preparePartitions(dataSlice)
 		if err != nil {
