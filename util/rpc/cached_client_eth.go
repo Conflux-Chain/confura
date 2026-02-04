@@ -29,12 +29,6 @@ var (
 	_ util.EthBlockNumberResolver = (*cachedEthBlockNumberResolver)(nil)
 )
 
-type NearHeadConfig struct {
-	Enabled bool
-	Cache   nearhead.Config
-	Sync    cacheSync.EthConfig
-}
-
 type EthNearHeadCache struct {
 	*nearhead.EthCache
 	stopSync context.CancelFunc
@@ -53,7 +47,10 @@ func (c *EthNearHeadCache) Close() {
 }
 
 func NewEthNearHeadCacheFromViper(url string) (*EthNearHeadCache, error) {
-	var conf NearHeadConfig
+	var conf struct {
+		Enabled                  bool
+		cacheSync.NearHeadConfig `mapstructure:",squash"`
+	}
 	if err := viperutil.UnmarshalKey("nearhead", &conf); err != nil {
 		return nil, errors.WithMessage(err, "failed to unmarshal near head config")
 	}
@@ -63,22 +60,17 @@ func NewEthNearHeadCacheFromViper(url string) (*EthNearHeadCache, error) {
 		return nil, nil
 	}
 
-	cache := nearhead.NewEthCache(conf.Cache)
-
-	conf.Sync.Extract.RpcEndpoint = url
-	syncer, err := cacheSync.NewEthNearHeadSyncer(conf.Sync, cache)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to create near head syncer")
-	}
+	conf.Adapter.URL = url
 
 	// Start near head sync.
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		wg := sync.WaitGroup{}
-		wg.Add(1)
-		syncer.Run(ctx, &wg)
-		wg.Wait()
-	}()
+	var wg sync.WaitGroup
+
+	cache, err := cacheSync.StartNearHead(ctx, &wg, conf.NearHeadConfig)
+	if err != nil {
+		cancel()
+		return nil, errors.WithMessage(err, "Failed to sync near head data")
+	}
 
 	return &EthNearHeadCache{EthCache: cache, stopSync: cancel}, nil
 }
