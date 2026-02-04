@@ -502,36 +502,36 @@ node:
 #   # The endpoint to start a http server for pprof
 #   httpEndpoint: ":6060"
 
-# Near head caching configuration
-nearhead:
-  # # Toggle to enable/disable the near-head cache feature.
-  # enabled: false
-  # Adapter settings to poll blockchain data
-  adapter:
-    # # RPC request timeout
-    # requestTimeout: 3s
-    # # Latest block number tag, -1: latest, -3: finalized, -4: safe
-    # latestBlockNumberTag: -1
-    # N blocks behind the LatestBlockNumberTag
-    latestBlockNumberOffset: 0
-    # ignoreReceipts: false
-    # ignoreTraces: false
-  # # Poller settings
-  # poller:
-  #   idleInterval: 1s
-  #   retryInterval: 5s
-  #   bufferSize: 32
-  #   health:
-  #     threshold: 1m
-  #     remind: 5m
-  # # Write cache settings
-  # writer:
-  #   health:
-  #     threshold: 1m
-  #     remind: 5m
-  # # In-memory cache settings
-  # cache:
-  #   # Maximum memory allocation for the cache (in bytes), default 100MB.
-  #   maxMemory: 104857600
-  #   # Upper limit on the number of logs returned per query operation, default 10000.
-  #   maxLogs: 10000
+# # Near head caching configuration
+# nearhead:
+#   # Toggle to enable/disable the near-head cache feature.
+#   enabled: false
+#   # Adapter settings to poll blockchain data
+#   adapter:
+#     # RPC request timeout
+#     requestTimeout: 3s
+#     # Latest block number tag, -1: latest, -3: finalized, -4: safe
+#     latestBlockNumberTag: -1
+#     # N blocks behind the LatestBlockNumberTag
+#     latestBlockNumberOffset: 0
+#     ignoreReceipts: false
+#     ignoreTraces: false
+#   # Poller settings
+#   poller:
+#     idleInterval: 1s
+#     retryInterval: 5s
+#     bufferSize: 32
+#     health:
+#       threshold: 1m
+#       remind: 5m
+#   # Write cache settings
+#   writer:
+#     health:
+#       threshold: 1m
+#       remind: 5m
+#   # In-memory cache settings
+#   cache:
+#     # Maximum memory allocation for the cache (in bytes), default 100MB.
+#     maxMemory: 104857600
+#     # Upper limit on the number of logs returned per query operation, default 10000.
+#     maxLogs: 10000
