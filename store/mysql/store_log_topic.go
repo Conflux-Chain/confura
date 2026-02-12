@@ -178,7 +178,7 @@ func (s *TopicIndexedLogStore[T]) DeleteTopicIndexedLogs(tx *gorm.DB, fromEpoch,
 	return nil
 }
 
-// GetTpoicIndexedLogs executes the filter query against the correct partition table.
+// GetTopicIndexedLogs executes the filter query against the correct partition table.
 func (s *TopicIndexedLogStore[T]) GetTopicIndexedLogs(
 	ctx context.Context,
 	tid uint64,
