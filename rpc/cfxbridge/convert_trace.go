@@ -1,6 +1,8 @@
 package cfxbridge
 
 import (
+	"math/big"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -60,9 +62,11 @@ func convertTraceCall(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32)
 	var cfxCallResult interface{}
 	if ethTrace.Error == nil {
 		ethCallResult := ethTrace.Result.(web3goTypes.CallResult)
+		gasLeft := big.NewInt(0).Sub(ethActionCall.Gas, ethCallResult.GasUsed)
+
 		cfxCallResult = types.CallResult{
 			Outcome:    types.OUTCOME_SUCCESS,
-			GasLeft:    *types.NewBigIntByRaw(ethCallResult.GasUsed),
+			GasLeft:    *types.NewBigIntByRaw(gasLeft),
 			ReturnData: ethCallResult.Output,
 		}
 	} else if *ethTrace.Error == cfxTraceErrorReverted {
@@ -98,10 +102,12 @@ func convertTraceCreate(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint3
 	var cfxCreateResult interface{}
 	if ethTrace.Error == nil {
 		ethCreateResult := ethTrace.Result.(web3goTypes.CreateResult)
+		gasLeft := big.NewInt(0).Sub(ethActionCreate.Gas, ethCreateResult.GasUsed)
+
 		cfxCreateResult = types.CreateResult{
 			Outcome:    types.OUTCOME_SUCCESS,
 			Addr:       ConvertAddress(ethCreateResult.Address, ethNetworkId),
-			GasLeft:    *types.NewBigIntByRaw(ethCreateResult.GasUsed),
+			GasLeft:    *types.NewBigIntByRaw(gasLeft),
 			ReturnData: ethCreateResult.Code,
 		}
 	} else if *ethTrace.Error == cfxTraceErrorReverted {
