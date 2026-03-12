@@ -5,6 +5,13 @@ import (
 	"github.com/pkg/errors"
 )
 
+// VirtualLog wraps a types.Log with its compact index identifiers.
+type VirtualLog struct {
+	*types.Log
+	ContractIdx ContractIndex
+	EventIdx    EventIndex
+}
+
 // CallFrame represents a node in the call tree, wrapping a localized trace
 // with parent-child relationships and parsed action/result data.
 type CallFrame struct {
@@ -17,6 +24,10 @@ type CallFrame struct {
 
 	Parent   *CallFrame
 	Children []*CallFrame
+
+	// fullChainSuccess is precomputed top-down after tree construction.
+	// True only if this frame AND every ancestor all succeeded.
+	fullChainSuccess bool
 }
 
 // IsSuccess checks whether this individual frame completed successfully.
@@ -31,14 +42,9 @@ func (f *CallFrame) IsSuccess() bool {
 	}
 }
 
-// IsFullChainSuccess checks whether this frame and all its ancestors succeeded.
+// IsFullChainSuccess returns the precomputed chain success status.
 func (f *CallFrame) IsFullChainSuccess() bool {
-	for cur := f; cur != nil; cur = cur.Parent {
-		if !cur.IsSuccess() {
-			return false
-		}
-	}
-	return true
+	return f.fullChainSuccess
 }
 
 // BuildCallTree converts a flat list of localized traces into a forest of CallFrames.
@@ -88,7 +94,24 @@ func BuildCallTree(traces []*types.LocalizedTrace) ([]*CallFrame, error) {
 		return nil, errors.New("unmatched call frames remaining on stack")
 	}
 
+	// Precompute fullChainSuccess top-down: O(n) total, each node visited once.
+	for _, root := range roots {
+		precomputeChainSuccess(root, true)
+	}
+
 	return roots, nil
+}
+
+// precomputeChainSuccess propagates success status from parent to children.
+//
+//	parentChainSuccess = true means all ancestors (including parent) succeeded.
+//	This node's fullChainSuccess = parentChainSuccess && self.IsSuccess().
+//	Each node is visited exactly once → O(n) total.
+func precomputeChainSuccess(frame *CallFrame, parentChainSuccess bool) {
+	frame.fullChainSuccess = parentChainSuccess && frame.IsSuccess()
+	for _, child := range frame.Children {
+		precomputeChainSuccess(child, frame.fullChainSuccess)
+	}
 }
 
 func pushFrame(frame *CallFrame, roots []*CallFrame, stack []*CallFrame) ([]*CallFrame, []*CallFrame) {

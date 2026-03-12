@@ -9,117 +9,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-var StakingEventDefs = []*EventDef{
-	{
-		MethodSignature:  "deposit(uint256)",
-		EventSignature:   "Deposit(address,uint256)",
-		Topics:           []TopicDef{{Source: TopicFromCaller}},
-		UseRawArgsAsData: true,
-	},
-	{
-		MethodSignature:  "withdraw(uint256)",
-		EventSignature:   "Withdraw(address,uint256)",
-		Topics:           []TopicDef{{Source: TopicFromCaller}},
-		UseRawArgsAsData: true,
-	},
-	{
-		MethodSignature:  "voteLock(uint256,uint256)",
-		EventSignature:   "VoteLocked(address,uint256,uint256)",
-		Topics:           []TopicDef{{Source: TopicFromCaller}},
-		UseRawArgsAsData: true,
-	},
-}
-
-var SponsorEventDefs = []*EventDef{
-	{
-		MethodSignature: "setSponsorForGas(address,uint256)",
-		EventSignature:  "SponsorGas(address,address,uint256)",
-		Topics: []TopicDef{
-			{Source: TopicFromCaller},
-			{Source: TopicFromArg, ArgIndex: 0},
-		},
-		NonIndexedArgs: []NonIndexedArg{
-			{ArgIndex: 1, ABIType: "uint256"},
-		},
-	},
-	{
-		MethodSignature: "setSponsorForCollateral(address)",
-		EventSignature:  "SponsorCollateral(address,address)",
-		Topics: []TopicDef{
-			{Source: TopicFromCaller},
-			{Source: TopicFromArg, ArgIndex: 0},
-		},
-	},
-	{
-		MethodSignature: "addPrivilegeByAdmin(address,address[])",
-		EventSignature:  "WhitelistAddedByAdmin(address,address,address[])",
-		Topics: []TopicDef{
-			{Source: TopicFromCaller},
-			{Source: TopicFromArg, ArgIndex: 0},
-		},
-		NonIndexedArgs: []NonIndexedArg{
-			{ArgIndex: 1, ABIType: "address[]"},
-		},
-	},
-	{
-		MethodSignature: "removePrivilegeByAdmin(address,address[])",
-		EventSignature:  "WhitelistRemovedByAdmin(address,address,address[])",
-		Topics: []TopicDef{
-			{Source: TopicFromCaller},
-			{Source: TopicFromArg, ArgIndex: 0},
-		},
-		NonIndexedArgs: []NonIndexedArg{
-			{ArgIndex: 1, ABIType: "address[]"},
-		},
-	},
-	{
-		MethodSignature: "addPrivilege(address[])",
-		EventSignature:  "WhitelistAdded(address,address[])",
-		Topics: []TopicDef{
-			{Source: TopicFromCaller},
-		},
-		NonIndexedArgs: []NonIndexedArg{
-			{ArgIndex: 1, ABIType: "address[]"},
-		},
-	},
-	{
-		MethodSignature: "removePrivilege(address[])",
-		EventSignature:  "WhitelistRemoved(address,address[])",
-		Topics: []TopicDef{
-			{Source: TopicFromCaller},
-		},
-		NonIndexedArgs: []NonIndexedArg{
-			{ArgIndex: 1, ABIType: "address[]"},
-		},
-	},
-}
-
-var AdminEventDefs = []*EventDef{
-	{
-		MethodSignature: "setAdmin(address,address)",
-		EventSignature:  "AdminChanged(address,address,address)",
-		Topics: []TopicDef{
-			{Source: TopicFromCaller},
-			{Source: TopicFromArg, ArgIndex: 0},
-		},
-		NonIndexedArgs: []NonIndexedArg{
-			{ArgIndex: 1, ABIType: "address"},
-		},
-	},
-	{
-		MethodSignature: "destroy(address)",
-		EventSignature:  "ContractDestroyed(address,address)",
-		Topics: []TopicDef{
-			{Source: TopicFromCaller},
-			{Source: TopicFromArg, ArgIndex: 0},
-		},
-	},
-}
-
 // ContractEntry holds the SDK contract and its associated event definitions.
 type ContractEntry struct {
-	Address  types.Address
-	Contract sdk.Contract
+	Address     types.Address
+	Contract    sdk.Contract
+	ContractIdx ContractIndex
 
 	// eventsByMethodID maps 4-byte method ID (hex without 0x) to EventDef.
 	eventsByMethodID map[string]*EventDef
@@ -132,17 +26,27 @@ func (e *ContractEntry) LookupEvent(methodID []byte) (*EventDef, bool) {
 	return def, ok
 }
 
+// EventIndexOf returns the EventIndex for a given 4-byte method selector.
+func (e *ContractEntry) EventIndexOf(methodID []byte) (EventIndex, bool) {
+	if def, ok := e.LookupEvent(methodID); ok {
+		return def.eventIndex, true
+	}
+	return 0, false
+}
+
 // Registry manages all known internal contracts and their event mappings.
 type Registry struct {
-	entries   []*ContractEntry
-	byAddress map[string]*ContractEntry // keyed by address
+	entries         []*ContractEntry
+	byAddress       map[string]*ContractEntry // keyed by address
+	contractIndices map[string]ContractIndex  // hex address -> ContractIndex
 }
 
 // NewRegistry creates a Registry from the SDK client, registering all
 // known internal contracts and their event definitions.
 func NewRegistry(client sdk.ClientOperator) (*Registry, error) {
 	r := &Registry{
-		byAddress: make(map[string]*ContractEntry),
+		byAddress:       make(map[string]*ContractEntry),
+		contractIndices: make(map[string]ContractIndex),
 	}
 
 	// Register Staking
@@ -150,29 +54,30 @@ func NewRegistry(client sdk.ClientOperator) (*Registry, error) {
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to create staking contract")
 	}
-	r.register(*staking.Address, staking.Contract, StakingEventDefs)
+	r.register(*staking.Address, staking.Contract, ContractStaking, StakingEventDefs)
 
 	// Register SponsorWhitelistControl
 	sponsor, err := sdkcontract.NewSponsor(client)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to create sponsor contract")
 	}
-	r.register(*sponsor.Address, sponsor.Contract, SponsorEventDefs)
+	r.register(*sponsor.Address, sponsor.Contract, ContractSponsor, SponsorEventDefs)
 
 	// Register AdminControl
 	admin, err := sdkcontract.NewAdminControl(client)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to create admin control contract")
 	}
-	r.register(*admin.Address, admin.Contract, AdminEventDefs)
+	r.register(*admin.Address, admin.Contract, ContractAdmin, AdminEventDefs)
 
 	return r, nil
 }
 
-func (r *Registry) register(addr types.Address, contract sdk.Contract, defs []*EventDef) {
+func (r *Registry) register(addr types.Address, contract sdk.Contract, ci ContractIndex, defs []*EventDef) {
 	entry := &ContractEntry{
 		Address:          addr,
 		Contract:         contract,
+		ContractIdx:      ci,
 		eventsByMethodID: make(map[string]*EventDef, len(defs)),
 	}
 	for _, def := range defs {
@@ -180,12 +85,23 @@ func (r *Registry) register(addr types.Address, contract sdk.Contract, defs []*E
 		key := hex.EncodeToString(def.methodID[:])
 		entry.eventsByMethodID[key] = def
 	}
+
 	r.entries = append(r.entries, entry)
-	r.byAddress[addr.GetHexAddress()] = entry
+	hexAddr := addr.GetHexAddress()
+	r.byAddress[hexAddr] = entry
+	r.contractIndices[hexAddr] = ci
 }
 
 // Lookup finds the ContractEntry for a given address.
 func (r *Registry) Lookup(addr types.Address) (*ContractEntry, bool) {
 	entry, ok := r.byAddress[addr.GetHexAddress()]
 	return entry, ok
+}
+
+// ContractIndexOf returns the ContractIndex for a given contract address.
+func (r *Registry) ContractIndexOf(addr types.Address) ContractIndex {
+	if idx, ok := r.contractIndices[addr.GetHexAddress()]; ok {
+		return idx
+	}
+	return ContractUnknown
 }

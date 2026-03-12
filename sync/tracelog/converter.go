@@ -11,7 +11,7 @@ import (
 
 // EnrichAndConvertLogs assigns log indices, timestamps, and converts types.Log
 // into InternalContractLog database models.
-func EnrichAndConvertLogs(logs []*types.Log, blocks []*types.Block) ([]*mysql.InternalContractLog, error) {
+func EnrichAndConvertLogs(logs []*VirtualLog, blocks []*types.Block) ([]*mysql.InternalContractLog, error) {
 	blockMap := make(map[types.Hash]*types.Block, len(blocks))
 	for _, b := range blocks {
 		blockMap[b.Hash] = b
@@ -45,20 +45,19 @@ func EnrichAndConvertLogs(logs []*types.Log, blocks []*types.Block) ([]*mysql.In
 
 		// Convert to DB model
 		dbLog := &mysql.InternalContractLog{
-			BlockNumber: block.BlockNumber.ToInt().Uint64(),
-			Epoch:       log.EpochNumber.ToInt().Uint64(),
-			BlockHash:   log.BlockHash.String(),
-			TxHash:      log.TransactionHash.String(),
-			TxIndex:     int(log.TransactionIndex.ToInt().Int64()),
-			LogIndex:    int(log.LogIndex.ToInt().Int64()),
-			Address:     log.Address.String(),
-			Data:        log.Data,
+			BlockNumber:  block.BlockNumber.ToInt().Uint64(),
+			Epoch:        log.EpochNumber.ToInt().Uint64(),
+			BlockHash:    log.BlockHash.String(),
+			TxHash:       log.TransactionHash.String(),
+			TxIndex:      int(log.TransactionIndex.ToInt().Int64()),
+			LogIndex:     int(log.LogIndex.ToInt().Int64()),
+			AddressIndex: uint8(log.ContractIdx),
+			Topic0Index:  uint8(log.EventIdx),
+			Data:         log.Data,
 		}
 
 		for i, topic := range log.Topics {
 			switch i {
-			case 0:
-				dbLog.Topic0 = topic.String()
 			case 1:
 				dbLog.Topic1 = topic.String()
 			case 2:

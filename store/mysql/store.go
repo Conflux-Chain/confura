@@ -58,7 +58,7 @@ func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.
 	pruner := newStorePruner(db)
 	cs := NewContractStore(db)
 	ts := NewTopicStore(db)
-	ebms := newEpochBlockMapStore[T](db, config, epochBlockMap{})
+	ebms := newEpochBlockMapStore[T](db, config)
 	ails := NewAddressIndexedLogStore[T](db, cs, ts, config.AddressIndexedLogPartitions)
 	tils := NewTopicIndexedLogStore[T](db, ts, config.TopicIndexedLogPartitions)
 

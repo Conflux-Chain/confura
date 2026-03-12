@@ -12,6 +12,125 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
+var (
+	StakingEventDefs = []*EventDef{
+		{
+			MethodSignature:  "deposit(uint256)",
+			EventSignature:   "Deposit(address,uint256)",
+			Topics:           []TopicDef{{Source: TopicFromCaller}},
+			UseRawArgsAsData: true,
+			eventIndex:       EventStakingDeposit,
+		},
+		{
+			MethodSignature:  "withdraw(uint256)",
+			EventSignature:   "Withdraw(address,uint256)",
+			Topics:           []TopicDef{{Source: TopicFromCaller}},
+			UseRawArgsAsData: true,
+			eventIndex:       EventStakingWithdraw,
+		},
+		{
+			MethodSignature:  "voteLock(uint256,uint256)",
+			EventSignature:   "VoteLocked(address,uint256,uint256)",
+			Topics:           []TopicDef{{Source: TopicFromCaller}},
+			UseRawArgsAsData: true,
+			eventIndex:       EventStakingVoteLock,
+		},
+	}
+	SponsorEventDefs = []*EventDef{
+		{
+			MethodSignature: "setSponsorForGas(address,uint256)",
+			EventSignature:  "SponsorGas(address,address,uint256)",
+			Topics: []TopicDef{
+				{Source: TopicFromCaller},
+				{Source: TopicFromArg, ArgIndex: 0},
+			},
+			NonIndexedArgs: []NonIndexedArg{
+				{ArgIndex: 1, ABIType: "uint256"},
+			},
+			eventIndex: EventSponsorGas,
+		},
+		{
+			MethodSignature: "setSponsorForCollateral(address)",
+			EventSignature:  "SponsorCollateral(address,address)",
+			Topics: []TopicDef{
+				{Source: TopicFromCaller},
+				{Source: TopicFromArg, ArgIndex: 0},
+			},
+			eventIndex: EventSponsorCollateral,
+		},
+		{
+			MethodSignature: "addPrivilegeByAdmin(address,address[])",
+			EventSignature:  "WhitelistAddedByAdmin(address,address,address[])",
+			Topics: []TopicDef{
+				{Source: TopicFromCaller},
+				{Source: TopicFromArg, ArgIndex: 0},
+			},
+			NonIndexedArgs: []NonIndexedArg{
+				{ArgIndex: 1, ABIType: "address[]"},
+			},
+			eventIndex: EventWhitelistAddedByAdmin,
+		},
+		{
+			MethodSignature: "removePrivilegeByAdmin(address,address[])",
+			EventSignature:  "WhitelistRemovedByAdmin(address,address,address[])",
+			Topics: []TopicDef{
+				{Source: TopicFromCaller},
+				{Source: TopicFromArg, ArgIndex: 0},
+			},
+			NonIndexedArgs: []NonIndexedArg{
+				{ArgIndex: 1, ABIType: "address[]"},
+			},
+			eventIndex: EventWhitelistRemovedByAdmin,
+		},
+		{
+			MethodSignature: "addPrivilege(address[])",
+			EventSignature:  "WhitelistAdded(address,address[])",
+			Topics: []TopicDef{
+				{Source: TopicFromCaller},
+			},
+			NonIndexedArgs: []NonIndexedArg{
+				{ArgIndex: 0, ABIType: "address[]"},
+			},
+			eventIndex: EventWhitelistAdded,
+		},
+		{
+			MethodSignature: "removePrivilege(address[])",
+			EventSignature:  "WhitelistRemoved(address,address[])",
+			Topics: []TopicDef{
+				{Source: TopicFromCaller},
+			},
+			NonIndexedArgs: []NonIndexedArg{
+				{ArgIndex: 0, ABIType: "address[]"},
+			},
+			eventIndex: EventWhitelistRemoved,
+		},
+	}
+
+	AdminEventDefs = []*EventDef{
+		{
+			MethodSignature: "setAdmin(address,address)",
+			EventSignature:  "AdminChanged(address,address,address)",
+			Topics: []TopicDef{
+				{Source: TopicFromCaller},
+				{Source: TopicFromArg, ArgIndex: 0},
+			},
+			NonIndexedArgs: []NonIndexedArg{
+				{ArgIndex: 1, ABIType: "address"},
+			},
+			eventIndex: EventAdminChanged,
+		},
+		{
+			MethodSignature: "destroy(address)",
+			EventSignature:  "ContractDestroyed(address,address)",
+			Topics: []TopicDef{
+				{Source: TopicFromCaller},
+				{Source: TopicFromArg, ArgIndex: 0},
+			},
+			eventIndex: EventContractDestroyed,
+		},
+	}
+)
+
 // MethodID computes the 4-byte method selector from a Solidity function signature.
 func MethodID(signature string) string {
 	h := sha3.NewLegacyKeccak256()
@@ -65,6 +184,9 @@ type EventDef struct {
 
 	// UseRawArgsAsData indicates that input[4:] should be used verbatim as log data.
 	UseRawArgsAsData bool
+
+	// EventIndex is a compact numeric identifier to reference event definitions.
+	eventIndex EventIndex
 
 	// Precomputed values (populated by Register)
 	methodID [4]byte

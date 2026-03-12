@@ -6,42 +6,58 @@ import (
 )
 
 // ParseEpochTraces extracts virtual logs from epoch traces for known internal contracts.
-func ParseEpochTraces(epochTrace *types.EpochTrace, registry *Registry) ([]*types.Log, error) {
+func ParseEpochTraces(epochTrace *types.EpochTrace, registry *Registry) ([]*VirtualLog, error) {
 	callFrames, err := BuildCallTree(epochTrace.CfxTraces)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to build call tree")
 	}
 
-	var logs []*types.Log
+	var logs []*VirtualLog
 	for _, frame := range callFrames {
-		log, err := constructVirtualLog(frame, registry)
+		frameLogs, err := collectVirtualLogs(frame, registry)
 		if err != nil {
 			return nil, err
 		}
-		if log != nil {
-			logs = append(logs, log)
-		}
+		logs = append(logs, frameLogs...)
 	}
 	return logs, nil
 }
 
-func constructVirtualLog(frame *CallFrame, registry *Registry) (*types.Log, error) {
+// collectVirtualLogs walks the subtree rooted at frame, collecting virtual logs.
+func collectVirtualLogs(frame *CallFrame, registry *Registry) ([]*VirtualLog, error) {
+	var logs []*VirtualLog
+
+	log, err := constructVirtualLog(frame, registry)
+	if err != nil {
+		return nil, err
+	}
+	if log != nil {
+		logs = append(logs, log)
+	}
+
+	for _, child := range frame.Children {
+		childLogs, err := collectVirtualLogs(child, registry)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, childLogs...)
+	}
+
+	return logs, nil
+}
+
+func constructVirtualLog(frame *CallFrame, registry *Registry) (*VirtualLog, error) {
 	// Only process successful CALL frames that are fully successful
-	// (i.e., exclude some ancestor reverted, meaning the real event was dropped).
 	if frame.Type != types.TRACE_CALL || !frame.Valid {
 		return nil, nil
 	}
 	if frame.CallAction == nil || frame.CallResult == nil {
-		return nil, nil
+		return nil, errors.New("invalid call trace")
 	}
-	if frame.CallResult.Outcome != types.OUTCOME_SUCCESS {
-		return nil, nil
-	}
-	if !frame.IsFullChainSuccess() {
+	if frame.IsFullChainSuccess() {
 		return nil, nil
 	}
 
-	// Look up the contract
 	entry, ok := registry.Lookup(frame.CallAction.To)
 	if !ok {
 		return nil, nil
@@ -52,13 +68,11 @@ func constructVirtualLog(frame *CallFrame, registry *Registry) (*types.Log, erro
 		return nil, nil
 	}
 
-	// Look up the event definition
 	eventDef, ok := entry.LookupEvent(input[:4])
 	if !ok {
 		return nil, nil
 	}
 
-	// Decode method arguments
 	method, err := entry.Contract.ABI.MethodById(input[:4])
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to find method by ID")
@@ -69,5 +83,14 @@ func constructVirtualLog(frame *CallFrame, registry *Registry) (*types.Log, erro
 		return nil, errors.WithMessage(err, "failed to unpack method arguments")
 	}
 
-	return eventDef.BuildLog(frame, values, input[4:])
+	log, err := eventDef.BuildLog(frame, values, input[4:])
+	if err != nil {
+		return nil, err
+	}
+
+	return &VirtualLog{
+		Log:         log,
+		ContractIdx: entry.ContractIdx,
+		EventIdx:    eventDef.eventIndex,
+	}, nil
 }

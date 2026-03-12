@@ -1,7 +1,6 @@
 package tracelog
 
 import (
-	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/core"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process/db"
@@ -16,8 +15,8 @@ type BatchProcessor struct {
 	logStore           *mysql.InternalContractLogStore
 	epochBlockMapStore *mysql.CfxTraceSyncEpochBlockMapStore
 
-	pendingLogs      []*mysql.InternalContractLog
-	pendingEpochData []store.EpochData
+	pendingLogs               []*mysql.InternalContractLog
+	pendingEpochBlockMappings []*mysql.CfxTraceSyncEpochBlockMap
 }
 
 func NewBatchProcessor(
@@ -45,12 +44,8 @@ func (p *BatchProcessor) BatchProcess(data core.EpochData) int {
 
 	p.pendingLogs = append(p.pendingLogs, dbLogs...)
 
-	pivotBlock := data.Blocks[len(data.Blocks)-1]
-	p.pendingEpochData = append(p.pendingEpochData, store.EpochData{
-		EpochNo:   pivotBlock.EpochNumber.ToInt().Uint64(),
-		PivotHash: &pivotBlock.Hash,
-		Blocks:    data.Blocks,
-	})
+	mapping := constructEpochBlockMapping(data)
+	p.pendingEpochBlockMappings = append(p.pendingEpochBlockMappings, mapping)
 
 	return len(dbLogs)
 }
@@ -62,7 +57,7 @@ func (p *BatchProcessor) BatchExec(tx *gorm.DB, batchSize int) error {
 		}
 	}
 
-	if err := p.epochBlockMapStore.Add(tx, p.pendingEpochData); err != nil {
+	if err := p.epochBlockMapStore.Add(tx, p.pendingEpochBlockMappings); err != nil {
 		return errors.WithMessage(err, "failed to store epoch block mappings")
 	}
 
@@ -70,8 +65,8 @@ func (p *BatchProcessor) BatchExec(tx *gorm.DB, batchSize int) error {
 }
 
 func (p *BatchProcessor) BatchReset() {
-	p.pendingLogs = nil
-	p.pendingEpochData = nil
+	p.pendingLogs = p.pendingLogs[:0]
+	p.pendingEpochBlockMappings = p.pendingEpochBlockMappings[:0]
 }
 
 // OperationFunc adapts a function to the db.Operation interface.
@@ -109,20 +104,15 @@ func (p *Processor) Process(data core.EpochData) db.Operation {
 		logrus.WithError(err).Fatal("Failed to convert logs")
 	}
 
-	pivotBlock := data.Blocks[len(data.Blocks)-1]
-	epochData := store.EpochData{
-		EpochNo:   pivotBlock.EpochNumber.ToInt().Uint64(),
-		PivotHash: &pivotBlock.Hash,
-		Blocks:    data.Blocks,
-	}
-
 	return OperationFunc(func(tx *gorm.DB) error {
 		if len(dbLogs) > 0 {
 			if err := tx.Create(dbLogs).Error; err != nil {
 				return errors.WithMessage(err, "failed to store internal contract logs")
 			}
 		}
-		if err := p.epochBlockMapStore.Add(tx, []store.EpochData{epochData}); err != nil {
+
+		mapping := constructEpochBlockMapping(data)
+		if err := p.epochBlockMapStore.Add(tx, []*mysql.CfxTraceSyncEpochBlockMap{mapping}); err != nil {
 			return errors.WithMessage(err, "failed to store epoch block mappings")
 		}
 		return nil
@@ -142,4 +132,20 @@ func (p *Processor) Revert(data core.EpochData) db.Operation {
 		}
 		return nil
 	})
+}
+
+func constructEpochBlockMapping(data core.EpochData) *mysql.CfxTraceSyncEpochBlockMap {
+	if len(data.Blocks) == 0 {
+		return nil
+	}
+
+	first := data.Blocks[0]
+	last := data.Blocks[len(data.Blocks)-1]
+
+	return &mysql.CfxTraceSyncEpochBlockMap{
+		Epoch:     last.EpochNumber.ToInt().Uint64(),
+		BnMin:     first.BlockNumber.ToInt().Uint64(),
+		BnMax:     last.BlockNumber.ToInt().Uint64(),
+		PivotHash: last.Hash.String(),
+	}
 }
