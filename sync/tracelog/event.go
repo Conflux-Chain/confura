@@ -36,6 +36,7 @@ var (
 			eventIndex:       EventStakingVoteLock,
 		},
 	}
+
 	SponsorEventDefs = []*EventDef{
 		{
 			MethodSignature: "setSponsorForGas(address,uint256)",
@@ -135,7 +136,7 @@ var (
 func MethodID(signature string) string {
 	h := sha3.NewLegacyKeccak256()
 	h.Write([]byte(signature))
-	return "0x" + hex.EncodeToString(h.Sum(nil)[:4])
+	return hex.EncodeToString(h.Sum(nil)[:4])
 }
 
 // Keccak256 computes the full keccak256 hash of the input string.
@@ -214,7 +215,7 @@ func (e *EventDef) init() {
 }
 
 // BuildLog constructs a virtual log from the event definition, call frame, and unpacked arguments.
-func (e *EventDef) BuildLog(callTrace *CallTraceData, values []interface{}, rawArgs []byte) (*types.Log, error) {
+func (e *EventDef) BuildLog(callTrace *CallTraceData, values []any, rawArgs []byte) (*types.Log, error) {
 	var topics []common.Hash
 	topics = append(topics, e.topic0)
 
@@ -258,6 +259,7 @@ func (e *EventDef) BuildLog(callTrace *CallTraceData, values []interface{}, rawA
 
 	space := types.SPACE_NATIVE
 	return &types.Log{
+		Space:            &space,
 		Data:             data,
 		Address:          callTrace.Action.To,
 		Topics:           cfxTopics,
@@ -265,13 +267,12 @@ func (e *EventDef) BuildLog(callTrace *CallTraceData, values []interface{}, rawA
 		EpochNumber:      &callTrace.EpochNumber,
 		TransactionHash:  &callTrace.TransactionHash,
 		TransactionIndex: (*hexutil.Big)(big.NewInt(0).SetUint64(uint64(callTrace.TransactionPosition))),
-		Space:            &space,
 	}, nil
 }
 
-func (e *EventDef) packNonIndexedArgs(values []interface{}) ([]byte, error) {
+func (e *EventDef) packNonIndexedArgs(values []any) ([]byte, error) {
 	args := make(abi.Arguments, 0, len(e.NonIndexedArgs))
-	vals := make([]interface{}, 0, len(e.NonIndexedArgs))
+	vals := make([]any, 0, len(e.NonIndexedArgs))
 
 	for _, na := range e.NonIndexedArgs {
 		if na.ArgIndex >= len(values) {

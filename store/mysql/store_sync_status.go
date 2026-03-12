@@ -26,15 +26,15 @@ func NewSyncStatusStore(db *gorm.DB) *SyncStatusStore {
 	return &SyncStatusStore{baseStore: newBaseStore(db)}
 }
 
-func (s *SyncStatusStore) Load(tx *gorm.DB) (*SyncStatus, error) {
+func (s *SyncStatusStore) LoadReorgVersion(tx *gorm.DB) (uint64, error) {
 	var status SyncStatus
 
 	err := tx.First(&status, 1).Error
 	if err != nil && !s.IsRecordNotFound(err) {
-		return nil, err
+		return 0, err
 	}
 
-	return &status, nil
+	return status.ReorgVersion, nil
 }
 
 func (s *SyncStatusStore) IncrementReorgVersion(tx *gorm.DB) error {

@@ -26,13 +26,8 @@ func BuildCallTree(traces []*types.LocalizedTrace) ([]*CallFrame, error) {
 				Action:        t.Action.(types.Create),
 			})
 
-		case types.TRACE_CALL_RESULT:
-			if err := handleTraceResult(builder, t, types.TRACE_CALL); err != nil {
-				return nil, err
-			}
-
-		case types.TRACE_CREATE_RESULT:
-			if err := handleTraceResult(builder, t, types.TRACE_CREATE); err != nil {
+		case types.TRACE_CALL_RESULT, types.TRACE_CREATE_RESULT:
+			if err := handleTraceResult(builder, t); err != nil {
 				return nil, err
 			}
 		}
@@ -142,14 +137,25 @@ func walkNode[T TraceData](node *TreeNode[T], visit func(*TreeNode[T]) error) er
 	return nil
 }
 
-func handleTraceResult(builder *TreeBuilder[TraceData], result *types.LocalizedTrace, expected types.TraceType) error {
+func handleTraceResult(builder *TreeBuilder[TraceData], result *types.LocalizedTrace) error {
 	top, err := builder.Pop()
 	if err != nil {
 		return err
 	}
 
-	if top.Data.TraceType() != expected {
-		return errors.Errorf("expected %v trace type, got %v", expected, top.Data.TraceType())
+	switch traceType := top.Data.TraceType(); traceType {
+	case types.TRACE_CALL:
+		if result.Type != types.TRACE_CALL_RESULT {
+			return errors.Errorf("expected call result, got %v", result.Type)
+		}
+
+	case types.TRACE_CREATE:
+		if result.Type != types.TRACE_CREATE_RESULT {
+			return errors.Errorf("expected create result, got %v", result.Type)
+		}
+
+	default:
+		return errors.Errorf("unexpected trace type %v", traceType)
 	}
 
 	action := top.Data.Trace()

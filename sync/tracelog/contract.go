@@ -31,23 +31,19 @@ func (e *ContractEntry) EventIndexOf(methodID []byte) (EventIndex, bool) {
 	if def, ok := e.LookupEvent(methodID); ok {
 		return def.eventIndex, true
 	}
-	return 0, false
+	return EventUnknown, false
 }
 
 // Registry manages all known internal contracts and their event mappings.
 type Registry struct {
-	entries         []*ContractEntry
-	byAddress       map[string]*ContractEntry // keyed by address
-	contractIndices map[string]ContractIndex  // hex address -> ContractIndex
+	entries   []*ContractEntry
+	byAddress map[string]*ContractEntry // keyed by address
 }
 
 // NewRegistry creates a Registry from the SDK client, registering all
 // known internal contracts and their event definitions.
 func NewRegistry(client sdk.ClientOperator) (*Registry, error) {
-	r := &Registry{
-		byAddress:       make(map[string]*ContractEntry),
-		contractIndices: make(map[string]ContractIndex),
-	}
+	r := &Registry{byAddress: make(map[string]*ContractEntry)}
 
 	// Register Staking
 	staking, err := sdkcontract.NewStaking(client)
@@ -87,9 +83,7 @@ func (r *Registry) register(addr types.Address, contract sdk.Contract, ci Contra
 	}
 
 	r.entries = append(r.entries, entry)
-	hexAddr := addr.GetHexAddress()
-	r.byAddress[hexAddr] = entry
-	r.contractIndices[hexAddr] = ci
+	r.byAddress[addr.GetHexAddress()] = entry
 }
 
 // Lookup finds the ContractEntry for a given address.
@@ -100,8 +94,8 @@ func (r *Registry) Lookup(addr types.Address) (*ContractEntry, bool) {
 
 // ContractIndexOf returns the ContractIndex for a given contract address.
 func (r *Registry) ContractIndexOf(addr types.Address) ContractIndex {
-	if idx, ok := r.contractIndices[addr.GetHexAddress()]; ok {
-		return idx
+	if entry, ok := r.byAddress[addr.GetHexAddress()]; ok {
+		return entry.ContractIdx
 	}
 	return ContractUnknown
 }

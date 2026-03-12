@@ -9,9 +9,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-// EnrichAndConvertLogs assigns log indices, timestamps, and converts types.Log
-// into InternalContractLog database models.
-func EnrichAndConvertLogs(logs []*VirtualLog, blocks []*types.Block) ([]*mysql.InternalContractLog, error) {
+// ConvertToDbLogs assigns log indices, timestamps, and converts virtual logs
+// into `InternalContractLog` database models.
+func ConvertToDbLogs(logs []*VirtualLog, blocks []*types.Block) ([]*mysql.InternalContractLog, error) {
 	blockMap := make(map[types.Hash]*types.Block, len(blocks))
 	for _, b := range blocks {
 		blockMap[b.Hash] = b
@@ -25,7 +25,7 @@ func EnrichAndConvertLogs(logs []*VirtualLog, blocks []*types.Block) ([]*mysql.I
 
 	for _, log := range logs {
 		if log.BlockHash == nil || log.TransactionHash == nil {
-			return nil, errors.New("log missing block hash or transaction hash")
+			return nil, errors.New("missing block hash or transaction hash")
 		}
 
 		block, ok := blockMap[*log.BlockHash]

@@ -56,7 +56,7 @@ func constructVirtualLog(frame *CallFrame, registry *Registry) (*VirtualLog, err
 
 	input := callData.Action.Input
 	if len(input) < 4 {
-		return nil, nil
+		return nil, errors.Errorf("expected at least 4 bytes of call input got %v", len(input))
 	}
 
 	eventDef, ok := entry.LookupEvent(input[:4])

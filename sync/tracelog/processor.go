@@ -37,15 +37,16 @@ func (p *BatchProcessor) BatchProcess(data core.EpochData) int {
 		logrus.WithError(err).Fatal("Failed to parse epoch traces")
 	}
 
-	dbLogs, err := EnrichAndConvertLogs(logs, data.Blocks)
+	dbLogs, err := ConvertToDbLogs(logs, data.Blocks)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to convert logs")
 	}
 
 	p.pendingLogs = append(p.pendingLogs, dbLogs...)
 
-	mapping := constructEpochBlockMapping(data)
-	p.pendingEpochBlockMappings = append(p.pendingEpochBlockMappings, mapping)
+	if mapping := constructEpochBlockMapping(data); mapping != nil {
+		p.pendingEpochBlockMappings = append(p.pendingEpochBlockMappings, mapping)
+	}
 
 	return len(dbLogs)
 }
@@ -102,7 +103,7 @@ func (p *Processor) Process(data core.EpochData) db.Operation {
 		logrus.WithError(err).Fatal("Failed to parse epoch traces")
 	}
 
-	dbLogs, err := EnrichAndConvertLogs(logs, data.Blocks)
+	dbLogs, err := ConvertToDbLogs(logs, data.Blocks)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to convert logs")
 	}
@@ -114,10 +115,12 @@ func (p *Processor) Process(data core.EpochData) db.Operation {
 			}
 		}
 
-		mapping := constructEpochBlockMapping(data)
-		if err := p.epochBlockMapStore.Add(tx, []*mysql.CfxTraceSyncEpochBlockMap{mapping}); err != nil {
-			return errors.WithMessage(err, "failed to store epoch block mappings")
+		if mapping := constructEpochBlockMapping(data); mapping != nil {
+			if err := p.syncStatusStore.IncrementReorgVersion(tx); err != nil {
+				return errors.WithMessage(err, "failed to increment reorg version")
+			}
 		}
+
 		return nil
 	})
 }
