@@ -269,7 +269,7 @@ func (e2bms *CfxTraceSyncEpochBlockMapStore) preparePartition(minEpochNumber, ma
 			return errors.WithMessage(err, "failed to init range partitioned table")
 		}
 
-		latestPartitionIndex = int(initPartitionIndex)
+		latestPartitionIndex = initPartitionIndex
 	}
 
 	targetPartitionIndex := int(maxEpochNumber / epochToBlockMappingPartitionSize)

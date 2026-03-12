@@ -79,16 +79,19 @@ type Processor struct {
 	registry           *Registry
 	logStore           *mysql.InternalContractLogStore
 	epochBlockMapStore *mysql.CfxTraceSyncEpochBlockMapStore
+	syncStatusStore    *mysql.SyncStatusStore
 }
 
 func NewProcessor(
 	registry *Registry,
 	logStore *mysql.InternalContractLogStore,
 	epochBlockMapStore *mysql.CfxTraceSyncEpochBlockMapStore,
+	syncStatusStore *mysql.SyncStatusStore,
 ) *Processor {
 	return &Processor{
 		registry:           registry,
 		logStore:           logStore,
+		syncStatusStore:    syncStatusStore,
 		epochBlockMapStore: epochBlockMapStore,
 	}
 }
@@ -129,6 +132,9 @@ func (p *Processor) Revert(data core.EpochData) db.Operation {
 		}
 		if err := p.epochBlockMapStore.Pop(tx, epochNum); err != nil {
 			return errors.WithMessage(err, "failed to pop epoch block mappings")
+		}
+		if err := p.syncStatusStore.IncrementReorgVersion(tx); err != nil {
+			return errors.WithMessage(err, "failed to increment reorg version")
 		}
 		return nil
 	})

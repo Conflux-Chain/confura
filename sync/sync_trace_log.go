@@ -101,6 +101,8 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 		}
 	}
 
-	proc := tracelog.NewProcessor(s.registry, s.logStore, s.epochBlockMapStore)
+	proc := tracelog.NewProcessor(
+		s.registry, s.logStore, s.epochBlockMapStore, s.syncStatusStore,
+	)
 	sync.StartLatestDB(ctx, wg, syncParams, proc)
 }
