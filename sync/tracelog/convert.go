@@ -9,13 +9,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// VirtualLog wraps a types.Log with its compact index identifiers.
-type VirtualLog struct {
-	*types.Log
-	ContractIdx ContractIndex
-	EventIdx    EventIndex
-}
-
 // EnrichAndConvertLogs assigns log indices, timestamps, and converts types.Log
 // into InternalContractLog database models.
 func EnrichAndConvertLogs(logs []*VirtualLog, blocks []*types.Block) ([]*mysql.InternalContractLog, error) {

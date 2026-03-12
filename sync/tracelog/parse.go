@@ -74,7 +74,7 @@ func constructVirtualLog(frame *CallFrame, registry *Registry) (*VirtualLog, err
 		return nil, errors.WithMessage(err, "unpack failed")
 	}
 
-	log, err := eventDef.BuildLog(frame, values, input[4:])
+	log, err := eventDef.BuildLog(callData, values, input[4:])
 	if err != nil {
 		return nil, err
 	}

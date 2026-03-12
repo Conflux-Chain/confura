@@ -214,7 +214,7 @@ func (e *EventDef) init() {
 }
 
 // BuildLog constructs a virtual log from the event definition, call frame, and unpacked arguments.
-func (e *EventDef) BuildLog(frame *CallFrame, values []interface{}, rawArgs []byte) (*types.Log, error) {
+func (e *EventDef) BuildLog(callTrace *CallTraceData, values []interface{}, rawArgs []byte) (*types.Log, error) {
 	var topics []common.Hash
 	topics = append(topics, e.topic0)
 
@@ -222,7 +222,7 @@ func (e *EventDef) BuildLog(frame *CallFrame, values []interface{}, rawArgs []by
 	for _, td := range e.Topics {
 		switch td.Source {
 		case TopicFromCaller:
-			topics = append(topics, common.HexToHash(frame.CallAction.From.GetHexAddress()))
+			topics = append(topics, common.HexToHash(callTrace.Action.From.GetHexAddress()))
 		case TopicFromArg:
 			if td.ArgIndex >= len(values) {
 				return nil, errors.Errorf("arg index %d out of range (have %d args)", td.ArgIndex, len(values))
@@ -259,12 +259,12 @@ func (e *EventDef) BuildLog(frame *CallFrame, values []interface{}, rawArgs []by
 	space := types.SPACE_NATIVE
 	return &types.Log{
 		Data:             data,
-		Address:          frame.CallAction.To,
+		Address:          callTrace.Action.To,
 		Topics:           cfxTopics,
-		BlockHash:        &frame.BlockHash,
-		EpochNumber:      &frame.EpochNumber,
-		TransactionHash:  &frame.TransactionHash,
-		TransactionIndex: (*hexutil.Big)(big.NewInt(0).SetUint64(uint64(frame.TransactionPosition))),
+		BlockHash:        &callTrace.BlockHash,
+		EpochNumber:      &callTrace.EpochNumber,
+		TransactionHash:  &callTrace.TransactionHash,
+		TransactionIndex: (*hexutil.Big)(big.NewInt(0).SetUint64(uint64(callTrace.TransactionPosition))),
 		Space:            &space,
 	}, nil
 }
