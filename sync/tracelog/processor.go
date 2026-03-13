@@ -80,19 +80,16 @@ type Processor struct {
 	registry           *Registry
 	logStore           *mysql.InternalContractLogStore
 	epochBlockMapStore *mysql.CfxTraceSyncEpochBlockMapStore
-	syncStatusStore    *mysql.SyncStatusStore
 }
 
 func NewProcessor(
 	registry *Registry,
 	logStore *mysql.InternalContractLogStore,
 	epochBlockMapStore *mysql.CfxTraceSyncEpochBlockMapStore,
-	syncStatusStore *mysql.SyncStatusStore,
 ) *Processor {
 	return &Processor{
 		registry:           registry,
 		logStore:           logStore,
-		syncStatusStore:    syncStatusStore,
 		epochBlockMapStore: epochBlockMapStore,
 	}
 }
@@ -100,12 +97,16 @@ func NewProcessor(
 func (p *Processor) Process(data core.EpochData) db.Operation {
 	logs, err := ParseEpochTraces(data.Traces, p.registry)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to parse epoch traces")
+		return OperationFunc(func(tx *gorm.DB) error {
+			return errors.WithMessage(err, "failed to parse epoch traces")
+		})
 	}
 
 	dbLogs, err := ConvertToDbLogs(logs, data.Blocks)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to convert logs")
+		return OperationFunc(func(tx *gorm.DB) error {
+			return errors.WithMessage(err, "failed to convert logs")
+		})
 	}
 
 	return OperationFunc(func(tx *gorm.DB) error {
@@ -116,8 +117,8 @@ func (p *Processor) Process(data core.EpochData) db.Operation {
 		}
 
 		if mapping := constructEpochBlockMapping(data); mapping != nil {
-			if err := p.syncStatusStore.IncrementReorgVersion(tx); err != nil {
-				return errors.WithMessage(err, "failed to increment reorg version")
+			if err := p.epochBlockMapStore.Add(tx, []*mysql.CfxTraceSyncEpochBlockMap{mapping}); err != nil {
+				return errors.WithMessage(err, "failed to store epoch block mappings")
 			}
 		}
 
@@ -135,9 +136,6 @@ func (p *Processor) Revert(data core.EpochData) db.Operation {
 		}
 		if err := p.epochBlockMapStore.Pop(tx, epochNum); err != nil {
 			return errors.WithMessage(err, "failed to pop epoch block mappings")
-		}
-		if err := p.syncStatusStore.IncrementReorgVersion(tx); err != nil {
-			return errors.WithMessage(err, "failed to increment reorg version")
 		}
 		return nil
 	})

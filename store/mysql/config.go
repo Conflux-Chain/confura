@@ -29,7 +29,6 @@ var allModels = []interface{}{
 	&bnPartition{},
 	&NodeRoute{},
 	&dlock.Dlock{},
-	&SyncStatus{},
 	&InternalContractLog{},
 	&CfxTraceSyncEpochBlockMap{},
 }

@@ -286,6 +286,14 @@ func (e2bms *CfxTraceSyncEpochBlockMapStore) preparePartition(minEpochNumber, ma
 }
 
 func (e2bms *CfxTraceSyncEpochBlockMapStore) LoadPivotHashes(fromEpoch, toEpoch uint64) (map[uint64]string, error) {
+	if fromEpoch > toEpoch {
+		return nil, errors.New("invalid epoch range")
+	}
+
+	if toEpoch-fromEpoch+1 > 10_000 {
+		return nil, errors.New("epoch range too large")
+	}
+
 	var epochBlockMaps []CfxTraceSyncEpochBlockMap
 
 	query := e2bms.db.Where("epoch BETWEEN ? AND ?", fromEpoch, toEpoch)

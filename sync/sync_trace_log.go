@@ -18,10 +18,9 @@ import (
 type TraceLogSyncer struct {
 	epochFrom uint64
 	adapter   *core.Adapter
-	clients   []*sdk.Client
+	client    *sdk.Client
 
 	registry           *tracelog.Registry
-	syncStatusStore    *mysql.SyncStatusStore
 	epochBlockMapStore *mysql.CfxTraceSyncEpochBlockMapStore
 	logStore           *mysql.InternalContractLogStore
 }
@@ -46,18 +45,20 @@ func MustNewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) *TraceL
 	}
 
 	epochBlockMapStore := mysql.NewCfxTraceSyncEpochBlockMapStore(store)
-	epochFrom, _, err := epochBlockMapStore.MaxEpoch()
+	epochFrom, ok, err := epochBlockMapStore.MaxEpoch()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get max epoch")
+	}
+	if !ok {
+		epochFrom = 0 // start from genesis if not found
 	}
 
 	return &TraceLogSyncer{
 		adapter:            adapter,
 		epochFrom:          epochFrom,
-		clients:            clients,
+		client:             clients[0],
 		registry:           registry,
 		epochBlockMapStore: epochBlockMapStore,
-		syncStatusStore:    mysql.NewSyncStatusStore(store.DB()),
 		logStore:           mysql.NewInternalContractLogStore(store.DB()),
 	}
 }
@@ -70,21 +71,21 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 	// Phase 1: Catchup
 	params := sync.CatchupParamsDB[core.EpochData]{
 		Adapter:         s.adapter,
-		DB:              s.syncStatusStore.DB(),
+		DB:              s.logStore.DB(),
 		NextBlockNumber: s.epochFrom,
 	}
 	bp := tracelog.NewBatchProcessor(s.registry, s.logStore, s.epochBlockMapStore)
 	s.epochFrom = sync.CatchUpDB[core.EpochData](ctx, params, bp)
 
 	// Phase 2: Follow latest
-	latestFinalized, err := s.clients[0].GetEpochNumber(types.EpochLatestFinalized)
+	latestFinalized, err := s.client.GetEpochNumber(types.EpochLatestFinalized)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get latest finalized epoch")
 	}
 
 	syncParams := sync.ParamsDB[core.EpochData]{
 		Adapter:         s.adapter,
-		DB:              s.syncStatusStore.DB(),
+		DB:              s.logStore.DB(),
 		NextBlockNumber: s.epochFrom,
 	}
 
@@ -94,6 +95,14 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 		if err != nil {
 			logrus.WithError(err).Fatal("Failed to load pivot hashes")
 		}
+
+		if expected := int(s.epochFrom - finalizedEpoch + 1); len(pivotHashes) < expected {
+			logrus.WithFields(logrus.Fields{
+				"expectedNum": expected,
+				"actualNum":   len(pivotHashes),
+			}).Fatal("Imcomplete pivot hashes loaded")
+		}
+
 		syncParams.Reorg = poll.ReorgWindowParams{
 			FinalizedBlockNumber: finalizedEpoch,
 			FinalizedBlockHash:   pivotHashes[finalizedEpoch],
@@ -101,8 +110,6 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 		}
 	}
 
-	proc := tracelog.NewProcessor(
-		s.registry, s.logStore, s.epochBlockMapStore, s.syncStatusStore,
-	)
+	proc := tracelog.NewProcessor(s.registry, s.logStore, s.epochBlockMapStore)
 	sync.StartLatestDB(ctx, wg, syncParams, proc)
 }

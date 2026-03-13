@@ -6,15 +6,16 @@ import (
 
 // InternalContractLog stores virtual logs synthesized from internal contract traces.
 type InternalContractLog struct {
-	ID           uint64 `gorm:"primaryKey;autoIncrement"`
-	BlockNumber  uint64 `gorm:"column:bn;not null;index:idx_bn;index:idx_t0_bn,priority:2;index:idx_addr_bn,priority:2;index:idx_addr_t0_bn,priority:3"`
-	Epoch        uint64 `gorm:"not null;index:idx_epoch"`
+	ID uint64 `gorm:"primaryKey;autoIncrement"`
+
+	BlockNumber  uint64 `gorm:"column:bn;index:idx_addr_bn,priority:2;index:idx_addr_t0_bn,priority:3"`
+	Epoch        uint64 `gorm:"index:idx_epoch;index:idx_addr_epoch,priority:2;index:idx_addr_t0_epoch,priority:3"`
 	BlockHash    string `gorm:"column:bh;size:66;not null"`
 	TxHash       string `gorm:"column:th;size:66;not null"`
-	TxIndex      int    `gorm:"not null"`
-	LogIndex     int    `gorm:"not null"`
-	AddressIndex uint8  `gorm:"column:address;type:tinyint unsigned;not null;index:idx_addr_bn,priority:1;index:idx_addr_t0_bn,priority:1"`
-	Topic0Index  uint8  `gorm:"column:topic0;type:tinyint unsigned;not null;index:idx_t0_bn,priority:1;index:idx_addr_t0_bn,priority:2"`
+	TxIndex      int    `gorm:"column:ti"`
+	LogIndex     int    `gorm:"column:li"`
+	AddressIndex uint8  `gorm:"column:address;index:idx_addr_bn,priority:1;index:idx_addr_t0_bn,priority:1;index:idx_addr_epoch,priority:1;index:idx_addr_t0_epoch,priority:1"`
+	Topic0Index  uint8  `gorm:"column:topic0;index:idx_addr_t0_bn,priority:2;index:idx_addr_t0_epoch,priority:2"`
 	Topic1       string `gorm:"size:66"`
 	Topic2       string `gorm:"size:66"`
 	Topic3       string `gorm:"size:66"`

@@ -266,7 +266,7 @@ func (e *EventDef) BuildLog(callTrace *CallTraceData, values []any, rawArgs []by
 		BlockHash:        &callTrace.BlockHash,
 		EpochNumber:      &callTrace.EpochNumber,
 		TransactionHash:  &callTrace.TransactionHash,
-		TransactionIndex: (*hexutil.Big)(big.NewInt(0).SetUint64(uint64(callTrace.TransactionPosition))),
+		TransactionIndex: (*hexutil.Big)(new(big.Int).SetUint64(uint64(callTrace.TransactionPosition))),
 	}, nil
 }
 

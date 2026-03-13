@@ -1,8 +1,11 @@
 package tracelog
 
 import (
+	"encoding/hex"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // VirtualLog wraps a types.Log with its compact index identifiers.
@@ -51,6 +54,9 @@ func constructVirtualLog(frame *CallFrame, registry *Registry) (*VirtualLog, err
 
 	entry, ok := registry.Lookup(callData.Action.To)
 	if !ok {
+		logrus.WithFields(logrus.Fields{
+			"callAction.To": callData.Action.To,
+		}).Debug("Skip un-registered internal contract")
 		return nil, nil
 	}
 
@@ -61,6 +67,10 @@ func constructVirtualLog(frame *CallFrame, registry *Registry) (*VirtualLog, err
 
 	eventDef, ok := entry.LookupEvent(input[:4])
 	if !ok {
+		logrus.WithFields(logrus.Fields{
+			"callAction.To": callData.Action.To,
+			"methodID":      hex.EncodeToString(input[:4]),
+		}).Debug("Skip un-registered event")
 		return nil, nil
 	}
 
@@ -76,7 +86,7 @@ func constructVirtualLog(frame *CallFrame, registry *Registry) (*VirtualLog, err
 
 	log, err := eventDef.BuildLog(callData, values, input[4:])
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "failed to build log")
 	}
 
 	return &VirtualLog{
