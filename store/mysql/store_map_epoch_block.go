@@ -99,7 +99,7 @@ func (e2bms *epochBlockMapStore[T]) MaxEpoch() (uint64, bool, error) {
 	var maxEpoch sql.NullInt64
 
 	db := e2bms.db.Model(&epochBlockMap{}).Select("MAX(epoch)")
-	if err := db.Find(&maxEpoch).Error; err != nil {
+	if err := db.Scan(&maxEpoch).Error; err != nil {
 		return 0, false, err
 	}
 
@@ -195,4 +195,119 @@ func (e2bms *epochBlockMapStore[T]) Add(dbTx *gorm.DB, dataSlice []T) error {
 // Remove remove epoch to block mappings of specific epoch range from db store.
 func (e2bms *epochBlockMapStore[T]) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
 	return dbTx.Where("epoch >= ? AND epoch <= ?", epochFrom, epochTo).Delete(&epochBlockMap{}).Error
+}
+
+type CfxTraceSyncEpochBlockMap epochBlockMap
+
+func (m CfxTraceSyncEpochBlockMap) TableName() string {
+	return "cfx_trace_sync_epoch_block_map"
+}
+
+type CfxTraceSyncEpochBlockMapStore struct {
+	*baseStore
+
+	// help partitioner
+	partitioner *mysqlRangePartitioner
+}
+
+func NewCfxTraceSyncEpochBlockMapStore(cs *CfxStore) *CfxTraceSyncEpochBlockMapStore {
+	return &CfxTraceSyncEpochBlockMapStore{
+		baseStore: newBaseStore(cs.DB()),
+		partitioner: newMysqlRangePartitioner(
+			cs.config.Database, CfxTraceSyncEpochBlockMap{}.TableName(), "epoch",
+		),
+	}
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) MaxEpoch() (uint64, bool, error) {
+	var maxEpoch sql.NullInt64
+
+	db := e2bms.db.Model(&CfxTraceSyncEpochBlockMap{}).Select("MAX(epoch)")
+	if err := db.Scan(&maxEpoch).Error; err != nil {
+		return 0, false, err
+	}
+
+	if !maxEpoch.Valid {
+		return 0, false, nil
+	}
+
+	return uint64(maxEpoch.Int64), true, nil
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) Add(dbTx *gorm.DB, mappings []*CfxTraceSyncEpochBlockMap) error {
+	if len(mappings) == 0 {
+		return nil
+	}
+
+	minEpochNumber := mappings[0].Epoch
+	maxEpochNumber := mappings[len(mappings)-1].Epoch
+
+	if err := e2bms.preparePartition(minEpochNumber, maxEpochNumber); err != nil {
+		return errors.WithMessage(err, "failed to prepare partitions")
+	}
+
+	return dbTx.Create(mappings).Error
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) preparePartition(minEpochNumber, maxEpochNumber uint64) error {
+	partition, err := e2bms.partitioner.latestPartition(e2bms.db)
+	if err != nil {
+		return errors.WithMessage(err, "failed to get latest partition")
+	}
+
+	var latestPartitionIndex int
+
+	if partition != nil {
+		latestPartitionIndex = e2bms.partitioner.indexOfPartition(partition)
+	} else {
+		// create initial partition
+		initPartitionIndex := int(minEpochNumber / epochToBlockMappingPartitionSize)
+		threshold := uint64(initPartitionIndex+1) * epochToBlockMappingPartitionSize
+
+		err = e2bms.partitioner.convert(e2bms.db, initPartitionIndex, threshold)
+		if err != nil {
+			return errors.WithMessage(err, "failed to init range partitioned table")
+		}
+
+		latestPartitionIndex = initPartitionIndex
+	}
+
+	targetPartitionIndex := int(maxEpochNumber / epochToBlockMappingPartitionSize)
+
+	for i := latestPartitionIndex + 1; i <= targetPartitionIndex; i++ {
+		threshold := uint64(i+1) * epochToBlockMappingPartitionSize
+
+		if err := e2bms.partitioner.addPartition(e2bms.db, i, threshold); err != nil {
+			return errors.WithMessage(err, "failed to add partition")
+		}
+	}
+
+	return nil
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) LoadPivotHashes(fromEpoch, toEpoch uint64) (map[uint64]string, error) {
+	if fromEpoch > toEpoch {
+		return nil, errors.New("invalid epoch range")
+	}
+
+	if toEpoch-fromEpoch+1 > 10_000 {
+		return nil, errors.New("epoch range too large")
+	}
+
+	var epochBlockMaps []CfxTraceSyncEpochBlockMap
+
+	query := e2bms.db.Where("epoch BETWEEN ? AND ?", fromEpoch, toEpoch)
+	if err := query.Find(&epochBlockMaps).Error; err != nil {
+		return nil, err
+	}
+
+	pivotHashes := make(map[uint64]string, len(epochBlockMaps))
+	for _, epochBlockMap := range epochBlockMaps {
+		pivotHashes[epochBlockMap.Epoch] = epochBlockMap.PivotHash
+	}
+	return pivotHashes, nil
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) Pop(dbTx *gorm.DB, epochUntil uint64) error {
+	return dbTx.Where("epoch >= ?", epochUntil).Delete(&CfxTraceSyncEpochBlockMap{}).Error
 }

@@ -29,6 +29,8 @@ var allModels = []interface{}{
 	&bnPartition{},
 	&NodeRoute{},
 	&dlock.Dlock{},
+	&InternalContractLog{},
+	&CfxTraceSyncEpochBlockMap{},
 }
 
 // Config represents the mysql configurations to open a database instance.
