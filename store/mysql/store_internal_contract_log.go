@@ -111,7 +111,6 @@ func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxIntern
 	}
 
 	if err := query.WithContext(ctx).
-		Order("bn ASC").
 		Limit(int(store.MaxLogLimit) + 1).
 		Find(&logs).Error; err != nil {
 		return nil, err
@@ -149,6 +148,7 @@ func (s *InternalContractLogStore) buildBlockHashQuery(
 	query *gorm.DB, filter CfxInternalContractLogFilter, syncInfo CfxTraceSyncEpochBlockMap,
 ) (*gorm.DB, error) {
 	blockNumbers := make([]uint64, 0, len(filter.BlockHashes))
+
 	for _, bh := range filter.BlockHashes {
 		bn, ok := filter.BlockHash2Numbers[bh]
 		if !ok {
@@ -160,7 +160,7 @@ func (s *InternalContractLogStore) buildBlockHashQuery(
 		blockNumbers = append(blockNumbers, bn)
 	}
 
-	return query.Where("bn IN(?)", blockNumbers), nil
+	return query.Where("bn IN(?)", blockNumbers).Order("bn ASC"), nil
 }
 
 func (s *InternalContractLogStore) buildBlockRangeQuery(
@@ -175,7 +175,7 @@ func (s *InternalContractLogStore) buildBlockRangeQuery(
 		)
 	}
 
-	return query.Where("bn >= ? AND bn <= ?", fromBlock, toBlock), nil
+	return query.Where("bn >= ? AND bn <= ?", fromBlock, toBlock).Order("bn ASC"), nil
 }
 
 func (s *InternalContractLogStore) buildEpochRangeQuery(
@@ -197,7 +197,8 @@ func (s *InternalContractLogStore) buildEpochRangeQuery(
 		)
 	}
 
-	return query.Where("epoch >= ? AND epoch <= ?", epochFrom.Uint64(), epochTo.Uint64()), nil
+	from, to := epochFrom.Uint64(), epochTo.Uint64()
+	return query.Where("epoch >= ? AND epoch <= ?", from, to).Order("epoch ASC"), nil
 }
 
 // applyIndexFilters adds contract address and event index conditions.
@@ -235,7 +236,6 @@ func (s *InternalContractLogStore) checkResultSetBounds(
 		Model(&InternalContractLog{}).
 		Select("bn, epoch").
 		Offset(int(store.MaxLogLimit)).
-		Order("bn ASC").
 		Take(&exceeding).Error
 
 	if s.IsRecordNotFound(err) {
