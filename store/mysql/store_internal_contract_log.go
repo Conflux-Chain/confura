@@ -93,7 +93,7 @@ func (s *InternalContractLogStore) Pop(dbTx *gorm.DB, epochFrom uint64) error {
 func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxInternalContractLogFilter) ([]InternalContractLog, error) {
 	var logs []InternalContractLog
 
-	syncInfo, err := s.getLatestSyncInfo(s.db)
+	syncInfo, err := s.getLatestSyncInfo()
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to get latest sync info")
 	}
@@ -121,9 +121,9 @@ func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxIntern
 }
 
 // getLatestSyncInfo retrieves the most recent epoch-to-block mapping record.
-func (s *InternalContractLogStore) getLatestSyncInfo(tx *gorm.DB) (CfxTraceSyncEpochBlockMap, error) {
+func (s *InternalContractLogStore) getLatestSyncInfo() (CfxTraceSyncEpochBlockMap, error) {
 	var info CfxTraceSyncEpochBlockMap
-	if err := tx.Last(&info).Error; err != nil && !s.IsRecordNotFound(err) {
+	if err := s.db.Last(&info).Error; err != nil && !s.IsRecordNotFound(err) {
 		return info, err
 	}
 	return info, nil
