@@ -2,7 +2,7 @@ package mysql
 
 import (
 	"context"
-	"database/sql"
+	"strconv"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -46,10 +46,42 @@ type CfxInternalContractLogFilter struct {
 // InternalContractLogStore provides database operations for internal contract logs.
 type InternalContractLogStore struct {
 	*baseStore
+	cs *confStore
 }
 
 func NewInternalContractLogStore(db *gorm.DB) *InternalContractLogStore {
-	return &InternalContractLogStore{baseStore: newBaseStore(db)}
+	return &InternalContractLogStore{
+		baseStore: newBaseStore(db), cs: newConfStore(db),
+	}
+}
+
+const (
+	MysqlConfKeyInternalContractReorgVersion = "internal.contract.reorg.version"
+)
+
+func (s *InternalContractLogStore) GetReorgVersion() (int, error) {
+	conf, err := s.cs.LoadConfig(MysqlConfKeyInternalContractReorgVersion)
+	if err != nil {
+		return 0, err
+	}
+
+	val, ok := conf[MysqlConfKeyInternalContractReorgVersion]
+	if !ok {
+		return 0, nil
+	}
+
+	return strconv.Atoi(val)
+}
+
+// thread unsafe
+func (s *InternalContractLogStore) IncrementReorgVersion(dbTx *gorm.DB) error {
+	version, err := s.GetReorgVersion()
+	if err != nil {
+		return errors.WithMessage(err, "failed to get reorg version")
+	}
+
+	newVersion := strconv.Itoa(version + 1)
+	return s.cs.StoreConfig(MysqlConfKeyInternalContractReorgVersion, newVersion)
 }
 
 // Pop removes all logs at or after the given epoch (for reorg handling).
@@ -57,37 +89,33 @@ func (s *InternalContractLogStore) Pop(dbTx *gorm.DB, epochFrom uint64) error {
 	return dbTx.Where("epoch >= ?", epochFrom).Delete(&InternalContractLog{}).Error
 }
 
-// GetLogs retrieves internal contract logs matching the given filter criteria within a repeatable-read transaction.
+// GetLogs retrieves internal contract logs matching the given filter criteria.
 func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxInternalContractLogFilter) ([]InternalContractLog, error) {
-	opts := &sql.TxOptions{
-		Isolation: sql.LevelRepeatableRead,
-		ReadOnly:  true,
+	var logs []InternalContractLog
+
+	syncInfo, err := s.getLatestSyncInfo(s.db)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get latest sync info")
 	}
 
-	var logs []InternalContractLog
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		syncInfo, err := s.getLatestSyncInfo(tx)
-		if err != nil {
-			return errors.WithMessage(err, "failed to get latest sync info")
-		}
+	query, err := s.buildRangeQuery(s.db, filter, syncInfo)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to build range query")
+	}
 
-		query, err := s.buildRangeQuery(tx, filter, syncInfo)
-		if err != nil {
-			return errors.WithMessage(err, "failed to build range query")
-		}
+	query = s.applyIndexFilters(query, filter)
+	query = s.applyTopicFilters(query, filter)
 
-		query = s.applyIndexFilters(query, filter)
-		query = s.applyTopicFilters(query, filter)
+	if err := s.checkResultSetBounds(ctx, query, filter); err != nil {
+		return nil, err
+	}
 
-		if err := s.checkResultSetBounds(ctx, query, filter); err != nil {
-			return err
-		}
-
-		return query.WithContext(ctx).
-			Order("bn ASC").
-			Limit(int(store.MaxLogLimit) + 1).
-			Find(&logs).Error
-	}, opts)
+	if err := query.WithContext(ctx).
+		Order("bn ASC").
+		Limit(int(store.MaxLogLimit) + 1).
+		Find(&logs).Error; err != nil {
+		return nil, err
+	}
 
 	return logs, err
 }

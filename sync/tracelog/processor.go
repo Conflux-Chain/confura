@@ -137,6 +137,9 @@ func (p *Processor) Revert(data core.EpochData) db.Operation {
 		if err := p.epochBlockMapStore.Pop(tx, epochNum); err != nil {
 			return errors.WithMessage(err, "failed to pop epoch block mappings")
 		}
+		if err := p.logStore.IncrementReorgVersion(tx); err != nil {
+			return errors.WithMessage(err, "failed to increment reorg version")
+		}
 		return nil
 	})
 }

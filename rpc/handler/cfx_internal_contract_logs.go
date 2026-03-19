@@ -65,6 +65,44 @@ func (h *CfxInternalContractLogsApiHandler) GetLogs(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 ) ([]types.Log, error) {
+	// record the reorg version before query to ensure data consistence
+	lastReorgVersion, err := h.logStore.GetReorgVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		// query data with reorg guard
+		logs, err := h.getLogsReorgGuard(ctx, cfx, filter)
+		if err != nil {
+			return nil, err
+		}
+
+		// check the reorg version after query
+		reorgVersion, err := h.logStore.GetReorgVersion()
+		if err != nil {
+			return nil, err
+		}
+
+		if reorgVersion == lastReorgVersion {
+			return logs, nil
+		}
+
+		// when reorg occurred, check timeout before retry.
+		if err := checkTimeout(ctx); err != nil {
+			return nil, err
+		}
+
+		// reorg version changed during data query and try again.
+		lastReorgVersion = reorgVersion
+	}
+}
+
+func (h *CfxInternalContractLogsApiHandler) getLogsReorgGuard(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	filter *types.LogFilter,
+) ([]types.Log, error) {
 	// Resolve filter components to internal indices.
 	contractIndices, contractByIdx, err := h.resolveContractIndices(filter.Address)
 	if err != nil {
@@ -73,7 +111,7 @@ func (h *CfxInternalContractLogsApiHandler) GetLogs(
 
 	eventIndices, unregisteredEventHashes, eventByIdx := h.resolveEventIndices(filter.Topics)
 	if len(eventIndices) == 0 && len(unregisteredEventHashes) > 0 {
-		// No registered events matched; all topics are unrecognized, so nothing to process.
+		// No registered events matched: all topics are unrecognized, so nothing to process.
 		logrus.WithFields(logrus.Fields{
 			"unregisteredEvents": unregisteredEventHashes,
 			"filter":             filter,
@@ -104,7 +142,7 @@ func (h *CfxInternalContractLogsApiHandler) GetLogs(
 		return nil, err
 	}
 
-	// 4. Convert and validate results.
+	// Convert and validate results.
 	return convertLogs(cfx, filter, internalLogs, contractByIdx, eventByIdx, useBoundCheck)
 }
 
