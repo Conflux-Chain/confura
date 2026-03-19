@@ -71,7 +71,15 @@ func (h *CfxInternalContractLogsApiHandler) GetLogs(
 		return nil, err
 	}
 
-	eventIndices, eventByIdx := h.resolveEventIndices(filter.Topics)
+	eventIndices, unregisteredEventHashes, eventByIdx := h.resolveEventIndices(filter.Topics)
+	if len(eventIndices) == 0 && len(unregisteredEventHashes) > 0 {
+		// No registered events matched; all topics are unrecognized, so nothing to process.
+		logrus.WithFields(logrus.Fields{
+			"unregisteredEvents": unregisteredEventHashes,
+			"filter":             filter,
+		}).Debug("Skipping logs: no registered internal contract events matched (all topics unrecognized)")
+		return nil, nil
+	}
 
 	blockHash2Number, err := resolveBlockHashes(cfx, filter.BlockHashes)
 	if err != nil {
@@ -110,7 +118,7 @@ func (h *CfxInternalContractLogsApiHandler) resolveContractIndices(
 	for _, addr := range addrs {
 		idx, ok := h.registry.ContractIndexOf(addr)
 		if !ok {
-			return nil, nil, errors.New("not a registered internal contract")
+			return nil, nil, errors.Errorf("%v is not a registered internal contract", addr)
 		}
 		if _, dup := byIdx[idx]; !dup {
 			byIdx[idx] = addr
@@ -123,25 +131,31 @@ func (h *CfxInternalContractLogsApiHandler) resolveContractIndices(
 // resolveEventIndices maps topic0 values to registered event indices.
 func (h *CfxInternalContractLogsApiHandler) resolveEventIndices(
 	topics [][]types.Hash,
-) ([]uint8, map[uint8]types.Hash) {
-	if len(topics) < 0 {
-		return nil, nil
+) (
+	registeredEventIndices []uint8,
+	unregisteredEventHashes []types.Hash,
+	registeredEventHashesByIdx map[uint8]types.Hash,
+) {
+	if len(topics) <= 0 || len(topics[0]) <= 0 {
+		return nil, nil, nil
 	}
 
-	byIdx := make(map[uint8]types.Hash, len(topics[0]))
-	indices := make([]uint8, 0, len(topics[0]))
+	registeredEventHashesByIdx = make(map[uint8]types.Hash, len(topics[0]))
+	registeredEventIndices = make([]uint8, 0, len(topics[0]))
 
 	for _, topic0 := range topics[0] {
 		idx, ok := h.registry.EventIndexOf(topic0)
 		if !ok {
+			unregisteredEventHashes = append(unregisteredEventHashes, topic0)
 			continue
 		}
-		if _, dup := byIdx[idx]; !dup {
-			byIdx[idx] = topic0
-			indices = append(indices, idx)
+
+		if _, dup := registeredEventHashesByIdx[idx]; !dup {
+			registeredEventHashesByIdx[idx] = topic0
+			registeredEventIndices = append(registeredEventIndices, idx)
 		}
 	}
-	return indices, byIdx
+	return
 }
 
 // resolveBlockHashes resolves block hashes to block numbers via the Conflux client.
@@ -150,6 +164,7 @@ func resolveBlockHashes(cfx sdk.ClientOperator, hashes []types.Hash) (map[types.
 		return nil, nil
 	}
 
+	// TODO: resolve hashes in parallel (e.g. goroutines + semaphore) with a capped concurrency?
 	result := make(map[types.Hash]uint64, len(hashes))
 	for _, hash := range hashes {
 		if _, exists := result[hash]; exists {

@@ -120,13 +120,6 @@ func (s *InternalContractLogStore) buildRangeQuery(
 func (s *InternalContractLogStore) buildBlockHashQuery(
 	query *gorm.DB, filter CfxInternalContractLogFilter, syncInfo CfxTraceSyncEpochBlockMap,
 ) (*gorm.DB, error) {
-	if len(filter.BlockHashes) != len(filter.BlockHash2Numbers) {
-		return nil, errors.Errorf(
-			"normalized block hash count mismatch, expected %d got %d",
-			len(filter.BlockHashes), len(filter.BlockHash2Numbers),
-		)
-	}
-
 	blockNumbers := make([]uint64, 0, len(filter.BlockHashes))
 	for _, bh := range filter.BlockHashes {
 		bn, ok := filter.BlockHash2Numbers[bh]
