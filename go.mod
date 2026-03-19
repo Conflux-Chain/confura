@@ -20,7 +20,7 @@ require (
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/montanaflynn/stats v0.6.6
 	github.com/openweb3/go-rpc-provider v0.3.6
-	github.com/openweb3/web3go v0.3.1-0.20250923092105-be8692eb5ab8
+	github.com/openweb3/web3go v0.3.2
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9
 	github.com/rs/cors v1.7.0
@@ -32,6 +32,7 @@ require (
 	github.com/valyala/fasthttp v1.40.0
 	github.com/zealws/golang-ring v0.0.0-20210116075443-7c86fdb43134
 	go.uber.org/multierr v1.6.0
+	golang.org/x/crypto v0.39.0
 	golang.org/x/sync v0.15.0
 	golang.org/x/time v0.9.0
 	google.golang.org/grpc v1.75.0
@@ -164,7 +165,6 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
