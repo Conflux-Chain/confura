@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/tracelog"
@@ -12,6 +13,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // CfxInternalContractLogsApiHandler handles log queries for registered internal contracts.
@@ -29,8 +31,25 @@ func NewCfxInternalContractLogsApiHandler(
 	}
 }
 
-// AllRegisteredInternalContractAddresses reports whether addrs is non-empty
-// and every address is a registered internal contract.
+func MustNewCfxInternalContractLogsApiHandler(
+	cfxDB *mysql.CfxStore,
+	clientProvider *node.CfxClientProvider,
+) *CfxInternalContractLogsApiHandler {
+	cfx, err := clientProvider.GetClientRandom()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to get random client from node client provider")
+	}
+
+	registry, err := tracelog.NewRegistry(cfx)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to create internal contract registry")
+	}
+
+	internalContractStore := mysql.NewInternalContractLogStore(cfxDB.DB())
+	return NewCfxInternalContractLogsApiHandler(registry, internalContractStore)
+}
+
+// AllRegisteredInternalContractAddresses reports whether every address is a registered internal contract.
 func (h *CfxInternalContractLogsApiHandler) AllRegisteredInternalContractAddresses(addrs []types.Address) bool {
 	for _, addr := range addrs {
 		if _, ok := h.registry.Lookup(addr); !ok {
