@@ -13,7 +13,7 @@ import (
 type ContractEntry struct {
 	Address     types.Address
 	Contract    sdk.Contract
-	ContractIdx ContractIndex
+	ContractIdx uint8
 
 	// eventsByMethodID maps 4-byte method ID (hex without 0x) to EventDef.
 	eventsByMethodID map[string]*EventDef
@@ -26,24 +26,20 @@ func (e *ContractEntry) LookupEvent(methodID []byte) (*EventDef, bool) {
 	return def, ok
 }
 
-// EventIndexOf returns the EventIndex for a given 4-byte method selector.
-func (e *ContractEntry) EventIndexOf(methodID []byte) (EventIndex, bool) {
-	if def, ok := e.LookupEvent(methodID); ok {
-		return def.eventIndex, true
-	}
-	return EventUnknown, false
-}
-
 // Registry manages all known internal contracts and their event mappings.
 type Registry struct {
 	entries   []*ContractEntry
 	byAddress map[string]*ContractEntry // keyed by address
+	byTopic0  map[string]*EventDef      // keyed by topic0
 }
 
 // NewRegistry creates a Registry from the SDK client, registering all
 // known internal contracts and their event definitions.
 func NewRegistry(client sdk.ClientOperator) (*Registry, error) {
-	r := &Registry{byAddress: make(map[string]*ContractEntry)}
+	r := &Registry{
+		byAddress: make(map[string]*ContractEntry),
+		byTopic0:  make(map[string]*EventDef),
+	}
 
 	// Register Staking
 	staking, err := sdkcontract.NewStaking(client)
@@ -69,7 +65,7 @@ func NewRegistry(client sdk.ClientOperator) (*Registry, error) {
 	return r, nil
 }
 
-func (r *Registry) register(addr types.Address, contract sdk.Contract, ci ContractIndex, defs []*EventDef) {
+func (r *Registry) register(addr types.Address, contract sdk.Contract, ci uint8, defs []*EventDef) {
 	entry := &ContractEntry{
 		Address:          addr,
 		Contract:         contract,
@@ -80,6 +76,8 @@ func (r *Registry) register(addr types.Address, contract sdk.Contract, ci Contra
 		def.init()
 		key := hex.EncodeToString(def.methodID[:])
 		entry.eventsByMethodID[key] = def
+
+		r.byTopic0[def.topic0.String()] = def
 	}
 
 	r.entries = append(r.entries, entry)
@@ -92,10 +90,18 @@ func (r *Registry) Lookup(addr types.Address) (*ContractEntry, bool) {
 	return entry, ok
 }
 
-// ContractIndexOf returns the ContractIndex for a given contract address.
-func (r *Registry) ContractIndexOf(addr types.Address) ContractIndex {
+// ContractIndexOf returns the index for a given contract address.
+func (r *Registry) ContractIndexOf(addr types.Address) (uint8, bool) {
 	if entry, ok := r.byAddress[addr.GetHexAddress()]; ok {
-		return entry.ContractIdx
+		return entry.ContractIdx, true
 	}
-	return ContractUnknown
+	return ContractUnknown, false
+}
+
+// EventIndexOf returns the index for a given topic string.
+func (r *Registry) EventIndexOf(topic0 types.Hash) (uint8, bool) {
+	if def, ok := r.byTopic0[topic0.String()]; ok {
+		return def.eventIndex, true
+	}
+	return EventUnknown, false
 }

@@ -45,15 +45,17 @@ func ConvertToDbLogs(logs []*VirtualLog, blocks []*types.Block) ([]*mysql.Intern
 
 		// Convert to DB model
 		dbLog := &mysql.InternalContractLog{
-			BlockNumber:  block.BlockNumber.ToInt().Uint64(),
-			Epoch:        log.EpochNumber.ToInt().Uint64(),
-			BlockHash:    log.BlockHash.String(),
-			TxHash:       log.TransactionHash.String(),
-			TxIndex:      int(log.TransactionIndex.ToInt().Int64()),
-			LogIndex:     int(log.LogIndex.ToInt().Int64()),
-			AddressIndex: uint8(log.ContractIdx),
-			Topic0Index:  uint8(log.EventIdx),
-			Data:         log.Data,
+			BlockNumber:    block.BlockNumber.ToInt().Uint64(),
+			Epoch:          log.EpochNumber.ToInt().Uint64(),
+			BlockHash:      log.BlockHash.String(),
+			TxHash:         log.TransactionHash.String(),
+			TxIndex:        int(log.TransactionIndex.ToInt().Int64()),
+			LogIndex:       int(log.LogIndex.ToInt().Int64()),
+			TxLogIndex:     int(log.TransactionLogIndex.ToInt().Int64()),
+			AddressIndex:   uint8(log.ContractIdx),
+			Topic0Index:    uint8(log.EventIdx),
+			Data:           log.Data,
+			BlockTimestamp: log.BlockTimestamp.ToInt().Uint64(),
 		}
 
 		for i, topic := range log.Topics {

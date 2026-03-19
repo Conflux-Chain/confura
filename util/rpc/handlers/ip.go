@@ -141,3 +141,8 @@ func GetAuthIdFromContext(ctx context.Context) (string, bool) {
 	authId, ok := ctx.Value(CtxKeyAuthId).(string)
 	return authId, ok
 }
+
+func GetQueryParamsFromContext(ctx context.Context) (url.Values, bool) {
+	val, ok := ctx.Value(CtxKeyQueryParams).(url.Values)
+	return val, ok
+}
