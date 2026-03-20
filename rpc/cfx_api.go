@@ -295,7 +295,9 @@ func (api *cfxAPI) getLogs(
 		return emptyLogs, err
 	}
 
-	if logs, handled, err := api.tryGetInternalContractLogs(ctx, cfx, &fq); err != nil || handled {
+	if logs, handled, err := api.tryGetInternalContractLogs(ctx, cfx, &fq); err != nil {
+		return emptyLogs, err
+	} else if handled {
 		return uniformCfxLogs(logs), err
 	}
 
@@ -309,7 +311,12 @@ func (api *cfxAPI) getLogs(
 	return cfx.GetLogs(fq)
 }
 
-// tryGetInternalContractLogs attempts to query internal contract logs when parse_trace mode is enabled.
+// queryParamIncludeInternalLogs is the query parameter name to enable querying event logs assembled from
+// traces of some internal contracts.
+const queryParamIncludeTraceLogs = "includeTraceLogs"
+
+// tryGetInternalContractLogs attempts to query internal contract logs when `includeTraceLogs` mode is enabled.
+// This flag allows getLogs to include event logs assembled by parsing traces of certain internal contracts.
 //
 // There are three possible cases:
 //   - All addresses are internal contracts, query internal contract logs and return
@@ -320,7 +327,7 @@ func (api *cfxAPI) tryGetInternalContractLogs(
 	cfx sdk.ClientOperator,
 	fq *types.LogFilter,
 ) (logs []types.Log, handled bool, err error) {
-	if qp, ok := handlers.GetQueryParamsFromContext(ctx); !ok || !qp.Has("parse_trace") {
+	if qp, ok := handlers.GetQueryParamsFromContext(ctx); !ok || !qp.Has(queryParamIncludeTraceLogs) {
 		return nil, false, nil
 	}
 
