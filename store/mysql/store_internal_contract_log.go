@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+	"sort"
 	"strconv"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -116,6 +117,13 @@ func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxIntern
 		return nil, err
 	}
 
+	// sort log result
+	sort.Slice(logs, func(i, j int) bool {
+		a, b := logs[i], logs[j]
+		return a.BlockNumber < b.BlockNumber ||
+			(a.BlockNumber == b.BlockNumber && a.LogIndex < b.LogIndex)
+	})
+
 	return logs, err
 }
 
@@ -175,7 +183,7 @@ func (s *InternalContractLogStore) buildBlockRangeQuery(
 		)
 	}
 
-	return query.Where("bn >= ? AND bn <= ?", fromBlock, toBlock).Order("bn ASC"), nil
+	return query.Where("bn BETWEEN ? AND ?", fromBlock, toBlock).Order("bn ASC"), nil
 }
 
 func (s *InternalContractLogStore) buildEpochRangeQuery(
@@ -198,7 +206,7 @@ func (s *InternalContractLogStore) buildEpochRangeQuery(
 	}
 
 	from, to := epochFrom.Uint64(), epochTo.Uint64()
-	return query.Where("epoch >= ? AND epoch <= ?", from, to).Order("epoch ASC"), nil
+	return query.Where("epoch BETWEEN ? AND ?", from, to).Order("epoch ASC"), nil
 }
 
 // applyIndexFilters adds contract address and event index conditions.
