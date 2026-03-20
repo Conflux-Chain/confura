@@ -128,6 +128,9 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 		// initialize logs api handler
 		maxAttempts := viper.GetInt("requestControl.maxGetLogsSuggestionAttempts")
 		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.CfxDB, prunedHandler, maxAttempts)
+
+		// initialize internal contract logs api handler
+		option.InternalContractLogApiHandler = handler.MustNewCfxInternalContractLogsApiHandler(storeCtx.CfxDB, clientProvider)
 	}
 
 	// initialize RPC server

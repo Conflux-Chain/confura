@@ -53,14 +53,14 @@ func newConfStore(db *gorm.DB) *confStore {
 	}
 }
 
-func (cs *confStore) LoadConfig(confNames ...string) (map[string]interface{}, error) {
+func (cs *confStore) LoadConfig(confNames ...string) (map[string]string, error) {
 	var confs []conf
 
 	if err := cs.db.Where("name IN ?", confNames).Find(&confs).Error; err != nil {
 		return nil, err
 	}
 
-	res := make(map[string]interface{}, len(confs))
+	res := make(map[string]string, len(confs))
 	for _, c := range confs {
 		res[c.Name] = c.Value
 	}

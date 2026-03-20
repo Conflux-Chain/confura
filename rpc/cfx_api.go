@@ -8,6 +8,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -27,10 +28,11 @@ var (
 )
 
 type CfxAPIOption struct {
-	StoreHandler        *handler.CfxStoreHandler
-	LogApiHandler       *handler.CfxLogsApiHandler
-	TxnHandler          *handler.CfxTxnHandler
-	VirtualFilterClient *vfclient.CfxClient
+	StoreHandler                  *handler.CfxStoreHandler
+	LogApiHandler                 *handler.CfxLogsApiHandler
+	TxnHandler                    *handler.CfxTxnHandler
+	VirtualFilterClient           *vfclient.CfxClient
+	InternalContractLogApiHandler *handler.CfxInternalContractLogsApiHandler
 }
 
 // cfxAPI provides main proxy API for core space.
@@ -293,6 +295,12 @@ func (api *cfxAPI) getLogs(
 		return emptyLogs, err
 	}
 
+	if logs, handled, err := api.tryGetInternalContractLogs(ctx, cfx, &fq); err != nil {
+		return emptyLogs, err
+	} else if handled {
+		return uniformCfxLogs(logs), err
+	}
+
 	if api.LogApiHandler != nil {
 		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, cfx, &fq, rpcMethod)
 		api.collectHitStats(rpcMethod, hitStore)
@@ -301,6 +309,38 @@ func (api *cfxAPI) getLogs(
 
 	// fail over to fullnode if no handler configured
 	return cfx.GetLogs(fq)
+}
+
+// queryParamIncludeInternalLogs is the query parameter name to enable querying event logs assembled from
+// traces of some internal contracts.
+const queryParamIncludeTraceLogs = "includeTraceLogs"
+
+// tryGetInternalContractLogs attempts to query internal contract logs when `includeTraceLogs` mode is enabled.
+// This flag allows getLogs to include event logs assembled by parsing traces of certain internal contracts.
+//
+// There are three possible cases:
+//   - All addresses are internal contracts, query internal contract logs and return
+//   - No addresses are internal contracts (or address list is empty), skip and fall back to normal log query
+//   - Mixed addresses, return an error
+func (api *cfxAPI) tryGetInternalContractLogs(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	fq *types.LogFilter,
+) (logs []types.Log, handled bool, err error) {
+	if qp, ok := handlers.GetQueryParamsFromContext(ctx); !ok || !qp.Has(queryParamIncludeTraceLogs) {
+		return nil, false, nil
+	}
+
+	if api.InternalContractLogApiHandler == nil || len(fq.Address) == 0 {
+		return nil, false, nil
+	}
+
+	if !api.InternalContractLogApiHandler.AllRegisteredInternalContractAddresses(fq.Address) {
+		return nil, false, errors.New("invalid filter: mixing internal contract and regular addresses is not allowed")
+	}
+
+	logs, err = api.InternalContractLogApiHandler.GetLogs(ctx, cfx, fq)
+	return logs, true, err
 }
 
 func (api *cfxAPI) GetTransactionByHash(ctx context.Context, txHash types.Hash) (*types.Transaction, error) {

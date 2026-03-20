@@ -1,22 +1,18 @@
 package tracelog
 
-// ContractIndex is a compact numeric identifier for known internal contract addresses.
+// Contract index is a compact numeric identifier for known internal contract addresses.
 // These values are protocol-level constants and must remain stable.
-type ContractIndex uint8
-
 const (
-	ContractUnknown ContractIndex = iota
+	ContractUnknown uint8 = iota
 	ContractStaking
 	ContractSponsor
 	ContractAdmin
 )
 
-// EventIndex is a compact numeric identifier for known event method selectors.
+// Event index is a compact numeric identifier for known event method selectors.
 // These values must remain stable; only append new entries.
-type EventIndex uint8
-
 const (
-	EventUnknown EventIndex = iota
+	EventUnknown uint8 = iota
 
 	// Staking events
 	EventStakingDeposit

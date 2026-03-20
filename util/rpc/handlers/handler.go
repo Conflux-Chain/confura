@@ -19,6 +19,7 @@ const (
 	CtxKeyAccessToken = CtxKey("Infura-Access-Token")
 	CtxKeyReqOrigin   = CtxKey("Infura-Req-Origin")
 	CtxKeyUserAgent   = CtxKey("Infura-User-Agent")
+	CtxKeyQueryParams = CtxKey("Infura-Query-Params")
 )
 
 func GetNamespaceFromContext(ctx context.Context) (string, bool) {

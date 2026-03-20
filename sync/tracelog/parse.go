@@ -11,8 +11,8 @@ import (
 // VirtualLog wraps a types.Log with its compact index identifiers.
 type VirtualLog struct {
 	*types.Log
-	ContractIdx ContractIndex
-	EventIdx    EventIndex
+	ContractIdx uint8
+	EventIdx    uint8
 }
 
 // ParseEpochTraces extracts virtual logs from epoch traces.

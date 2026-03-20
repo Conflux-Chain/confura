@@ -79,6 +79,7 @@ func httpMiddleware(namespace string, registry *rate.Registry, clientProvider in
 			ctx = context.WithValue(ctx, handlers.CtxKeyReqOrigin, r.Header.Get("Origin"))
 			ctx = context.WithValue(ctx, handlers.CtxKeyUserAgent, r.Header.Get("User-Agent"))
 			ctx = context.WithValue(ctx, handlers.CtxKeyRealIP, handlers.GetIPAddress(r))
+			ctx = context.WithValue(ctx, handlers.CtxKeyQueryParams, r.URL.Query())
 
 			if registry != nil {
 				ctx = context.WithValue(ctx, handlers.CtxKeyRateRegistry, registry)

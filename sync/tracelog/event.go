@@ -187,7 +187,7 @@ type EventDef struct {
 	UseRawArgsAsData bool
 
 	// EventIndex is a compact numeric identifier to reference event definitions.
-	eventIndex EventIndex
+	eventIndex uint8
 
 	// Precomputed values (populated by Register)
 	methodID [4]byte
