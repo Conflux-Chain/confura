@@ -34,7 +34,9 @@ func NewBatchProcessor(
 func (p *BatchProcessor) BatchProcess(data core.EpochData) int {
 	logs, err := ParseEpochTraces(data.Traces, p.registry)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to parse epoch traces")
+		logrus.WithFields(logrus.Fields{
+			"epoch": data.Blocks[0].EpochNumber.ToInt().Uint64(),
+		}).WithError(err).Fatal("Failed to parse epoch traces")
 	}
 
 	dbLogs, err := ConvertToDbLogs(logs, data.Blocks)
@@ -48,7 +50,7 @@ func (p *BatchProcessor) BatchProcess(data core.EpochData) int {
 		p.pendingEpochBlockMappings = append(p.pendingEpochBlockMappings, mapping)
 	}
 
-	return len(dbLogs)
+	return len(dbLogs) + 1
 }
 
 func (p *BatchProcessor) BatchExec(tx *gorm.DB, batchSize int) error {
@@ -97,6 +99,10 @@ func NewProcessor(
 func (p *Processor) Process(data core.EpochData) db.Operation {
 	logs, err := ParseEpochTraces(data.Traces, p.registry)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"epoch": data.Blocks[0].EpochNumber.ToInt().Uint64(),
+		}).WithError(err).Error("Failed to parse epoch traces")
+
 		return OperationFunc(func(tx *gorm.DB) error {
 			return errors.WithMessage(err, "failed to parse epoch traces")
 		})

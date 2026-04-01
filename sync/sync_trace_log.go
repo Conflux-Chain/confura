@@ -11,13 +11,14 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/core"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/sirupsen/logrus"
 )
 
 // TraceLogSyncer orchestrates the synchronization of internal contract trace logs.
 type TraceLogSyncer struct {
 	epochFrom uint64
-	adapter   *core.Adapter
+	adapter   poll.Adapter[core.EpochData]
 	client    *sdk.Client
 
 	registry           *tracelog.Registry
@@ -30,6 +31,9 @@ func MustNewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) *TraceL
 	if len(clients) == 0 {
 		logrus.Fatal("No SDK client provided")
 	}
+
+	var conf cfxSyncConfig
+	viperutil.MustUnmarshalKey("sync.cfx", &conf)
 
 	adapter, err := core.NewAdapterWithConfig(core.AdapterConfig{
 		URL:           clients[0].GetNodeURL(),
@@ -45,12 +49,16 @@ func MustNewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) *TraceL
 	}
 
 	epochBlockMapStore := mysql.NewCfxTraceSyncEpochBlockMapStore(store)
-	epochFrom, ok, err := epochBlockMapStore.MaxEpoch()
+	maxEpoch, ok, err := epochBlockMapStore.MaxEpoch()
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to get max epoch")
 	}
-	if !ok {
-		epochFrom = 0 // start from genesis if not found
+
+	var epochFrom uint64
+	if !ok { // start from configured start epoch if not found
+		epochFrom = conf.FromEpoch
+	} else {
+		epochFrom = maxEpoch + 1
 	}
 
 	return &TraceLogSyncer{

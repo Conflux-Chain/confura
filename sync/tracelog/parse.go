@@ -86,6 +86,13 @@ func constructVirtualLog(frame *CallFrame, registry *Registry) (*VirtualLog, err
 
 	log, err := eventDef.BuildLog(callData, values, input[4:])
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"traceEpoch":    trace.EpochNumber.ToInt().Uint64(),
+			"contract":      entry.Contract.Address,
+			"callAction.To": callData.Action.To,
+			"methodID":      method.String(),
+			"values":        values,
+		}).WithError(err).Info("Failed to construct virtual log from internal contract event definition")
 		return nil, errors.WithMessage(err, "failed to build log")
 	}
 

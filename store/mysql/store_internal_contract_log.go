@@ -215,7 +215,7 @@ func (s *InternalContractLogStore) applyIndexFilters(query *gorm.DB, filter CfxI
 		query = query.Where("address IN(?)", filter.ContractIndices)
 	}
 	if len(filter.EventIndices) > 0 {
-		query = query.Where("event IN(?)", filter.EventIndices)
+		query = query.Where("topic0 IN(?)", filter.EventIndices)
 	}
 	return query
 }
