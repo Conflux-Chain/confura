@@ -64,15 +64,10 @@ type cfxLogExtra struct {
 	TransactionIndex    *hexutil.Big       `json:"ti,omitempty"`
 	TransactionLogIndex *hexutil.Big       `json:"tli,omitempty"`
 	Data                hexutil.Bytes      `json:"data,omitempty"`
-	BlockTimestamp      uint64             `json:"bts,omitempty"`
+	BlockTimestamp      *hexutil.Big       `json:"bts,omitempty"`
 }
 
 func ParseCfxLog(log *types.Log, bn uint64) *Log {
-	var blockTimestamp uint64
-	if log.BlockTimestamp != nil {
-		blockTimestamp = log.BlockTimestamp.ToInt().Uint64()
-	}
-
 	return &Log{
 		BlockNumber: bn,
 		Epoch:       log.EpochNumber.ToInt().Uint64(),
@@ -88,7 +83,7 @@ func ParseCfxLog(log *types.Log, bn uint64) *Log {
 			TransactionIndex:    log.TransactionIndex,
 			TransactionLogIndex: log.TransactionLogIndex,
 			Data:                log.Data,
-			BlockTimestamp:      blockTimestamp,
+			BlockTimestamp:      log.BlockTimestamp,
 		}),
 	}
 }
@@ -106,11 +101,6 @@ func (log *Log) ToCfxLog() (*types.Log, error) {
 		}
 	}
 
-	var blockTimestamp *hexutil.Big
-	if extra.BlockTimestamp != 0 {
-		blockTimestamp = types.NewBigInt(extra.BlockTimestamp)
-	}
-
 	return &types.Log{
 		Address:             extra.Address,
 		Topics:              topics,
@@ -121,7 +111,7 @@ func (log *Log) ToCfxLog() (*types.Log, error) {
 		TransactionIndex:    extra.TransactionIndex,
 		LogIndex:            types.NewBigInt(log.LogIndex),
 		TransactionLogIndex: extra.TransactionLogIndex,
-		BlockTimestamp:      blockTimestamp,
+		BlockTimestamp:      extra.BlockTimestamp,
 	}, nil
 }
 
