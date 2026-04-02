@@ -64,6 +64,7 @@ type cfxLogExtra struct {
 	TransactionIndex    *hexutil.Big       `json:"ti,omitempty"`
 	TransactionLogIndex *hexutil.Big       `json:"tli,omitempty"`
 	Data                hexutil.Bytes      `json:"data,omitempty"`
+	BlockTimestamp      *hexutil.Big       `json:"bts,omitempty"`
 }
 
 func ParseCfxLog(log *types.Log, bn uint64) *Log {
@@ -82,6 +83,7 @@ func ParseCfxLog(log *types.Log, bn uint64) *Log {
 			TransactionIndex:    log.TransactionIndex,
 			TransactionLogIndex: log.TransactionLogIndex,
 			Data:                log.Data,
+			BlockTimestamp:      log.BlockTimestamp,
 		}),
 	}
 }
@@ -109,6 +111,7 @@ func (log *Log) ToCfxLog() (*types.Log, error) {
 		TransactionIndex:    extra.TransactionIndex,
 		LogIndex:            types.NewBigInt(log.LogIndex),
 		TransactionLogIndex: extra.TransactionLogIndex,
+		BlockTimestamp:      extra.BlockTimestamp,
 	}, nil
 }
 
