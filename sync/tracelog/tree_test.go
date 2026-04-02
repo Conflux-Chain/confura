@@ -16,21 +16,12 @@ import (
 // ---------------------------------------------------------------------------
 // Fixtures helpers
 // ---------------------------------------------------------------------------
-
-func mustHash(hex string) types.Hash {
-	return types.Hash(hex)
-}
-
 func mustAddr(hex string) types.Address {
 	return cfxaddress.MustNew(hex, 1)
 }
 
 func hexBig(v int64) hexutil.Big {
 	return hexutil.Big(*big.NewInt(v))
-}
-
-func hexUint64(v uint64) hexutil.Uint64 {
-	return hexutil.Uint64(v)
 }
 
 // baseLocalized returns a LocalizedTrace with all common fields pre-filled.
@@ -40,11 +31,11 @@ func baseLocalized(traceType types.TraceType, action interface{}) *types.Localiz
 		Type:                traceType,
 		Action:              action,
 		Valid:               true,
-		EpochHash:           mustHash("0xec4fc7f29ef5f3367be2bfef3718b3e167416e811d7c2707c58e174bbb3a900c"),
+		EpochHash:           types.Hash("0xec4fc7f29ef5f3367be2bfef3718b3e167416e811d7c2707c58e174bbb3a900c"),
 		EpochNumber:         hexBig(121630605),
-		BlockHash:           mustHash("0xec4fc7f29ef5f3367be2bfef3718b3e167416e811d7c2707c58e174bbb3a900c"),
-		TransactionPosition: hexUint64(0),
-		TransactionHash:     mustHash("0x89b14531507aa7f680ace24d2a4c8f42387e03ac63bb2d6331d42a1d714ed1d1"),
+		BlockHash:           types.Hash("0xec4fc7f29ef5f3367be2bfef3718b3e167416e811d7c2707c58e174bbb3a900c"),
+		TransactionPosition: hexutil.Uint64(0),
+		TransactionHash:     types.Hash("0x89b14531507aa7f680ace24d2a4c8f42387e03ac63bb2d6331d42a1d714ed1d1"),
 	}
 }
 
@@ -93,7 +84,7 @@ func internalTransferTrace() *types.LocalizedTrace {
 	})
 }
 
-// withField returns a shallow copy of t with the given field overridden via a
+// withMutation returns a shallow copy of t with the given field overridden via a
 // mutator function – keeps individual test cases concise.
 func withMutation(t *types.LocalizedTrace, mutate func(*types.LocalizedTrace)) *types.LocalizedTrace {
 	copy := *t
@@ -346,7 +337,7 @@ func TestBuildCallTree_TC13_CreateReceivesCallResult(t *testing.T) {
 
 func TestBuildCallTree_TC14_BlockHashMismatch(t *testing.T) {
 	result := withMutation(callResultTrace(types.OUTCOME_SUCCESS), func(t *types.LocalizedTrace) {
-		t.BlockHash = mustHash("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+		t.BlockHash = types.Hash("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	})
 
 	traces := []*types.LocalizedTrace{callTrace(), result}
@@ -361,7 +352,7 @@ func TestBuildCallTree_TC14_BlockHashMismatch(t *testing.T) {
 
 func TestBuildCallTree_TC15_TransactionHashMismatch(t *testing.T) {
 	result := withMutation(callResultTrace(types.OUTCOME_SUCCESS), func(t *types.LocalizedTrace) {
-		t.TransactionHash = mustHash("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+		t.TransactionHash = types.Hash("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	})
 
 	traces := []*types.LocalizedTrace{callTrace(), result}
@@ -479,7 +470,7 @@ func TestWalk_TC20_PreOrder(t *testing.T) {
 	// D
 	makeNode := func(id string) *CallFrame {
 		tr := callTrace()
-		tr.TransactionHash = mustHash("0x" + id + strings.Repeat("0", 63-len(id)))
+		tr.TransactionHash = types.Hash("0x" + id + strings.Repeat("0", 63-len(id)))
 		return &CallFrame{Data: &CallTraceData{
 			BaseTraceData: &BaseTraceData{LocalizedTrace: tr},
 		}}
