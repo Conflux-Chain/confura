@@ -228,11 +228,11 @@ func (e *EventDef) BuildLog(callTrace *CallTraceData, values []any, rawArgs []by
 			if td.ArgIndex >= len(values) {
 				return nil, errors.Errorf("arg index %d out of range (have %d args)", td.ArgIndex, len(values))
 			}
-			addr, ok := values[td.ArgIndex].(types.Address)
+			addr, ok := values[td.ArgIndex].(common.Address)
 			if !ok {
 				return nil, errors.Errorf("arg %d is not an address type", td.ArgIndex)
 			}
-			topics = append(topics, common.HexToHash(addr.GetHexAddress()))
+			topics = append(topics, common.HexToHash(addr.Hex()))
 		default:
 			return nil, errors.Errorf("unknown topic source: %d", td.Source)
 		}

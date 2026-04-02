@@ -335,8 +335,13 @@ func (api *cfxAPI) tryGetInternalContractLogs(
 		return nil, false, nil
 	}
 
-	if !api.InternalContractLogApiHandler.AllRegisteredInternalContractAddresses(fq.Address) {
-		return nil, false, errors.New("invalid filter: mixing internal contract and regular addresses is not allowed")
+	filteredAddrs := api.InternalContractLogApiHandler.FilterRegisteredInternalContractAddresses(fq.Address)
+	if len(filteredAddrs) == 0 {
+		return nil, false, nil
+	}
+
+	if len(filteredAddrs) != len(fq.Address) {
+		return nil, false, errors.New("invalid filter: mixing internal contract with regular addresses is not allowed")
 	}
 
 	logs, err = api.InternalContractLogApiHandler.GetLogs(ctx, cfx, fq)

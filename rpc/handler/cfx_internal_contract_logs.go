@@ -49,14 +49,15 @@ func MustNewCfxInternalContractLogsApiHandler(
 	return NewCfxInternalContractLogsApiHandler(registry, internalContractStore)
 }
 
-// AllRegisteredInternalContractAddresses reports whether every address is a registered internal contract.
-func (h *CfxInternalContractLogsApiHandler) AllRegisteredInternalContractAddresses(addrs []types.Address) bool {
+// FilterRegisteredInternalContractAddresses filters the given addresses to only include registered internal contracts.
+func (h *CfxInternalContractLogsApiHandler) FilterRegisteredInternalContractAddresses(addrs []types.Address) []types.Address {
+	var filtered []types.Address
 	for _, addr := range addrs {
-		if _, ok := h.registry.Lookup(addr); !ok {
-			return false
+		if _, ok := h.registry.Lookup(addr); ok {
+			filtered = append(filtered, addr)
 		}
 	}
-	return true
+	return filtered
 }
 
 // GetLogs retrieves internal contract logs matching the given filter.
@@ -106,10 +107,10 @@ func (h *CfxInternalContractLogsApiHandler) getLogsReorgGuard(
 	// Resolve filter components to internal indices.
 	contractIndices, contractByIdx, err := h.resolveContractIndices(filter.Address)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "failed to resolve contract indices")
 	}
 
-	eventIndices, unregisteredEventHashes, eventByIdx := h.resolveEventIndices(filter.Topics)
+	eventIndices, unregisteredEventHashes := h.resolveEventIndices(filter.Topics)
 	if len(eventIndices) == 0 && len(unregisteredEventHashes) > 0 {
 		// No registered events matched: all topics are unrecognized, so nothing to process.
 		logrus.WithFields(logrus.Fields{
@@ -121,7 +122,7 @@ func (h *CfxInternalContractLogsApiHandler) getLogsReorgGuard(
 
 	blockHash2Number, err := resolveBlockHashes(cfx, filter.BlockHashes)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithMessage(err, "failed to resolve block hashes")
 	}
 
 	// Configure context based on bound-check requirements.
@@ -143,7 +144,7 @@ func (h *CfxInternalContractLogsApiHandler) getLogsReorgGuard(
 	}
 
 	// Convert and validate results.
-	return convertLogs(cfx, filter, internalLogs, contractByIdx, eventByIdx, useBoundCheck)
+	return convertLogs(cfx, filter, internalLogs, contractByIdx, h.registry.EventHashByIndex, useBoundCheck)
 }
 
 // resolveContractIndices maps addresses to registered contract indices.
@@ -172,13 +173,12 @@ func (h *CfxInternalContractLogsApiHandler) resolveEventIndices(
 ) (
 	registeredEventIndices []uint8,
 	unregisteredEventHashes []types.Hash,
-	registeredEventHashesByIdx map[uint8]types.Hash,
 ) {
 	if len(topics) <= 0 || len(topics[0]) <= 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 
-	registeredEventHashesByIdx = make(map[uint8]types.Hash, len(topics[0]))
+	registeredEventHashesByIdx := make(map[uint8]types.Hash, len(topics[0]))
 	registeredEventIndices = make([]uint8, 0, len(topics[0]))
 
 	for _, topic0 := range topics[0] {
@@ -241,7 +241,7 @@ func convertLogs(
 	filter *types.LogFilter,
 	internalLogs []mysql.InternalContractLog,
 	contractByIdx map[uint8]types.Address,
-	eventByIdx map[uint8]types.Hash,
+	eventIdxResolver func(uint8) (types.Hash, bool),
 	useBoundCheck bool,
 ) ([]types.Log, error) {
 	var totalDataBytes int
@@ -249,9 +249,14 @@ func convertLogs(
 	logs := make([]types.Log, 0, len(internalLogs))
 
 	for _, clog := range internalLogs {
+		topics, err := buildTopics(clog.Topic0Index, clog.Topic1, clog.Topic2, clog.Topic3, eventIdxResolver)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to build log topics")
+		}
+
 		log := types.Log{
 			Address:             contractByIdx[clog.AddressIndex],
-			Topics:              buildTopics(clog.Topic0Index, clog.Topic1, clog.Topic2, clog.Topic3, eventByIdx),
+			Topics:              topics,
 			Data:                clog.Data,
 			BlockHash:           (*types.Hash)(&clog.BlockHash),
 			TransactionHash:     (*types.Hash)(&clog.TxHash),
@@ -282,17 +287,22 @@ func convertLogs(
 func buildTopics(
 	topic0Idx uint8,
 	topic1, topic2, topic3 string,
-	eventByIdx map[uint8]types.Hash,
-) []types.Hash {
+	eventIdxResolver func(uint8) (types.Hash, bool),
+) ([]types.Hash, error) {
+	topic0, ok := eventIdxResolver(topic0Idx)
+	if !ok {
+		return nil, errors.Errorf("unknown event index %d", topic0Idx)
+	}
+
 	topics := make([]types.Hash, 1, 4)
-	topics[0] = eventByIdx[topic0Idx]
+	topics[0] = topic0
 
 	for _, t := range [3]string{topic1, topic2, topic3} {
 		if len(t) > 0 {
 			topics = append(topics, types.Hash(t))
 		}
 	}
-	return topics
+	return topics, nil
 }
 
 // hexBig converts a uint64 to *hexutil.Big (eliminates repetitive boilerplate).

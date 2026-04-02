@@ -28,17 +28,19 @@ func (e *ContractEntry) LookupEvent(methodID []byte) (*EventDef, bool) {
 
 // Registry manages all known internal contracts and their event mappings.
 type Registry struct {
-	entries   []*ContractEntry
-	byAddress map[string]*ContractEntry // keyed by address
-	byTopic0  map[string]*EventDef      // keyed by topic0
+	entries     []*ContractEntry
+	byAddress   map[string]*ContractEntry // keyed by address
+	byTopic0    map[string]*EventDef      // keyed by topic0
+	byTopic0Idx map[uint8]*EventDef       // keyed by topic0 index
 }
 
 // NewRegistry creates a Registry from the SDK client, registering all
 // known internal contracts and their event definitions.
 func NewRegistry(client sdk.ClientOperator) (*Registry, error) {
 	r := &Registry{
-		byAddress: make(map[string]*ContractEntry),
-		byTopic0:  make(map[string]*EventDef),
+		byAddress:   make(map[string]*ContractEntry),
+		byTopic0:    make(map[string]*EventDef),
+		byTopic0Idx: make(map[uint8]*EventDef),
 	}
 
 	// Register Staking
@@ -78,6 +80,7 @@ func (r *Registry) register(addr types.Address, contract sdk.Contract, ci uint8,
 		entry.eventsByMethodID[key] = def
 
 		r.byTopic0[def.topic0.String()] = def
+		r.byTopic0Idx[def.eventIndex] = def
 	}
 
 	r.entries = append(r.entries, entry)
@@ -104,4 +107,11 @@ func (r *Registry) EventIndexOf(topic0 types.Hash) (uint8, bool) {
 		return def.eventIndex, true
 	}
 	return EventUnknown, false
+}
+
+func (r *Registry) EventHashByIndex(idx uint8) (topic0 types.Hash, ok bool) {
+	if def, ok := r.byTopic0Idx[idx]; ok {
+		return types.Hash(def.topic0.String()), true
+	}
+	return types.Hash(""), false
 }
