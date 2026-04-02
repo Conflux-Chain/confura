@@ -48,9 +48,10 @@ func (p *BatchProcessor) BatchProcess(data core.EpochData) int {
 
 	if mapping := constructEpochBlockMapping(data); mapping != nil {
 		p.pendingEpochBlockMappings = append(p.pendingEpochBlockMappings, mapping)
+		return len(dbLogs) + 1 // +1 for the epoch block mapping
 	}
 
-	return len(dbLogs) + 1
+	return len(dbLogs)
 }
 
 func (p *BatchProcessor) BatchExec(tx *gorm.DB, batchSize int) error {
