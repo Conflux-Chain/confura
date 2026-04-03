@@ -69,23 +69,23 @@ or equivalently:
 https://main.confluxrpc.com/?includeTraceLogs=true
 ```
 
-Once enabled, `cfx_getLogs` requests sent to this endpoint will support internal contract event log queries. The request body format remains identical to the standard `cfx_getLogs` specification.
+Once enabled, `cfx_getLogs` requests sent to this endpoint will support early internal contract event log queries. The request body format remains identical to the standard `cfx_getLogs` specification.
 
 ### Query Constraints
 
-> ⚠️ **Only pure internal contract queries are supported. Mixed-address queries are not allowed.**
+> ⚠️ **Only three internal contracts (staking, admin control, and sponsor contracts) are supported for synthetic event log queries. Mixed-address queries are not allowed.**
 
 | Scenario | `address` Field | Behavior |
 |:---------|:----------------|:---------|
-| Pure internal contracts ✅ | All addresses are internal contract addresses | Routes to internal contract event service; returns synthetic event logs |
-| Pure normal contracts or unspecified | All addresses are normal contracts, or `address` is omitted | Follows standard `cfx_getLogs` logic; `includeTraceLogs` has no effect |
-| Mixed addresses ❌ | Contains both internal and normal contract addresses | Returns an error; not supported |
+| Supported internal contracts only ✅ | All addresses are supported internal contract addresses | Returns synthetic event logs reconstructed from trace data |
+| Other contracts or unspecified ✅ | All addresses are unsupported internal contracts or normal contracts, or `address` is omitted | Follows standard `cfx_getLogs` logic; `includeTraceLogs` has no effect |
+| Mixed addresses ❌ | Contains both supported internal contracts and any other addresses | Returns an error |
 
 ---
 
-## Examples
+## Example
 
-### Example 1: Query `Deposit` Events from the Staking Contract
+Query `Deposit` Events from the Staking Contract
 
 ```shell
 curl -X POST 'https://main.confluxrpc.com/?includeTraceLogs' \
@@ -109,39 +109,9 @@ curl -X POST 'https://main.confluxrpc.com/?includeTraceLogs' \
 
 > `0xe1fffcc4...` is the result of `keccak256("Deposit(address,uint256)")`.
 
-### Example 2: Query `Deposit` Events for a Specific User
-
-Filter by a specific user address using `topics[1]` (the `user` indexed parameter):
-
-```shell
-curl -X POST 'https://main.confluxrpc.com/?includeTraceLogs' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "cfx_getLogs",
-    "params": [
-      {
-        "fromEpoch": "0x6B9A02F",
-        "toEpoch": "0x6B9A03A",
-        "address": ["cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaajrwuc9jnb"],
-        "topics": [
-          ["0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c"],
-          ["0x0000000000000000000000008515d9c04967eac70db5ff8043293d3a13fc5b2e"]
-        ]
-      }
-    ],
-    "id": 1
-  }'
-```
-
 ---
 
 ## Important Notes
-
-### Data Coverage
-
-- Event logs are available from the genesis block through the current block.
-- All historical internal contract call records have been fully backfilled.
 
 ### Event Synthesis Rules
 
@@ -177,13 +147,13 @@ The response format is fully compatible with the standard `cfx_getLogs` response
 
 ## FAQ
 
-**Q: Can I query internal contract events without the `includeTraceLogs` parameter?**
+**Q: Can I query early internal contract events without the `includeTraceLogs` parameter?**
 
-A: No. Internal contract event logs are only returned when `includeTraceLogs` is appended to the RPC endpoint URL (e.g., `https://main.confluxrpc.com/?includeTraceLogs`). Requests sent to the standard endpoint are unaffected and behave exactly as before.
+A: No. Early internal contract event logs are only returned when `includeTraceLogs` is appended to the RPC endpoint URL (e.g., `https://main.confluxrpc.com/?includeTraceLogs`). Requests sent to the standard endpoint are unaffected and behave exactly as before.
 
 **Q: Why does a mixed-address query return an error?**
 
-A: Internal contract events and normal contract events are stored in separate data sources. Merging results across both sources in a single query is not supported in the current version. If you need both, please issue two separate queries.
+A: The three early internal contract events and other contract events are stored in separate data sources. Merging results across both sources in a single query is not supported in the current version. If you need both, please issue two separate queries.
 
 **Q: Can the returned events be affected by chain reorganizations (Reorg)?**
 
