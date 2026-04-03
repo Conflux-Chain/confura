@@ -17,6 +17,7 @@ Comparatively running your full node, Confura makes it easy to build a high perf
 - Off-chain index of event logs, by which *getLog* (both `cfx_getLogs` and `eth_getLogs`) are handled rather than directly by a full node. This index is backed by a traditional database, which allows us to index and query on more data, without the added overhead of false positives experienced with a bloom filter on full node. All event logs (with total amount less than 10,000) of some contract can even be retrieved within single request.
 - Shared proxy subscription for Pub/Sub per full node hence more concurrent sessions supported are possible.
 - Improvements over the standard filter APIs by migrating the storage of filter "state" (only event logs for now) out of the full node into memory and database of a new backend system we've dubbed "Virtual Filters" so that a more reliable, high performance and more customizable (eg., long polling timeout for filter changes) filter APIs can be achieved.
+- Enabled [support for querying early internal contract event logs](./doc/GETLOGS.md) via `cfx_getLogs` by reconstructing events from on-chain trace data.
 
 #### Node Cluster Management
 
@@ -36,7 +37,7 @@ Comparatively running your full node, Confura makes it easy to build a high perf
 
 #### Metrics
 
-- Component instrumentation && monitoring using [RED](https://www.weave.works/blog/the-red-method-key-metrics-for-microservices-architecture/) method.
+- Component instrumentation && monitoring using [RED](https://www.splunk.com/en_us/blog/learn/red-monitoring.html) method.
 
 #### EVM Compatibility
 
