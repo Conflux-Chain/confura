@@ -290,7 +290,7 @@ func (e2bms *CfxTraceSyncEpochBlockMapStore) LoadPivotHashes(fromEpoch, toEpoch 
 		return nil, errors.New("invalid epoch range")
 	}
 
-	if toEpoch-fromEpoch+1 > 10_000 {
+	if toEpoch-fromEpoch+1 > 100_000 {
 		return nil, errors.New("epoch range too large")
 	}
 
