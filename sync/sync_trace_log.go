@@ -98,17 +98,16 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 	}
 
 	finalizedEpoch := latestFinalized.ToInt().Uint64()
-	if s.epochFrom >= finalizedEpoch {
-		pivotHashes, err := s.epochBlockMapStore.LoadPivotHashes(finalizedEpoch, s.epochFrom)
+	if s.epochFrom > finalizedEpoch {
+		pivotHashes, err := s.epochBlockMapStore.LoadPivotHashes(finalizedEpoch, s.epochFrom-1)
 		if err != nil {
-			logrus.WithError(err).Fatal("Failed to load pivot hashes")
+			logrus.WithError(err).Fatal("Failed to load pivot hashes for reorg window")
 		}
 
-		if expected := int(s.epochFrom - finalizedEpoch + 1); len(pivotHashes) < expected {
-			logrus.WithFields(logrus.Fields{
-				"expectedNum": expected,
-				"actualNum":   len(pivotHashes),
-			}).Fatal("Imcomplete pivot hashes loaded")
+		for epoch := finalizedEpoch; epoch < s.epochFrom; epoch++ {
+			if _, ok := pivotHashes[epoch]; !ok {
+				logrus.WithField("missingEpoch", epoch).Fatal("Missing pivot hash in reorg window")
+			}
 		}
 
 		syncParams.Reorg = poll.ReorgWindowParams{
