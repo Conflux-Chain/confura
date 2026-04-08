@@ -243,6 +243,7 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 				log.TransactionIndex = types.NewBigInt(uint64(receipt.Index))
 				log.LogIndex = types.NewBigInt(logIndex)
 				log.TransactionLogIndex = types.NewBigInt(txLogIndex)
+				log.BlockTimestamp = block.Timestamp
 
 				// skip blacklisted address eg., POINTS token
 				if !blacklist.IsAddressBlacklisted(&log.Address, epochNumber) {
