@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -321,8 +322,7 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 			continue
 		}
 
-		for i := len(partitions) - 1; i >= 0; i-- {
-			partition := partitions[i]
+		for _, partition := range slices.Backward(partitions) {
 			tblName := btls.getPartitionedTableName(tlTabler, partition.Index)
 
 			res := dbTx.Table(tblName).Where("bn >= ?", e2bmap.BnMin).Delete(nil)

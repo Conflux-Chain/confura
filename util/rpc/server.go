@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -62,9 +63,9 @@ func MustNewServer(name string, rpcs map[string]interface{}, middlewares ...hand
 		}),
 	}
 
-	for i := len(middlewares) - 1; i >= 0; i-- {
-		httpServer.Handler = middlewares[i](httpServer.Handler)
-		wsServer.Handler = middlewares[i](wsServer.Handler)
+	for _, v := range slices.Backward(middlewares) {
+		httpServer.Handler = v(httpServer.Handler)
+		wsServer.Handler = v(wsServer.Handler)
 	}
 
 	return &Server{
