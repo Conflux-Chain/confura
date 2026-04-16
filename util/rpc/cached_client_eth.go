@@ -342,18 +342,19 @@ func (c ethCacheClient) LazyBlockByNumber(
 	tracker := newRPCCacheTracker(rpcMethodEthBlockByNumber)
 	defer tracker.report()
 
-	var nearHeadBlock nearhead.EthCacheResultWithCoverage[*web3Types.Block]
+	var nearheadCoverage [2]uint64
 	return readThroughLazyCacheChain(
 		tracker,
 		func() (res cacheTypes.Lazy[*web3Types.Block], err error) {
-			nearHeadBlock = c.nearhead.GetBlock(blockRef.cacheRef, isFull)
+			nearHeadBlock := c.nearhead.GetBlock(blockRef.cacheRef, isFull)
 			if nearHeadBlock.Result != nil {
 				res, err = cacheTypes.NewLazy(nearHeadBlock.Result)
 			}
+			nearheadCoverage = nearHeadBlock.Coverage
 			return res, err
 		},
 		func() (res cacheTypes.Lazy[*web3Types.Block], err error) {
-			if blockRef.shouldReadFromDataCache(nearHeadBlock.Coverage) {
+			if blockRef.shouldReadFromDataCache(nearheadCoverage) {
 				res, err = c.dataCache.GetBlock(blockRef.cacheRef, isFull)
 			}
 			return res, err
@@ -379,8 +380,8 @@ func (c ethCacheClient) BlockTransactionCountByHash(blockHash common.Hash) (*big
 		tracker,
 		func() (*big.Int, bool, error) {
 			nearheadBlock := c.nearhead.GetBlock(blockRef, false)
-			if nearheadBlock.Result != nil {
-				return big.NewInt(txCountFromBlock(nearheadBlock.Result)), true, nil
+			if block := nearheadBlock.Result; block != nil {
+				return big.NewInt(txCountFromBlock(block)), true, nil
 			}
 			return nil, false, nil
 		},
@@ -409,18 +410,19 @@ func (c ethCacheClient) BlockTransactionCountByNumber(blockNum web3Types.BlockNu
 	tracker := newRPCCacheTracker(rpcMethodEthBlockTransactionCountByNum)
 	defer tracker.report()
 
-	var nearHeadBlock nearhead.EthCacheResultWithCoverage[*web3Types.Block]
+	var nearheadCoverage [2]uint64
 	return readThroughCacheChain(
 		tracker,
 		func() (*big.Int, bool, error) {
-			nearHeadBlock = c.nearhead.GetBlock(blockRef.cacheRef, false)
-			if nearHeadBlock.Result != nil {
-				return big.NewInt(txCountFromBlock(nearHeadBlock.Result)), true, nil
+			nearHeadBlock := c.nearhead.GetBlock(blockRef.cacheRef, false)
+			if block := nearHeadBlock.Result; block != nil {
+				return big.NewInt(txCountFromBlock(block)), true, nil
 			}
+			nearheadCoverage = nearHeadBlock.Coverage
 			return nil, false, nil
 		},
 		func() (*big.Int, bool, error) {
-			if !blockRef.shouldReadFromDataCache(nearHeadBlock.Coverage) {
+			if !blockRef.shouldReadFromDataCache(nearheadCoverage) {
 				return nil, false, nil
 			}
 
@@ -596,18 +598,19 @@ func (c ethCacheClient) LazyBlockReceipts(
 	tracker := newRPCCacheTracker(rpcMethodEthBlockReceipts)
 	defer tracker.report()
 
-	var nearHeadReceipts nearhead.EthCacheResultWithCoverage[[]*web3Types.Receipt]
+	var nearheadCoverage [2]uint64
 	return readThroughLazyCacheChain(
 		tracker,
 		func() (res cacheTypes.Lazy[[]web3Types.Receipt], err error) {
-			nearHeadReceipts = c.nearhead.GetBlockReceipts(blockRef.cacheRef)
+			nearHeadReceipts := c.nearhead.GetBlockReceipts(blockRef.cacheRef)
 			if nearHeadReceipts.Result != nil {
 				res, err = cacheTypes.NewLazy(cloneReceipts(nearHeadReceipts.Result))
 			}
+			nearheadCoverage = nearHeadReceipts.Coverage
 			return res, err
 		},
 		func() (res cacheTypes.Lazy[[]web3Types.Receipt], err error) {
-			if blockRef.shouldReadFromDataCache(nearHeadReceipts.Coverage) {
+			if blockRef.shouldReadFromDataCache(nearheadCoverage) {
 				res, err = c.dataCache.GetBlockReceipts(blockRef.cacheRef)
 			}
 			return res, err
@@ -835,20 +838,21 @@ func (c ethCacheClient) LazyTransactionByBlockNumberAndIndex(
 	tracker := newRPCCacheTracker(rpcMethodEthTxnByBlockNumAndIndex)
 	defer tracker.report()
 
-	var nearHeadBlock nearhead.EthCacheResultWithCoverage[*web3Types.Block]
+	var nearheadCoverage [2]uint64
 	return readThroughLazyCacheChain(
 		tracker,
 		func() (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
-			nearHeadBlock = c.nearhead.GetBlock(blockRef.cacheRef, true)
+			nearHeadBlock := c.nearhead.GetBlock(blockRef.cacheRef, true)
 			if block := nearHeadBlock.Result; block != nil {
 				if txns := block.Transactions.Transactions(); index < uint(len(txns)) {
 					res, err = cacheTypes.NewLazy(&txns[index])
 				}
 			}
+			nearheadCoverage = nearHeadBlock.Coverage
 			return res, err
 		},
 		func() (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
-			if blockRef.shouldReadFromDataCache(nearHeadBlock.Coverage) {
+			if blockRef.shouldReadFromDataCache(nearheadCoverage) {
 				res, err = c.dataCache.GetTransactionByIndex(blockRef.cacheRef, uint32(index))
 			}
 			return res, err
@@ -964,18 +968,19 @@ func (c traceCacheClient) LazyBlocks(
 	tracker := newRPCCacheTracker(rpcMethodTraceBlock)
 	defer tracker.report()
 
-	var nearheadBlock nearhead.EthCacheResultWithCoverage[[]web3Types.LocalizedTrace]
+	var nearheadCoverage [2]uint64
 	return readThroughLazyCacheChain(
 		tracker,
 		func() (res cacheTypes.Lazy[[]web3Types.LocalizedTrace], err error) {
-			nearheadBlock = c.nearhead.GetBlockTraces(blockRef.cacheRef)
+			nearheadBlock := c.nearhead.GetBlockTraces(blockRef.cacheRef)
 			if traces := nearheadBlock.Result; traces != nil {
 				res, err = cacheTypes.NewLazy(traces)
 			}
+			nearheadCoverage = nearheadBlock.Coverage
 			return res, err
 		},
 		func() (res cacheTypes.Lazy[[]web3Types.LocalizedTrace], err error) {
-			if blockRef.shouldReadFromDataCache(nearheadBlock.Coverage) {
+			if blockRef.shouldReadFromDataCache(nearheadCoverage) {
 				res, err = c.dataCache.GetBlockTraces(blockRef.cacheRef)
 			}
 			return res, err
