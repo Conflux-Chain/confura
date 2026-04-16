@@ -193,9 +193,9 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 
 			var receipt *types.TransactionReceipt
 			if useBatch {
-				// If epoch not executed yet, cfx_getEpochReceipts will always return nil no matter what block hash passed in
-				// as assumptive pivot hash due to fullnode RPC implementation. While we have some executed transaction but
-				// unexecuted receipt here, it is definitely resulted by pivot switch.
+				// If epoch is not executed yet, cfx_getEpochReceipts will always return nil no matter what block hash is passed in
+				// as assumptive pivot hash due to fullnode RPC implementation. While we have some executed transactions but
+				// unexecuted receipts here, it is definitely caused by pivot switch.
 				if epochReceipts == nil {
 					logger.Info("Failed to match tx receipts due to epoch receipts nil (regarded as pivot switch)")
 					return emptyEpochData, errors.WithMessage(ErrEpochPivotSwitched, "batch retrieved epoch receipts nil")
@@ -220,8 +220,8 @@ func queryEpochData(cfx sdk.ClientOperator, epochNumber uint64, useBatch bool) (
 					return emptyEpochData, errors.WithMessagef(err, "Failed to get receipt by tx hash %v", tx.Hash)
 				}
 
-				// While we have some executed transaction but unexecuted receipt here, it is definitely
-				// resulted by pivot switch.
+				// While we have some executed transactions but unexecuted receipts here, it is definitely
+				// caused by pivot switch.
 				if receipt == nil {
 					logger.Info("Failed to get tx receipt due to receipt nil (regarded as pivot switch)")
 					return emptyEpochData, errors.WithMessage(ErrEpochPivotSwitched, "retrieved tx receipt nil")
