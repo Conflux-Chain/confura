@@ -1,11 +1,18 @@
 package rpc
 
 import (
-	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/confura/util/rpc/cache"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+)
+
+const (
+	rpcMethodCfxChainID       = "cfx_clientVersion"
+	rpcMethodCfxGasPrice      = "cfx_gasPrice"
+	rpcMethodCfxStatus        = "cfx_status"
+	rpcMethodCfxEpochNumber   = "cfx_epochNumber"
+	rpcMethodCfxBestBlockHash = "cfx_bestBlockHash"
 )
 
 type CfxCoreClient struct {
@@ -21,33 +28,21 @@ func NewCfxCoreClient(client sdk.ClientOperator) *CfxCoreClient {
 }
 
 func (c CfxCoreClient) GetClientVersion() (string, error) {
-	version, loaded, err := cache.CfxDefault.GetClientVersion(c.ClientOperator)
-	if err != nil {
-		return "", err
-	}
-
-	metrics.Registry.Client.ExpiryCacheHit("cfx_clientVersion").Mark(loaded)
-	return version, nil
+	return readWithExpiryCache(rpcMethodCfxChainID, func() (string, bool, error) {
+		return cache.CfxDefault.GetClientVersion(c.ClientOperator)
+	})
 }
 
 func (c CfxCoreClient) GetGasPrice() (*hexutil.Big, error) {
-	gasPrice, loaded, err := cache.CfxDefault.GetGasPrice(c.ClientOperator)
-	if err != nil {
-		return nil, err
-	}
-
-	metrics.Registry.Client.ExpiryCacheHit("cfx_gasPrice").Mark(loaded)
-	return gasPrice, nil
+	return readWithExpiryCache(rpcMethodCfxGasPrice, func() (*hexutil.Big, bool, error) {
+		return cache.CfxDefault.GetGasPrice(c.ClientOperator)
+	})
 }
 
 func (c CfxCoreClient) GetStatus() (types.Status, error) {
-	status, loaded, err := cache.CfxDefault.GetStatus(c.nodeName, c.ClientOperator)
-	if err != nil {
-		return types.Status{}, err
-	}
-
-	metrics.Registry.Client.ExpiryCacheHit("cfx_status").Mark(loaded)
-	return status, nil
+	return readWithExpiryCache(rpcMethodCfxStatus, func() (types.Status, bool, error) {
+		return cache.CfxDefault.GetStatus(c.nodeName, c.ClientOperator)
+	})
 }
 
 func (c CfxCoreClient) GetEpochNumber(epochs ...*types.Epoch) (*hexutil.Big, error) {
@@ -56,20 +51,13 @@ func (c CfxCoreClient) GetEpochNumber(epochs ...*types.Epoch) (*hexutil.Big, err
 		epoch = epochs[0]
 	}
 
-	epochNumber, loaded, err := cache.CfxDefault.GetEpochNumber(c.nodeName, c.ClientOperator, epoch)
-	if err != nil {
-		return nil, err
-	}
-	metrics.Registry.Client.ExpiryCacheHit("cfx_epochNumber").Mark(loaded)
-	return epochNumber, nil
+	return readWithExpiryCache(rpcMethodCfxEpochNumber, func() (*hexutil.Big, bool, error) {
+		return cache.CfxDefault.GetEpochNumber(c.nodeName, c.ClientOperator, epoch)
+	})
 }
 
 func (c CfxCoreClient) GetBestBlockHash() (types.Hash, error) {
-	blockHash, loaded, err := cache.CfxDefault.GetBestBlockHash(c.nodeName, c.ClientOperator)
-	if err != nil {
-		return blockHash, err
-	}
-
-	metrics.Registry.Client.ExpiryCacheHit("cfx_bestBlockHash").Mark(loaded)
-	return blockHash, nil
+	return readWithExpiryCache(rpcMethodCfxBestBlockHash, func() (types.Hash, bool, error) {
+		return cache.CfxDefault.GetBestBlockHash(c.nodeName, c.ClientOperator)
+	})
 }

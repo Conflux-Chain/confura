@@ -257,3 +257,7 @@ func (*ClientMetrics) DataCacheHit(method string) metricUtil.Percentage {
 func (*ClientMetrics) NearHeadCacheHit(method string) metricUtil.Percentage {
 	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/client/nearhead/cache/hit/%v", method)
 }
+
+func (*ClientMetrics) FullNodeHit(method string) metricUtil.Percentage {
+	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/client/fullnode/hit/%v", method)
+}

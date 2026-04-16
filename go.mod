@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.23.10
 
 require (
-	github.com/Conflux-Chain/confura-data-cache v1.0.0
+	github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20260414083601-cfb736638339
 	github.com/Conflux-Chain/go-conflux-sdk v1.6.1
 	github.com/Conflux-Chain/go-conflux-util v0.7.4
 	github.com/Conflux-Chain/web3pay-service v1.0.2
@@ -184,3 +184,4 @@ require (
 // replace github.com/Conflux-Chain/web3pay-service => ../web3pay-service
 // replace github.com/Conflux-Chain/go-conflux-util => ../go-conflux-util
 // replace github.com/openweb3/go-rpc-provider => ../go-rpc-provider
+// replace github.com/Conflux-Chain/confura-data-cache => ../confura-data-cache
