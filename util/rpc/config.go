@@ -86,3 +86,7 @@ func MustInit() {
 	viper.MustUnmarshalKey("cfx", &cfxClientCfg)
 	viper.MustUnmarshalKey("eth", &ethClientCfg)
 }
+
+func DefaultCfxClientConfig() clientConfig {
+	return cfxClientCfg
+}

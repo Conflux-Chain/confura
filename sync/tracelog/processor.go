@@ -69,8 +69,8 @@ func (p *BatchProcessor) BatchExec(tx *gorm.DB, batchSize int) error {
 }
 
 func (p *BatchProcessor) BatchReset() {
-	p.pendingLogs = p.pendingLogs[:0]
-	p.pendingEpochBlockMappings = p.pendingEpochBlockMappings[:0]
+	p.pendingLogs = nil
+	p.pendingEpochBlockMappings = nil
 }
 
 // OperationFunc adapts a function to the db.Operation interface.

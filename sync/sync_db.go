@@ -33,6 +33,8 @@ type cfxSyncConfig struct {
 	FromEpoch uint64 `default:"0"`
 	MaxEpochs uint64 `default:"10"`
 	UseBatch  bool   `default:"false"`
+
+	TraceLog traceLogSyncConfig
 }
 
 // DatabaseSyncer is used to sync blockchain data into database

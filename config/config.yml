@@ -110,6 +110,41 @@ eth:
 #     fromEpoch: 0
 #     # Maximum number of epochs to batch sync once
 #     maxEpochs: 10
+#     # Trace log synchronization configurations
+#     traceLog:
+#       catchUp:
+#         poller:
+#           parallel:
+#             routines: 0
+#             # Better to set n x number of RPC nodes, 0 indicates unlimited
+#             window: 0
+#             retryInterval: 1s
+#             health:
+#               threshold: 1m
+#               remind: 5m
+#           buffer:
+#             capacity: 1024
+#             maxBytes: 256000000 # 256M
+#         processor:
+#           retryInterval: 3s
+#           health:
+#             threshold: 1m
+#             remind: 5m
+#           batchSize: 100
+#           batchTimeout: 3s
+#           createBatchSize: 1000
+#       poller:
+#         idleInterval: 1s
+#         retryInterval: 5s
+#         bufferSize: 32
+#         health:
+#           threshold: 1m
+#           remind: 5m
+#       processor:
+#         retryInterval: 3s
+#         health:
+#           threshold: 1m
+#           remind: 5m
 
 #   # EVM space sync configurations
 #   eth:
