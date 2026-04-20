@@ -6,17 +6,32 @@ import (
 
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/tracelog"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/core"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
+	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process/db"
+	"github.com/Conflux-Chain/go-conflux-util/ctxutil"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/sirupsen/logrus"
 )
 
+type traceLogSyncConfig struct {
+	CatchUp struct {
+		Poller    poll.CatchUpOption
+		Processor db.BatchOption
+	}
+
+	Poller    poll.Option
+	Processor db.Option
+}
+
 // TraceLogSyncer orchestrates the synchronization of internal contract trace logs.
 type TraceLogSyncer struct {
+	conf traceLogSyncConfig
+
 	epochFrom uint64
 	adapter   poll.Adapter[core.EpochData]
 	client    *sdk.Client
@@ -36,8 +51,11 @@ func MustNewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) *TraceL
 	viperutil.MustUnmarshalKey("sync.cfx", &conf)
 
 	adapter, err := core.NewAdapterWithConfig(core.AdapterConfig{
-		URL:           clients[0].GetNodeURL(),
-		AdapterOption: core.AdapterOption{IgnoreReceipts: true},
+		URL: clients[0].GetNodeURL(),
+		AdapterOption: core.AdapterOption{
+			RequestTimeout: rpcutil.DefaultCfxClientConfig().RequestTimeout,
+			IgnoreReceipts: true,
+		},
 	})
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to create RPC adapter")
@@ -62,6 +80,7 @@ func MustNewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) *TraceL
 	}
 
 	return &TraceLogSyncer{
+		conf:               conf.TraceLog,
 		adapter:            adapter,
 		epochFrom:          epochFrom,
 		client:             clients[0],
@@ -79,11 +98,19 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 	// Phase 1: Catchup
 	params := sync.CatchupParamsDB[core.EpochData]{
 		Adapter:         s.adapter,
+		Poller:          s.conf.CatchUp.Poller,
+		Processor:       s.conf.CatchUp.Processor,
 		DB:              s.logStore.DB(),
 		NextBlockNumber: s.epochFrom,
 	}
+
 	bp := tracelog.NewBatchProcessor(s.registry, s.logStore, s.epochBlockMapStore)
 	s.epochFrom = sync.CatchUpDB[core.EpochData](ctx, params, bp)
+
+	if ctxutil.IsDone(ctx) {
+		logrus.Info("Trace log catchup sync interrupted")
+		return
+	}
 
 	// Phase 2: Follow latest
 	latestFinalized, err := s.client.GetEpochNumber(types.EpochLatestFinalized)
@@ -93,6 +120,8 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 
 	syncParams := sync.ParamsDB[core.EpochData]{
 		Adapter:         s.adapter,
+		Poller:          s.conf.Poller,
+		Processor:       s.conf.Processor,
 		DB:              s.logStore.DB(),
 		NextBlockNumber: s.epochFrom,
 	}
