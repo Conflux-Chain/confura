@@ -13,6 +13,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/core"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process/db"
+	"github.com/Conflux-Chain/go-conflux-util/ctxutil"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/sirupsen/logrus"
 )
@@ -102,8 +103,14 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 		DB:              s.logStore.DB(),
 		NextBlockNumber: s.epochFrom,
 	}
+
 	bp := tracelog.NewBatchProcessor(s.registry, s.logStore, s.epochBlockMapStore)
 	s.epochFrom = sync.CatchUpDB[core.EpochData](ctx, params, bp)
+
+	if ctxutil.IsDone(ctx) {
+		logrus.Info("Trace log catchup sync interrupted")
+		return
+	}
 
 	// Phase 2: Follow latest
 	latestFinalized, err := s.client.GetEpochNumber(types.EpochLatestFinalized)
