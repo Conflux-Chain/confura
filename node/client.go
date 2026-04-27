@@ -68,7 +68,7 @@ func (p *clientProvider[T]) getOrRegisterGroup(group Group) *util.ConcurrentMap 
 	return v.(*util.ConcurrentMap)
 }
 
-// GetRouteGroup get custom route group for specific route key
+// GetRouteGroup gets custom route group for specific route key
 func (p *clientProvider[T]) GetRouteGroup(key string) (grp Group, ok bool) {
 	if p.db == nil { // db not available
 		return grp, false
@@ -184,7 +184,7 @@ func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T,
 	return client.(T), nil
 }
 
-// GetClient gets client of specific group (or use normal HTTP group as default).
+// GetClient gets client of a specific group (or uses normal HTTP group as default).
 func (p *clientProvider[T]) GetClient(key string, groups ...Group) (T, error) {
 	if len(groups) > 0 {
 		return p.getClient(key, groups[0])
@@ -193,7 +193,7 @@ func (p *clientProvider[T]) GetClient(key string, groups ...Group) (T, error) {
 	return p.getClient(key, p.defaultGroup)
 }
 
-// GetClientByIP gets client of specific group (or use normal HTTP group as default) by remote IP address.
+// GetClientByIP gets client of a specific group (or uses normal HTTP group as default) by remote IP address.
 func (p *clientProvider[T]) GetClientByIP(ctx context.Context, groups ...Group) (T, error) {
 	if ip, ok := handlers.GetIPAddressFromContext(ctx); ok {
 		return p.GetClient(ip, groups...)

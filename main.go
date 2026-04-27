@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	// ensure configuration initialized at first.
+	// ensure configuration is initialized first.
 	config.Init()
 
 	cmd.Execute()
