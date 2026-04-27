@@ -40,7 +40,7 @@ type clientProvider[T any] struct {
 	mu           sync.Mutex
 
 	// db store to load node route configs
-	db *mysql.MysqlStore
+	db *mysql.CommonStores
 	// route key cache: route key => route group
 	routeKeyCache *util.ExpirableLruCache
 
@@ -48,7 +48,7 @@ type clientProvider[T any] struct {
 	clients *util.ConcurrentMap
 }
 
-func newClientProvider[T any](db *mysql.MysqlStore, router Router, defaultGroup Group, factory clientFactory[T]) *clientProvider[T] {
+func newClientProvider[T any](db *mysql.CommonStores, router Router, defaultGroup Group, factory clientFactory[T]) *clientProvider[T] {
 	return &clientProvider[T]{
 		db:            db,
 		router:        router,
@@ -246,7 +246,7 @@ func locateNodeProvider(r Router) NodeProvider {
 // CfxClientProvider provides core space client by router.
 type CfxClientProvider = clientProvider[sdk.ClientOperator]
 
-func NewCfxClientProvider(db *mysql.MysqlStore, router Router) *CfxClientProvider {
+func NewCfxClientProvider(db *mysql.CommonStores, router Router) *CfxClientProvider {
 	return newClientProvider(db, router, GroupCfxHttp, func(grp Group, url string) (sdk.ClientOperator, error) {
 		client, err := rpcutil.NewCfxClient(url, rpcutil.WithClientHookMetrics(true))
 		if err != nil {
@@ -261,7 +261,7 @@ type Web3goClient = rpcutil.Web3goClient
 // EthClientProvider provides evm space client by router.
 type EthClientProvider = clientProvider[*Web3goClient]
 
-func NewEthClientProvider(dataCache cacheRpc.Interface, db *mysql.MysqlStore, router Router) *EthClientProvider {
+func NewEthClientProvider(dataCache cacheRpc.Interface, db *mysql.CommonStores, router Router) *EthClientProvider {
 	return newClientProvider(db, router, GroupEthHttp, func(grp Group, url string) (*Web3goClient, error) {
 		client, err := rpcutil.NewEthClient(url, rpcutil.WithClientHookMetrics(true))
 		if err != nil {

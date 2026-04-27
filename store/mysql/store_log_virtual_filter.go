@@ -48,12 +48,12 @@ type vfLogFilter struct {
 	LogFilter
 
 	BlockHashes []string
-	Contracts   store.VariadicValue
+	Contracts   store.VariadicValue[string]
 }
 
 func (filter *vfLogFilter) validateCount(db *gorm.DB) error {
 	db = db.Where("is_del <> ?", true)
-	db = applyContractFilter(db, filter.Contracts)
+	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
 
 	if len(filter.BlockHashes) > 0 {
 		db = db.Where("bh IN (?)", filter.BlockHashes)
@@ -77,7 +77,7 @@ func (filter *vfLogFilter) Find(db *gorm.DB) ([]VirtualFilterLog, error) {
 	}
 
 	db = applyTopicsFilter(db, filter.Topics)
-	db = applyContractFilter(db, filter.Contracts)
+	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
 
 	var result []VirtualFilterLog
 	if err := db.Find(&result).Error; err != nil {
@@ -200,7 +200,9 @@ func (vfls *VirtualFilterLogStore) GetLogs(
 
 	filter := &vfLogFilter{
 		LogFilter: LogFilter{
-			BlockFrom: sfilter.BlockFrom, BlockTo: sfilter.BlockTo, Topics: sfilter.Topics,
+			BlockFrom: sfilter.BlockFrom,
+			BlockTo:   sfilter.BlockTo,
+			Topics:    store.ToVariadicValuers(sfilter.Topics...),
 		},
 		Contracts:   sfilter.Contracts,
 		BlockHashes: blockHashes,

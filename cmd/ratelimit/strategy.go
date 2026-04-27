@@ -84,7 +84,7 @@ func addStrategy(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs, err := storeCtx.GetMysqlStore(stratCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(stratCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return
@@ -133,7 +133,7 @@ func delStrategy(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs, err := storeCtx.GetMysqlStore(stratCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(stratCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return
@@ -166,7 +166,7 @@ func listStrategies(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	dbs, err := storeCtx.GetMysqlStore(stratCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(stratCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return

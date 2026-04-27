@@ -1,7 +1,6 @@
 package mysql
 
 import (
-	"github.com/Conflux-Chain/confura/store"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -93,6 +92,10 @@ func (cs *ContractStore) GetContractById(cid uint64) (*Contract, bool, error) {
 	return cs.enforceCache("id = ?", cid)
 }
 
+func (cs *ContractStore) GetContractByAddr(addr string) (*Contract, bool, error) {
+	return cs.enforceCache("address = ?", addr)
+}
+
 // AddContractIfAbsent add new contract if absent. Note, this method is thread unsafe.
 // Generally, it is used by data sync thread.
 func (cs *ContractStore) AddContractIfAbsent(address string) (uint64, bool, error) {
@@ -154,12 +157,6 @@ func (cs *ContractStore) AddContract(contracts map[string]bool) (int, error) {
 	}
 
 	return len(newContracts), nil
-}
-
-// AddContractByEpochData adds contract for the specified epoch data slice and returns the number of new added contracts.
-func (cs *ContractStore) AddContractByEpochData(slice ...*store.EpochData) (int, error) {
-	contracts := extractUniqueContractAddresses(slice...)
-	return cs.AddContract(contracts)
 }
 
 // GetUpdatedContractsSinceEpoch gets all contracts that have been updated since the specified epoch.

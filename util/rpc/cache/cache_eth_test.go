@@ -64,7 +64,7 @@ func TestEthCachePendingTransaction(t *testing.T) {
 		assert.True(t, loaded)
 		assert.True(t, expired, "should expire after exemption")
 
-		pending.MarkChecked()
+		pending.Set(nil) // reset data
 		_, _, expired = ethCache.GetPendingTransaction(txHash)
 		assert.False(t, expired, "just checked, should not expire")
 
@@ -83,7 +83,7 @@ func TestEthCachePendingTransaction(t *testing.T) {
 
 		assert.True(t, ptx.shouldCheckNow(exempt, interval), "should check when never checked")
 
-		ptx.MarkChecked()
+		ptx.Set(nil)
 		assert.False(t, ptx.shouldCheckNow(exempt, interval), "just checked")
 	})
 }

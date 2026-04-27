@@ -31,15 +31,15 @@ func (epochBlockMap) TableName() string {
 }
 
 // epochBlockMapStore used to get epoch to block map data.
-type epochBlockMapStore struct {
+type epochBlockMapStore[T store.ChainData] struct {
 	*baseStore
 
 	// help partitioner
 	partitioner *mysqlRangePartitioner
 }
 
-func newEpochBlockMapStore(db *gorm.DB, config *Config) *epochBlockMapStore {
-	return &epochBlockMapStore{
+func newEpochBlockMapStore[T store.ChainData](db *gorm.DB, config *Config) *epochBlockMapStore[T] {
+	return &epochBlockMapStore[T]{
 		baseStore: newBaseStore(db),
 		partitioner: newMysqlRangePartitioner(
 			config.Database, epochBlockMap{}.TableName(), "epoch",
@@ -48,7 +48,7 @@ func newEpochBlockMapStore(db *gorm.DB, config *Config) *epochBlockMapStore {
 }
 
 // preparePartition creates new table partition if necessary.
-func (ebms *epochBlockMapStore) preparePartition(dataSlice []*store.EpochData) error {
+func (ebms *epochBlockMapStore[T]) preparePartition(dataSlice []T) error {
 	var latestPartitionIndex int
 
 	partition, err := ebms.partitioner.latestPartition(ebms.db)
@@ -60,7 +60,7 @@ func (ebms *epochBlockMapStore) preparePartition(dataSlice []*store.EpochData) e
 		latestPartitionIndex = ebms.partitioner.indexOfPartition(partition)
 	} else {
 		// create initial partition
-		initPartitionIndex := int(dataSlice[0].Number / epochToBlockMappingPartitionSize)
+		initPartitionIndex := int(dataSlice[0].Number() / epochToBlockMappingPartitionSize)
 		threshold := uint64(initPartitionIndex+1) * epochToBlockMappingPartitionSize
 
 		err = ebms.partitioner.convert(ebms.db, initPartitionIndex, threshold)
@@ -72,12 +72,12 @@ func (ebms *epochBlockMapStore) preparePartition(dataSlice []*store.EpochData) e
 	}
 
 	for _, data := range dataSlice {
-		if data.Number%epochToBlockMappingPartitionSize != 0 {
+		if data.Number()%epochToBlockMappingPartitionSize != 0 {
 			continue
 		}
 
 		// create new partition if necessary
-		partitionIndex := int(data.Number / epochToBlockMappingPartitionSize)
+		partitionIndex := int(data.Number() / epochToBlockMappingPartitionSize)
 		if int(partitionIndex) <= latestPartitionIndex { // partition already exists
 			continue
 		}
@@ -95,11 +95,11 @@ func (ebms *epochBlockMapStore) preparePartition(dataSlice []*store.EpochData) e
 }
 
 // MaxEpoch returns the max epoch within the map store.
-func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
+func (e2bms *epochBlockMapStore[T]) MaxEpoch() (uint64, bool, error) {
 	var maxEpoch sql.NullInt64
 
 	db := e2bms.db.Model(&epochBlockMap{}).Select("MAX(epoch)")
-	if err := db.Find(&maxEpoch).Error; err != nil {
+	if err := db.Scan(&maxEpoch).Error; err != nil {
 		return 0, false, err
 	}
 
@@ -111,7 +111,7 @@ func (e2bms *epochBlockMapStore) MaxEpoch() (uint64, bool, error) {
 }
 
 // findOneBlockMapping retrieves a single `epochBlockMap` record based on a condition and optional ordering.
-func (e2bms *epochBlockMapStore) findOneBlockMapping(
+func (e2bms *epochBlockMapStore[T]) findOneBlockMapping(
 	condition string, order string, args ...interface{}) (res epochBlockMap, existed bool, err error) {
 
 	query := e2bms.db.Where(condition, args...)
@@ -129,22 +129,22 @@ func (e2bms *epochBlockMapStore) findOneBlockMapping(
 }
 
 // FloorBlockMapping finds the `epochBlockMap` for the largest epoch ≤ the given epoch.
-func (e2bms *epochBlockMapStore) FloorBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
+func (e2bms *epochBlockMapStore[T]) FloorBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
 	return e2bms.findOneBlockMapping("epoch <= ?", "epoch DESC", epoch)
 }
 
 // CeilBlockMapping finds the `epochBlockMap` for the smallest epoch ≥ the given epoch.
-func (e2bms *epochBlockMapStore) CeilBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
+func (e2bms *epochBlockMapStore[T]) CeilBlockMapping(epoch uint64) (epochBlockMap, bool, error) {
 	return e2bms.findOneBlockMapping("epoch >= ?", "epoch ASC", epoch)
 }
 
 // BlockMapping retrieves the `epochBlockMap` for the exact given epoch.
-func (e2bms *epochBlockMapStore) BlockMapping(epoch uint64) (epochBlockMap, bool, error) {
+func (e2bms *epochBlockMapStore[T]) BlockMapping(epoch uint64) (epochBlockMap, bool, error) {
 	return e2bms.findOneBlockMapping("epoch = ?", "", epoch)
 }
 
 // LatestEpochBeforeBlock finds the latest epoch ≤ maxEpochNumber where BnMax ≤ blockNumber.
-func (e2bms *epochBlockMapStore) LatestEpochBeforeBlock(maxEpochNumber, blockNumber uint64) (uint64, bool, error) {
+func (e2bms *epochBlockMapStore[T]) LatestEpochBeforeBlock(maxEpochNumber, blockNumber uint64) (uint64, bool, error) {
 	res, existed, err := e2bms.findOneBlockMapping("epoch <= ? AND bn_max <= ?", "epoch DESC", maxEpochNumber, blockNumber)
 	if err != nil || !existed {
 		return 0, false, err
@@ -153,7 +153,7 @@ func (e2bms *epochBlockMapStore) LatestEpochBeforeBlock(maxEpochNumber, blockNum
 }
 
 // PivotHash returns the pivot hash of the given epoch.
-func (e2bms *epochBlockMapStore) PivotHash(epoch uint64) (string, bool, error) {
+func (e2bms *epochBlockMapStore[T]) PivotHash(epoch uint64) (string, bool, error) {
 	var e2bmap epochBlockMap
 
 	existed, err := e2bms.exists(&e2bmap, "epoch = ?", epoch)
@@ -165,24 +165,22 @@ func (e2bms *epochBlockMapStore) PivotHash(epoch uint64) (string, bool, error) {
 }
 
 // Add batch saves epoch to block mapping data to db store.
-func (e2bms *epochBlockMapStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData) error {
+func (e2bms *epochBlockMapStore[T]) Add(dbTx *gorm.DB, dataSlice []T) error {
 	var mappings []*epochBlockMap
 
 	for _, data := range dataSlice {
-		if len(data.Blocks) == 0 {
+		blocks := data.ExtractBlocks()
+		if len(blocks) == 0 {
 			continue
 		}
 
-		var pivotHash string
-		if data.Hash != nil {
-			pivotHash = string(*data.Hash)
-		}
+		pivotHash := data.Hash()
 
-		firstBlock, endBlock := data.Blocks[0], data.Blocks[len(data.Blocks)-1]
+		firstBlock, endBlock := blocks[0], blocks[len(blocks)-1]
 		mappings = append(mappings, &epochBlockMap{
-			Epoch:     data.Number,
-			BnMin:     firstBlock.BlockNumber.ToInt().Uint64(),
-			BnMax:     endBlock.BlockNumber.ToInt().Uint64(),
+			Epoch:     data.Number(),
+			BnMin:     firstBlock.Number(),
+			BnMax:     endBlock.Number(),
 			PivotHash: pivotHash,
 		})
 	}
@@ -195,6 +193,121 @@ func (e2bms *epochBlockMapStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData
 }
 
 // Remove remove epoch to block mappings of specific epoch range from db store.
-func (e2bms *epochBlockMapStore) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
+func (e2bms *epochBlockMapStore[T]) Remove(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
 	return dbTx.Where("epoch >= ? AND epoch <= ?", epochFrom, epochTo).Delete(&epochBlockMap{}).Error
+}
+
+type CfxTraceSyncEpochBlockMap epochBlockMap
+
+func (m CfxTraceSyncEpochBlockMap) TableName() string {
+	return "cfx_trace_sync_epoch_block_map"
+}
+
+type CfxTraceSyncEpochBlockMapStore struct {
+	*baseStore
+
+	// help partitioner
+	partitioner *mysqlRangePartitioner
+}
+
+func NewCfxTraceSyncEpochBlockMapStore(cs *CfxStore) *CfxTraceSyncEpochBlockMapStore {
+	return &CfxTraceSyncEpochBlockMapStore{
+		baseStore: newBaseStore(cs.DB()),
+		partitioner: newMysqlRangePartitioner(
+			cs.config.Database, CfxTraceSyncEpochBlockMap{}.TableName(), "epoch",
+		),
+	}
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) MaxEpoch() (uint64, bool, error) {
+	var maxEpoch sql.NullInt64
+
+	db := e2bms.db.Model(&CfxTraceSyncEpochBlockMap{}).Select("MAX(epoch)")
+	if err := db.Scan(&maxEpoch).Error; err != nil {
+		return 0, false, err
+	}
+
+	if !maxEpoch.Valid {
+		return 0, false, nil
+	}
+
+	return uint64(maxEpoch.Int64), true, nil
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) Add(dbTx *gorm.DB, mappings []*CfxTraceSyncEpochBlockMap) error {
+	if len(mappings) == 0 {
+		return nil
+	}
+
+	minEpochNumber := mappings[0].Epoch
+	maxEpochNumber := mappings[len(mappings)-1].Epoch
+
+	if err := e2bms.preparePartition(minEpochNumber, maxEpochNumber); err != nil {
+		return errors.WithMessage(err, "failed to prepare partitions")
+	}
+
+	return dbTx.Create(mappings).Error
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) preparePartition(minEpochNumber, maxEpochNumber uint64) error {
+	partition, err := e2bms.partitioner.latestPartition(e2bms.db)
+	if err != nil {
+		return errors.WithMessage(err, "failed to get latest partition")
+	}
+
+	var latestPartitionIndex int
+
+	if partition != nil {
+		latestPartitionIndex = e2bms.partitioner.indexOfPartition(partition)
+	} else {
+		// create initial partition
+		initPartitionIndex := int(minEpochNumber / epochToBlockMappingPartitionSize)
+		threshold := uint64(initPartitionIndex+1) * epochToBlockMappingPartitionSize
+
+		err = e2bms.partitioner.convert(e2bms.db, initPartitionIndex, threshold)
+		if err != nil {
+			return errors.WithMessage(err, "failed to init range partitioned table")
+		}
+
+		latestPartitionIndex = initPartitionIndex
+	}
+
+	targetPartitionIndex := int(maxEpochNumber / epochToBlockMappingPartitionSize)
+
+	for i := latestPartitionIndex + 1; i <= targetPartitionIndex; i++ {
+		threshold := uint64(i+1) * epochToBlockMappingPartitionSize
+
+		if err := e2bms.partitioner.addPartition(e2bms.db, i, threshold); err != nil {
+			return errors.WithMessage(err, "failed to add partition")
+		}
+	}
+
+	return nil
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) LoadPivotHashes(fromEpoch, toEpoch uint64) (map[uint64]string, error) {
+	if fromEpoch > toEpoch {
+		return nil, errors.New("invalid epoch range")
+	}
+
+	if toEpoch-fromEpoch+1 > 100_000 {
+		return nil, errors.New("epoch range too large")
+	}
+
+	var epochBlockMaps []CfxTraceSyncEpochBlockMap
+
+	query := e2bms.db.Where("epoch BETWEEN ? AND ?", fromEpoch, toEpoch)
+	if err := query.Find(&epochBlockMaps).Error; err != nil {
+		return nil, err
+	}
+
+	pivotHashes := make(map[uint64]string, len(epochBlockMaps))
+	for _, epochBlockMap := range epochBlockMaps {
+		pivotHashes[epochBlockMap.Epoch] = epochBlockMap.PivotHash
+	}
+	return pivotHashes, nil
+}
+
+func (e2bms *CfxTraceSyncEpochBlockMapStore) Pop(dbTx *gorm.DB, epochUntil uint64) error {
+	return dbTx.Where("epoch >= ?", epochUntil).Delete(&CfxTraceSyncEpochBlockMap{}).Error
 }

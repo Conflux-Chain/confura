@@ -411,7 +411,7 @@ func (validator *EpochValidator) validateGetTransactionReceipt(
 		}
 
 		for i := range rcpt1.Logs { // receipt log has no `epochNumber` data
-			rcpt1.Logs[i].EpochNumber = (*hexutil.Big)(big.NewInt(int64(*rcpt1.EpochNumber)))
+			rcpt1.Logs[i].EpochNumber = (*hexutil.Big)(big.NewInt(int64(rcpt1.EpochNumber)))
 		}
 
 		rcpt1.Logs = validator.filterLogs(rcpt1.Logs)
@@ -424,7 +424,7 @@ func (validator *EpochValidator) validateGetTransactionReceipt(
 		}
 
 		for i := range rcpt2.Logs { // receipt log has no `epochNumber` data
-			rcpt2.Logs[i].EpochNumber = (*hexutil.Big)(big.NewInt(int64(*rcpt2.EpochNumber)))
+			rcpt2.Logs[i].EpochNumber = (*hexutil.Big)(big.NewInt(int64(rcpt2.EpochNumber)))
 		}
 
 		rcpt2.Logs = validator.filterLogs(rcpt2.Logs)

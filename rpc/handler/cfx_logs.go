@@ -41,13 +41,13 @@ func MustInitFromViper() {
 
 // CfxLogsApiHandler RPC handler to get core space event logs from store or fullnode.
 type CfxLogsApiHandler struct {
-	ms *mysql.MysqlStore
+	ms *mysql.CfxStore
 
 	prunedHandler      *CfxPrunedLogsHandler // optional
 	maxSuggestAttempts int
 }
 
-func NewCfxLogsApiHandler(ms *mysql.MysqlStore, prunedHandler *CfxPrunedLogsHandler, maxAttempts int) *CfxLogsApiHandler {
+func NewCfxLogsApiHandler(ms *mysql.CfxStore, prunedHandler *CfxPrunedLogsHandler, maxAttempts int) *CfxLogsApiHandler {
 	return &CfxLogsApiHandler{ms: ms, prunedHandler: prunedHandler, maxSuggestAttempts: maxAttempts}
 }
 
@@ -156,7 +156,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	var logs []types.Log
 	var accumulator int
 
-	useBoundCheck := handler.RequireBoundChecks(filter)
+	useBoundCheck := RequireBoundChecks(filter)
 	if len(dbFilters) > 0 {
 		if useBoundCheck {
 			// add db query timeout
@@ -183,19 +183,27 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 					return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, v)
 				}
 
-				log, _ := v.ToCfxLog()
+				log, err := v.ToCfxLog()
+				if err != nil {
+					return nil, false, errors.WithMessage(err, "failed to convert to cfx log")
+				}
 				logs = append(logs, *log)
 			}
 
 			continue
 		}
 
-		// convert suggested block range back to epoch range for log filter with epoch range
-		if filter.FromEpoch != nil {
+		// convert suggested block range back to epoch range for log filter with epoch range or
+		// return inner error directly for log filter with block hashes
+		if filter.FromEpoch != nil || len(filter.BlockHashes) > 0 {
 			var valErr *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
 			if errors.As(err, &valErr) {
-				oversizedErr := handler.convertSuggestedFilterOversizedError(filter, valErr)
-				return nil, false, oversizedErr
+				if filter.FromEpoch != nil {
+					oversizedErr := handler.convertSuggestedFilterOversizedError(filter, valErr)
+					return nil, false, oversizedErr
+				} else {
+					return nil, false, valErr.Unwrap()
+				}
 			}
 		}
 
@@ -523,7 +531,7 @@ func (handler *CfxLogsApiHandler) convertSuggestedFilterOversizedError(
 }
 
 // RequireBoundChecks determines if bound checks should be applied based on if there is any space to narrow down the log filter
-func (handler *CfxLogsApiHandler) RequireBoundChecks(filter *types.LogFilter) bool {
+func RequireBoundChecks(filter *types.LogFilter) bool {
 	switch {
 	case filter.FromEpoch != nil && filter.ToEpoch != nil:
 		return !filter.FromEpoch.Equals(filter.ToEpoch)
@@ -559,7 +567,7 @@ func newSuggestedFilterOversizedError[T types.Log | store.Log](
 		if filter.FromEpoch != nil {
 			logEpochNum = v.EpochNumber.ToInt().Uint64()
 		} else if filter.FromBlock != nil && v.BlockHash != nil {
-			if block, err := cfx.GetBlockSummaryByHash(*v.BlockHash); err == nil {
+			if block, err := cfx.GetBlockSummaryByHash(*v.BlockHash); err == nil && block != nil {
 				logBlockNum = block.BlockNumber.ToInt().Uint64()
 			}
 		}

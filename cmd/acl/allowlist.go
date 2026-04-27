@@ -87,7 +87,7 @@ func addAllowList(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs, err := storeCtx.GetMysqlStore(alCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(alCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return
@@ -133,7 +133,7 @@ func delAllowList(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	dbs, err := storeCtx.GetMysqlStore(alCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(alCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return
@@ -166,7 +166,7 @@ func listAllowLists(cmd *cobra.Command, args []string) {
 	storeCtx := util.MustInitStoreContext()
 	defer storeCtx.Close()
 
-	dbs, err := storeCtx.GetMysqlStore(alCfg.Network)
+	dbs, err := storeCtx.GetCommonStore(alCfg.Network)
 	if err != nil {
 		logrus.WithError(err).Info("Failed to get mysql store by network")
 		return

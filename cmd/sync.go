@@ -13,8 +13,9 @@ import (
 var (
 	// sync boot options
 	syncOpt struct {
-		dbSyncEnabled  bool
-		ethSyncEnabled bool
+		dbSyncEnabled    bool
+		ethSyncEnabled   bool
+		traceSyncEnabled bool
 	}
 
 	syncCmd = &cobra.Command{
@@ -35,11 +36,16 @@ func init() {
 		&syncOpt.ethSyncEnabled, "eth", false, "start ETH sync server",
 	)
 
+	// boot flag for trace log sync
+	syncCmd.Flags().BoolVar(
+		&syncOpt.traceSyncEnabled, "trace", false, "start trace log sync server",
+	)
+
 	rootCmd.AddCommand(syncCmd)
 }
 
 func startSyncService(*cobra.Command, []string) {
-	if !syncOpt.dbSyncEnabled && !syncOpt.ethSyncEnabled {
+	if !syncOpt.dbSyncEnabled && !syncOpt.ethSyncEnabled && !syncOpt.traceSyncEnabled {
 		logrus.Fatal("No Sync server specified")
 	}
 
@@ -58,6 +64,10 @@ func startSyncService(*cobra.Command, []string) {
 
 	if syncOpt.ethSyncEnabled { // start ETH sync
 		startSyncEthDatabase(ctx, &wg, syncCtx)
+	}
+
+	if syncOpt.traceSyncEnabled { // start trace log sync
+		startSyncTraceLog(ctx, &wg, syncCtx)
 	}
 
 	util.GracefulShutdown(&wg, cancel)
@@ -98,4 +108,11 @@ func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.
 
 	// start evm space db prune
 	go syncCtx.EthDB.Prune()
+}
+
+func startSyncTraceLog(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
+	logrus.Info("Start to sync trace log into database")
+
+	traceLogSyncer := cisync.MustNewTraceLogSyncer(syncCtx.SyncCfxs, syncCtx.CfxDB)
+	go traceLogSyncer.MustSync(ctx, wg)
 }

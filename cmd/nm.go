@@ -61,9 +61,9 @@ func startNodeManagerService(*cobra.Command, []string) {
 }
 
 func startNativeSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
-	node.Factory().MustStartServer(ctx, wg, storeCtx.CfxDB)
+	node.Factory().MustStartServer(ctx, wg, storeCtx.GetCfxCommonStore())
 }
 
 func startEvmSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
-	node.EthFactory().MustStartServer(ctx, wg, storeCtx.EthDB)
+	node.EthFactory().MustStartServer(ctx, wg, storeCtx.GetEthCommonStore())
 }

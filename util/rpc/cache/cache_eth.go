@@ -284,16 +284,12 @@ func (cache *EthCache) RemovePendingTransaction(txHash common.Hash) bool {
 type ethPendingTxn struct {
 	val           atomic.Value
 	createdAt     time.Time    // Creation time
-	lastCheckedAt atomic.Int64 // Last check timestamp of mined status
-}
-
-// MarkChecked marks the mined status as checked
-func (t *ethPendingTxn) MarkChecked() {
-	t.lastCheckedAt.Store(time.Now().UnixMilli())
+	lastUpdatedAt atomic.Int64 // Last check timestamp of mined status
 }
 
 // Set updates the pending transaction detail
 func (t *ethPendingTxn) Set(txn *types.TransactionDetail) {
+	t.lastUpdatedAt.Store(time.Now().UnixMilli())
 	t.val.Store(txn)
 }
 
@@ -306,5 +302,5 @@ func (t *ethPendingTxn) Get() (*types.TransactionDetail, bool) {
 // ShouldCheckNow returns whether it's time to check if the pending transaction is mined.
 func (t *ethPendingTxn) shouldCheckNow(exemption, checkInterval time.Duration) bool {
 	return time.Since(t.createdAt) > exemption &&
-		time.Since(time.UnixMilli(t.lastCheckedAt.Load())) > checkInterval
+		time.Since(time.UnixMilli(t.lastUpdatedAt.Load())) > checkInterval
 }

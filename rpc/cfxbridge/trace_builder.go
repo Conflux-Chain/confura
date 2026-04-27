@@ -135,11 +135,9 @@ func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTr
 
 	if len(ttb.txTrace.TransactionHash) == 0 {
 		// initialize transaction hash and position with the first trace.
-		ttb.txTrace.TransactionHash = *trace.TransactionHash
-		if trace.TransactionPosition != nil {
-			ttb.txTrace.TransactionPosition = *trace.TransactionPosition
-		}
-	} else if ttb.txTrace.TransactionHash != *trace.TransactionHash { // next new transaction
+		ttb.txTrace.TransactionHash = trace.TransactionHash
+		ttb.txTrace.TransactionPosition = trace.TransactionPosition
+	} else if ttb.txTrace.TransactionHash != trace.TransactionHash { // next new transaction
 		return false, nil
 	}
 

@@ -161,19 +161,19 @@ func (b *benchmarker) report(start, end uint64) {
 	fmt.Printf(" m15 tps: %v\n", b.fetchPerEpochTimer.Snapshot().Rate15())
 }
 
-func (b *benchmarker) metricPersistDb(start time.Time, state *persistState) {
+func (b *benchmarker) metricPersistDb(start time.Time, insertDbRows, numEpochs int) {
 	persistDuration := b.metricPersistDuration(start)
 
-	b.metricPersistDbRows(int64(state.insertDbRows))
-	b.metricPersistEpochs(int64(state.numEpochs()))
+	b.metricPersistDbRows(int64(insertDbRows))
+	b.metricPersistEpochs(int64(numEpochs))
 
-	if state.insertDbRows > 0 {
-		avgDurationPerDbRow := int64(persistDuration) / int64(state.insertDbRows)
+	if insertDbRows > 0 {
+		avgDurationPerDbRow := int64(persistDuration) / int64(insertDbRows)
 		b.avgPersistDurationPerDbRowMetrics.Update(avgDurationPerDbRow)
 	}
 
-	if state.numEpochs() > 0 {
-		avgDurationPerEpoch := int64(persistDuration) / int64(state.numEpochs())
+	if numEpochs > 0 {
+		avgDurationPerEpoch := int64(persistDuration) / int64(numEpochs)
 		b.avgPersistDurationPerEpochMetrics.Update(avgDurationPerEpoch)
 	}
 }

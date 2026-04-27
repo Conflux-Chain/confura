@@ -1,30 +1,35 @@
 package cfxbridge
 
 import (
+	"math/big"
+
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3goTypes "github.com/openweb3/web3go/types"
 )
 
-var (
-	cfxTraceErrorReverted = "Reverted"
-	cfxTraceGasLeftZero   = *types.NewBigInt(0)
-	cfxTraceBytesEmpty    = []byte{}
+const cfxTraceErrorReverted = "Reverted"
 
-	cfxTraceCallResultReverted = types.CallResult{
-		Outcome:    types.OUTCOME_REVERTED,
-		GasLeft:    cfxTraceGasLeftZero,
-		ReturnData: cfxTraceBytesEmpty,
+func convertTraceOutcome(ethTrace *web3goTypes.LocalizedTrace) types.OutcomeType {
+	// success
+	if ethTrace.Error == nil {
+		return types.OUTCOME_SUCCESS
 	}
-)
+
+	// reverted
+	if *ethTrace.Error == cfxTraceErrorReverted {
+		return types.OUTCOME_REVERTED
+	}
+
+	// fail
+	return types.OUTCOME_FAIL
+}
 
 func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.TraceType, cfxTraceAction interface{}) *types.LocalizedTrace {
 	// transaction position
-	var txPos *hexutil.Uint64
+	var txPos hexutil.Uint64
 	if ethTrace.TransactionPosition != nil {
-		txPosU64 := hexutil.Uint64(*ethTrace.TransactionPosition)
-		txPos = &txPosU64
+		txPos = hexutil.Uint64(*ethTrace.TransactionPosition)
 	}
 
 	var valid bool
@@ -38,11 +43,11 @@ func convertTrace(ethTrace *web3goTypes.LocalizedTrace, cfxTraceType types.Trace
 		Action:              cfxTraceAction,
 		Valid:               valid,
 		Type:                cfxTraceType,
-		EpochHash:           ConvertHashNullable(&ethTrace.BlockHash),
-		EpochNumber:         types.NewBigInt(ethTrace.BlockNumber),
-		BlockHash:           ConvertHashNullable(&ethTrace.BlockHash),
+		EpochHash:           types.Hash(ethTrace.BlockHash.Hex()),
+		EpochNumber:         *types.NewBigInt(ethTrace.BlockNumber),
+		BlockHash:           types.Hash(ethTrace.BlockHash.Hex()),
 		TransactionPosition: txPos,
-		TransactionHash:     ConvertHashNullable(ethTrace.TransactionHash),
+		TransactionHash:     types.Hash(ethTrace.TransactionHash.Hex()),
 	}
 }
 
@@ -52,31 +57,19 @@ func convertTraceCall(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint32)
 		Space:    types.SPACE_EVM,
 		From:     ConvertAddress(ethActionCall.From, ethNetworkId),
 		To:       ConvertAddress(ethActionCall.To, ethNetworkId),
-		Value:    *types.NewBigIntByRaw(ethActionCall.Value),
-		Gas:      *types.NewBigIntByRaw(ethActionCall.Gas),
+		Value:    hexutil.Big(*ethActionCall.Value),
+		Gas:      hexutil.Big(*ethActionCall.Gas),
 		Input:    ethActionCall.Input,
 		CallType: types.CallType(ethActionCall.CallType),
 	})
 
-	var cfxCallResult interface{}
-	if ethTrace.Error == nil {
-		ethCallResult := ethTrace.Result.(web3goTypes.CallResult)
-		cfxCallResult = types.CallResult{
-			Outcome:    types.OUTCOME_SUCCESS,
-			GasLeft:    *types.NewBigIntByRaw(ethCallResult.GasUsed),
-			ReturnData: ethCallResult.Output,
-		}
-	} else if *ethTrace.Error == cfxTraceErrorReverted {
-		cfxCallResult = cfxTraceCallResultReverted
-	} else {
-		cfxCallResult = types.CallResult{
-			Outcome:    types.OUTCOME_FAIL,
-			GasLeft:    cfxTraceGasLeftZero,
-			ReturnData: []byte(*ethTrace.Error),
-		}
-	}
-
-	cfxTraceCallResult := convertTrace(ethTrace, types.TRACE_CALL_RESULT, cfxCallResult)
+	ethCallResult := ethTrace.Result.(web3goTypes.CallResult)
+	gasLeft := big.NewInt(0).Sub(ethActionCall.Gas, ethCallResult.GasUsed)
+	cfxTraceCallResult := convertTrace(ethTrace, types.TRACE_CALL_RESULT, types.CallResult{
+		Outcome:    convertTraceOutcome(ethTrace),
+		GasLeft:    hexutil.Big(*gasLeft),
+		ReturnData: ethCallResult.Output,
+	})
 
 	return cfxTraceCall, cfxTraceCallResult
 }
@@ -90,38 +83,20 @@ func convertTraceCreate(ethTrace *web3goTypes.LocalizedTrace, ethNetworkId uint3
 	cfxTraceCreate := convertTrace(ethTrace, types.TRACE_CREATE, types.Create{
 		Space:      types.SPACE_EVM,
 		From:       ConvertAddress(ethActionCreate.From, ethNetworkId),
-		Value:      *types.NewBigIntByRaw(ethActionCreate.Value),
-		Gas:        *types.NewBigIntByRaw(ethActionCreate.Gas),
+		Value:      hexutil.Big(*ethActionCreate.Value),
+		Gas:        hexutil.Big(*ethActionCreate.Gas),
 		Init:       ethActionCreate.Init,
 		CreateType: createType,
 	})
 
-	var cfxCreateResult interface{}
-	if ethTrace.Error == nil {
-		ethCreateResult := ethTrace.Result.(web3goTypes.CreateResult)
-		cfxCreateResult = types.CreateResult{
-			Outcome:    types.OUTCOME_SUCCESS,
-			Addr:       ConvertAddress(ethCreateResult.Address, ethNetworkId),
-			GasLeft:    *types.NewBigIntByRaw(ethCreateResult.GasUsed),
-			ReturnData: ethCreateResult.Code,
-		}
-	} else if *ethTrace.Error == cfxTraceErrorReverted {
-		cfxCreateResult = types.CreateResult{
-			Outcome:    types.OUTCOME_REVERTED,
-			Addr:       ConvertAddress(common.Address{}, ethNetworkId),
-			GasLeft:    cfxTraceGasLeftZero,
-			ReturnData: cfxTraceBytesEmpty,
-		}
-	} else {
-		cfxCreateResult = types.CreateResult{
-			Outcome:    types.OUTCOME_FAIL,
-			Addr:       ConvertAddress(common.Address{}, ethNetworkId),
-			GasLeft:    cfxTraceGasLeftZero,
-			ReturnData: []byte(*ethTrace.Error),
-		}
-	}
-
-	cfxTraceCreateResult := convertTrace(ethTrace, types.TRACE_CREATE_RESULT, cfxCreateResult)
+	ethCreateResult := ethTrace.Result.(web3goTypes.CreateResult)
+	gasLeft := big.NewInt(0).Sub(ethActionCreate.Gas, ethCreateResult.GasUsed)
+	cfxTraceCreateResult := convertTrace(ethTrace, types.TRACE_CREATE_RESULT, types.CreateResult{
+		Outcome:    convertTraceOutcome(ethTrace),
+		Addr:       ConvertAddress(ethCreateResult.Address, ethNetworkId),
+		GasLeft:    hexutil.Big(*gasLeft),
+		ReturnData: ethCreateResult.Code,
+	})
 
 	return cfxTraceCreate, cfxTraceCreateResult
 }

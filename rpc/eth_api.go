@@ -98,15 +98,40 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 func (api *ethAPI) GetBlockByHash(ctx context.Context, blockHash common.Hash, fullTx bool) (any, error) {
 	metrics.Registry.RPC.Percentage("eth_getBlockByHash", "fullTx").Mark(fullTx)
 
-	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		block, err := api.StoreHandler.GetBlockByHash(ctx, blockHash, fullTx)
-		metrics.Registry.RPC.StoreHit("eth_getBlockByHash", "store").Mark(err == nil)
-		if err == nil {
-			return block, nil
-		}
+	bnh := web3Types.BlockNumberOrHashWithHash(blockHash, true)
+	if block, ok := api.tryGetBlockFromStore(ctx, bnh, fullTx); ok && block != nil {
+		return block, nil
 	}
 
 	return GetEthClientFromContext(ctx).Eth.LazyBlockByHash(blockHash, fullTx)
+}
+
+func (api *ethAPI) tryGetBlockFromStore(ctx context.Context, bnh web3Types.BlockNumberOrHash, fullTx bool) (*web3Types.Block, bool) {
+	if util.IsInterfaceValNil(api.StoreHandler) {
+		return nil, false
+	}
+
+	var (
+		block  *web3Types.Block
+		method string
+		err    error
+	)
+	if blockHash, ok := bnh.Hash(); ok {
+		method = "eth_getBlockByHash"
+		block, err = api.StoreHandler.GetBlockByHash(ctx, blockHash, fullTx)
+	} else if blockNum, ok := bnh.Number(); ok {
+		method = "eth_getBlockByNumber"
+		block, err = api.StoreHandler.GetBlockByNumber(ctx, blockNum, fullTx)
+	} else {
+		return nil, false
+	}
+
+	if errors.Is(err, store.ErrUnsupported) {
+		return nil, false
+	}
+
+	metrics.Registry.RPC.StoreHit(method, "store").Mark(err == nil)
+	return block, err == nil
 }
 
 // ChainId returns the chainID value for transaction replay protection.
@@ -146,12 +171,9 @@ func (api *ethAPI) GetBlockByNumber(
 	metrics.Registry.RPC.Percentage("eth_getBlockByNumber", "fullTx").Mark(fullTx)
 	api.inputBlockMetric.Update1(&blockNum, "eth_getBlockByNumber", w3c.Eth)
 
-	if !store.EthStoreConfig().IsChainBlockDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		block, err := api.StoreHandler.GetBlockByNumber(ctx, &blockNum, fullTx)
-		metrics.Registry.RPC.StoreHit("eth_getBlockByNumber", "store").Mark(err == nil)
-		if err == nil {
-			return block, nil
-		}
+	bnh := web3Types.BlockNumberOrHashWithNumber(blockNum)
+	if block, ok := api.tryGetBlockFromStore(ctx, bnh, fullTx); ok && block != nil {
+		return block, nil
 	}
 
 	return w3c.Eth.LazyBlockByNumber(blockNum, fullTx)
@@ -280,16 +302,26 @@ func (api *ethAPI) EstimateGas(
 
 // GetTransactionByHash returns the transaction with the given hash.
 func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (any, error) {
-	if !store.EthStoreConfig().IsChainTxnDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		tx, err := api.StoreHandler.GetTransactionByHash(ctx, hash)
-		metrics.Registry.RPC.StoreHit("eth_getTransactionByHash", "store").Mark(err == nil)
-		if err == nil {
-			return tx, nil
-		}
+	if txn, ok := api.tryGetTxnFromStore(ctx, hash); ok && txn != nil {
+		return txn, nil
 	}
 
 	w3c := GetEthClientFromContext(ctx)
 	return w3c.Eth.LazyTransactionByHash(hash)
+}
+
+func (api *ethAPI) tryGetTxnFromStore(ctx context.Context, txHash common.Hash) (*web3Types.TransactionDetail, bool) {
+	if util.IsInterfaceValNil(api.StoreHandler) {
+		return nil, false
+	}
+
+	txn, err := api.StoreHandler.GetTransactionByHash(ctx, txHash)
+	if errors.Is(err, store.ErrUnsupported) {
+		return nil, false
+	}
+
+	metrics.Registry.RPC.StoreHit("eth_getTransactionByHash", "store").Mark(err == nil)
+	return txn, err == nil
 }
 
 // GetTransactionReceipt returns the receipt of a transaction by transaction hash.
@@ -302,14 +334,9 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 		}
 	}()
 
-	if !store.EthStoreConfig().IsChainReceiptDisabled() && !util.IsInterfaceValNil(api.StoreHandler) {
-		var receipt *web3Types.Receipt
-		receipt, err = api.StoreHandler.GetTransactionReceipt(ctx, txHash)
-		metrics.Registry.RPC.StoreHit("eth_getTransactionReceipt", "store").Mark(err == nil)
-		if err == nil {
-			found = (receipt != nil)
-			return receipt, nil
-		}
+	if receipt, ok := api.tryGetReceiptFromStore(ctx, txHash); ok && receipt != nil {
+		found = true
+		return receipt, nil
 	}
 
 	w3c := GetEthClientFromContext(ctx)
@@ -371,6 +398,20 @@ func (api *ethAPI) GetTransactionReceipt(ctx context.Context, txHash common.Hash
 	// No matching receipt found after checking other clients
 	err = errNoMatchingReceiptFound
 	return nil, err
+}
+
+func (api *ethAPI) tryGetReceiptFromStore(ctx context.Context, txHash common.Hash) (*web3Types.Receipt, bool) {
+	if util.IsInterfaceValNil(api.StoreHandler) {
+		return nil, false
+	}
+
+	receipt, err := api.StoreHandler.GetTransactionReceipt(ctx, txHash)
+	if errors.Is(err, store.ErrUnsupported) {
+		return nil, false
+	}
+
+	metrics.Registry.RPC.StoreHit("eth_getTransactionReceipt", "store").Mark(err == nil)
+	return receipt, err == nil
 }
 
 // GetBlockReceipts returns the receipts of a given block number or hash.

@@ -2,11 +2,9 @@ package mysql
 
 import (
 	"context"
-	"fmt"
 	"hash/fnv"
 
 	"github.com/Conflux-Chain/confura/store"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -17,10 +15,10 @@ import (
 
 type AddressIndexedLog struct {
 	ID          uint64
-	ContractID  uint64 `gorm:"column:cid;size:64;not null;index:idx_cid_bn,priority:1"`
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_cid_bn,priority:2"`
+	ContractID  uint64 `gorm:"column:cid;not null;index:idx_cid_bn,priority:1;index:idx_cid_tid_bn,priority:1"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_cid_bn,priority:2;index:idx_cid_tid_bn,priority:3"`
 	Epoch       uint64 `gorm:"not null;index"` // to support pop logs when reorg
-	Topic0      string `gorm:"size:66;not null"`
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_cid_tid_bn,priority:2"`
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
@@ -33,29 +31,28 @@ func (AddressIndexedLog) TableName() string {
 }
 
 // AddressIndexedLogStore is used to store address indexed event logs in N partitions, e.g. logs_1, logs_2, ..., logs_n.
-type AddressIndexedLogStore struct {
+type AddressIndexedLogStore[T store.ChainData] struct {
 	partitionedStore
 	db         *gorm.DB
+	ts         *TopicStore
 	cs         *ContractStore
 	model      AddressIndexedLog
 	partitions uint32
 }
 
-func NewAddressIndexedLogStore(db *gorm.DB, cs *ContractStore, partitions uint32) *AddressIndexedLogStore {
-	return &AddressIndexedLogStore{
-		db:         db,
-		cs:         cs,
-		partitions: partitions,
-	}
+func NewAddressIndexedLogStore[T store.ChainData](
+	db *gorm.DB, cs *ContractStore, ts *TopicStore, partitions uint32,
+) *AddressIndexedLogStore[T] {
+	return &AddressIndexedLogStore[T]{db: db, cs: cs, ts: ts, partitions: partitions}
 }
 
 // CreatePartitionedTables initializes partitioned tables.
-func (ls *AddressIndexedLogStore) CreatePartitionedTables() (int, error) {
+func (ls *AddressIndexedLogStore[T]) CreatePartitionedTables() (int, error) {
 	return ls.createPartitionedTables(ls.db, &ls.model, 0, ls.partitions)
 }
 
 // getPartitionByAddress returns the partition by specified contract address.
-func (ls *AddressIndexedLogStore) getPartitionByAddress(contract string) uint32 {
+func (ls *AddressIndexedLogStore[T]) getPartitionByAddress(contract string) uint32 {
 	hasher := fnv.New32()
 	hasher.Write([]byte(contract))
 	// could use consistent hashing if repartition supported
@@ -63,32 +60,32 @@ func (ls *AddressIndexedLogStore) getPartitionByAddress(contract string) uint32 
 }
 
 // convertToPartitionedLogs converts the specified epoch data into partitioned event logs.
-func (ls *AddressIndexedLogStore) convertToPartitionedLogs(
-	data *store.EpochData, bigContractIds map[uint64]bool,
+func (ls *AddressIndexedLogStore[T]) convertToPartitionedLogs(
+	data T, bigContractIds map[uint64]bool,
 ) (map[uint32][]*AddressIndexedLog, map[uint64]int, error) {
 	contract2LogCount := make(map[uint64]int)
 	partition2Logs := make(map[uint32][]*AddressIndexedLog)
 
-	// divide event logs into different partitions by address
-	for _, block := range data.Blocks {
-		bn := block.BlockNumber.ToInt().Uint64()
+	receipts := data.ExtractReceipts()
 
-		for _, tx := range block.Transactions {
-			// ignore txs that not executed in current block
-			if !util.IsTxExecutedInBlock(&tx) {
+	// divide event logs into different partitions by address
+	for _, block := range data.ExtractBlocks() {
+		bn := block.Number()
+
+		for _, tx := range block.Transactions() {
+			// ignore txs that are not executed in current block
+			if !tx.Executed() {
 				continue
 			}
 
-			receipt, ok := data.Receipts[tx.Hash]
+			receipt, ok := receipts[tx.Hash()]
 			if !ok {
 				// This could happen if there are no event logs for this transaction.
 				continue
 			}
 
-			receiptExt := data.ReceiptExts[tx.Hash]
-
-			for i, v := range receipt.Logs {
-				cid, _, err := ls.cs.AddContractIfAbsent(v.Address.MustGetBase32Address())
+			for _, v := range receipt.Logs() {
+				cid, _, err := ls.cs.AddContractIfAbsent(v.Address())
 				if err != nil {
 					return nil, nil, err
 				}
@@ -98,14 +95,24 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(
 					continue
 				}
 
-				var logext *store.LogExtra
-				if receiptExt != nil {
-					logext = receiptExt.LogExts[i]
+				slog := v.AsStoreLog()
+				tid, err := resolveTopic0ID(ls.ts, slog.Topic0)
+				if err != nil {
+					return nil, nil, errors.WithMessagef(err, "failed to resolve id for topic %s", slog.Topic0)
 				}
 
-				log := store.ParseCfxLog(&v, cid, bn, logext)
-				partition := ls.getPartitionByAddress(v.Address.MustGetBase32Address())
-				partition2Logs[partition] = append(partition2Logs[partition], (*AddressIndexedLog)(log))
+				partition := ls.getPartitionByAddress(v.Address())
+				partition2Logs[partition] = append(partition2Logs[partition], &AddressIndexedLog{
+					ContractID:  cid,
+					BlockNumber: bn,
+					Epoch:       slog.Epoch,
+					Topic0ID:    tid,
+					Topic1:      slog.Topic1,
+					Topic2:      slog.Topic2,
+					Topic3:      slog.Topic3,
+					LogIndex:    slog.LogIndex,
+					Extra:       slog.Extra,
+				})
 
 				contract2LogCount[cid]++
 			}
@@ -116,7 +123,7 @@ func (ls *AddressIndexedLogStore) convertToPartitionedLogs(
 }
 
 // Add inserts event logs from a batch of epochs into partitioned tables, while ignoring logs from big contracts.
-func (ls *AddressIndexedLogStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, bigContractIds map[uint64]bool) error {
+func (ls *AddressIndexedLogStore[T]) Add(dbTx *gorm.DB, dataSlice []T, bigContractIds map[uint64]bool) error {
 	var (
 		allContract2LogCount      = make(map[uint64]int)
 		allContract2UpdatedEpochs = make(map[uint64]uint64)
@@ -147,7 +154,7 @@ func (ls *AddressIndexedLogStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochDat
 
 		// Update the updated epoch for each contract into `allContract2UpdatedEpochs`
 		for cid := range contract2LogCount {
-			allContract2UpdatedEpochs[cid] = data.Number
+			allContract2UpdatedEpochs[cid] = data.Number()
 		}
 	}
 
@@ -170,10 +177,20 @@ func (ls *AddressIndexedLogStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochDat
 	return nil
 }
 
-// DeleteAddressIndexedLogs removes event logs of specified epoch number range.
+// DeleteAddressIndexedLogs removes address-indexed event logs within the specified epoch range.
 //
-// Generally, this is used when pivot chain switched for confirmed blocks.
-func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
+// This is primarily used during pivot chain switches for confirmed blocks.
+//
+// DESIGN NOTES:
+//
+// 1. Deletion is performed at partition granularity for efficiency.
+// 2. Contract statistics (log_count, latest_updated_epoch) are intentionally NOT updated here.
+//   - log_count is a monotonic upper bound used for migration/sharding decisions and must not be rolled back.
+//   - latest_updated_epoch represents a historical upper bound and is updated only on forward sync (ingest).
+//
+// 3. This function may delete logs multiple times for the same contract across reorgs, which is acceptable and safe,
+// while missing a deletion is not.
+func (ls *AddressIndexedLogStore[T]) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochFrom, epochTo uint64) error {
 	contracts, err := ls.cs.GetUpdatedContractsSinceEpoch(epochFrom)
 	if err != nil {
 		return errors.WithMessage(err, "failed to get updated contracts since start epoch")
@@ -183,22 +200,23 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 		return nil
 	}
 
-	// Delete logs for all possible contracts in batches.
-	for _, contract := range contracts {
-		partition := ls.getPartitionByAddress(contract.Address)
+	// Collect affected partitions.
+	partitions := make(map[uint32]struct{}, len(contracts))
+	for _, c := range contracts {
+		p := ls.getPartitionByAddress(c.Address)
+		partitions[p] = struct{}{}
+	}
+
+	// Bulk delete event logs per partition.
+	for partition := range partitions {
 		tableName := ls.getPartitionedTableName(&ls.model, partition)
-
-		sql := fmt.Sprintf("DELETE FROM %v WHERE epoch BETWEEN ? AND ?", tableName)
-		res := dbTx.Exec(sql, epochFrom, epochTo)
+		res := dbTx.Table(tableName).Where("epoch BETWEEN ? AND ?", epochFrom, epochTo).Delete(nil)
 		if err := res.Error; err != nil {
-			return err
-		}
-
-		// Update contract statistics (log count and latest updated epoch).
-		// A rough estimation of the number of logs deleted from the contract, not accounting for other contracts in the same partition
-		// since the accuracy is not critical and it happens rarely.
-		if err := ls.cs.UpdateContractStats(dbTx, contract.ID, int(-res.RowsAffected), epochFrom); err != nil {
-			return errors.WithMessage(err, "failed to update contract statistics")
+			return errors.WithMessagef(
+				err,
+				"failed to delete address indexed logs from %s [epoch %d-%d]",
+				tableName, epochFrom, epochTo,
+			)
 		}
 	}
 
@@ -206,18 +224,117 @@ func (ls *AddressIndexedLogStore) DeleteAddressIndexedLogs(dbTx *gorm.DB, epochF
 }
 
 // GetAddressIndexedLogs returns event logs for the specified filter.
-func (ls *AddressIndexedLogStore) GetAddressIndexedLogs(
+func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 	ctx context.Context,
-	filter AddressIndexedLogFilter,
+	cid uint64,
 	contract string,
-) ([]*AddressIndexedLog, error) {
-	filter.TableName = ls.GetPartitionedTableName(contract)
-	return filter.Find(ctx, ls.db)
+	sfilter store.LogFilter,
+) ([]*store.Log, error) {
+	filter := LogFilter{
+		TableName: ls.GetPartitionedTableName(contract),
+		BlockFrom: sfilter.BlockFrom,
+		BlockTo:   sfilter.BlockTo,
+		Topics:    store.ToVariadicValuers(sfilter.Topics...),
+		Schema:    &PrimaryIDTopicSchema,
+	}
+
+	// Normalize topic0 hashes to ids
+	if len(sfilter.Topics) > 0 && !sfilter.Topics[0].IsNull() {
+		normalized, err := normalizeTopicsToIDs(ls.ts, sfilter.Topics[0])
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to normalize topic to ids")
+		}
+
+		if normalized.IsNull() {
+			// The specified topic0 hashes do not exist.
+			return nil, nil
+		}
+		filter.Topics[0] = normalized
+	}
+
+	addrFilter := AddressIndexedLogFilter{filter, cid}
+	addrLogs, err := addrFilter.Find(ctx, ls.db)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to get address indexed logs")
+	}
+
+	var result []*store.Log
+	for _, v := range addrLogs {
+		topic0, err := resolveTopic0Hash(ls.ts, v.Topic0ID)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
+		}
+
+		result = append(result, &store.Log{
+			BlockNumber: v.BlockNumber,
+			Epoch:       v.Epoch,
+			Topic0:      topic0,
+			Topic1:      v.Topic1,
+			Topic2:      v.Topic2,
+			Topic3:      v.Topic3,
+			LogIndex:    v.LogIndex,
+			Extra:       v.Extra,
+		})
+	}
+
+	return result, nil
 }
 
 // GetPartitionedTableName returns partitioned table name with specified
 // contract address hashed partition index
-func (ls *AddressIndexedLogStore) GetPartitionedTableName(contract string) string {
+func (ls *AddressIndexedLogStore[T]) GetPartitionedTableName(contract string) string {
 	partition := ls.getPartitionByAddress(contract)
 	return ls.getPartitionedTableName(&ls.model, partition)
+}
+
+func normalizeTopicsToIDs(
+	ts *TopicStore,
+	topics store.VariadicValue[string],
+) (res store.VariadicValue[uint64], err error) {
+	hashes := topics.ToSlice()
+	if len(hashes) == 0 {
+		return
+	}
+
+	tids := make([]uint64, 0, len(hashes))
+	for _, topic := range hashes {
+		tid, exists, err := ts.GetID(topic)
+		if err != nil {
+			return res, errors.WithMessagef(err, "failed to get topic id for %s", topic)
+		}
+		if exists {
+			tids = append(tids, tid)
+		}
+	}
+	return store.NewVariadicValue(tids...), nil
+}
+
+func resolveTopic0ID(ts *TopicStore, topic0 string) (uint64, error) {
+	if topic0 == "" {
+		return 0, nil
+	}
+
+	tid, ok, err := ts.GetID(topic0)
+	if err != nil {
+		return 0, errors.WithMessage(err, "failed to get topic id")
+	}
+	if !ok {
+		return 0, errors.Errorf("topic id not found for topic0 %s", topic0)
+	}
+	return tid, nil
+}
+
+func resolveTopic0Hash(ts *TopicStore, topic0ID uint64) (string, error) {
+	if topic0ID == 0 {
+		return "", nil
+	}
+
+	hash, ok, err := ts.GetHash(topic0ID)
+	if err != nil {
+		return "", errors.WithMessage(err, "failed to get topic0 by id")
+	}
+	if !ok {
+		return "", errors.Errorf("topic0 not found for id %v", topic0ID)
+	}
+	return hash, nil
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	gosql "github.com/go-sql-driver/mysql"
@@ -23,10 +24,13 @@ var allModels = []interface{}{
 	&RateLimit{},
 	&User{},
 	&Contract{},
+	&Topic{},
 	&epochBlockMap{},
 	&bnPartition{},
 	&NodeRoute{},
 	&dlock.Dlock{},
+	&InternalContractLog{},
+	&CfxTraceSyncEpochBlockMap{},
 }
 
 // Config represents the mysql configurations to open a database instance.
@@ -45,8 +49,8 @@ type Config struct {
 	MaxIdleConns    int           `default:"10"`
 	CreateBatchSize int           `default:"500"`
 
-	AddressIndexedLogEnabled    bool   `default:"true"`
 	AddressIndexedLogPartitions uint32 `default:"100"`
+	TopicIndexedLogPartitions   uint32 `default:"10"`
 
 	MaxBnRangedArchiveLogPartitions uint32 `default:"5"`
 }
@@ -85,8 +89,8 @@ func MustNewEthStoreConfigFromViper() *Config {
 	return mustNewConfigFromViper("ethstore.mysql")
 }
 
-// MustOpenOrCreate creates an instance of store or exits on any error.
-func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
+// MustOpenOrCreate creates an instance of gorm database or exits on any error.
+func (config *Config) MustOpenOrCreate() *gorm.DB {
 	newCreated := config.mustCreateDatabaseIfAbsent()
 
 	db := config.mustNewDB(config.Database)
@@ -107,11 +111,20 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 			logrus.WithError(err).Fatal("Failed to create tables")
 		}
 
-		ls := NewAddressIndexedLogStore(db, NewContractStore(db), config.AddressIndexedLogPartitions)
+		// Initialize the address indexed log tables
+		ls := NewAddressIndexedLogStore[store.ChainData](db, NewContractStore(db), NewTopicStore(db), config.AddressIndexedLogPartitions)
 		if _, err := ls.CreatePartitionedTables(); err != nil {
 			logrus.WithError(err).
 				WithField("partitions", config.AddressIndexedLogPartitions).
 				Fatal("Failed to create address indexed log tables")
+		}
+
+		// Initialize the topic indexed log tables
+		tls := NewTopicIndexedLogStore[store.ChainData](db, NewTopicStore(db), config.TopicIndexedLogPartitions)
+		if _, err := tls.CreatePartitionedTables(); err != nil {
+			logrus.WithError(err).
+				WithField("partitions", config.TopicIndexedLogPartitions).
+				Fatal("Failed to create topic indexed log tables")
 		}
 	}
 
@@ -124,8 +137,7 @@ func (config *Config) MustOpenOrCreate(option StoreOption) *MysqlStore {
 	}
 
 	logrus.Info("MySQL database initialized")
-
-	return mustNewStore(db, config, option)
+	return db
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {

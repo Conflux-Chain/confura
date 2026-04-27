@@ -6,7 +6,6 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -20,7 +19,6 @@ const (
 
 type log struct {
 	ID          uint64
-	ContractID  uint64 `gorm:"column:cid;size:64;not null"`
 	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn"`
 	Epoch       uint64 `gorm:"not null"`
 	Topic0      string `gorm:"size:66;not null"`
@@ -35,24 +33,29 @@ func (log) TableName() string {
 	return "logs"
 }
 
-type logStore struct {
+type logStore[T store.ChainData] struct {
 	*bnPartitionedStore
 	cs    *ContractStore
-	ebms  *epochBlockMapStore
+	ebms  *epochBlockMapStore[T]
 	model log
 	// notify channel for new bn partition created
 	bnPartitionNotifyChan chan<- *bnPartition
 }
 
-func newLogStore(db *gorm.DB, cs *ContractStore, ebms *epochBlockMapStore, notifyChan chan<- *bnPartition) *logStore {
-	return &logStore{
+func newLogStore[T store.ChainData](
+	db *gorm.DB,
+	cs *ContractStore,
+	ebms *epochBlockMapStore[T],
+	notifyChan chan<- *bnPartition,
+) *logStore[T] {
+	return &logStore[T]{
 		bnPartitionedStore:    newBnPartitionedStore(db),
 		bnPartitionNotifyChan: notifyChan, cs: cs, ebms: ebms,
 	}
 }
 
 // preparePartition create new log partitions if necessary.
-func (ls *logStore) preparePartition(dataSlice []*store.EpochData) (bnPartition, error) {
+func (ls *logStore[T]) preparePartition() (bnPartition, error) {
 	partition, newCreated, err := ls.autoPartition(bnPartitionedLogEntity, &ls.model, bnPartitionedLogVolumeSize)
 	if err == nil && newCreated {
 		partition.tabler = &ls.model
@@ -62,42 +65,38 @@ func (ls *logStore) preparePartition(dataSlice []*store.EpochData) (bnPartition,
 	return partition, err
 }
 
-func (ls *logStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartition bnPartition) error {
+func (ls *logStore[T]) Add(dbTx *gorm.DB, dataSlice []T, logPartition bnPartition) error {
 	// containers to collect event logs for batch inserting
 	var logs []*log
 	bnMin, bnMax := uint64(math.MaxUint64), uint64(0)
 
 	for _, data := range dataSlice {
-		for _, block := range data.Blocks {
-			bn := block.BlockNumber.ToInt().Uint64()
+		receipts := data.ExtractReceipts()
+		for _, block := range data.ExtractBlocks() {
+			bn := block.Number()
 			bnMin, bnMax = min(bnMin, bn), max(bnMax, bn)
 
-			for _, tx := range block.Transactions {
-				receipt := data.Receipts[tx.Hash]
+			for _, tx := range block.Transactions() {
+				receipt := receipts[tx.Hash()]
 
 				// Skip transactions that unexecuted in block.
-				if receipt == nil || !util.IsTxExecutedInBlock(&tx) {
+				if receipt == nil || !tx.Executed() {
 					continue
 				}
 
-				var rcptExt *store.ReceiptExtra
-				if len(data.ReceiptExts) > 0 {
-					rcptExt = data.ReceiptExts[tx.Hash]
-				}
+				for _, rlog := range receipt.Logs() {
+					slog := rlog.AsStoreLog()
 
-				for k, rlog := range receipt.Logs {
-					cid, _, err := ls.cs.AddContractIfAbsent(rlog.Address.MustGetBase32Address())
-					if err != nil {
-						return errors.WithMessage(err, "failed to add contract")
-					}
-
-					var logExt *store.LogExtra
-					if rcptExt != nil && k < len(rcptExt.LogExts) {
-						logExt = rcptExt.LogExts[k]
-					}
-
-					clog := store.ParseCfxLog(&rlog, cid, bn, logExt)
-					logs = append(logs, (*log)(clog))
+					logs = append(logs, &log{
+						BlockNumber: bn,
+						Epoch:       data.Number(),
+						Topic0:      slog.Topic0,
+						Topic1:      slog.Topic1,
+						Topic2:      slog.Topic2,
+						Topic3:      slog.Topic3,
+						LogIndex:    slog.LogIndex,
+						Extra:       slog.Extra,
+					})
 				}
 			}
 		}
@@ -129,7 +128,7 @@ func (ls *logStore) Add(dbTx *gorm.DB, dataSlice []*store.EpochData, logPartitio
 }
 
 // Popn pops event logs until the specific epoch from db store.
-func (ls *logStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
+func (ls *logStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	e2bmap, ok, err := ls.ebms.CeilBlockMapping(epochUntil)
 	if err != nil {
 		return errors.WithMessagef(err, "failed to get block mapping for epoch %v", epochUntil)
@@ -168,7 +167,7 @@ func (ls *logStore) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	return nil
 }
 
-func (ls *logStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([]*store.Log, error) {
+func (ls *logStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([]*store.Log, error) {
 	// find the partitions that holds the event logs
 	partitions, _, err := ls.searchPartitions(
 		bnPartitionedLogEntity, types.RangeUint64{
@@ -183,7 +182,7 @@ func (ls *logStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([
 	filter := LogFilter{
 		BlockFrom: storeFilter.BlockFrom,
 		BlockTo:   storeFilter.BlockTo,
-		Topics:    storeFilter.Topics,
+		Topics:    store.ToVariadicValuers(storeFilter.Topics...),
 	}
 
 	var result []*store.Log
@@ -215,7 +214,7 @@ func (ls *logStore) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([
 }
 
 // GetBnPartitionedLogs returns event logs for the specified block number partitioned log filter.
-func (ls *logStore) GetBnPartitionedLogs(ctx context.Context, filter LogFilter, partition bnPartition) ([]*log, error) {
+func (ls *logStore[T]) GetBnPartitionedLogs(ctx context.Context, filter LogFilter, partition bnPartition) ([]*log, error) {
 	filter.TableName = ls.getPartitionedTableName(&log{}, partition.Index)
 
 	var res []*log
@@ -225,13 +224,13 @@ func (ls *logStore) GetBnPartitionedLogs(ctx context.Context, filter LogFilter, 
 }
 
 // extractUniqueContractAddresses extracts unique contract addresses of event logs within epoch data slice.
-func extractUniqueContractAddresses(slice ...*store.EpochData) map[string]bool {
+func extractUniqueContractAddresses[T store.ChainData](slice ...T) map[string]bool {
 	contracts := make(map[string]bool)
 
 	for _, data := range slice {
-		for _, receipt := range data.Receipts {
-			for i := range receipt.Logs {
-				addr := receipt.Logs[i].Address.String()
+		for _, receipt := range data.ExtractReceipts() {
+			for _, log := range receipt.Logs() {
+				addr := log.Address()
 				contracts[addr] = true
 			}
 		}

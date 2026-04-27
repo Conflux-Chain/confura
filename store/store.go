@@ -1,172 +1,79 @@
 package store
 
 import (
-	"context"
-	"io"
-	"strings"
-
-	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/sirupsen/logrus"
 )
 
 var (
-	cfxStoreConfig storeConfig
-	ethStoreConfig storeConfig
+	cfxStoreConfig persistConfig
+	ethStoreConfig persistConfig
 )
 
-// Prunable is used to prune historical data.
-type Prunable interface {
-	GetBlockEpochRange() (uint64, uint64, error)
-	GetTransactionEpochRange() (uint64, uint64, error)
-	GetLogEpochRange() (uint64, uint64, error)
+type persistType string
 
-	GetNumBlocks() (uint64, error)
-	GetNumTransactions() (uint64, error)
-	GetNumLogs() (uint64, error)
+const (
+	PersistTypeBlock       persistType = "block"
+	PersistTypeTransaction persistType = "transaction"
+	PersistTypeReceipt     persistType = "receipt"
+	PersistTypeLog         persistType = "log"
+)
 
-	// DequeueBlocks removes epoch blocks from the store like dequeuing a queue,
-	// which is deleting data from the oldest epoch to some new epoch
-	DequeueBlocks(epochUntil uint64) error
-	// DequeueTransactions removes epoch transactions from the store like dequeuing a queue,
-	// which is deleting data from the oldest epoch to some new epoch
-	DequeueTransactions(epochUntil uint64) error
-	// DequeueLogs removes epoch logs from the store like dequeuing a queue,
-	// which is deleting data from the oldest epoch to some new epoch
-	DequeueLogs(epochUntil uint64) error
+// All supported persist types
+var AllPersistTypes = []persistType{
+	PersistTypeBlock,
+	PersistTypeTransaction,
+	PersistTypeReceipt,
+	PersistTypeLog,
 }
 
-// Readable is used for RPC to read cached data from database.
-type Readable interface {
-	GetLogs(ctx context.Context, filter LogFilter) ([]*Log, error)
-
-	GetTransaction(ctx context.Context, txHash types.Hash) (*Transaction, error)
-	GetReceipt(ctx context.Context, txHash types.Hash) (*TransactionReceipt, error)
-
-	GetBlocksByEpoch(ctx context.Context, epochNumber uint64) ([]types.Hash, error)
-	GetBlockByEpoch(ctx context.Context, epochNumber uint64) (*Block, error)
-	GetBlockSummaryByEpoch(ctx context.Context, epochNumber uint64) (*BlockSummary, error)
-	GetBlockByHash(ctx context.Context, blockHash types.Hash) (*Block, error)
-	GetBlockSummaryByHash(ctx context.Context, blockHash types.Hash) (*BlockSummary, error)
-	GetBlockByBlockNumber(ctx context.Context, blockNumber uint64) (*Block, error)
-	GetBlockSummaryByBlockNumber(ctx context.Context, blockNumber uint64) (*BlockSummary, error)
-}
-
-type Configurable interface {
-	// LoadConfig load configurations with specified names
-	LoadConfig(confNames ...string) (map[string]interface{}, error)
-	// StoreConfig stores configuration name to value pair
-	StoreConfig(confName string, confVal interface{}) error
-}
-
-type StackOperable interface {
-	// Push appends epoch data to the store
-	Push(data *EpochData) error
-	Pushn(dataSlice []*EpochData) error
-	// Pop removes epoch data from the store like popping a stack, which is deleting
-	// data from the most recently appended epoch to some old epoch
-	Popn(epochUntil uint64) error
-}
-
-// Store is implemented by any object that persist blockchain data, especially for event logs.
-type Store interface {
-	Readable
-	Prunable
-	Configurable
-	StackOperable
-	io.Closer
-
-	IsRecordNotFound(err error) bool
-
-	GetGlobalEpochRange() (uint64, uint64, error)
-}
-
-type CacheStore interface {
-	Store
-
-	// Flush deletes all kv pairs in cache
-	Flush() error
-}
-
-func StoreConfig() *storeConfig {
+func StoreConfig() *persistConfig {
 	return &cfxStoreConfig
 }
 
-func EthStoreConfig() *storeConfig {
+func EthStoreConfig() *persistConfig {
 	return &ethStoreConfig
 }
 
-type ChainDataDisabler interface {
-	IsChainBlockDisabled() bool
-	IsChainTxnDisabled() bool
-	IsChainReceiptDisabled() bool
-	IsChainLogDisabled() bool
-	IsDisabledForType(edt EpochDataType) bool
+type ChainDataFilter interface {
+	IsBlockDisabled() bool
+	IsTxnDisabled() bool
+	IsReceiptDisabled() bool
+	IsLogDisabled() bool
 }
 
-type storeConfig struct {
-	// disabled store chain data types, available options are:
-	// `block`, `transaction`, `receipt` and `log`
-	Disables []string `default:"[block,transaction,receipt]"`
-
-	disabledDataTypeMapping map[string]bool
+type persistConfig struct {
+	Types       []persistType `default:"[log]"`
+	disabledSet map[persistType]bool
 }
 
-func (conf *storeConfig) mustInit(viperRoot string) {
-	viper.MustUnmarshalKey(viperRoot, conf)
+func (c *persistConfig) mustInit(viperRoot string) {
+	viper.MustUnmarshalKey(viperRoot, c)
 
-	dataTypeMapping := make(map[string]bool, 4)
-	for _, dt := range []string{"block", "transaction", "receipt", "log"} {
-		dataTypeMapping[dt] = false
+	disabled := make(map[persistType]bool, len(AllPersistTypes))
+	for _, t := range AllPersistTypes {
+		disabled[t] = true
 	}
 
-	for _, dt := range conf.Disables {
-		ldt := strings.ToLower(dt)
-
-		if _, ok := dataTypeMapping[ldt]; !ok {
-			logrus.WithField("dataType", dt).Fatal(
-				"Failed to init store config due to invalid disabled store data type",
-			)
+	for _, t := range c.Types {
+		if _, ok := disabled[t]; !ok {
+			logrus.WithField("dataType", t).
+				Fatal("Failed to init store config due to invalid persistence data type")
 		}
-
-		dataTypeMapping[ldt] = true
+		disabled[t] = false
 	}
 
-	conf.disabledDataTypeMapping = dataTypeMapping
+	c.disabledSet = disabled
 }
 
-func (conf *storeConfig) IsChainBlockDisabled() bool {
-	return conf.disabledDataTypeMapping["block"]
-}
-
-func (conf *storeConfig) IsChainTxnDisabled() bool {
-	return conf.disabledDataTypeMapping["transaction"]
-}
-
-func (conf *storeConfig) IsChainReceiptDisabled() bool {
-	return conf.disabledDataTypeMapping["receipt"]
-}
-
-func (conf *storeConfig) IsChainLogDisabled() bool {
-	return conf.disabledDataTypeMapping["log"]
-}
-
-func (conf *storeConfig) IsDisabledForType(edt EpochDataType) bool {
-	switch edt {
-	case EpochBlock:
-		return conf.IsChainBlockDisabled()
-	case EpochTransaction:
-		return conf.IsChainTxnDisabled() && conf.IsChainReceiptDisabled()
-	case EpochLog:
-		return conf.IsChainLogDisabled()
-	}
-
-	return false
-}
+func (c *persistConfig) IsBlockDisabled() bool   { return c.disabledSet[PersistTypeBlock] }
+func (c *persistConfig) IsTxnDisabled() bool     { return c.disabledSet[PersistTypeTransaction] }
+func (c *persistConfig) IsReceiptDisabled() bool { return c.disabledSet[PersistTypeReceipt] }
+func (c *persistConfig) IsLogDisabled() bool     { return c.disabledSet[PersistTypeLog] }
 
 func MustInit() {
-	cfxStoreConfig.mustInit("store")
-	ethStoreConfig.mustInit("ethstore")
+	cfxStoreConfig.mustInit("store.persistence")
+	ethStoreConfig.mustInit("ethstore.persistence")
 
 	initLogFilter()
 	initEth()
