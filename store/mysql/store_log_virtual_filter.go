@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -154,8 +155,8 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []VirtualFilterLog, p
 
 	return vfls.db.Transaction(func(tx *gorm.DB) error {
 		// soft delete event logs within db, whose block hashes coincides with the to be appended ones
-		for i := len(partitions) - 1; i >= 0; i-- {
-			tblName := vfls.getPartitionedTableName(ftabler, partitions[i].Index)
+		for _, v := range slices.Backward(partitions) {
+			tblName := vfls.getPartitionedTableName(ftabler, v.Index)
 
 			dbtx := tx.Table(tblName).Where("bn BETWEEN ? AND ?", bnMin, bnMax).Where("bh IN (?)", blockHashes)
 			if res := dbtx.Update("is_del", true); res.Error != nil {
