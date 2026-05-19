@@ -14,7 +14,7 @@ Comparatively running your full node, Confura makes it easy to build a high perf
 #### RPC Improvement
 
 - Expiry cache for some high frequency RPC methods such as `cfx_getStatus` and `cfx_epochNumber`.
-- Off-chain index of event logs, by which *getLog* (both `cfx_getLogs` and `eth_getLogs`) are handled rather than directly by a full node. This index is backed by a traditional database, which allows us to index and query on more data, without the added overhead of false positives experienced with a bloom filter on full node. All event logs (with total amount less than 10,000) of some contract can even be retrieved within single request.
+- Off-chain index of event logs, by which *getLog* (both `cfx_getLogs` and `eth_getLogs`) are handled rather than directly by a full node. This index is backed by a traditional database, which allows us to index and query on more data, without the added overhead of false positives experienced with a bloom filter on full node. Confura does not enforce a fixed block range for indexed `getLogs` queries. Instead, it dynamically limits requests by result size, response bytes, and query latency; low-frequency contracts can retrieve all matching logs in a single request, while oversized filters return a suggested range to retry with. See [Enhanced RPC Features](./doc/RPC_FEATURES.md#getlogs-with-dynamic-query-bounds) for details.
 - Shared proxy subscription for Pub/Sub per full node hence more concurrent sessions supported are possible.
 - Improvements over the standard filter APIs by migrating the storage of filter "state" (only event logs for now) out of the full node into memory and database of a new backend system we've dubbed "Virtual Filters" so that a more reliable, high performance and more customizable (eg., long polling timeout for filter changes) filter APIs can be achieved.
 - Enabled [support for querying early internal contract event logs](./doc/GETLOGS.md) via `cfx_getLogs` by reconstructing events from on-chain trace data.
@@ -30,6 +30,7 @@ Comparatively running your full node, Confura makes it easy to build a high perf
 
 - Command line toolset to add/delete/manage custom rate limit strategy and API key.
 - Support to rate limit per RPC method with *fixed window* or *token bucket* algorithm.
+- Support daily total request quotas and QPS limits. Clients can inspect the effective rate limit strategy through `diagnostic_getRateLimitStatus` when the `diagnostic` module is exposed. See [Enhanced RPC Features](./doc/RPC_FEATURES.md#rate-limit-status-diagnostics) for details.
 
 #### VIP Support
 
