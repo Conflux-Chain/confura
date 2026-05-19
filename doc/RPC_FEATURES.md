@@ -41,7 +41,7 @@ curl -X POST http://127.0.0.1:22537 \
       {
         "fromEpoch": "0x0",
         "toEpoch": "latest_state",
-        "address": ["cfx:TYPE.USER:..."],
+        "address": ["cfx:type.contract:..."],
         "topics": [["0x..."]]
       }
     ],
