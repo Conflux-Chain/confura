@@ -46,12 +46,27 @@ func newLogStore[T store.ChainData](
 	db *gorm.DB,
 	cs *ContractStore,
 	ebms *epochBlockMapStore[T],
-	notifyChan chan<- *bnPartition,
+	pruner *storePruner,
 ) *logStore[T] {
-	return &logStore[T]{
+	ls := &logStore[T]{
 		bnPartitionedStore:    newBnPartitionedStore(db),
-		bnPartitionNotifyChan: notifyChan, cs: cs, ebms: ebms,
+		bnPartitionNotifyChan: pruner.newBnPartitionObsChan, cs: cs, ebms: ebms,
 	}
+
+	pruner.registerEntitySource(ls.prunableEntities)
+	return ls
+}
+
+func (ls *logStore[T]) prunableEntities(maxArchivePartitions uint32) ([]prunableEntity, error) {
+	exceeded, err := ls.limitExceededEntity(bnPartitionedLogEntity, maxArchivePartitions)
+	if err != nil || !exceeded {
+		return nil, err
+	}
+
+	return []prunableEntity{{
+		entity: bnPartitionedLogEntity,
+		tabler: &ls.model,
+	}}, nil
 }
 
 // preparePartition create new log partitions if necessary.

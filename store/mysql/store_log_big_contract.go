@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -56,13 +57,16 @@ func newBigContractLogStore[T store.ChainData](
 	ts *TopicStore,
 	ebms *epochBlockMapStore[T],
 	ails *AddressIndexedLogStore[T],
-	notifyChan chan<- *bnPartition,
+	pruner *storePruner,
 ) *bigContractLogStore[T] {
-	return &bigContractLogStore[T]{
+	bcls := &bigContractLogStore[T]{
 		cs: cs, ts: ts, ebms: ebms, ails: ails,
 		bnPartitionedStore:    newBnPartitionedStore(db),
-		bnPartitionNotifyChan: notifyChan,
+		bnPartitionNotifyChan: pruner.newBnPartitionObsChan,
 	}
+
+	pruner.registerEntitySource(bcls.prunableEntities)
+	return bcls
 }
 
 // preparePartitions create new contract log partitions for the big contract if necessary.
@@ -201,6 +205,24 @@ func (bcls *bigContractLogStore[T]) contractEntity(cid uint64) string {
 // contractTabler get partition tabler of contract logs
 func (bcls *bigContractLogStore[T]) contractTabler(cid uint64) *contractLog {
 	return &contractLog{ContractID: cid}
+}
+
+func (bcls *bigContractLogStore[T]) prunableEntities(maxArchivePartitions uint32) ([]prunableEntity, error) {
+	entityPrefix := strings.TrimSuffix(bcls.contractEntity(0), "0")
+	entities, err := bcls.limitExceededEntitiesByPrefix(entityPrefix, maxArchivePartitions)
+	if err != nil {
+		return nil, err
+	}
+
+	targets := make([]prunableEntity, 0, len(entities))
+	for _, entity := range entities {
+		targets = append(targets, prunableEntity{
+			entity: entity,
+			tabler: staticTabler(entity),
+		})
+	}
+
+	return targets, nil
 }
 
 func (bcls *bigContractLogStore[T]) Add(

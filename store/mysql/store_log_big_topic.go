@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -52,13 +53,16 @@ func newBigTopicLogStore[T store.ChainData](
 	ts *TopicStore,
 	ebms *epochBlockMapStore[T],
 	tils *TopicIndexedLogStore[T],
-	notifyChan chan<- *bnPartition,
+	pruner *storePruner,
 ) *bigTopicLogStore[T] {
-	return &bigTopicLogStore[T]{
+	btls := &bigTopicLogStore[T]{
 		ts: ts, ebms: ebms, tils: tils,
 		bnPartitionedStore:    newBnPartitionedStore(db),
-		bnPartitionNotifyChan: notifyChan,
+		bnPartitionNotifyChan: pruner.newBnPartitionObsChan,
 	}
+
+	pruner.registerEntitySource(btls.prunableEntities)
+	return btls
 }
 
 // preparePartitions creates partitions for big topics and migrates existing data if needed.
@@ -194,6 +198,24 @@ func (bcls *bigTopicLogStore[T]) topicEntity(tid uint64) string {
 // topicTabler get partition tabler for dedicated topic logs table
 func (bcls *bigTopicLogStore[T]) topicTabler(tid uint64) *topicLog {
 	return &topicLog{Topic0ID: tid}
+}
+
+func (btls *bigTopicLogStore[T]) prunableEntities(maxArchivePartitions uint32) ([]prunableEntity, error) {
+	entityPrefix := strings.TrimSuffix(btls.topicEntity(0), "0")
+	entities, err := btls.limitExceededEntitiesByPrefix(entityPrefix, maxArchivePartitions)
+	if err != nil {
+		return nil, err
+	}
+
+	targets := make([]prunableEntity, 0, len(entities))
+	for _, entity := range entities {
+		targets = append(targets, prunableEntity{
+			entity: entity,
+			tabler: staticTabler(entity),
+		})
+	}
+
+	return targets, nil
 }
 
 func (btls *bigTopicLogStore[T]) Add(dbTx *gorm.DB, dataSlice []T, topic2BnPartitions map[uint64]bnPartition) error {

@@ -68,9 +68,9 @@ func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.
 		CommonStores:       newCommonStores(db),
 		txStore:            newTxStore[T](db),
 		blockStore:         newBlockStore[T](db),
-		ls:                 newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
-		bcls:               newBigContractLogStore(db, cs, ts, ebms, ails, pruner.newBnPartitionObsChan),
-		btls:               newBigTopicLogStore(db, ts, ebms, tils, pruner.newBnPartitionObsChan),
+		ls:                 newLogStore(db, cs, ebms, pruner),
+		bcls:               newBigContractLogStore(db, cs, ts, ebms, ails, pruner),
+		btls:               newBigTopicLogStore(db, ts, ebms, tils, pruner),
 		ails:               ails,
 		cs:                 cs,
 		tils:               tils,
@@ -471,6 +471,11 @@ func (ms *MysqlStore[T]) getContractLogs(ctx context.Context, contracts []string
 // Prune prune data from db store.
 func (ms *MysqlStore[T]) Prune() {
 	go ms.pruner.schedulePrune(ms.config)
+}
+
+// PruneArchiveLogPartitions prunes archive log partitions that exceed the configured limit.
+func (ms *MysqlStore[T]) PruneArchiveLogPartitions() []ArchiveLogPruneResult {
+	return ms.pruner.prunePrunableEntities(ms.config.MaxBnRangedArchiveLogPartitions)
 }
 
 // SetTxnBatchSize sets the transaction batch size for db insertion.

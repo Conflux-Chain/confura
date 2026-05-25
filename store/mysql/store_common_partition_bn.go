@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -449,6 +450,40 @@ func (bnps *bnPartitionedStore) deleteEntityPartitions(entity string, tabler sch
 	}
 
 	return partitions, nil
+}
+
+func (bnps *bnPartitionedStore) limitExceededEntity(entity string, maxArchivePartitions uint32) (bool, error) {
+	var entities []string
+	err := bnps.db.
+		Model(&bnPartition{}).
+		Where("entity = ?", entity).
+		Group("entity").
+		Having("COUNT(*) > ?", maxArchivePartitions).
+		Pluck("entity", &entities).
+		Error
+	return len(entities) > 0, err
+}
+
+func (bnps *bnPartitionedStore) limitExceededEntitiesByPrefix(
+	entityPrefix string, maxArchivePartitions uint32,
+) ([]string, error) {
+	if len(entityPrefix) == 0 {
+		return nil, nil
+	}
+
+	var entities []string
+	err := bnps.db.
+		Model(&bnPartition{}).
+		Where("entity LIKE ? ESCAPE '='", escapeSQLLikePattern(entityPrefix)+"%").
+		Group("entity").
+		Having("COUNT(*) > ?", maxArchivePartitions).
+		Pluck("entity", &entities).
+		Error
+	return entities, err
+}
+
+func escapeSQLLikePattern(text string) string {
+	return strings.NewReplacer("=", "==", "%", "=%", "_", "=_").Replace(text)
 }
 
 // pruneArchivePartitions iteratively prunes archive partitions chronologically
