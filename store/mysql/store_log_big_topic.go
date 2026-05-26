@@ -15,9 +15,6 @@ import (
 const (
 	// Log count threshold for a topic to be considered "big" and migrated to a dedicated table.
 	thresholdBigTopicLogCount = 100_000
-
-	// Volume size per log partition for dedicated big topic table.
-	bigTopicBnPartitionedLogVolumeSize = 1_000_000
 )
 
 // topicLog represents a log entry stored in a dedicated topic table.
@@ -82,7 +79,7 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 		}
 
 		tlEntity, tlTabler := btls.topicEntity(topic0.ID), btls.topicTabler(topic0.ID)
-		partition, newCreated, err := btls.autoPartition(tlEntity, tlTabler, bigTopicBnPartitionedLogVolumeSize)
+		partition, newCreated, err := btls.autoPartition(tlEntity, tlTabler, bnPartitionedLogVolumeSize)
 		if err != nil {
 			return nil, errors.WithMessage(err, "auto partition failed")
 		}
