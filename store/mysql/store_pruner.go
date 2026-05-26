@@ -34,6 +34,8 @@ func newStorePruner(db *gorm.DB) *storePruner {
 // be tracked by the pruner.
 func (sp *storePruner) observe() {
 	for partition := range sp.newBnPartitionObsChan {
+		logrus.WithField("entity", partition.Entity).Info("New bn partition observed, added to pruner tracking set")
+
 		if partition.tabler != nil {
 			sp.bnPartitionObsEntitySet.Store(partition.Entity, partition.tabler)
 		}
@@ -43,7 +45,7 @@ func (sp *storePruner) observe() {
 // schedulePrune periodically monitors and removes extra more than the max specified number of
 // archive bn partitions. Be noted this function will block caller thread.
 func (sp *storePruner) schedulePrune(config *Config) {
-	ticker := time.NewTicker(time.Minute * 15)
+	ticker := time.NewTicker(time.Minute * 5)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -51,28 +53,25 @@ func (sp *storePruner) schedulePrune(config *Config) {
 			entity := key.(string)
 			tabler := value.(schema.Tabler)
 
+			logrus.WithField("entity", entity).Info("Pruning archive log partitions...")
+
 			pruned, err := sp.partitionedStore.pruneArchivePartitions(
 				entity, tabler, config.MaxBnRangedArchiveLogPartitions,
 			)
 
-			logger := logrus.WithField("entity", entity)
-
 			if err != nil {
-				logger.WithError(err).Error("Failed to prune archive log partitions")
+				logrus.WithField("entity", entity).WithError(err).Error("Failed to prune archive log partitions")
+				return true
 			}
+
+			sp.bnPartitionObsEntitySet.Delete(entity)
 
 			if len(pruned) > 0 {
-				logger.WithField("prunedPartitions", pruned).Info("Archive partitions pruned")
-			}
-
-			if err == nil {
-				sp.bnPartitionObsEntitySet.Delete(entity)
+				logrus.WithField("entity", entity).WithField("prunedPartitions", pruned).Info("Archive partitions pruned")
 
 				// To minimize the db performance loss, we only remove extra archive partitions
 				// for one entity at a time.
-				if len(pruned) > 0 {
-					return false
-				}
+				return false
 			}
 
 			// continue to next entity
