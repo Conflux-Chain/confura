@@ -34,9 +34,8 @@ func newStorePruner(db *gorm.DB) *storePruner {
 // be tracked by the pruner.
 func (sp *storePruner) observe() {
 	for partition := range sp.newBnPartitionObsChan {
-		logrus.WithField("entity", partition.Entity).Info("New bn partition observed, added to pruner tracking set")
-
 		if partition.tabler != nil {
+			logrus.WithField("entity", partition.Entity).Debug("New bn partition observed, added to pruner tracking set")
 			sp.bnPartitionObsEntitySet.Store(partition.Entity, partition.tabler)
 		}
 	}
@@ -53,7 +52,7 @@ func (sp *storePruner) schedulePrune(config *Config) {
 			entity := key.(string)
 			tabler := value.(schema.Tabler)
 
-			logrus.WithField("entity", entity).Info("Pruning archive log partitions...")
+			logrus.WithField("entity", entity).Debug("Pruning archive log partitions...")
 
 			pruned, err := sp.partitionedStore.pruneArchivePartitions(
 				entity, tabler, config.MaxBnRangedArchiveLogPartitions,
