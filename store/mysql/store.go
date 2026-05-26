@@ -55,7 +55,15 @@ type MysqlStore[T store.ChainData] struct {
 }
 
 func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.ChainDataFilter) *MysqlStore[T] {
-	pruner := newStorePruner(db)
+	return newMysqlStore[T](db, config, filter, newStorePruner(db))
+}
+
+func newMysqlStore[T store.ChainData](
+	db *gorm.DB,
+	config *Config,
+	filter store.ChainDataFilter,
+	pruner *storePruner,
+) *MysqlStore[T] {
 	cs := NewContractStore(db)
 	ts := NewTopicStore(db)
 	ebms := newEpochBlockMapStore[T](db, config)
@@ -94,7 +102,7 @@ func (ms *MysqlStore[T]) Clone() (*MysqlStore[T], error) {
 		return nil, errors.WithMessagef(err, "failed to open gorm db connection")
 	}
 	conf := *ms.config
-	return NewMysqlStore[T](newDb, &conf, ms.filter), nil
+	return newMysqlStore[T](newDb, &conf, ms.filter, ms.pruner), nil
 }
 
 func (ms *MysqlStore[T]) Push(data T) error {
