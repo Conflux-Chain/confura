@@ -1,6 +1,6 @@
 # Enhanced RPC Features
 
-Confura behaves like a full-node-compatible JSON-RPC gateway, but several high-traffic methods are backed by indexed storage and request-control middleware. This document describes two user-visible differences from a plain full node: dynamic `getLogs` query bounds and rate limit diagnostics.
+Confura behaves like a full-node-compatible JSON-RPC gateway, but several high-traffic methods are backed by indexed storage, trace-derived data, and request-control middleware. This document describes three user-visible differences from a plain full node: dynamic `getLogs` query bounds, early internal contract event logs, and rate limit diagnostics.
 
 ## `getLogs` with Dynamic Query Bounds
 
@@ -54,6 +54,26 @@ If the matching logs are sparse, this can complete in one request. If the result
 ### Full Node Delegation
 
 Confura may still delegate the newest, not-yet-indexed part of a log query to an upstream full node. That delegated portion is checked with configured split ranges, because it is still subject to full-node query constraints. Once data has been indexed, the dynamic result-size and latency controls described above apply.
+
+## Early Internal Contract Event Logs
+
+Some early Conflux 1.0 internal contract calls did not emit standard event logs on-chain. A plain full node cannot return those historical events through `cfx_getLogs`, even though applications often expect to query them like normal contract events.
+
+Confura can reconstruct these events from synchronized trace data and return them through the standard `cfx_getLogs` response format. Existing SDKs and log decoders can keep using `cfx_getLogs`; the only client-side change is using an endpoint with the `includeTraceLogs` query parameter.
+
+```text
+https://main.confluxrpc.com/?includeTraceLogs
+```
+
+or:
+
+```text
+https://main.confluxrpc.com/?includeTraceLogs=true
+```
+
+The supported internal contracts are Staking, SponsorWhitelistControl, and AdminControl. Mixed-address queries that combine these supported internal contracts with normal contracts are not supported; issue separate requests instead.
+
+For supported contract addresses, event signatures, query constraints, synthesis rules, and examples, see [Internal Contract Event Logs](./INTERNAL_CONTRACT_EVENT_LOGS.md).
 
 ## Rate Limit Status Diagnostics
 

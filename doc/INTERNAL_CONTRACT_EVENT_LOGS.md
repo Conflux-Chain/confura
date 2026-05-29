@@ -1,10 +1,10 @@
-# Early Internal Contract Event Logs Support
+# Internal Contract Event Logs
 
 ## Overview
 
 Due to historical limitations of the Conflux 1.0 chain, three early internal contracts (Staking, SponsorWhitelistControl, and AdminControl) did not emit standard Event Logs during execution. As a result, these events could not be queried via the standard `cfx_getLogs` RPC interface.
 
-Confura addresses this by synchronizing on-chain Trace data and assembling synthetic event logs for internal contracts. Users can query these events through the standard `cfx_getLogs` method by using a dedicated RPC endpoint — **no changes to the request body or existing SDK integration are required**.
+Confura addresses this by synchronizing on-chain Trace data and assembling synthetic event logs for internal contracts. Users can query these events through the standard `cfx_getLogs` method by using an endpoint with the `includeTraceLogs` query parameter — **no changes to the request body or existing SDK integration are required**.
 
 ---
 
@@ -14,7 +14,7 @@ Confura addresses this by synchronizing on-chain Trace data and assembling synth
 
 **Contract Address**: 
 
-- Mainet: https://confluxscan.org/address/cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaajrwuc9jnb
+- Mainnet: https://confluxscan.org/address/cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaajrwuc9jnb
 - Testnet: https://testnet.confluxscan.org/address/cfxtest:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaajh3dw3ctn
 
 | Event | Signature | Parameters |
@@ -27,7 +27,7 @@ Confura addresses this by synchronizing on-chain Trace data and assembling synth
 
 **Contract Address**: 
 
-- Mainet: https://confluxscan.org/address/cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaaegg2r16ar
+- Mainnet: https://confluxscan.org/address/cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaaegg2r16ar
 - Testnet: https://testnet.confluxscan.org/address/cfxtest:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaaeprn7v0eh
 
 | Event | Signature | Parameters |
@@ -43,7 +43,7 @@ Confura addresses this by synchronizing on-chain Trace data and assembling synth
 
 **Contract Address**: 
 
-- Mainet: https://confluxscan.org/address/cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2mhjju8k
+- Mainnet: https://confluxscan.org/address/cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2mhjju8k
 - Testnet: https://testnet.confluxscan.org/address/cfxtest:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaaawby2s44d
 
 | Event | Signature | Parameters |
