@@ -1265,9 +1265,6 @@ func readThroughCacheChain[T any](
 	// Fall back to full node
 	value, err = fromFullNode()
 	if err != nil {
-		logrus.WithError(err).
-			WithField("method", tracker.method).
-			Info("Failed to read from ETH full node")
 		return value, tracker.withError(err)
 	}
 
