@@ -1243,9 +1243,10 @@ func readThroughCacheChain[T any](
 	// Try near-head cache
 	value, hit, err := fromNearHead()
 	if err != nil {
-		return value, tracker.withError(err)
-	}
-	if hit {
+		logrus.WithError(err).
+			WithField("method", tracker.method).
+			Info("Failed to read from ETH near-head cache")
+	} else if hit {
 		tracker.withNearHeadHit(true)
 		return value, nil
 	}
@@ -1253,9 +1254,10 @@ func readThroughCacheChain[T any](
 	// Try data cache if applicable
 	value, hit, err = fromDataCache()
 	if err != nil {
-		return res, tracker.withError(err)
-	}
-	if hit {
+		logrus.WithError(err).
+			WithField("method", tracker.method).
+			Info("Failed to read from ETH data cache")
+	} else if hit {
 		tracker.withDataCacheHit(true)
 		return value, nil
 	}
@@ -1263,6 +1265,9 @@ func readThroughCacheChain[T any](
 	// Fall back to full node
 	value, err = fromFullNode()
 	if err != nil {
+		logrus.WithError(err).
+			WithField("method", tracker.method).
+			Info("Failed to read from ETH full node")
 		return value, tracker.withError(err)
 	}
 
