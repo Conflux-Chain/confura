@@ -494,6 +494,19 @@ node:
 #     # Maximum response bytes for 'getLogs' requests (default 10MB)
 #     MaxGetLogsResponseBytes: 10485760
 
+#   # PubSub WebSocket limits. Set a value to 0 to disable that specific bound.
+#   pubsub:
+#     # Maximum active WebSocket connections on this RPC proxy process.
+#     maxConnections: 10000
+#     # Maximum active WebSocket connections from one client IP.
+#     maxConnectionsPerIP: 20
+#     # Maximum active PubSub subscriptions on this RPC proxy process.
+#     maxSubscriptions: 50000
+#     # Maximum active PubSub subscriptions from one client IP.
+#     maxSubscriptionsPerIP: 100
+#     # Maximum active PubSub subscriptions on one WebSocket connection.
+#     maxSubscriptionsPerConnection: 20
+
 #   # ETH cache settings
 #   ethCache:
 #     # Cache expiration time duration for 'net_version' requests

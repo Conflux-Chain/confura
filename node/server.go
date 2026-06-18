@@ -18,7 +18,7 @@ var (
 func NewServer(handler *apiHandler) *rpc.Server {
 	return rpc.MustNewServer("node", map[string]interface{}{
 		"node": &api{h: handler},
-	})
+	}, nil)
 }
 
 // api node management RPC APIs.

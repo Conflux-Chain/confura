@@ -83,7 +83,11 @@ func startRpcService(*cobra.Command, []string) {
 }
 
 // startNativeSpaceRpcServer starts core space RPC server
-func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+func startNativeSpaceRpcServer(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	storeCtx util.StoreContext,
+) {
 	var rateReg *rate.Registry
 
 	router := node.Factory().CreateRouter()
@@ -135,7 +139,14 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 
 	// initialize RPC server
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
-	server := rpc.MustNewNativeSpaceServer(rateReg, clientProvider, gasHandler, exposedModules, option)
+	server := rpc.MustNewNativeSpaceServer(
+		rateReg,
+		clientProvider,
+		gasHandler,
+		exposedModules,
+		rpcutil.NewPubSubLimiterFromViper(),
+		option,
+	)
 
 	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("rpc.endpoint")
@@ -154,7 +165,11 @@ func startNativeSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx
 }
 
 // startEvmSpaceRpcServer starts evm space RPC server
-func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+func startEvmSpaceRpcServer(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	storeCtx util.StoreContext,
+) {
 	var rateReg *rate.Registry
 
 	router := node.EthFactory().CreateRouter()
@@ -190,7 +205,14 @@ func startEvmSpaceRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx ut
 
 	// initialize RPC server
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
-	server := rpc.MustNewEvmSpaceServer(rateReg, clientProvider, gasHandler, exposedModules, option)
+	server := rpc.MustNewEvmSpaceServer(
+		rateReg,
+		clientProvider,
+		gasHandler,
+		exposedModules,
+		rpcutil.NewPubSubLimiterFromViper(),
+		option,
+	)
 
 	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("ethrpc.endpoint")

@@ -12,12 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// eSpace PubSub notification
-// TODO:
-// 1. restrict total sessions and sessions per IP, otherwise it maybe susceptible
-// to flooding attack;
-// 2. `newPendingTransactions` and `syncing` are not implemented in the fullnode yet.
-
 // NewHeads send a notification each time a new header (block) is appended to the chain.
 func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
@@ -31,6 +25,12 @@ func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
 	}
 
+	permit, err := reservePubSubSubscriptionPermit(ctx)
+	if err != nil {
+		logrus.WithError(err).Info("NewHeads pubsub limit exceeded")
+		return &rpc.Subscription{}, err
+	}
+
 	rpcSub := psCtx.notifier.CreateSubscription()
 
 	headersCh := make(chan *types.Header, pubsubChannelBufferSize)
@@ -38,6 +38,7 @@ func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 	dSub, err := dClient.delegateSubscribeNewHeads(rpcSub.ID, headersCh)
 	if err != nil {
+		releasePubSubSubscriptionPermit(permit)
 		logrus.WithError(err).Info("Failed to delegate pubsub newheads subscription")
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
@@ -49,6 +50,7 @@ func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 	counter.Inc(1)
 
 	go func() {
+		defer releasePubSubSubscriptionPermit(permit)
 		defer dSub.unsubscribe()
 		defer counter.Dec(1)
 
@@ -92,6 +94,12 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
 	}
 
+	permit, err := reservePubSubSubscriptionPermit(ctx)
+	if err != nil {
+		logrus.WithError(err).Info("Logs pubsub limit exceeded")
+		return &rpc.Subscription{}, err
+	}
+
 	rpcSub := psCtx.notifier.CreateSubscription()
 
 	logsCh := make(chan *types.Log, pubsubChannelBufferSize)
@@ -99,6 +107,7 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 
 	dSub, err := dClient.delegateSubscribeLogs(rpcSub.ID, logsCh, filter)
 	if err != nil {
+		releasePubSubSubscriptionPermit(permit)
 		logrus.WithField("filter", filter).WithError(err).Info("Failed to delegate pubsub logs subscription")
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
@@ -108,6 +117,7 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 	counter.Inc(1)
 
 	go func() {
+		defer releasePubSubSubscriptionPermit(permit)
 		defer dSub.unsubscribe()
 		defer counter.Dec(1)
 
