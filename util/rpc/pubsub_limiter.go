@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"sync"
 
@@ -22,36 +23,6 @@ type PubSubLimitConfig struct {
 	MaxSubscriptions              int `default:"50000"`
 	MaxSubscriptionsPerIP         int `default:"100"`
 	MaxSubscriptionsPerConnection int `default:"20"`
-}
-
-// DefaultPubSubLimitConfig returns production-safe default PubSub bounds.
-func DefaultPubSubLimitConfig() PubSubLimitConfig {
-	return PubSubLimitConfig{
-		MaxConnections:                10000,
-		MaxConnectionsPerIP:           20,
-		MaxSubscriptions:              50000,
-		MaxSubscriptionsPerIP:         100,
-		MaxSubscriptionsPerConnection: 20,
-	}
-}
-
-func (cfg PubSubLimitConfig) normalized() PubSubLimitConfig {
-	if cfg.MaxConnections < 0 {
-		cfg.MaxConnections = 0
-	}
-	if cfg.MaxConnectionsPerIP < 0 {
-		cfg.MaxConnectionsPerIP = 0
-	}
-	if cfg.MaxSubscriptions < 0 {
-		cfg.MaxSubscriptions = 0
-	}
-	if cfg.MaxSubscriptionsPerIP < 0 {
-		cfg.MaxSubscriptionsPerIP = 0
-	}
-	if cfg.MaxSubscriptionsPerConnection < 0 {
-		cfg.MaxSubscriptionsPerConnection = 0
-	}
-	return cfg
 }
 
 // PubSubLimitError describes which PubSub resource bound was exceeded.
@@ -105,7 +76,7 @@ type PubSubSubscriptionPermit struct {
 
 // NewPubSubLimiterFromViper builds a PubSubLimiter from requestControl.pubsub.
 func NewPubSubLimiterFromViper() *PubSubLimiter {
-	cfg := DefaultPubSubLimitConfig()
+	var cfg PubSubLimitConfig
 	viper.MustUnmarshalKey("requestControl.pubsub", &cfg)
 	return NewPubSubLimiter(cfg)
 }
@@ -113,7 +84,7 @@ func NewPubSubLimiterFromViper() *PubSubLimiter {
 // NewPubSubLimiter builds a PubSubLimiter with the supplied bounds.
 func NewPubSubLimiter(config PubSubLimitConfig) *PubSubLimiter {
 	return &PubSubLimiter{
-		config:            config.normalized(),
+		config:            config,
 		connectionsByIP:   make(map[string]int),
 		subscriptionsByIP: make(map[string]int),
 	}
@@ -126,9 +97,9 @@ func (l *PubSubLimiter) Stats() PubSubLimiterStats {
 
 	return PubSubLimiterStats{
 		Connections:       l.connections,
-		ConnectionsByIP:   cloneCountMap(l.connectionsByIP),
+		ConnectionsByIP:   maps.Clone(l.connectionsByIP),
 		Subscriptions:     l.subscriptions,
-		SubscriptionsByIP: cloneCountMap(l.subscriptionsByIP),
+		SubscriptionsByIP: maps.Clone(l.subscriptionsByIP),
 	}
 }
 
@@ -300,12 +271,4 @@ func decrementCount(counts map[string]int, key string, delta int) {
 	}
 
 	counts[key] = next
-}
-
-func cloneCountMap(src map[string]int) map[string]int {
-	dst := make(map[string]int, len(src))
-	for key, val := range src {
-		dst[key] = val
-	}
-	return dst
 }
