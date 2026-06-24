@@ -13,10 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// PubSub notification
-// TODO: restrict total sessions and sessions per IP, otherwise it maybe susceptible
-// to flooding attack.
-
 // NewHeads send a notification each time a new header (block) is appended to the chain.
 func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 	psCtx, supported, err := api.pubsubCtxFromContext(ctx)
@@ -30,6 +26,12 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
 	}
 
+	permit, err := reservePubSubSubscriptionPermit(ctx)
+	if err != nil {
+		logrus.WithError(err).Info("NewHeads pubsub limit exceeded")
+		return &rpc.Subscription{}, err
+	}
+
 	rpcSub := psCtx.notifier.CreateSubscription()
 
 	headersCh := make(chan *types.BlockHeader, pubsubChannelBufferSize)
@@ -37,6 +39,7 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 	dSub, err := dClient.delegateSubscribeNewHeads(rpcSub.ID, headersCh)
 	if err != nil {
+		releasePubSubSubscriptionPermit(permit)
 		logrus.WithError(err).Info("Failed to delegate pubsub newheads subscription")
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
@@ -46,6 +49,7 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 	counter.Inc(1)
 
 	go func() {
+		defer releasePubSubSubscriptionPermit(permit)
 		defer dSub.unsubscribe()
 		defer counter.Dec(1)
 
@@ -98,6 +102,12 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
 	}
 
+	permit, err := reservePubSubSubscriptionPermit(ctx)
+	if err != nil {
+		logrus.WithError(err).Infof("Epochs pubsub limit exceeded (%v)", subEpoch)
+		return &rpc.Subscription{}, err
+	}
+
 	rpcSub := psCtx.notifier.CreateSubscription()
 
 	epochsCh := make(chan *types.WebsocketEpochResponse, pubsubChannelBufferSize)
@@ -105,6 +115,7 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 
 	dSub, err := dClient.delegateSubscribeEpochs(rpcSub.ID, epochsCh, *subEpoch)
 	if err != nil {
+		releasePubSubSubscriptionPermit(permit)
 		logrus.WithField("subEpoch", subEpoch).
 			WithError(err).
 			Info("Failed to delegate pubsub epochs subscription")
@@ -116,6 +127,7 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 	counter.Inc(1)
 
 	go func() {
+		defer releasePubSubSubscriptionPermit(permit)
 		defer dSub.unsubscribe()
 		defer counter.Dec(1)
 
@@ -162,6 +174,12 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
 	}
 
+	permit, err := reservePubSubSubscriptionPermit(ctx)
+	if err != nil {
+		logrus.WithError(err).Info("Logs pubsub limit exceeded")
+		return &rpc.Subscription{}, err
+	}
+
 	rpcSub := psCtx.notifier.CreateSubscription()
 
 	logsCh := make(chan *types.SubscriptionLog, pubsubChannelBufferSize)
@@ -169,6 +187,7 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 
 	dSub, err := dClient.delegateSubscribeLogs(rpcSub.ID, logsCh, filter)
 	if err != nil {
+		releasePubSubSubscriptionPermit(permit)
 		logrus.WithField("filter", filter).
 			WithError(err).
 			Info("Failed to delegate pubsub logs subscription")
@@ -180,6 +199,7 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 	counter.Inc(1)
 
 	go func() {
+		defer releasePubSubSubscriptionPermit(permit)
 		defer dSub.unsubscribe()
 		defer counter.Dec(1)
 

@@ -16,7 +16,7 @@ func MustNewEvmSpaceServerFromViper(
 
 	srv := rpc.MustNewServer("eth_vfilter", map[string]interface{}{
 		"eth": newEthFilterApi(fs),
-	})
+	}, nil)
 
 	return srv, conf.Endpoint
 }
@@ -31,7 +31,7 @@ func MustNewCoreSpaceServerFromViper(
 
 	srv := rpc.MustNewServer("cfx_vfilter", map[string]interface{}{
 		"cfx": newCfxFilterApi(fs),
-	})
+	}, nil)
 
 	return srv, conf.Endpoint
 }

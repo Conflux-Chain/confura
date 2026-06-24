@@ -35,7 +35,12 @@ type Server struct {
 }
 
 // MustNewServer creates an instance of Server with specified RPC services.
-func MustNewServer(name string, rpcs map[string]interface{}, middlewares ...handlers.Middleware) *Server {
+func MustNewServer(
+	name string,
+	rpcs map[string]interface{},
+	pubSubLimiter *PubSubLimiter,
+	middlewares ...handlers.Middleware,
+) *Server {
 	handler := rpc.NewServer()
 	servedApis := make([]string, 0, len(rpcs))
 
@@ -56,10 +61,14 @@ func MustNewServer(name string, rpcs map[string]interface{}, middlewares ...hand
 	}
 
 	viper.SetDefault("rpc.wsPingInterval", defaultWsPingInterval)
+	wsHandler := handler.WebsocketHandler([]string{"*"}, rpc.WebsocketOption{
+		WsPingInterval: viper.GetDuration("rpc.wsPingInterval"),
+	})
+	if pubSubLimiter != nil {
+		wsHandler = pubSubConnectionLimitMiddleware(pubSubLimiter)(wsHandler)
+	}
 	wsServer := http.Server{
-		Handler: handler.WebsocketHandler([]string{"*"}, rpc.WebsocketOption{
-			WsPingInterval: viper.GetDuration("rpc.wsPingInterval"),
-		}),
+		Handler: wsHandler,
 	}
 
 	for i := len(middlewares) - 1; i >= 0; i-- {

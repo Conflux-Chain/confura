@@ -4,7 +4,7 @@ import (
 	infuraNode "github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/util/rate"
-	"github.com/Conflux-Chain/confura/util/rpc"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/sirupsen/logrus"
 )
 
@@ -26,8 +26,9 @@ func MustNewNativeSpaceServer(
 	clientProvider *infuraNode.CfxClientProvider,
 	gashandler *handler.CfxGasStationHandler,
 	exposedModules []string,
+	pubSubLimiter *rpcutil.PubSubLimiter,
 	option ...CfxAPIOption,
-) *rpc.Server {
+) *rpcutil.Server {
 	// retrieve all available core space rpc apis
 	allApis := nativeSpaceApis(clientProvider, gashandler, registry, option...)
 
@@ -40,7 +41,7 @@ func MustNewNativeSpaceServer(
 
 	middleware := httpMiddleware("cfx", registry, clientProvider)
 
-	return rpc.MustNewServer(nativeSpaceRpcServerName, exposedApis, middleware)
+	return rpcutil.MustNewServer(nativeSpaceRpcServerName, exposedApis, pubSubLimiter, middleware)
 }
 
 // MustNewEvmSpaceServer new evm space RPC server by specifying router, and exposed modules.
@@ -51,8 +52,9 @@ func MustNewEvmSpaceServer(
 	clientProvider *infuraNode.EthClientProvider,
 	gasHandler *handler.EthGasStationHandler,
 	exposedModules []string,
+	pubSubLimiter *rpcutil.PubSubLimiter,
 	option ...EthAPIOption,
-) *rpc.Server {
+) *rpcutil.Server {
 	// retrieve all available evm space rpc apis
 	allApis, err := evmSpaceApis(clientProvider, gasHandler, registry, option...)
 	if err != nil {
@@ -68,7 +70,7 @@ func MustNewEvmSpaceServer(
 
 	middleware := httpMiddleware("eth", registry, clientProvider)
 
-	return rpc.MustNewServer(evmSpaceRpcServerName, exposedApis, middleware)
+	return rpcutil.MustNewServer(evmSpaceRpcServerName, exposedApis, pubSubLimiter, middleware)
 }
 
 type CfxBridgeServerConfig struct {
@@ -78,7 +80,7 @@ type CfxBridgeServerConfig struct {
 	Endpoint       string `default:":32537"`
 }
 
-func MustNewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeServerConfig) *rpc.Server {
+func MustNewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeServerConfig) *rpcutil.Server {
 	allApis, err := nativeSpaceBridgeApis(config)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server")
@@ -90,15 +92,15 @@ func MustNewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeSe
 	}
 
 	middleware := httpMiddleware("cfxBridge", registry, nil)
-	return rpc.MustNewServer(nativeSpaceBridgeRpcServerName, exposedApis, middleware)
+	return rpcutil.MustNewServer(nativeSpaceBridgeRpcServerName, exposedApis, nil, middleware)
 }
 
 // MustNewDebugServer new debug RPC server for internal debugging use.
-func MustNewDebugServer() *rpc.Server {
+func MustNewDebugServer() *rpcutil.Server {
 	servedApis := make(map[string]interface{})
 	for _, api := range debugApis() {
 		servedApis[api.Namespace] = api.Service
 	}
 
-	return rpc.MustNewServer(debugRpcServerName, servedApis)
+	return rpcutil.MustNewServer(debugRpcServerName, servedApis, nil)
 }
