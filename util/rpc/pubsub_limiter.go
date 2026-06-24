@@ -9,6 +9,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/sirupsen/logrus"
 )
 
 const unknownPubSubClientIP = "unknown"
@@ -221,8 +222,11 @@ func (l *PubSubLimiter) releaseConnection(session *PubSubSession) {
 func pubSubConnectionLimitMiddleware(limiter *PubSubLimiter) handlers.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			session, err := limiter.AcquireConnection(pubSubClientIPFromContext(r.Context()))
+			ip := pubSubClientIPFromContext(r.Context())
+			session, err := limiter.AcquireConnection(ip)
 			if err != nil {
+				logrus.WithError(err).
+					WithField("clientIP", ip).Debug("PubSub connection limit exceeded")
 				http.Error(w, err.Error(), http.StatusTooManyRequests)
 				return
 			}
