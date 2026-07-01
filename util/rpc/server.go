@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -41,7 +42,19 @@ func MustNewServer(
 	pubSubLimiter *PubSubLimiter,
 	middlewares ...handlers.Middleware,
 ) *Server {
+	var resrcLimit struct {
+		MaxBatchRpcItemCount     int
+		MaxBatchRpcResponseBytes int   `default:"10485760"` // default 10MB
+		MaxHttpRequestBodyBytes  int   `default:"10485760"` // default 10MB
+		MaxWebSocketMessageBytes int64 `default:"10485760"` // default 10MB
+	}
+	viperutil.MustUnmarshalKey("requestControl.resourceLimits", &resrcLimit)
+
 	handler := rpc.NewServer()
+	handler.SetBatchLimits(resrcLimit.MaxBatchRpcItemCount, resrcLimit.MaxBatchRpcResponseBytes)
+	handler.SetHTTPBodyLimit(resrcLimit.MaxHttpRequestBodyBytes)
+	handler.SetWebsocketReadLimit(resrcLimit.MaxWebSocketMessageBytes)
+
 	servedApis := make([]string, 0, len(rpcs))
 
 	for namespace, impl := range rpcs {
