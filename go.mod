@@ -19,7 +19,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/montanaflynn/stats v0.6.6
-	github.com/openweb3/go-rpc-provider v0.3.6
+	github.com/openweb3/go-rpc-provider v0.3.7
 	github.com/openweb3/web3go v0.3.3
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9
