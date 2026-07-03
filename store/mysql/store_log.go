@@ -178,6 +178,8 @@ func (ls *logStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilter)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to search partitions")
 	}
+	store.AddLogQueryPartitionHits(ctx, int64(len(partitions)))
+	store.AddLogQueryFanOuts(ctx, int64(len(partitions)))
 
 	filter := LogFilter{
 		BlockFrom: storeFilter.BlockFrom,

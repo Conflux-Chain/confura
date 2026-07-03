@@ -121,6 +121,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 		}
 
 		// reorg version changed during data query and try again.
+		store.AddLogQueryReorgRetries(ctx, 1)
 		lastReorgVersion = reorgVersion
 	}
 }
@@ -229,6 +230,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		store.AddLogQueryFanOuts(ctx, 1)
 		fnLogs, err := handler.prunedHandler.GetLogs(ctx, *originalFilter)
 		if err != nil {
 			return nil, false, err
@@ -254,6 +256,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		store.AddLogQueryFanOuts(ctx, 1)
 		fnLogs, err := cfx.GetLogs(*fnFilter)
 		if err != nil {
 			return nil, false, err

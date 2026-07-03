@@ -93,6 +93,7 @@ func (s *InternalContractLogStore) Pop(dbTx *gorm.DB, epochFrom uint64) error {
 // GetLogs retrieves internal contract logs matching the given filter criteria.
 func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxInternalContractLogFilter) ([]InternalContractLog, error) {
 	var logs []InternalContractLog
+	store.AddLogQueryFanOuts(ctx, 1)
 
 	syncInfo, err := s.getLatestSyncInfo()
 	if err != nil {
@@ -116,6 +117,7 @@ func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxIntern
 		Find(&logs).Error; err != nil {
 		return nil, err
 	}
+	store.AddLogQueryDBRowScans(ctx, int64(len(logs)))
 
 	// sort log result
 	sort.Slice(logs, func(i, j int) bool {

@@ -281,6 +281,8 @@ func (api *cfxAPI) getLogs(
 	rpcMethod string,
 ) ([]types.Log, error) {
 	metrics.UpdateCfxRpcLogFilter(rpcMethod, cfx, &fq)
+	ctx, finishLogQueryStats := withLogQueryStats(ctx, rpcMethod)
+	defer finishLogQueryStats()
 
 	flag, ok := ParseLogFilterType(&fq)
 	if !ok {
@@ -308,6 +310,7 @@ func (api *cfxAPI) getLogs(
 	}
 
 	// fail over to fullnode if no handler configured
+	store.AddLogQueryFanOuts(ctx, 1)
 	return cfx.GetLogs(fq)
 }
 
