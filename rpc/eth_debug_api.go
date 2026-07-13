@@ -36,3 +36,8 @@ func (api *ethDebugAPI) TraceCall(
 	w3c := GetEthClientFromContext(ctx)
 	return api.stateHandler.DebugTraceCall(ctx, w3c, request, blockNumber, opts...)
 }
+
+func (api *ethDebugAPI) BlockProperties(ctx context.Context, block types.BlockNumberOrHash) ([]types.BlockProperties, error) {
+	w3c := GetEthClientFromContext(ctx)
+	return w3c.Debug.BlockProperties(block)
+}
