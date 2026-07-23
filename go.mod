@@ -6,7 +6,7 @@ toolchain go1.23.10
 
 require (
 	github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20260414083601-cfb736638339
-	github.com/Conflux-Chain/go-conflux-sdk v1.6.1
+	github.com/Conflux-Chain/go-conflux-sdk v1.6.2-0.20260723071534-0585f1e2e56b
 	github.com/Conflux-Chain/go-conflux-util v0.7.4
 	github.com/Conflux-Chain/web3pay-service v1.0.2
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
