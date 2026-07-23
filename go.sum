@@ -42,8 +42,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20260414083601-cfb736638339 h1:fsTf5wLyTIg1pIRZSQySkmCdCnEUbtsupCowD1nQ0nU=
 github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20260414083601-cfb736638339/go.mod h1:ZWx7tvyHx2ceALhsbIg8Lfu40qZLnl+uu2VM9WxyDv0=
-github.com/Conflux-Chain/go-conflux-sdk v1.6.1 h1:0UscKNdfcMTZFpqBE4xsCIqN2RTH/0muWNt6ApC/Z3k=
-github.com/Conflux-Chain/go-conflux-sdk v1.6.1/go.mod h1:8jfCPUR8MgY+yvqj2rPTHAtQLtt1tvmXuto9VV2eIJg=
+github.com/Conflux-Chain/go-conflux-sdk v1.6.2-0.20260723071534-0585f1e2e56b h1:MwyIRMknK/QdUj9n+QPVpBVS3wSv7eDJ0XQvX9HZotE=
+github.com/Conflux-Chain/go-conflux-sdk v1.6.2-0.20260723071534-0585f1e2e56b/go.mod h1:8jfCPUR8MgY+yvqj2rPTHAtQLtt1tvmXuto9VV2eIJg=
 github.com/Conflux-Chain/go-conflux-util v0.7.4 h1:v1iC+NPEmyBBZHVV3QjYuuaXmiTwMZrAip6t3t+7wOE=
 github.com/Conflux-Chain/go-conflux-util v0.7.4/go.mod h1:JujW3dd5moi4Vgusd3Xwqbw5sW89MuatoyUSVf/J9Yk=
 github.com/Conflux-Chain/web3pay-service v1.0.2 h1:GiZhlvtF2NfQYjYsl5qNGz2sHg53mIhsAGhEaZrtC5E=
