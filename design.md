@@ -22,12 +22,12 @@ https://shimo.im/docs/m5kvdYYNGEfJ0v3X
   - [4.5 Catch-Up 机制](#45-catch-up-机制)
 - [5. 数据查询模块](#5-数据查询模块)
   - [5.1 方案选型](#51-方案选型)
-  - [5.2 RPC 接口设计](#52-rpc-接口设计)
-  - [5.3 Reorg 检测](#53-reorg-检测)
+  - [5.2 方案分析](#52-方案分析)
+  - [5.3 SDK Client 设计（方案 C）](#53-sdk-client-设计方案-c)
+  - [5.4 数据一致性保障](#54-数据一致性保障)
 - [6. 数据聚合模块](#6-数据聚合模块)
   - [6.1 接口设计方案](#61-接口设计方案)
-  - [6.2 返回策略逻辑](#62-返回策略逻辑)
-  - [6.3 交互流程与一致性](#63-交互流程与一致性)
+  - [6.2 查询模式](#62-查询模式)
 
 ---
 
@@ -187,7 +187,9 @@ https://shimo.im/docs/m5kvdYYNGEfJ0v3X
 | `tx_hash` | `CHAR(66)` | 交易哈希 |
 | `tx_index` | `INT` | 交易在区块中的位置（排序用） |
 | `log_index` | `INT` | 虚拟日志索引 |
-| `address` | `CHAR(42)` | 内置合约地址 |
+| `transaction_log_index` | `INT` | 日志在交易中的索引（对应 `types.Log.TransactionLogIndex`） |
+| `block_timestamp` | `BIGINT` | 区块时间戳（Unix 秒，对应 `types.Log.BlockTimestamp`） |
+| `address` | `CHAR(42)` | 内置合约的 hex 地址，固定使用 `0x` + 40 个十六进制字符；对外返回时再按网络 ID 编码为 CIP-37 Base32 地址 |
 | `topic0` ~ `topic3` | `VARCHAR(66)` | 事件签名及 Topics |
 | `data` | `TEXT` | 事件数据 |
 
@@ -203,7 +205,7 @@ CREATE INDEX idx_address_block ON internal_contract_logs(address, block_number);
 
 #### 表结构：`epoch_block_map`
 
-采用（每 5000 万个 epoch) 分区表，用于存储同步进度及 pivot hash 进行 Reorg 检测。
+采用（每 5000 万个 epoch）分区表，用于存储同步进度及 pivot hash 进行 Reorg 检测。
 
 | 字段名 | 类型 | 说明 |
 |:-------|:-----|:-----|
@@ -234,13 +236,13 @@ CREATE INDEX idx_bn_range ON epoch_block_map(bn_min, bn_max);
 
 ### 4.3 Trace 同步与解析
 
-### 4.3.1 数据源选择
+#### 4.3.1 数据源选择
 
 * 使用 **`trace_epoch`** RPC 逐个获取整个 epoch 下所有 block 的 Trace。
 
 * 优点：减少请求次数，捕获合约内部调用（Internal Tx）到内置合约的情况。
 
-### 4.3.2 过滤策略
+#### 4.3.2 过滤策略
 
 * 内置合约地址是固定的。
 
@@ -317,7 +319,9 @@ Trace Input: 0x... (selector) + amount (data)
 1. 获取 Epoch N 的 `Parent Hash` / `Pivot Hash` 信息。
 2. 对比 DB 中 Epoch N-1 的 `pivot_hash`。
 3. 如果一致：继续同步。
-4. 如果不一致：触发回滚。从 DB 中删除 Epoch >= N-1 的所有 logs 和 block mappings，指针回退，重新同步。
+4. 如果不一致：触发回滚。从 DB 中删除 Epoch >= N-1 的所有 logs 和 block mappings，指针回退，递增 `reorg_version`，然后重新同步。
+
+日志删除、`epoch_block_map` 删除、同步指针回退和 `reorg_version` 递增必须在**同一个数据库事务**中原子提交。这样查询方不可能看到已经回滚的数据状态却仍读到旧版本号；任一操作失败时须回滚整个事务。
 
 ### 4.5 Catch-Up 机制
 
@@ -374,17 +378,20 @@ Trace Input: 0x... (selector) + amount (data)
 type LogFilter struct {
     FromBlock, ToBlock uint64
     FromEpoch, ToEpoch uint64
+    BlockHashes []common.Hash
     Addresses []common.Address
     Topics    [][]common.Hash
 }
 
 type BuiltinLogsClient interface {
     // GetLogs 查询内置合约日志
-    GetLogs(ctx context.Context, filter LogFilter) (*[]types.Log, error)
+    GetLogs(ctx context.Context, filter LogFilter) ([]types.Log, error)
 }
 ```
 
-### 5.3 数据一致性保障
+`FromBlock`/`ToBlock`、`FromEpoch`/`ToEpoch` 与 `BlockHashes` 是互斥的三种范围模式，SDK 必须沿用 `cfx_getLogs` 的范围校验语义。对于 `BlockHashes` 模式，先通过可靠的 canonical block 映射解析并验证每个哈希，再按哈希查询，不能把它解释成零值区块范围。
+
+### 5.4 数据一致性保障
 
 利用 Reorg Version 进行乐观锁检查，防止查询期间发生 Reorg 返回“脏数据”。
 
@@ -394,8 +401,10 @@ type BuiltinLogsClient interface {
 1. 获取当前 reorg_version (V1)
    └── SELECT reorg_version FROM sync_status WHERE id = 1
 
-2. 检查查询范围是否在已同步范围内
-   └── 若 toBlock > latest_synced_block，返回错误
+2. 按过滤器的范围模式检查查询范围是否在已同步范围内
+   ├── Block 模式：若 ToBlock > latest_synced_block，返回错误
+   ├── Epoch 模式：若 ToEpoch > latest_synced_epoch，返回错误
+   └── BlockHashes 模式：解析每个 canonical block 的 epoch/高度；任一结果超过对应同步进度或无法解析，均返回错误
 
 3. 根据 log filter 条件组装 SQL 查询
    └── 执行查询获取 logs
@@ -408,7 +417,7 @@ type BuiltinLogsClient interface {
    └── V1 != V2：查询期间发生 Reorg，重试（最多 3s 超时）
 ```
 
-## 6 数据聚合
+## 6. 数据聚合模块
 
 在 Confura 的 `rpc-proxy` 层进行 Event Logs 的聚合操作，合并原生 Log 和合成 Log。
 
@@ -419,9 +428,9 @@ type BuiltinLogsClient interface {
 | A. 扩展参数 | 在 log filter 增加 includeBuiltin 参数 | 中低 | 高 | 中 | 高 |
 | B. 新 RPC 方法 | 提供 cfx_getLogsWithBuiltin | 低 | 高 | 中高 | 高 |
 | C. 地址白名单触发 | 根据 filter.address 自动启用 | 高 | 中低 | 高 | 中 |
-| D. URL/Header 触发 ⭐ | URL 或 Header 附加参数 （如 parse_trace) | 高 | 高 | 高 | 高 |
+| D. URL Query 触发 ⭐ | URL query 附加 `includeTraceLogs` 参数 | 高 | 高 | 高 | 高 |
 
->💡 推荐方案 D：灵活且兼容性好，可与其他方案结合使用。
+>💡 推荐方案 D：使用当前实现支持的 URL query 参数 `includeTraceLogs`。例如，请求 URL 添加 `?includeTraceLogs=true`；当前实现不读取 Header，也不支持 `parse_trace` 别名。
 
 ### 6.2 查询模式
 
