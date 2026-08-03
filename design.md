@@ -236,9 +236,9 @@ CREATE INDEX idx_bn_range ON epoch_block_map(bn_min, bn_max);
 
 ### 4.3.1 数据源选择
 
-* 使用 **`trace_epoch`** RPC 获取逐个获取整个 epoch 下所有 block 的 Trace。
+* 使用 **`trace_epoch`** RPC 逐个获取整个 epoch 下所有 block 的 Trace。
 
-* 优点: 减少请求次数，捕获合约内部调用（Internal Tx）内置合约的情况。。
+* 优点：减少请求次数，捕获合约内部调用（Internal Tx）到内置合约的情况。
 
 ### 4.3.2 过滤策略
 
