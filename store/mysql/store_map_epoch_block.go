@@ -113,8 +113,11 @@ func (e2bms *epochBlockMapStore[T]) MaxEpoch() (uint64, bool, error) {
 // findOneBlockMapping retrieves a single `epochBlockMap` record based on a condition and optional ordering.
 func (e2bms *epochBlockMapStore[T]) findOneBlockMapping(
 	condition string, order string, args ...interface{}) (res epochBlockMap, existed bool, err error) {
+	query := e2bms.db
+	if condition != "" {
+		query = query.Where(condition, args...)
+	}
 
-	query := e2bms.db.Where(condition, args...)
 	if order != "" {
 		query = query.Order(order)
 	}
@@ -141,6 +144,11 @@ func (e2bms *epochBlockMapStore[T]) CeilBlockMapping(epoch uint64) (epochBlockMa
 // BlockMapping retrieves the `epochBlockMap` for the exact given epoch.
 func (e2bms *epochBlockMapStore[T]) BlockMapping(epoch uint64) (epochBlockMap, bool, error) {
 	return e2bms.findOneBlockMapping("epoch = ?", "", epoch)
+}
+
+// EarliestBlockMapping returns the earliest epoch block mapping.
+func (e2bms *epochBlockMapStore[T]) EarliestBlockMapping() (epochBlockMap, bool, error) {
+	return e2bms.findOneBlockMapping("", "epoch ASC")
 }
 
 // LatestEpochBeforeBlock finds the latest epoch ≤ maxEpochNumber where BnMax ≤ blockNumber.

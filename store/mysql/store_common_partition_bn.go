@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -158,59 +159,122 @@ func (bnps *bnPartitionedStore) shrinkPartition(entity string, tabler schema.Tab
 
 // searchPartitions searches for the partitions which hold the entity data covering the specified block range.
 //
-// If the search block range [sbn0, sbn1] overlaps with any area before the block range [bn0, bn1]
-// covered by all entity partitions (sbn1 < bn0 or sbn0 < bn0 < sbn1), it will regard the entity data
+// If the lower bound of the search block range [sbn0, sbn1] precedes the lower bound of the block
+// range [bn0, bn1] covered by all entity partitions (sbn0 < bn0), it will regard the entity data
 // for the search block range as already pruned and raise an error.
 //
 // Otherwise, it will return the partitions (usually span at most two partitions) which hold the entity data
 // for the search block range and the block range which is not covered by any entity partition.
-func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange types.RangeUint64) (
+func (bnps *bnPartitionedStore) searchPartitions(
+	ctx context.Context, entity string, searchRange types.RangeUint64,
+) (
 	partitions []*bnPartition, uncoverings *types.RangeUint64, err error,
 ) {
-	bnStart, bnEnd, existed, err := bnps.bnRange(entity)
-	if err != nil {
-		return nil, nil, err
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
+		defer cancel()
 	}
 
-	if !existed { // no partitions found
-		return nil, &searchRange, nil
+	readRange := func(ctx context.Context, entity string) (bnPartitionRangeSnapshot, error) {
+		bnStart, bnEnd, existed, err := bnps.bnRangeWithContext(ctx, entity)
+		return bnPartitionRangeSnapshot{start: bnStart, end: bnEnd, existed: existed}, err
+	}
+	readOverlap := func(
+		ctx context.Context, entity string, searchRange types.RangeUint64,
+	) ([]*bnPartition, error) {
+		return bnps.searchOverlapPartitionsWithContext(ctx, entity, searchRange)
 	}
 
-	bnPartRange := types.RangeUint64{From: bnStart, To: bnEnd}
+	return searchPartitionsUntilStable(ctx, entity, searchRange, readRange, readOverlap)
+}
 
-	if searchRange.To < bnStart {
-		// search range is before the first partition
-		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
-	}
+type bnPartitionRangeSnapshot struct {
+	start   uint64
+	end     uint64
+	existed bool
+}
 
-	if searchRange.From > bnEnd {
-		// search range is after the last partition
-		return nil, &searchRange, nil
-	}
+type bnPartitionRangeReader func(context.Context, string) (bnPartitionRangeSnapshot, error)
 
-	if searchRange.From < bnStart && searchRange.To > bnStart {
-		// search range intersects with the first partition
-		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
-	}
+type bnPartitionOverlapReader func(context.Context, string, types.RangeUint64) ([]*bnPartition, error)
 
-	partitions, err = bnps.searchOverlapPartitions(entity, searchRange)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if searchRange.To > bnEnd && searchRange.From < bnEnd {
-		// search range intersects with the last partition
-		uncoverings = &types.RangeUint64{
-			From: bnEnd + 1, To: searchRange.To,
+// searchPartitionsUntilStable makes sure the partition metadata used for routing did not change
+// while the overlapping partitions were being selected. Partition pruning advances the covered
+// range monotonically, so retrying until two consecutive range reads match prevents returning a
+// partial result selected from stale metadata.
+func searchPartitionsUntilStable(
+	ctx context.Context,
+	entity string,
+	searchRange types.RangeUint64,
+	readRange bnPartitionRangeReader,
+	readOverlap bnPartitionOverlapReader,
+) ([]*bnPartition, *types.RangeUint64, error) {
+	for {
+		if ctx.Err() != nil {
+			return nil, nil, store.ErrGetLogsTimeout
 		}
-	}
 
-	return
+		before, err := readRange(ctx, entity)
+		if ctx.Err() != nil {
+			return nil, nil, store.ErrGetLogsTimeout
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if before.existed && searchRange.From < before.start {
+			// Pruning only advances the lower bound, so this range cannot become queryable
+			// after another metadata read and may fail without selecting overlap partitions.
+			bnPartRange := types.RangeUint64{From: before.start, To: before.end}
+			return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
+		}
+
+		partitions, err := readOverlap(ctx, entity, searchRange)
+		if ctx.Err() != nil {
+			return nil, nil, store.ErrGetLogsTimeout
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+
+		after, err := readRange(ctx, entity)
+		if ctx.Err() != nil {
+			return nil, nil, store.ErrGetLogsTimeout
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if before != after {
+			continue
+		}
+
+		if !before.existed || searchRange.From > before.end {
+			return nil, &searchRange, nil
+		}
+
+		var uncoverings *types.RangeUint64
+		if searchRange.To > before.end && searchRange.From < before.end {
+			uncoverings = &types.RangeUint64{
+				From: before.end + 1,
+				To:   searchRange.To,
+			}
+		}
+
+		return partitions, uncoverings, nil
+	}
 }
 
 // searchOverlapPartitions search entity partitions that overlap the search range regardless of the boundary.
 func (bnps *bnPartitionedStore) searchOverlapPartitions(entity string, searchRange types.RangeUint64) ([]*bnPartition, error) {
-	db := bnps.db.Where("entity = ?", entity).
+	return bnps.searchOverlapPartitionsWithContext(context.Background(), entity, searchRange)
+}
+
+func (bnps *bnPartitionedStore) searchOverlapPartitionsWithContext(
+	ctx context.Context, entity string, searchRange types.RangeUint64,
+) ([]*bnPartition, error) {
+	db := bnps.db.WithContext(ctx).Where("entity = ?", entity).
 		Where("bn_min <= ? AND bn_max >= ?", searchRange.To, searchRange.From).
 		Order("pi asc")
 
@@ -398,18 +462,32 @@ func (bnps *bnPartitionedStore) indexRange(entity string) (
 func (bnps *bnPartitionedStore) bnRange(entity string) (
 	start uint64, end uint64, existed bool, err error,
 ) {
-	return bnps.entityRange("MAX(bn_max) AS max, MIN(bn_min) AS min", entity)
+	return bnps.bnRangeWithContext(context.Background(), entity)
+}
+
+func (bnps *bnPartitionedStore) bnRangeWithContext(ctx context.Context, entity string) (
+	start uint64, end uint64, existed bool, err error,
+) {
+	return bnps.entityRangeWithDB(
+		bnps.db.WithContext(ctx), "MAX(bn_max) AS max, MIN(bn_min) AS min", entity,
+	)
 }
 
 // range returns entity range covered by partitions.
 func (bnps *bnPartitionedStore) entityRange(selector string, entity string) (
 	start uint64, end uint64, existed bool, err error,
 ) {
+	return bnps.entityRangeWithDB(bnps.db, selector, entity)
+}
+
+func (bnps *bnPartitionedStore) entityRangeWithDB(db *gorm.DB, selector string, entity string) (
+	start uint64, end uint64, existed bool, err error,
+) {
 	var er struct {
 		Max, Min sql.NullInt64
 	}
 
-	db := bnps.db.Select(selector).Model(&bnPartition{}).Where("entity = ?", entity)
+	db = db.Select(selector).Model(&bnPartition{}).Where("entity = ?", entity)
 	if err = db.Find(&er).Error; err != nil {
 		return
 	}

@@ -112,6 +112,14 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 
 // migrate moves logs from shared shard table to dedicated big topic table.
 func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) error {
+	var bnMin, bnMax uint64
+
+	if eBlockmap, ok, err := btls.ebms.EarliestBlockMapping(); err != nil {
+		return errors.WithMessage(err, "failed to get earliest block mapping")
+	} else if ok {
+		bnMin = eBlockmap.BnMin
+	}
+
 	tiTableName := btls.tils.GetPartitionedTableName(topic.Hash)
 
 	tlEntity, tlTabler := btls.topicEntity(topic.ID), btls.topicTabler(topic.ID)
@@ -119,15 +127,15 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 
 	return btls.db.Transaction(func(dbTx *gorm.DB) error {
 		var tiLogs []*TopicIndexedLog
-		var bnMin, bnMax uint64
 
 		tidb := dbTx.Table(tiTableName).Where("tid = ?", topic.ID)
-
-		res := tidb.FindInBatches(&tiLogs, defaultBatchSizeForLogMigrating, func(tx *gorm.DB, batch int) error {
+		res := tidb.FindInBatches(&tiLogs, defaultBatchSizeForLogMigrating, func(_ *gorm.DB, _ int) error {
 			delIDs := make([]uint64, 0, len(tiLogs))
 			tlLogs := make([]*topicLog, 0, len(tiLogs))
 
 			for _, tilog := range tiLogs {
+				bnMax = max(bnMax, tilog.BlockNumber)
+
 				// copy topic indexed event log
 				tlog := (topicLog)(*tilog)
 				tlog.ID = 0 // clear primary id
@@ -146,12 +154,6 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 				return errors.WithMessage(err, "failed to delete topic indexed logs")
 			}
 
-			// Track block range stats
-			if batch == 1 {
-				bnMin = tiLogs[0].BlockNumber
-			}
-			bnMax = tiLogs[len(tiLogs)-1].BlockNumber
-
 			return nil
 		})
 
@@ -159,8 +161,15 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 			return errors.WithMessage(err, "failed to batch migrate topic indexed logs")
 		}
 
+		// validate migration block range
+		if bnMin > bnMax {
+			return errors.Errorf(
+				"first covered block %v exceeds last indexed block %v", bnMin, bnMax,
+			)
+		}
+
 		// expand partition block number range
-		if err := btls.expandBnRange(dbTx, tlEntity, int(partition.Index), 0, bnMax); err != nil {
+		if err := btls.expandBnRange(dbTx, tlEntity, int(partition.Index), bnMin, bnMax); err != nil {
 			return errors.WithMessage(err, "failed to expand partition bn range")
 		}
 
@@ -358,7 +367,7 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 	topic string,
 	storeFilter store.LogFilter,
 ) ([]*store.Log, error) {
-	partitions, _, err := btls.searchPartitions(btls.topicEntity(tid), types.RangeUint64{
+	partitions, _, err := btls.searchPartitions(ctx, btls.topicEntity(tid), types.RangeUint64{
 		From: storeFilter.BlockFrom,
 		To:   storeFilter.BlockTo,
 	})
