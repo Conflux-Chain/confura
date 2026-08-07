@@ -151,6 +151,11 @@ func (e2bms *epochBlockMapStore[T]) EarliestBlockMapping() (epochBlockMap, bool,
 	return e2bms.findOneBlockMapping("", "epoch ASC")
 }
 
+// LatestBlockMapping returns the latest epoch block mapping.
+func (e2bms *epochBlockMapStore[T]) LatestBlockMapping() (epochBlockMap, bool, error) {
+	return e2bms.findOneBlockMapping("", "epoch DESC")
+}
+
 // LatestEpochBeforeBlock finds the latest epoch ≤ maxEpochNumber where BnMax ≤ blockNumber.
 func (e2bms *epochBlockMapStore[T]) LatestEpochBeforeBlock(maxEpochNumber, blockNumber uint64) (uint64, bool, error) {
 	res, existed, err := e2bms.findOneBlockMapping("epoch <= ? AND bn_max <= ?", "epoch DESC", maxEpochNumber, blockNumber)

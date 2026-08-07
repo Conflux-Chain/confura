@@ -199,29 +199,27 @@ func (handler *EthLogsApiHandler) splitLogFilter(
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
 ) (*store.LogFilter, *types.FilterQuery, error) {
-	maxBlock, ok, err := handler.es.MaxEpoch()
+	earliestMapping, ok, err := handler.es.EarliestBlockMapping()
 	if err != nil {
 		return nil, nil, err
 	}
-
 	if !ok {
 		return nil, filter, nil
 	}
 
-	firstMapping, ok, err := handler.es.CeilBlockMapping(0)
+	latestMapping, ok, err := handler.es.LatestBlockMapping()
 	if err != nil {
 		return nil, nil, err
 	}
-
 	if !ok {
 		return nil, filter, nil
 	}
 
 	if filter.BlockHash != nil {
-		return handler.splitLogFilterByBlockHash(eth, filter, firstMapping.BnMin, maxBlock)
+		return handler.splitLogFilterByBlockHash(eth, filter, earliestMapping.BnMin, latestMapping.BnMax)
 	}
 
-	return handler.splitLogFilterByBlockRange(filter, firstMapping.BnMin, maxBlock)
+	return handler.splitLogFilterByBlockRange(filter, earliestMapping.BnMin, latestMapping.BnMax)
 }
 
 func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(

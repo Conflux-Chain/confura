@@ -291,47 +291,36 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 ) ([]store.LogFilter, *types.LogFilter, error) {
-	maxEpoch, ok, err := handler.ms.MaxEpoch()
+	earliestMapping, ok, err := handler.ms.EarliestBlockMapping()
 	if err != nil {
 		return nil, nil, err
 	}
-
 	if !ok {
 		return nil, filter, nil
 	}
 
-	e2bMap, ok, err := handler.ms.BlockMapping(maxEpoch)
+	latestMapping, ok, err := handler.ms.LatestBlockMapping()
 	if err != nil {
 		return nil, nil, err
 	}
-
-	if !ok {
-		return nil, filter, nil
-	}
-
-	firstE2bMap, ok, err := handler.ms.CeilBlockMapping(0)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	if !ok {
 		return nil, filter, nil
 	}
 
 	if len(filter.BlockHashes) > 0 {
 		return handler.splitLogFilterByBlockHashes(
-			cfx, filter, firstE2bMap.Epoch, maxEpoch, firstE2bMap.BnMin,
+			cfx, filter, earliestMapping.Epoch, latestMapping.Epoch, earliestMapping.BnMin,
 		)
 	}
 
 	if filter.FromBlock != nil && filter.ToBlock != nil {
 		return handler.splitLogFilterByBlockRange(
-			cfx, filter, firstE2bMap.BnMin, e2bMap.BnMax,
+			cfx, filter, earliestMapping.BnMin, latestMapping.BnMax,
 		)
 	}
 
 	return handler.splitLogFilterByEpochRange(
-		cfx, filter, firstE2bMap.Epoch, maxEpoch, e2bMap.BnMax,
+		cfx, filter, earliestMapping.Epoch, latestMapping.Epoch, latestMapping.BnMax,
 	)
 }
 
