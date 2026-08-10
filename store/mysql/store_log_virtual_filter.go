@@ -193,7 +193,7 @@ func (vfls *VirtualFilterLogStore) GetLogs(
 	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)
 
 	srange := types.RangeUint64{From: sfilter.BlockFrom, To: sfilter.BlockTo}
-	partitions, _, err := vfls.searchPartitions(fentity, srange)
+	partitions, _, err := vfls.searchPartitions(ctx, fentity, srange)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to search partitions")
 	}

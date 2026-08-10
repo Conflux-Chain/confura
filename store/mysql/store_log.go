@@ -170,7 +170,7 @@ func (ls *logStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 func (ls *logStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([]*store.Log, error) {
 	// find the partitions that holds the event logs
 	partitions, _, err := ls.searchPartitions(
-		bnPartitionedLogEntity, types.RangeUint64{
+		ctx, bnPartitionedLogEntity, types.RangeUint64{
 			From: storeFilter.BlockFrom,
 			To:   storeFilter.BlockTo,
 		},

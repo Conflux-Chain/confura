@@ -291,39 +291,43 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 ) ([]store.LogFilter, *types.LogFilter, error) {
-	maxEpoch, ok, err := handler.ms.MaxEpoch()
+	earliestMapping, ok, err := handler.ms.EarliestBlockMapping()
 	if err != nil {
 		return nil, nil, err
 	}
-
 	if !ok {
 		return nil, filter, nil
 	}
 
-	e2bMap, ok, err := handler.ms.BlockMapping(maxEpoch)
+	latestMapping, ok, err := handler.ms.LatestBlockMapping()
 	if err != nil {
 		return nil, nil, err
 	}
-
 	if !ok {
 		return nil, filter, nil
 	}
 
 	if len(filter.BlockHashes) > 0 {
-		return handler.splitLogFilterByBlockHashes(cfx, filter, maxEpoch)
+		return handler.splitLogFilterByBlockHashes(
+			cfx, filter, earliestMapping.Epoch, latestMapping.Epoch, earliestMapping.BnMin,
+		)
 	}
 
 	if filter.FromBlock != nil && filter.ToBlock != nil {
-		return handler.splitLogFilterByBlockRange(cfx, filter, e2bMap.BnMax)
+		return handler.splitLogFilterByBlockRange(
+			cfx, filter, earliestMapping.BnMin, latestMapping.BnMax,
+		)
 	}
 
-	return handler.splitLogFilterByEpochRange(cfx, filter, maxEpoch, e2bMap.BnMax)
+	return handler.splitLogFilterByEpochRange(
+		cfx, filter, earliestMapping.Epoch, latestMapping.Epoch, latestMapping.BnMax,
+	)
 }
 
 func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
-	maxEpoch uint64,
+	minEpoch, maxEpoch, minBlock uint64,
 ) ([]store.LogFilter, *types.LogFilter, error) {
 	var dbBlockNumbers []int
 	var fnBlockHashes []types.Hash
@@ -347,7 +351,13 @@ func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
 			return nil, nil, fmt.Errorf("block with hash %v is not executed yet", hash)
 		}
 
-		bn := int(block.BlockNumber.ToInt().Uint64())
+		blockNumber := block.BlockNumber.ToInt().Uint64()
+		epoch := block.EpochNumber.ToInt().Uint64()
+		if epoch <= maxEpoch && (epoch < minEpoch || blockNumber < minBlock) {
+			return nil, nil, store.ErrAlreadyPruned
+		}
+
+		bn := int(blockNumber)
 
 		// dedupe
 		if _, ok := blockNumToHash[bn]; ok {
@@ -356,7 +366,7 @@ func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
 
 		blockNumToHash[bn] = hash
 
-		if epoch := block.EpochNumber.ToInt().Uint64(); epoch <= maxEpoch {
+		if epoch <= maxEpoch {
 			dbBlockNumbers = append(dbBlockNumbers, bn)
 		} else {
 			fnBlockHashes = append(fnBlockHashes, hash)
@@ -388,10 +398,14 @@ func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
 func (handler *CfxLogsApiHandler) splitLogFilterByBlockRange(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
-	maxBlock uint64,
+	minBlock, maxBlock uint64,
 ) ([]store.LogFilter, *types.LogFilter, error) {
-	// no data in database
 	blockFrom := filter.FromBlock.ToInt().Uint64()
+	if blockFrom < minBlock {
+		return nil, nil, store.ErrAlreadyPruned
+	}
+
+	// no data in database
 	if blockFrom > maxBlock {
 		return nil, filter, nil
 	}
@@ -421,11 +435,15 @@ func (handler *CfxLogsApiHandler) splitLogFilterByBlockRange(
 func (handler *CfxLogsApiHandler) splitLogFilterByEpochRange(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
-	maxEpoch, maxBlock uint64,
+	minEpoch, maxEpoch, maxBlock uint64,
 ) ([]store.LogFilter, *types.LogFilter, error) {
 	epochFrom, ok := filter.FromEpoch.ToInt()
 	if !ok {
 		return nil, filter, nil
+	}
+
+	if epochFrom.Uint64() < minEpoch {
+		return nil, nil, store.ErrAlreadyPruned
 	}
 
 	// no data in database

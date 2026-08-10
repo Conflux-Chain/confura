@@ -127,16 +127,25 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 	clTableName := bcls.getPartitionedTableName(clTabler, partition.Index)
 
 	return bcls.db.Transaction(func(dbTx *gorm.DB) error {
+		eBlockMap, ok, err := bcls.ebms.earliestBlockMapping(dbTx)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get earliest block mapping")
+		}
+		if !ok {
+			return errors.New("earliest block mapping not found")
+		}
+
+		bnMin, bnMax := eBlockMap.BnMin, uint64(0)
 		var aiLogs []*AddressIndexedLog
-		var bnMin, bnMax uint64
 
 		aidb := dbTx.Table(aiTableName).Where("cid = ?", contract.ID)
-
-		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeForLogMigrating, func(tx *gorm.DB, batch int) error {
+		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeForLogMigrating, func(_ *gorm.DB, _ int) error {
 			deleteIds := make([]uint64, 0, len(aiLogs))
 			clLogs := make([]*contractLog, 0, len(aiLogs))
 
 			for _, aiLog := range aiLogs {
+				bnMax = max(bnMax, aiLog.BlockNumber)
+
 				// copy address indexed event log
 				clog := (contractLog)(*aiLog)
 				// clear primary id
@@ -157,26 +166,32 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 				return errors.WithMessage(err, "failed to delete address indexed log")
 			}
 
-			if batch == 1 { // least block number of the first batch
-				bnMin = aiLogs[0].BlockNumber
-			}
-			bnMax = aiLogs[len(aiLogs)-1].BlockNumber
-
 			return nil
 		})
 
 		if err := res.Error; err != nil {
 			return errors.WithMessage(err, "failed to batch get address indexed logs for migration")
 		}
+		if res.RowsAffected == 0 {
+			return errors.New("no address indexed logs found for migration")
+		}
+
+		// validate migration block range
+		if bnMin > bnMax {
+			return errors.Errorf(
+				"first covered block %v exceeds last indexed block %v", bnMin, bnMax,
+			)
+		}
 
 		// expand partition block number range
-		if err := bcls.expandBnRange(dbTx, clEntity, int(partition.Index), 0, bnMax); err != nil {
+		if err := bcls.expandBnRange(dbTx, clEntity, int(partition.Index), bnMin, bnMax); err != nil {
 			return errors.WithMessage(err, "failed to expand partition bn range")
 		}
 
 		// update separate contract log partition count
-		err := bcls.deltaUpdateCount(dbTx, clEntity, int(partition.Index), int(res.RowsAffected))
-		if err != nil {
+		if err := bcls.deltaUpdateCount(
+			dbTx, clEntity, int(partition.Index), int(res.RowsAffected),
+		); err != nil {
 			return errors.WithMessage(err, "failed to update contract log partition count")
 		}
 
@@ -370,7 +385,7 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 ) ([]*store.Log, error) {
 	contractEntity := bcls.contractEntity(cid)
 	partitions, _, err := bcls.searchPartitions(
-		contractEntity, types.RangeUint64{
+		ctx, contractEntity, types.RangeUint64{
 			From: storeFilter.BlockFrom,
 			To:   storeFilter.BlockTo,
 		},

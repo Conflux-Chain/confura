@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -18,6 +19,10 @@ type EthLogsApiHandler struct {
 	es *mysql.EthStore
 
 	maxSuggestAttempts int
+}
+
+type ethBlockByHashClient interface {
+	BlockByHash(blockHash common.Hash, isFull bool) (*types.Block, error)
 }
 
 func NewEthLogsApiHandler(es *mysql.EthStore, maxAttempts int) *EthLogsApiHandler {
@@ -194,25 +199,33 @@ func (handler *EthLogsApiHandler) splitLogFilter(
 	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
 ) (*store.LogFilter, *types.FilterQuery, error) {
-	maxBlock, ok, err := handler.es.MaxEpoch()
+	earliestMapping, ok, err := handler.es.EarliestBlockMapping()
 	if err != nil {
 		return nil, nil, err
 	}
+	if !ok {
+		return nil, filter, nil
+	}
 
+	latestMapping, ok, err := handler.es.LatestBlockMapping()
+	if err != nil {
+		return nil, nil, err
+	}
 	if !ok {
 		return nil, filter, nil
 	}
 
 	if filter.BlockHash != nil {
-		return handler.splitLogFilterByBlockHash(eth, filter, maxBlock)
+		return handler.splitLogFilterByBlockHash(eth, filter, earliestMapping.BnMin, latestMapping.BnMax)
 	}
 
-	return handler.splitLogFilterByBlockRange(eth, filter, maxBlock)
+	return handler.splitLogFilterByBlockRange(filter, earliestMapping.BnMin, latestMapping.BnMax)
 }
 
 func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
-	eth *client.RpcEthClient,
+	eth ethBlockByHashClient,
 	filter *types.FilterQuery,
+	minBlock uint64,
 	maxBlock uint64,
 ) (*store.LogFilter, *types.FilterQuery, error) {
 	block, err := eth.BlockByHash(*filter.BlockHash, false)
@@ -225,6 +238,9 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 	}
 
 	bn := block.Number.Uint64()
+	if bn < minBlock {
+		return nil, nil, store.ErrAlreadyPruned
+	}
 
 	if bn > maxBlock {
 		return nil, filter, nil
@@ -235,8 +251,8 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 }
 
 func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
-	eth *client.RpcEthClient,
 	filter *types.FilterQuery,
+	minBlock uint64,
 	maxBlock uint64,
 ) (*store.LogFilter, *types.FilterQuery, error) {
 	if filter.FromBlock == nil || *filter.FromBlock < 0 {
@@ -248,6 +264,9 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockRange(
 	}
 
 	blockFrom, blockTo := uint64(*filter.FromBlock), uint64(*filter.ToBlock)
+	if blockFrom < minBlock {
+		return nil, nil, store.ErrAlreadyPruned
+	}
 
 	// no data in database
 	if blockFrom > maxBlock {

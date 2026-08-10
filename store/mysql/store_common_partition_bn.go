@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -158,59 +159,118 @@ func (bnps *bnPartitionedStore) shrinkPartition(entity string, tabler schema.Tab
 
 // searchPartitions searches for the partitions which hold the entity data covering the specified block range.
 //
-// If the search block range [sbn0, sbn1] overlaps with any area before the block range [bn0, bn1]
-// covered by all entity partitions (sbn1 < bn0 or sbn0 < bn0 < sbn1), it will regard the entity data
+// If the lower bound of the search block range [sbn0, sbn1] precedes the lower bound of the block
+// range [bn0, bn1] covered by all entity partitions (sbn0 < bn0), it will regard the entity data
 // for the search block range as already pruned and raise an error.
 //
 // Otherwise, it will return the partitions (usually span at most two partitions) which hold the entity data
 // for the search block range and the block range which is not covered by any entity partition.
-func (bnps *bnPartitionedStore) searchPartitions(entity string, searchRange types.RangeUint64) (
+func (bnps *bnPartitionedStore) searchPartitions(
+	ctx context.Context, entity string, searchRange types.RangeUint64,
+) (
 	partitions []*bnPartition, uncoverings *types.RangeUint64, err error,
 ) {
-	bnStart, bnEnd, existed, err := bnps.bnRange(entity)
+	metadata := make([]*bnPartition, 0)
+	err = bnps.db.WithContext(ctx).
+		Where("entity = ?", entity).
+		Where("bn_min IS NOT NULL AND bn_max IS NOT NULL").
+		Order("pi ASC").
+		Find(&metadata).Error
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if !existed { // no partitions found
+	return searchPartitionsFromMetadata(entity, searchRange, metadata)
+}
+
+// searchPartitionsFromMetadata validates one consistent metadata snapshot and routes the search
+// range entirely in memory. Valid partition metadata must be index-contiguous and its block ranges
+// must be ordered without overlaps. Gaps between block ranges are allowed because an indexed
+// contract/topic may have no logs for a span of blocks.
+func searchPartitionsFromMetadata(
+	entity string, searchRange types.RangeUint64, metadata []*bnPartition,
+) ([]*bnPartition, *types.RangeUint64, error) {
+	if len(metadata) == 0 {
 		return nil, &searchRange, nil
 	}
 
-	bnPartRange := types.RangeUint64{From: bnStart, To: bnEnd}
+	for i, partition := range metadata {
+		if partition == nil || !partition.BnMin.Valid || !partition.BnMax.Valid {
+			return nil, nil, errors.Errorf(
+				"invalid bn partition metadata for entity %q at position %v", entity, i,
+			)
+		}
+		if partition.BnMin.Int64 < 0 || partition.BnMax.Int64 < 0 {
+			return nil, nil, errors.Errorf(
+				"negative bn partition metadata for entity %q partition %v",
+				entity, partition.Index,
+			)
+		}
 
-	if searchRange.To < bnStart {
-		// search range is before the first partition
-		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
-	}
+		bnMin, bnMax := uint64(partition.BnMin.Int64), uint64(partition.BnMax.Int64)
+		if bnMin > bnMax {
+			return nil, nil, errors.Errorf(
+				"invalid bn range [%v, %v] for entity %q partition %v",
+				bnMin, bnMax, entity, partition.Index,
+			)
+		}
 
-	if searchRange.From > bnEnd {
-		// search range is after the last partition
-		return nil, &searchRange, nil
-	}
+		if i == 0 {
+			continue
+		}
 
-	if searchRange.From < bnStart && searchRange.To > bnStart {
-		// search range intersects with the first partition
-		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
-	}
+		previous := metadata[i-1]
+		if partition.Index <= previous.Index || partition.Index-previous.Index != 1 {
+			return nil, nil, errors.Errorf(
+				"bn partition metadata index gap for entity %q between partitions %v and %v",
+				entity, previous.Index, partition.Index,
+			)
+		}
 
-	partitions, err = bnps.searchOverlapPartitions(entity, searchRange)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if searchRange.To > bnEnd && searchRange.From < bnEnd {
-		// search range intersects with the last partition
-		uncoverings = &types.RangeUint64{
-			From: bnEnd + 1, To: searchRange.To,
+		previousEnd := uint64(previous.BnMax.Int64)
+		if bnMin <= previousEnd {
+			return nil, nil, errors.Errorf(
+				"overlapping bn partition metadata for entity %q between partitions %v and %v",
+				entity, previous.Index, partition.Index,
+			)
 		}
 	}
 
-	return
+	bnStart := uint64(metadata[0].BnMin.Int64)
+	bnEnd := uint64(metadata[len(metadata)-1].BnMax.Int64)
+	bnPartRange := types.RangeUint64{From: bnStart, To: bnEnd}
+	if searchRange.From < bnStart {
+		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
+	}
+	if searchRange.From > bnEnd {
+		return nil, &searchRange, nil
+	}
+
+	partitions := make([]*bnPartition, 0, 2)
+	for _, partition := range metadata {
+		bnMin, bnMax := uint64(partition.BnMin.Int64), uint64(partition.BnMax.Int64)
+		if bnMin <= searchRange.To && bnMax >= searchRange.From {
+			partitions = append(partitions, partition)
+		}
+	}
+
+	var uncoverings *types.RangeUint64
+	if searchRange.To > bnEnd {
+		uncoverings = &types.RangeUint64{From: bnEnd + 1, To: searchRange.To}
+	}
+
+	return partitions, uncoverings, nil
 }
 
 // searchOverlapPartitions search entity partitions that overlap the search range regardless of the boundary.
 func (bnps *bnPartitionedStore) searchOverlapPartitions(entity string, searchRange types.RangeUint64) ([]*bnPartition, error) {
-	db := bnps.db.Where("entity = ?", entity).
+	return bnps.searchOverlapPartitionsWithContext(context.Background(), entity, searchRange)
+}
+
+func (bnps *bnPartitionedStore) searchOverlapPartitionsWithContext(
+	ctx context.Context, entity string, searchRange types.RangeUint64,
+) ([]*bnPartition, error) {
+	db := bnps.db.WithContext(ctx).Where("entity = ?", entity).
 		Where("bn_min <= ? AND bn_max >= ?", searchRange.To, searchRange.From).
 		Order("pi asc")
 
@@ -398,18 +458,32 @@ func (bnps *bnPartitionedStore) indexRange(entity string) (
 func (bnps *bnPartitionedStore) bnRange(entity string) (
 	start uint64, end uint64, existed bool, err error,
 ) {
-	return bnps.entityRange("MAX(bn_max) AS max, MIN(bn_min) AS min", entity)
+	return bnps.bnRangeWithContext(context.Background(), entity)
+}
+
+func (bnps *bnPartitionedStore) bnRangeWithContext(ctx context.Context, entity string) (
+	start uint64, end uint64, existed bool, err error,
+) {
+	return bnps.entityRangeWithDB(
+		bnps.db.WithContext(ctx), "MAX(bn_max) AS max, MIN(bn_min) AS min", entity,
+	)
 }
 
 // range returns entity range covered by partitions.
 func (bnps *bnPartitionedStore) entityRange(selector string, entity string) (
 	start uint64, end uint64, existed bool, err error,
 ) {
+	return bnps.entityRangeWithDB(bnps.db, selector, entity)
+}
+
+func (bnps *bnPartitionedStore) entityRangeWithDB(db *gorm.DB, selector string, entity string) (
+	start uint64, end uint64, existed bool, err error,
+) {
 	var er struct {
 		Max, Min sql.NullInt64
 	}
 
-	db := bnps.db.Select(selector).Model(&bnPartition{}).Where("entity = ?", entity)
+	db = db.Select(selector).Model(&bnPartition{}).Where("entity = ?", entity)
 	if err = db.Find(&er).Error; err != nil {
 		return
 	}

@@ -118,16 +118,25 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 	tlTableName := btls.getPartitionedTableName(tlTabler, partition.Index)
 
 	return btls.db.Transaction(func(dbTx *gorm.DB) error {
+		eBlockMap, ok, err := btls.ebms.earliestBlockMapping(dbTx)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get earliest block mapping")
+		}
+		if !ok {
+			return errors.New("earliest block mapping not found")
+		}
+
+		bnMin, bnMax := eBlockMap.BnMin, uint64(0)
 		var tiLogs []*TopicIndexedLog
-		var bnMin, bnMax uint64
 
 		tidb := dbTx.Table(tiTableName).Where("tid = ?", topic.ID)
-
-		res := tidb.FindInBatches(&tiLogs, defaultBatchSizeForLogMigrating, func(tx *gorm.DB, batch int) error {
+		res := tidb.FindInBatches(&tiLogs, defaultBatchSizeForLogMigrating, func(_ *gorm.DB, _ int) error {
 			delIDs := make([]uint64, 0, len(tiLogs))
 			tlLogs := make([]*topicLog, 0, len(tiLogs))
 
 			for _, tilog := range tiLogs {
+				bnMax = max(bnMax, tilog.BlockNumber)
+
 				// copy topic indexed event log
 				tlog := (topicLog)(*tilog)
 				tlog.ID = 0 // clear primary id
@@ -146,27 +155,32 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 				return errors.WithMessage(err, "failed to delete topic indexed logs")
 			}
 
-			// Track block range stats
-			if batch == 1 {
-				bnMin = tiLogs[0].BlockNumber
-			}
-			bnMax = tiLogs[len(tiLogs)-1].BlockNumber
-
 			return nil
 		})
 
 		if err := res.Error; err != nil {
 			return errors.WithMessage(err, "failed to batch migrate topic indexed logs")
 		}
+		if res.RowsAffected == 0 {
+			return errors.New("no topic indexed logs found for migration")
+		}
+
+		// validate migration block range
+		if bnMin > bnMax {
+			return errors.Errorf(
+				"first covered block %v exceeds last indexed block %v", bnMin, bnMax,
+			)
+		}
 
 		// expand partition block number range
-		if err := btls.expandBnRange(dbTx, tlEntity, int(partition.Index), 0, bnMax); err != nil {
+		if err := btls.expandBnRange(dbTx, tlEntity, int(partition.Index), bnMin, bnMax); err != nil {
 			return errors.WithMessage(err, "failed to expand partition bn range")
 		}
 
 		// update dedicated topic log partition count
-		err := btls.deltaUpdateCount(dbTx, tlEntity, int(partition.Index), int(res.RowsAffected))
-		if err != nil {
+		if err := btls.deltaUpdateCount(
+			dbTx, tlEntity, int(partition.Index), int(res.RowsAffected),
+		); err != nil {
 			return errors.WithMessage(err, "failed to update topic log partition count")
 		}
 
@@ -358,7 +372,7 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 	topic string,
 	storeFilter store.LogFilter,
 ) ([]*store.Log, error) {
-	partitions, _, err := btls.searchPartitions(btls.topicEntity(tid), types.RangeUint64{
+	partitions, _, err := btls.searchPartitions(ctx, btls.topicEntity(tid), types.RangeUint64{
 		From: storeFilter.BlockFrom,
 		To:   storeFilter.BlockTo,
 	})
