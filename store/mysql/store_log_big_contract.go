@@ -121,20 +121,21 @@ func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T) (map[uint64
 
 // migrate migrates address indexed event logs for the big contract to separate log table partition.
 func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPartition) error {
-	var bnMin, bnMax uint64
-
-	if eBlockmap, ok, err := bcls.ebms.EarliestBlockMapping(); err != nil {
-		return errors.WithMessage(err, "failed to get earliest block mapping")
-	} else if ok {
-		bnMin = eBlockmap.BnMin
-	}
-
 	aiTableName := bcls.ails.GetPartitionedTableName(contract.Address)
 
 	clEntity, clTabler := bcls.contractEntity(contract.ID), bcls.contractTabler(contract.ID)
 	clTableName := bcls.getPartitionedTableName(clTabler, partition.Index)
 
 	return bcls.db.Transaction(func(dbTx *gorm.DB) error {
+		eBlockMap, ok, err := bcls.ebms.earliestBlockMapping(dbTx)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get earliest block mapping")
+		}
+		if !ok {
+			return errors.New("earliest block mapping not found")
+		}
+
+		bnMin, bnMax := eBlockMap.BnMin, uint64(0)
 		var aiLogs []*AddressIndexedLog
 
 		aidb := dbTx.Table(aiTableName).Where("cid = ?", contract.ID)
@@ -171,6 +172,9 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 		if err := res.Error; err != nil {
 			return errors.WithMessage(err, "failed to batch get address indexed logs for migration")
 		}
+		if res.RowsAffected == 0 {
+			return errors.New("no address indexed logs found for migration")
+		}
 
 		// validate migration block range
 		if bnMin > bnMax {
@@ -185,8 +189,9 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 		}
 
 		// update separate contract log partition count
-		err := bcls.deltaUpdateCount(dbTx, clEntity, int(partition.Index), int(res.RowsAffected))
-		if err != nil {
+		if err := bcls.deltaUpdateCount(
+			dbTx, clEntity, int(partition.Index), int(res.RowsAffected),
+		); err != nil {
 			return errors.WithMessage(err, "failed to update contract log partition count")
 		}
 

@@ -112,20 +112,21 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 
 // migrate moves logs from shared shard table to dedicated big topic table.
 func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) error {
-	var bnMin, bnMax uint64
-
-	if eBlockmap, ok, err := btls.ebms.EarliestBlockMapping(); err != nil {
-		return errors.WithMessage(err, "failed to get earliest block mapping")
-	} else if ok {
-		bnMin = eBlockmap.BnMin
-	}
-
 	tiTableName := btls.tils.GetPartitionedTableName(topic.Hash)
 
 	tlEntity, tlTabler := btls.topicEntity(topic.ID), btls.topicTabler(topic.ID)
 	tlTableName := btls.getPartitionedTableName(tlTabler, partition.Index)
 
 	return btls.db.Transaction(func(dbTx *gorm.DB) error {
+		eBlockMap, ok, err := btls.ebms.earliestBlockMapping(dbTx)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get earliest block mapping")
+		}
+		if !ok {
+			return errors.New("earliest block mapping not found")
+		}
+
+		bnMin, bnMax := eBlockMap.BnMin, uint64(0)
 		var tiLogs []*TopicIndexedLog
 
 		tidb := dbTx.Table(tiTableName).Where("tid = ?", topic.ID)
@@ -160,6 +161,9 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 		if err := res.Error; err != nil {
 			return errors.WithMessage(err, "failed to batch migrate topic indexed logs")
 		}
+		if res.RowsAffected == 0 {
+			return errors.New("no topic indexed logs found for migration")
+		}
 
 		// validate migration block range
 		if bnMin > bnMax {
@@ -174,8 +178,9 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 		}
 
 		// update dedicated topic log partition count
-		err := btls.deltaUpdateCount(dbTx, tlEntity, int(partition.Index), int(res.RowsAffected))
-		if err != nil {
+		if err := btls.deltaUpdateCount(
+			dbTx, tlEntity, int(partition.Index), int(res.RowsAffected),
+		); err != nil {
 			return errors.WithMessage(err, "failed to update topic log partition count")
 		}
 
