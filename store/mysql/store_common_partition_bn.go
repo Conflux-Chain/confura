@@ -170,100 +170,96 @@ func (bnps *bnPartitionedStore) searchPartitions(
 ) (
 	partitions []*bnPartition, uncoverings *types.RangeUint64, err error,
 ) {
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
-		defer cancel()
+	metadata := make([]*bnPartition, 0)
+	err = bnps.db.WithContext(ctx).
+		Where("entity = ?", entity).
+		Where("bn_min IS NOT NULL AND bn_max IS NOT NULL").
+		Order("pi ASC").
+		Find(&metadata).Error
+	if err != nil {
+		return nil, nil, err
 	}
 
-	readRange := func(ctx context.Context, entity string) (bnPartitionRangeSnapshot, error) {
-		bnStart, bnEnd, existed, err := bnps.bnRangeWithContext(ctx, entity)
-		return bnPartitionRangeSnapshot{start: bnStart, end: bnEnd, existed: existed}, err
-	}
-	readOverlap := func(
-		ctx context.Context, entity string, searchRange types.RangeUint64,
-	) ([]*bnPartition, error) {
-		return bnps.searchOverlapPartitionsWithContext(ctx, entity, searchRange)
-	}
-
-	return searchPartitionsUntilStable(ctx, entity, searchRange, readRange, readOverlap)
+	return searchPartitionsFromMetadata(entity, searchRange, metadata)
 }
 
-type bnPartitionRangeSnapshot struct {
-	start   uint64
-	end     uint64
-	existed bool
-}
-
-type bnPartitionRangeReader func(context.Context, string) (bnPartitionRangeSnapshot, error)
-
-type bnPartitionOverlapReader func(context.Context, string, types.RangeUint64) ([]*bnPartition, error)
-
-// searchPartitionsUntilStable makes sure the partition metadata used for routing did not change
-// while the overlapping partitions were being selected. Partition pruning advances the covered
-// range monotonically, so retrying until two consecutive range reads match prevents returning a
-// partial result selected from stale metadata.
-func searchPartitionsUntilStable(
-	ctx context.Context,
-	entity string,
-	searchRange types.RangeUint64,
-	readRange bnPartitionRangeReader,
-	readOverlap bnPartitionOverlapReader,
+// searchPartitionsFromMetadata validates one consistent metadata snapshot and routes the search
+// range entirely in memory. Valid partition metadata must be index-contiguous and its block ranges
+// must be ordered without overlaps. Gaps between block ranges are allowed because an indexed
+// contract/topic may have no logs for a span of blocks.
+func searchPartitionsFromMetadata(
+	entity string, searchRange types.RangeUint64, metadata []*bnPartition,
 ) ([]*bnPartition, *types.RangeUint64, error) {
-	for {
-		if ctx.Err() != nil {
-			return nil, nil, store.ErrGetLogsTimeout
+	if len(metadata) == 0 {
+		return nil, &searchRange, nil
+	}
+
+	for i, partition := range metadata {
+		if partition == nil || !partition.BnMin.Valid || !partition.BnMax.Valid {
+			return nil, nil, errors.Errorf(
+				"invalid bn partition metadata for entity %q at position %v", entity, i,
+			)
+		}
+		if partition.BnMin.Int64 < 0 || partition.BnMax.Int64 < 0 {
+			return nil, nil, errors.Errorf(
+				"negative bn partition metadata for entity %q partition %v",
+				entity, partition.Index,
+			)
 		}
 
-		before, err := readRange(ctx, entity)
-		if ctx.Err() != nil {
-			return nil, nil, store.ErrGetLogsTimeout
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if before.existed && searchRange.From < before.start {
-			// Pruning only advances the lower bound, so this range cannot become queryable
-			// after another metadata read and may fail without selecting overlap partitions.
-			bnPartRange := types.RangeUint64{From: before.start, To: before.end}
-			return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
+		bnMin, bnMax := uint64(partition.BnMin.Int64), uint64(partition.BnMax.Int64)
+		if bnMin > bnMax {
+			return nil, nil, errors.Errorf(
+				"invalid bn range [%v, %v] for entity %q partition %v",
+				bnMin, bnMax, entity, partition.Index,
+			)
 		}
 
-		partitions, err := readOverlap(ctx, entity, searchRange)
-		if ctx.Err() != nil {
-			return nil, nil, store.ErrGetLogsTimeout
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-
-		after, err := readRange(ctx, entity)
-		if ctx.Err() != nil {
-			return nil, nil, store.ErrGetLogsTimeout
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if before != after {
+		if i == 0 {
 			continue
 		}
 
-		if !before.existed || searchRange.From > before.end {
-			return nil, &searchRange, nil
+		previous := metadata[i-1]
+		if partition.Index <= previous.Index || partition.Index-previous.Index != 1 {
+			return nil, nil, errors.Errorf(
+				"bn partition metadata index gap for entity %q between partitions %v and %v",
+				entity, previous.Index, partition.Index,
+			)
 		}
 
-		var uncoverings *types.RangeUint64
-		if searchRange.To > before.end && searchRange.From < before.end {
-			uncoverings = &types.RangeUint64{
-				From: before.end + 1,
-				To:   searchRange.To,
-			}
+		previousEnd := uint64(previous.BnMax.Int64)
+		if bnMin <= previousEnd {
+			return nil, nil, errors.Errorf(
+				"overlapping bn partition metadata for entity %q between partitions %v and %v",
+				entity, previous.Index, partition.Index,
+			)
 		}
-
-		return partitions, uncoverings, nil
 	}
+
+	bnStart := uint64(metadata[0].BnMin.Int64)
+	bnEnd := uint64(metadata[len(metadata)-1].BnMax.Int64)
+	bnPartRange := types.RangeUint64{From: bnStart, To: bnEnd}
+	if searchRange.From < bnStart {
+		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
+	}
+	if searchRange.From > bnEnd {
+		return nil, &searchRange, nil
+	}
+
+	partitions := make([]*bnPartition, 0, 2)
+	for _, partition := range metadata {
+		bnMin, bnMax := uint64(partition.BnMin.Int64), uint64(partition.BnMax.Int64)
+		if bnMin <= searchRange.To && bnMax >= searchRange.From {
+			partitions = append(partitions, partition)
+		}
+	}
+
+	var uncoverings *types.RangeUint64
+	if searchRange.To > bnEnd {
+		uncoverings = &types.RangeUint64{From: bnEnd + 1, To: searchRange.To}
+	}
+
+	return partitions, uncoverings, nil
 }
 
 // searchOverlapPartitions search entity partitions that overlap the search range regardless of the boundary.

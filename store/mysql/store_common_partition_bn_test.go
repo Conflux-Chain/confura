@@ -2,171 +2,235 @@ package mysql
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
-func TestSearchPartitionsLowerBoundaryInclusive(t *testing.T) {
-	readRange := scriptedBnRangeReader(
-		bnPartitionRangeSnapshot{start: 100, end: 200, existed: true},
-		bnPartitionRangeSnapshot{start: 100, end: 200, existed: true},
-	)
-	readOverlap := func(context.Context, string, types.RangeUint64) ([]*bnPartition, error) {
-		t.Fatal("overlap query must not run for a pruned range")
-		return nil, nil
-	}
+func TestSearchPartitionsUsesSingleMetadataQuery(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&bnPartition{}))
+	require.NoError(t, db.Create([]bnPartition{
+		{
+			Entity: "logs", Index: 3,
+			BnMin: sql.NullInt64{Int64: 100, Valid: true},
+			BnMax: sql.NullInt64{Int64: 149, Valid: true},
+		},
+		{
+			Entity: "logs", Index: 4,
+			BnMin: sql.NullInt64{Int64: 150, Valid: true},
+			BnMax: sql.NullInt64{Int64: 199, Valid: true},
+		},
+	}).Error)
 
-	_, _, err := searchPartitionsUntilStable(
-		context.Background(), "logs", types.RangeUint64{From: 99, To: 100}, readRange, readOverlap,
-	)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, store.ErrAlreadyPruned)
-}
+	queryCount := 0
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(
+		"test:count-search-partition-queries", func(*gorm.DB) { queryCount++ },
+	))
 
-func TestSearchPartitionsRetriesUntilMetadataStable(t *testing.T) {
-	readRange := scriptedBnRangeReader(
-		bnPartitionRangeSnapshot{start: 100, end: 200, existed: true},
-		bnPartitionRangeSnapshot{start: 150, end: 200, existed: true},
-		bnPartitionRangeSnapshot{start: 150, end: 200, existed: true},
-		bnPartitionRangeSnapshot{start: 150, end: 200, existed: true},
-	)
-
-	overlapCalls := 0
-	readOverlap := func(context.Context, string, types.RangeUint64) ([]*bnPartition, error) {
-		overlapCalls++
-		return []*bnPartition{{Index: uint32(overlapCalls)}}, nil
-	}
-
-	partitions, _, err := searchPartitionsUntilStable(
-		context.Background(), "logs", types.RangeUint64{From: 150, To: 160}, readRange, readOverlap,
+	partitionStore := newBnPartitionedStore(db)
+	partitions, uncoverings, err := partitionStore.searchPartitions(
+		context.Background(), "logs", types.RangeUint64{From: 140, To: 160},
 	)
 	require.NoError(t, err)
-	require.Len(t, partitions, 1)
-	assert.Equal(t, uint32(2), partitions[0].Index)
-	assert.Equal(t, 2, overlapCalls)
+	assert.Equal(t, []uint32{3, 4}, partitionIndexes(partitions))
+	assert.Nil(t, uncoverings)
+	assert.Equal(t, 1, queryCount)
 }
 
-func TestSearchPartitionsRangeFingerprint(t *testing.T) {
+func TestSearchPartitionsFromMetadata(t *testing.T) {
+	metadata := []*bnPartition{
+		newTestBnPartition(3, 100, 149),
+		newTestBnPartition(4, 150, 199),
+		newTestBnPartition(5, 200, 249),
+	}
+
 	tests := []struct {
-		name      string
-		snapshots []bnPartitionRangeSnapshot
+		name              string
+		searchRange       types.RangeUint64
+		wantIndexes       []uint32
+		wantUncoverings   *types.RangeUint64
+		wantAlreadyPruned bool
 	}{
 		{
-			name: "end changed",
-			snapshots: []bnPartitionRangeSnapshot{
-				{start: 100, end: 200, existed: true},
-				{start: 100, end: 201, existed: true},
-				{start: 100, end: 201, existed: true},
-				{start: 100, end: 201, existed: true},
+			name:              "closed lower boundary is pruned",
+			searchRange:       types.RangeUint64{From: 99, To: 100},
+			wantAlreadyPruned: true,
+		},
+		{
+			name:        "range within one partition",
+			searchRange: types.RangeUint64{From: 110, To: 120},
+			wantIndexes: []uint32{3},
+		},
+		{
+			name:        "range spans adjacent partitions",
+			searchRange: types.RangeUint64{From: 140, To: 210},
+			wantIndexes: []uint32{3, 4, 5},
+		},
+		{
+			name:            "range ends after metadata",
+			searchRange:     types.RangeUint64{From: 240, To: 260},
+			wantIndexes:     []uint32{5},
+			wantUncoverings: &types.RangeUint64{From: 250, To: 260},
+		},
+		{
+			name:            "range starts at metadata end",
+			searchRange:     types.RangeUint64{From: 249, To: 260},
+			wantIndexes:     []uint32{5},
+			wantUncoverings: &types.RangeUint64{From: 250, To: 260},
+		},
+		{
+			name:            "range starts after metadata",
+			searchRange:     types.RangeUint64{From: 250, To: 260},
+			wantUncoverings: &types.RangeUint64{From: 250, To: 260},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			partitions, uncoverings, err := searchPartitionsFromMetadata(
+				"logs", test.searchRange, metadata,
+			)
+			if test.wantAlreadyPruned {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, store.ErrAlreadyPruned)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, test.wantIndexes, partitionIndexes(partitions))
+			assert.Equal(t, test.wantUncoverings, uncoverings)
+		})
+	}
+}
+
+func TestSearchPartitionsFromEmptyMetadata(t *testing.T) {
+	searchRange := types.RangeUint64{From: 100, To: 200}
+	partitions, uncoverings, err := searchPartitionsFromMetadata("logs", searchRange, nil)
+
+	require.NoError(t, err)
+	assert.Empty(t, partitions)
+	assert.Equal(t, &searchRange, uncoverings)
+}
+
+func TestSearchPartitionsFromMetadataRejectsDiscontinuity(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata []*bnPartition
+	}{
+		{
+			name: "partition index gap",
+			metadata: []*bnPartition{
+				newTestBnPartition(3, 100, 149),
+				newTestBnPartition(5, 150, 199),
 			},
 		},
 		{
-			name: "existence changed",
-			snapshots: []bnPartitionRangeSnapshot{
-				{existed: false},
-				{start: 100, end: 200, existed: true},
-				{start: 100, end: 200, existed: true},
-				{start: 100, end: 200, existed: true},
+			name: "overlapping block ranges",
+			metadata: []*bnPartition{
+				newTestBnPartition(3, 100, 150),
+				newTestBnPartition(4, 150, 199),
+			},
+		},
+		{
+			name: "inverted block range",
+			metadata: []*bnPartition{
+				newTestBnPartition(3, 150, 100),
+			},
+		},
+		{
+			name: "invalid range metadata",
+			metadata: []*bnPartition{
+				{Index: 3},
 			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			overlapCalls := 0
-			readOverlap := func(context.Context, string, types.RangeUint64) ([]*bnPartition, error) {
-				overlapCalls++
-				return []*bnPartition{{Index: uint32(overlapCalls)}}, nil
-			}
-
-			partitions, _, err := searchPartitionsUntilStable(
-				context.Background(), "logs", types.RangeUint64{From: 150, To: 160},
-				scriptedBnRangeReader(test.snapshots...), readOverlap,
+			_, _, err := searchPartitionsFromMetadata(
+				"logs", types.RangeUint64{From: 100, To: 199}, test.metadata,
 			)
-			require.NoError(t, err)
-			require.Len(t, partitions, 1)
-			assert.Equal(t, uint32(2), partitions[0].Index)
-			assert.Equal(t, 2, overlapCalls)
+			require.Error(t, err)
+			assert.NotErrorIs(t, err, store.ErrAlreadyPruned)
 		})
 	}
 }
 
-func TestSearchPartitionsRetriesWithoutFixedAttemptLimit(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+func TestSearchPartitionsFromMetadataAllowsBlockGaps(t *testing.T) {
+	metadata := []*bnPartition{
+		newTestBnPartition(3, 100, 149),
+		newTestBnPartition(4, 200, 249),
+	}
 
-	rangeReads := 0
-	readRange := func(context.Context, string) (bnPartitionRangeSnapshot, error) {
-		rangeReads++
-		if rangeReads == 8 {
-			cancel()
+	t.Run("range inside a no-data gap has no overlapping partition", func(t *testing.T) {
+		partitions, uncoverings, err := searchPartitionsFromMetadata(
+			"logs", types.RangeUint64{From: 160, To: 170}, metadata,
+		)
+		require.NoError(t, err)
+		assert.Empty(t, partitions)
+		assert.Nil(t, uncoverings)
+	})
+
+	t.Run("range spanning a no-data gap routes both partitions", func(t *testing.T) {
+		partitions, uncoverings, err := searchPartitionsFromMetadata(
+			"logs", types.RangeUint64{From: 140, To: 210}, metadata,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, []uint32{3, 4}, partitionIndexes(partitions))
+		assert.Nil(t, uncoverings)
+	})
+}
+
+func TestSearchPartitionsPruningSnapshotOutcomes(t *testing.T) {
+	searchRange := types.RangeUint64{From: 50, To: 60}
+
+	t.Run("snapshot before pruning routes the retained partition", func(t *testing.T) {
+		metadata := []*bnPartition{
+			newTestBnPartition(0, 0, 99),
+			newTestBnPartition(1, 100, 199),
 		}
-		return bnPartitionRangeSnapshot{
-			start:   uint64(rangeReads),
-			end:     100,
-			existed: true,
-		}, nil
-	}
-	readOverlap := func(context.Context, string, types.RangeUint64) ([]*bnPartition, error) {
-		return []*bnPartition{{Index: 1}}, nil
-	}
 
-	_, _, err := searchPartitionsUntilStable(
-		ctx, "logs", types.RangeUint64{From: 50, To: 60}, readRange, readOverlap,
-	)
-	assert.ErrorIs(t, err, store.ErrGetLogsTimeout)
-	assert.GreaterOrEqual(t, rangeReads, 8)
-}
+		partitions, uncoverings, err := searchPartitionsFromMetadata("logs", searchRange, metadata)
+		require.NoError(t, err)
+		assert.Equal(t, []uint32{0}, partitionIndexes(partitions))
+		assert.Nil(t, uncoverings)
+	})
 
-func TestSearchPartitionsDoesNotRetryOrdinaryErrors(t *testing.T) {
-	expectedErr := errors.New("database unavailable")
-	rangeCalls := 0
-	readRange := func(context.Context, string) (bnPartitionRangeSnapshot, error) {
-		rangeCalls++
-		return bnPartitionRangeSnapshot{}, expectedErr
-	}
-
-	_, _, err := searchPartitionsUntilStable(
-		context.Background(), "logs", types.RangeUint64{From: 1, To: 2}, readRange, nil,
-	)
-	assert.ErrorIs(t, err, expectedErr)
-	assert.Equal(t, 1, rangeCalls)
-}
-
-func TestSearchPartitionsDoesNotRetryOverlapErrors(t *testing.T) {
-	expectedErr := errors.New("database unavailable")
-	rangeCalls := 0
-	readRange := func(context.Context, string) (bnPartitionRangeSnapshot, error) {
-		rangeCalls++
-		return bnPartitionRangeSnapshot{start: 1, end: 100, existed: true}, nil
-	}
-	overlapCalls := 0
-	readOverlap := func(context.Context, string, types.RangeUint64) ([]*bnPartition, error) {
-		overlapCalls++
-		return nil, expectedErr
-	}
-
-	_, _, err := searchPartitionsUntilStable(
-		context.Background(), "logs", types.RangeUint64{From: 1, To: 2}, readRange, readOverlap,
-	)
-	assert.ErrorIs(t, err, expectedErr)
-	assert.Equal(t, 1, rangeCalls)
-	assert.Equal(t, 1, overlapCalls)
-}
-
-func scriptedBnRangeReader(snapshots ...bnPartitionRangeSnapshot) bnPartitionRangeReader {
-	index := 0
-	return func(context.Context, string) (bnPartitionRangeSnapshot, error) {
-		if index >= len(snapshots) {
-			return snapshots[len(snapshots)-1], nil
+	t.Run("snapshot after pruning reports the range as pruned", func(t *testing.T) {
+		metadata := []*bnPartition{
+			newTestBnPartition(1, 100, 199),
 		}
-		snapshot := snapshots[index]
-		index++
-		return snapshot, nil
+
+		_, _, err := searchPartitionsFromMetadata("logs", searchRange, metadata)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, store.ErrAlreadyPruned)
+	})
+}
+
+func newTestBnPartition(index uint32, from, to int64) *bnPartition {
+	return &bnPartition{
+		Index: index,
+		BnMin: sql.NullInt64{Int64: from, Valid: true},
+		BnMax: sql.NullInt64{Int64: to, Valid: true},
 	}
+}
+
+func partitionIndexes(partitions []*bnPartition) []uint32 {
+	if len(partitions) == 0 {
+		return nil
+	}
+
+	indexes := make([]uint32, 0, len(partitions))
+	for _, partition := range partitions {
+		indexes = append(indexes, partition.Index)
+	}
+	return indexes
 }
