@@ -2,6 +2,8 @@ package middlewares
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"runtime/debug"
 
@@ -26,8 +28,8 @@ func Recover(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 				ipAddr, _ := handlers.GetIPAddressFromContext(ctx)
 
 				logrus.WithFields(logrus.Fields{
-					"ipAddress": ipAddr,
-					"apiToken":  apiToken,
+					"ipAddress":           ipAddr,
+					"apiTokenFingerprint": accessTokenFingerprint(apiToken),
 				}).Info("RPC middleware panic with request context")
 
 				// alert error message
@@ -43,6 +45,15 @@ func Recover(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 
 		return next(ctx, msg)
 	}
+}
+
+func accessTokenFingerprint(apiToken string) string {
+	if apiToken == "" {
+		return ""
+	}
+
+	sum := sha256.Sum256([]byte(apiToken))
+	return hex.EncodeToString(sum[:6])
 }
 
 type humanReadableRpcMessage struct {
