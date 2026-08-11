@@ -300,6 +300,18 @@ func (api *ethAPI) EstimateGas(
 	return (*hexutil.Big)(gas), err
 }
 
+// CreateAccessList generates an EIP-2930 access list for a transaction request.
+func (api *ethAPI) CreateAccessList(
+	ctx context.Context,
+	request web3Types.CallRequest,
+	blockNumOrHash *web3Types.BlockNumberOrHash,
+	overrides *web3Types.StateOverride,
+) (*web3Types.CreateAccessListResult, error) {
+	w3c := GetEthClientFromContext(ctx)
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_createAccessList", w3c.Eth)
+	return api.stateHandler.CreateAccessList(ctx, w3c, request, blockNumOrHash, overrides)
+}
+
 // GetTransactionByHash returns the transaction with the given hash.
 func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (any, error) {
 	if txn, ok := api.tryGetTxnFromStore(ctx, hash); ok && txn != nil {
