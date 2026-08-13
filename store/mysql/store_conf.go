@@ -102,16 +102,17 @@ func (cs *confStore) GetReorgVersion() (int, error) {
 	return strconv.Atoi(result.Value)
 }
 
-// thread unsafe
 func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
-	version, err := cs.GetReorgVersion()
-	if err != nil {
-		return err
-	}
-
-	newVersion := strconv.Itoa(version + 1)
-
-	return cs.StoreConfig(MysqlConfKeyReorgVersion, newVersion)
+	return dbTx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "name"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"value":      gorm.Expr("CAST(value AS UNSIGNED) + 1"),
+			"updated_at": gorm.Expr("CURRENT_TIMESTAMP"),
+		}),
+	}).Create(&conf{
+		Name:  MysqlConfKeyReorgVersion,
+		Value: "1",
+	}).Error
 }
 
 // access control config
