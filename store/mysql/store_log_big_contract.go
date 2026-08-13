@@ -363,15 +363,16 @@ func (bcls *bigContractLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error
 	return nil
 }
 
-// IsBigContract check if the contract is big contract or not.
-func (bcls *bigContractLogStore[T]) IsBigContract(cid uint64) (bool, error) {
+// IsMigrationCompleted reports whether the contract logs have been moved from
+// the address hash partition to dedicated block-number partitions.
+func (bcls *bigContractLogStore[T]) IsMigrationCompleted(cid uint64) (bool, error) {
 	contractEntity := bcls.contractEntity(cid)
 	partition, existed, err := bcls.oldestPartition(contractEntity)
 	if err != nil || !existed {
 		return false, errors.WithMessage(err, "failed to get oldest partition")
 	}
 
-	// regarded as big contract with the following two cases:
+	// The contract is regarded as migrated in the following two cases:
 	// 1. oldest partition is not the initial one;
 	// 2. oldest partition is the initial one and has data on it.
 	return !partition.IsInitial() || partition.Count > 0, nil

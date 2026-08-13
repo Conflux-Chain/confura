@@ -351,129 +351,29 @@ func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilte
 }
 
 func (ms *MysqlStore[T]) getTopicLogs(ctx context.Context, topics []string, storeFilter store.LogFilter) ([]*store.Log, error) {
-	var result []*store.Log
-
-	for _, topic := range topics {
-		// convert topic hash to id
-		tid, exists, err := ms.ts.GetID(topic)
-		if err != nil {
-			return nil, errors.WithMessage(err, "failed to get topic id")
-		}
-
-		if !exists {
-			continue
-		}
-
-		// check if the topic is a big topic or not
-		isBigTopic, err := ms.btls.IsBigTopic(tid)
-		if err != nil {
-			return nil, err
-		}
-
-		// if the topic is a big topic, find the event logs from separate table.
-		if isBigTopic {
-			logs, err := ms.btls.GetTopicLogs(ctx, tid, topic, storeFilter)
-			if err != nil {
-				return nil, err
-			}
-
-			result = append(result, logs...)
-
-			// check log count
-			if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-				return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, false)
-			}
-
-			continue
-		}
-
-		// check timeout before query
-		select {
-		case <-ctx.Done():
-			return nil, store.ErrGetLogsTimeout
-		default:
-		}
-
-		// query from topic indexed logs
-		logs, err := ms.tils.GetTopicIndexedLogs(ctx, tid, topic, storeFilter)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, logs...)
-
-		// check log count
-		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, false)
-		}
+	reader := optimisticMigrationLogReader{
+		source:    topicMigrationLogSource[T]{store: ms},
+		resolveID: ms.resolveTopicLogID,
 	}
-
-	// merge && sort log result
-	sort.Sort(store.LogSlice(result))
-	return result, nil
+	return reader.read(ctx, topics, storeFilter)
 }
 
 func (ms *MysqlStore[T]) getContractLogs(ctx context.Context, contracts []string, storeFilter store.LogFilter) ([]*store.Log, error) {
-	var result []*store.Log
-
-	for _, addr := range contracts {
-		// convert contract address to id
-		cid, exists, err := ms.cs.GetContractIdByAddress(addr)
-		if err != nil {
-			return nil, errors.WithMessage(err, "failed to get contract id")
-		}
-
-		if !exists {
-			continue
-		}
-
-		// check if the contract is a big contract or not
-		isBigContract, err := ms.bcls.IsBigContract(cid)
-		if err != nil {
-			return nil, err
-		}
-
-		// if the contract is a big contract, find the event logs from separate table.
-		if isBigContract {
-			logs, err := ms.bcls.GetContractLogs(ctx, cid, storeFilter)
-			if err != nil {
-				return nil, err
-			}
-
-			result = append(result, logs...)
-
-			// check log count
-			if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-				return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, false)
-			}
-
-			continue
-		}
-
-		// check timeout before query
-		select {
-		case <-ctx.Done():
-			return nil, store.ErrGetLogsTimeout
-		default:
-		}
-
-		// query from address indexed logs
-		logs, err := ms.ails.GetAddressIndexedLogs(ctx, cid, addr, storeFilter)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, logs...)
-
-		// check log count
-		if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
-			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, result, false)
-		}
+	reader := optimisticMigrationLogReader{
+		source:    contractMigrationLogSource[T]{store: ms},
+		resolveID: ms.resolveContractLogID,
 	}
+	return reader.read(ctx, contracts, storeFilter)
+}
 
-	// merge && sort log result
-	sort.Sort(store.LogSlice(result))
-	return result, nil
+func (ms *MysqlStore[T]) resolveContractLogID(address string) (uint64, bool, error) {
+	id, exists, err := ms.cs.GetContractIdByAddress(address)
+	return id, exists, errors.WithMessage(err, "failed to get contract id")
+}
+
+func (ms *MysqlStore[T]) resolveTopicLogID(topic string) (uint64, bool, error) {
+	id, exists, err := ms.ts.GetID(topic)
+	return id, exists, errors.WithMessage(err, "failed to get topic id")
 }
 
 // Prune prune data from db store.

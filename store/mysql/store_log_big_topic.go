@@ -352,14 +352,15 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	return nil
 }
 
-// IsBigTopic check if the topic is a big topic managed by this store.
-func (btls *bigTopicLogStore[T]) IsBigTopic(tid uint64) (bool, error) {
+// IsMigrationCompleted reports whether the topic logs have been moved from
+// the topic hash partition to dedicated block-number partitions.
+func (btls *bigTopicLogStore[T]) IsMigrationCompleted(tid uint64) (bool, error) {
 	partition, existed, err := btls.oldestPartition(btls.topicEntity(tid))
 	if err != nil || !existed {
 		return false, errors.WithMessage(err, "failed to get oldest partition")
 	}
 
-	// regarded as big topic with the following two cases:
+	// The topic is regarded as migrated in the following two cases:
 	// 1. oldest partition is not the initial one;
 	// 2. oldest partition is the initial one and has data on it.
 	return !partition.IsInitial() || partition.Count > 0, nil
