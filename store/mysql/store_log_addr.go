@@ -15,14 +15,14 @@ import (
 
 type AddressIndexedLog struct {
 	ID          uint64
-	ContractID  uint64 `gorm:"column:cid;not null;index:idx_cid_bn,priority:1;index:idx_cid_tid_bn,priority:1"`
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_cid_bn,priority:2;index:idx_cid_tid_bn,priority:3"`
+	ContractID  uint64 `gorm:"column:cid;not null;index:idx_cid_bn_li,priority:1;index:idx_cid_tid_bn_li,priority:1"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_cid_bn_li,priority:2;index:idx_cid_tid_bn_li,priority:3"`
 	Epoch       uint64 `gorm:"not null;index"` // to support pop logs when reorg
-	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_cid_tid_bn,priority:2"`
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_cid_tid_bn_li,priority:2"`
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	LogIndex    uint64 `gorm:"not null"`
+	LogIndex    uint64 `gorm:"not null;index:idx_cid_bn_li,priority:3;index:idx_cid_tid_bn_li,priority:4"`
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 

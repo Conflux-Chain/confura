@@ -24,13 +24,13 @@ const (
 type contractLog struct {
 	ID          uint64
 	ContractID  uint64 `gorm:"-"`
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn;index:idx_tid_bn,priority:2"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn_li,priority:1;index:idx_tid_bn_li,priority:2"`
 	Epoch       uint64 `gorm:"not null"`
-	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn,priority:1"`
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn_li,priority:1"`
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	LogIndex    uint64 `gorm:"not null"`
+	LogIndex    uint64 `gorm:"not null;index:idx_bn_li,priority:2;index:idx_tid_bn_li,priority:3"`
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 

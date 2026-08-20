@@ -20,13 +20,13 @@ const (
 // topicLog represents a log entry stored in a dedicated topic table.
 type topicLog struct {
 	ID          uint64
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn_li,priority:1"`
 	Epoch       uint64 `gorm:"not null"`
 	Topic0ID    uint64 `gorm:"-"` // topic0 id (not persisted, used for table naming)
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	LogIndex    uint64 `gorm:"not null"`
+	LogIndex    uint64 `gorm:"not null;index:idx_bn_li,priority:2"`
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
