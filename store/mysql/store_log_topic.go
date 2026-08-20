@@ -14,13 +14,13 @@ import (
 // For high-frequency topics (e.g., Transfer) are typically stored in separate special tables.
 type TopicIndexedLog struct {
 	ID          uint64
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_tid_bn,priority:2"`
-	Epoch       uint64 `gorm:"not null;index"`                                  // to support pop logs when reorg
-	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn,priority:1"` // topic0 id
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_tid_bn_li,priority:2"`
+	Epoch       uint64 `gorm:"not null;index"`                                     // to support pop logs when reorg
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn_li,priority:1"` // topic0 id
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	LogIndex    uint64 `gorm:"not null"`
+	LogIndex    uint64 `gorm:"not null;index:idx_tid_bn_li,priority:3"`
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
