@@ -218,10 +218,7 @@ func (ls *logStore[T]) ScanLogs(
 	ctx context.Context, params store.ScanLogParams,
 ) ([]*store.Log, error) {
 	partitions, _, err := ls.searchPartitions(
-		ctx, bnPartitionedLogEntity, types.RangeUint64{
-			From: params.Filter.BlockFrom,
-			To:   params.Filter.BlockTo,
-		},
+		ctx, bnPartitionedLogEntity, effectiveScanLogBlockRange(params),
 	)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to search log partitions")

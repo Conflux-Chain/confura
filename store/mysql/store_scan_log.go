@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/types"
 	"github.com/pkg/errors"
 )
 
@@ -18,6 +19,12 @@ type scanPartitionQuery func(
 func validateScanLogParams(params store.ScanLogParams) error {
 	if params.Limit <= 0 {
 		return errors.New("scan log limit must be positive")
+	}
+	if uint64(params.Limit) > store.MaxLogLimit {
+		return errors.Errorf(
+			"scan log limit %v exceeds maximum %v",
+			params.Limit, store.MaxLogLimit,
+		)
 	}
 
 	if params.Filter.BlockFrom > params.Filter.BlockTo {
@@ -41,6 +48,25 @@ func validateScanLogParams(params store.ScanLogParams) error {
 	return nil
 }
 
+func effectiveScanLogBlockRange(params store.ScanLogParams) types.RangeUint64 {
+	blockRange := types.RangeUint64{
+		From: params.Filter.BlockFrom,
+		To:   params.Filter.BlockTo,
+	}
+
+	if params.Cursor == nil {
+		return blockRange
+	}
+
+	if params.Reverse {
+		blockRange.To = min(blockRange.To, params.Cursor.BlockNumber)
+	} else {
+		blockRange.From = max(blockRange.From, params.Cursor.BlockNumber)
+	}
+
+	return blockRange
+}
+
 // scanPartitions scans block-number partitions in the requested direction.
 // searchPartitions returns ordered, non-overlapping metadata, so concatenating
 // individually ordered results preserves the global scan order.
@@ -51,6 +77,7 @@ func scanPartitions(
 	query scanPartitionQuery,
 ) ([]*store.Log, error) {
 	result := make([]*store.Log, 0, params.Limit)
+	blockRange := effectiveScanLogBlockRange(params)
 
 	for offset := 0; offset < len(partitions); offset++ {
 		if err := checkGetLogsContext(ctx); err != nil {
@@ -71,27 +98,8 @@ func scanPartitions(
 		partitionFrom := uint64(partition.BnMin.Int64)
 		partitionTo := uint64(partition.BnMax.Int64)
 
-		if params.Cursor != nil {
-			if !params.Reverse && partitionTo < params.Cursor.BlockNumber {
-				continue
-			}
-			if params.Reverse && partitionFrom > params.Cursor.BlockNumber {
-				continue
-			}
-		}
-
-		blockFrom := max(params.Filter.BlockFrom, partitionFrom)
-		blockTo := min(params.Filter.BlockTo, partitionTo)
-
-		// Tighten the range to the cursor block. The SQL cursor predicate still
-		// handles exclusive log-index filtering within that block.
-		if params.Cursor != nil {
-			if params.Reverse {
-				blockTo = min(blockTo, params.Cursor.BlockNumber)
-			} else {
-				blockFrom = max(blockFrom, params.Cursor.BlockNumber)
-			}
-		}
+		blockFrom := max(blockRange.From, partitionFrom)
+		blockTo := min(blockRange.To, partitionTo)
 
 		if blockFrom > blockTo {
 			continue

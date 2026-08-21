@@ -438,10 +438,7 @@ func (btls *bigTopicLogStore[T]) ScanTopicLogs(
 	params store.ScanLogParams,
 ) ([]*store.Log, error) {
 	partitions, _, err := btls.searchPartitions(
-		ctx, btls.topicEntity(tid), types.RangeUint64{
-			From: params.Filter.BlockFrom,
-			To:   params.Filter.BlockTo,
-		},
+		ctx, btls.topicEntity(tid), effectiveScanLogBlockRange(params),
 	)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to search topic log partitions")

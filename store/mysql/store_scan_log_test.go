@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -17,6 +18,45 @@ type scanPartitionCall struct {
 	blockFrom uint64
 	blockTo   uint64
 	remaining int
+}
+
+func TestEffectiveScanLogBlockRange(t *testing.T) {
+	tests := []struct {
+		name   string
+		params store.ScanLogParams
+		want   types.RangeUint64
+	}{
+		{
+			name: "without cursor",
+			params: store.ScanLogParams{
+				Filter: store.ScanLogFilter{BlockFrom: 100, BlockTo: 200},
+			},
+			want: types.RangeUint64{From: 100, To: 200},
+		},
+		{
+			name: "forward cursor raises lower bound",
+			params: store.ScanLogParams{
+				Filter: store.ScanLogFilter{BlockFrom: 100, BlockTo: 200},
+				Cursor: &store.ScanCursor{BlockNumber: 150},
+			},
+			want: types.RangeUint64{From: 150, To: 200},
+		},
+		{
+			name: "reverse cursor lowers upper bound",
+			params: store.ScanLogParams{
+				Filter:  store.ScanLogFilter{BlockFrom: 100, BlockTo: 200},
+				Cursor:  &store.ScanCursor{BlockNumber: 150},
+				Reverse: true,
+			},
+			want: types.RangeUint64{From: 100, To: 150},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, effectiveScanLogBlockRange(test.params))
+		})
+	}
 }
 
 func TestScanPartitionsForwardStopsAtLimit(t *testing.T) {
@@ -46,6 +86,35 @@ func TestScanPartitionsForwardStopsAtLimit(t *testing.T) {
 		{index: 1, blockFrom: 110, blockTo: 119, remaining: 1},
 	}, calls)
 	assert.Equal(t, [][2]uint64{{105, 0}, {110, 1}}, storeLogKeys(logs))
+}
+
+func TestScanPartitionsForwardPrunesAndTightensToCursor(t *testing.T) {
+	params := store.ScanLogParams{
+		Filter: store.ScanLogFilter{BlockFrom: 100, BlockTo: 129},
+		Cursor: &store.ScanCursor{BlockNumber: 115, LogIndex: 3},
+		Limit:  3,
+	}
+
+	var calls []scanPartitionCall
+	logs, err := scanPartitions(
+		context.Background(), testScanPartitions(), params,
+		func(
+			_ context.Context, partition *bnPartition,
+			blockFrom, blockTo uint64, remaining int,
+		) ([]*store.Log, error) {
+			calls = append(calls, scanPartitionCall{
+				index: partition.Index, blockFrom: blockFrom,
+				blockTo: blockTo, remaining: remaining,
+			})
+			return []*store.Log{{BlockNumber: blockFrom, LogIndex: uint64(partition.Index)}}, nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []scanPartitionCall{
+		{index: 1, blockFrom: 115, blockTo: 119, remaining: 3},
+		{index: 2, blockFrom: 120, blockTo: 129, remaining: 2},
+	}, calls)
+	assert.Equal(t, [][2]uint64{{115, 1}, {120, 2}}, storeLogKeys(logs))
 }
 
 func TestScanPartitionsReversePrunesAndTightensToCursor(t *testing.T) {
@@ -153,12 +222,27 @@ func TestValidateScanLogParams(t *testing.T) {
 			},
 			valid: true,
 		},
+		{
+			name: "maximum limit",
+			params: store.ScanLogParams{
+				Filter: store.ScanLogFilter{BlockFrom: 10, BlockTo: 10},
+				Limit:  int(store.MaxLogLimit),
+			},
+			valid: true,
+		},
 		{name: "zero limit", params: store.ScanLogParams{}},
 		{
 			name: "negative limit",
 			params: store.ScanLogParams{
 				Filter: store.ScanLogFilter{BlockFrom: 10, BlockTo: 10},
 				Limit:  -1,
+			},
+		},
+		{
+			name: "limit exceeds maximum",
+			params: store.ScanLogParams{
+				Filter: store.ScanLogFilter{BlockFrom: 10, BlockTo: 10},
+				Limit:  int(store.MaxLogLimit) + 1,
 			},
 		},
 		{
@@ -234,6 +318,14 @@ func TestMysqlStoreScanLogsRoutesSupportedFilters(t *testing.T) {
 			Limit:  1,
 		})
 		assert.ErrorIs(t, err, store.ErrAlreadyPruned)
+
+		logs, err = ms.ScanLogs(context.Background(), store.ScanLogParams{
+			Filter: store.ScanLogFilter{BlockFrom: 9, BlockTo: 11},
+			Cursor: &store.ScanCursor{BlockNumber: 10, LogIndex: 0},
+			Limit:  10,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, [][2]uint64{{11, 0}}, storeLogKeys(logs))
 	})
 
 	t.Run("address and topic use the address hash table", func(t *testing.T) {
@@ -317,6 +409,18 @@ func TestMysqlStoreScanLogsRoutesSupportedFilters(t *testing.T) {
 		require.Len(t, logs, 1)
 		assert.Equal(t, "topic", logs[0].Topic0)
 		assert.Equal(t, uint64(4), logs[0].LogIndex)
+
+		logs, err = ms.ScanLogs(context.Background(), store.ScanLogParams{
+			Filter: store.ScanLogFilter{
+				BlockFrom: 0, BlockTo: 10,
+				Contract: "contract", Topic0: "topic",
+			},
+			Cursor: &store.ScanCursor{BlockNumber: 10, LogIndex: 3},
+			Limit:  10,
+		})
+		require.NoError(t, err)
+		require.Len(t, logs, 1)
+		assert.Equal(t, uint64(4), logs[0].LogIndex)
 	})
 
 	t.Run("migrated topic uses dedicated partitions", func(t *testing.T) {
@@ -344,6 +448,17 @@ func TestMysqlStoreScanLogsRoutesSupportedFilters(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, logs, 1)
 		assert.Equal(t, "topic", logs[0].Topic0)
+		assert.Equal(t, uint64(5), logs[0].LogIndex)
+
+		logs, err = ms.ScanLogs(context.Background(), store.ScanLogParams{
+			Filter: store.ScanLogFilter{
+				BlockFrom: 0, BlockTo: 10, Topic0: "topic",
+			},
+			Cursor: &store.ScanCursor{BlockNumber: 10, LogIndex: 4},
+			Limit:  10,
+		})
+		require.NoError(t, err)
+		require.Len(t, logs, 1)
 		assert.Equal(t, uint64(5), logs[0].LogIndex)
 	})
 }

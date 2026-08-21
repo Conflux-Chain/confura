@@ -473,10 +473,7 @@ func (bcls *bigContractLogStore[T]) ScanContractLogs(
 ) ([]*store.Log, error) {
 	contractEntity := bcls.contractEntity(cid)
 	partitions, _, err := bcls.searchPartitions(
-		ctx, contractEntity, types.RangeUint64{
-			From: params.Filter.BlockFrom,
-			To:   params.Filter.BlockTo,
-		},
+		ctx, contractEntity, effectiveScanLogBlockRange(params),
 	)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to search contract log partitions")
