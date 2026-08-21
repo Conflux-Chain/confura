@@ -6,6 +6,7 @@ import (
 
 type ChainData interface {
 	Hash() string
+	ParentHash() string
 	Number() uint64
 	ExtractBlocks() []BlockLike
 	ExtractReceipts() map[string]ReceiptLike

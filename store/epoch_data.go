@@ -24,6 +24,65 @@ var (
 )
 
 func RequireContinuous[T ChainData](slice []T, currentEpoch uint64) error {
+	return requireContinuousNumbers(slice, currentEpoch)
+}
+
+func RequireCanonicalContinuous[T ChainData](slice []T, currentEpoch uint64, currentHash string) error {
+	if len(slice) == 0 {
+		return nil
+	}
+
+	if err := requireContinuousNumbers(slice, currentEpoch); err != nil {
+		return err
+	}
+
+	for i, data := range slice {
+		hash := data.Hash()
+		if hash == "" {
+			return errors.WithMessagef(
+				ErrContinousEpochRequired,
+				"canonical hash missing for epoch %v", data.Number(),
+			)
+		}
+
+		var prevHash string
+		if i == 0 {
+			if currentEpoch == citypes.EpochNumberNil {
+				continue
+			}
+			prevHash = currentHash
+		} else {
+			prevHash = slice[i-1].Hash()
+		}
+
+		if prevHash == "" {
+			return errors.WithMessagef(
+				ErrContinousEpochRequired,
+				"canonical hash missing for previous epoch of %v", data.Number(),
+			)
+		}
+
+		parentHash := data.ParentHash()
+		if parentHash == "" {
+			return errors.WithMessagef(
+				ErrContinousEpochRequired,
+				"parent hash missing for epoch %v", data.Number(),
+			)
+		}
+
+		if parentHash != prevHash {
+			return errors.WithMessagef(
+				ErrContinousEpochRequired,
+				"parent hash not continuous for epoch %v, expected %v, but got %v",
+				data.Number(), prevHash, parentHash,
+			)
+		}
+	}
+
+	return nil
+}
+
+func requireContinuousNumbers[T ChainData](slice []T, currentEpoch uint64) error {
 	if len(slice) == 0 {
 		return nil
 	}

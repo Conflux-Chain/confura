@@ -21,6 +21,14 @@ func (e EpochData) Hash() string {
 	return ""
 }
 
+func (e EpochData) ParentHash() string {
+	if len(e.Blocks) == 0 {
+		return ""
+	}
+
+	return e.GetPivotBlock().ParentHash.String()
+}
+
 func (e EpochData) ExtractBlocks() []BlockLike {
 	blocks := make([]BlockLike, len(e.Blocks))
 	for i, b := range e.Blocks {

@@ -29,19 +29,25 @@ type IRpcClient[T store.ChainData] interface {
 	QueryChainData(ctx context.Context, from, to uint64) ([]T, error)
 	BoostQueryChainData(ctx context.Context, from, to uint64) ([]T, error)
 	Space() string
+	SourceID() string
 	Close()
 }
 
 type CoreRpcClient struct {
 	sdk.ClientOperator
+	sourceID string
 }
 
 func MustNewCoreRpcClient(nodeUrl string) IRpcClient[*store.EpochData] {
-	return NewCoreRpcClient(rpc.MustNewCfxClient(nodeUrl))
+	return NewCoreRpcClientWithSource(rpc.MustNewCfxClient(nodeUrl), nodeUrl)
 }
 
 func NewCoreRpcClient(cfx sdk.ClientOperator) *CoreRpcClient {
-	return &CoreRpcClient{cfx}
+	return NewCoreRpcClientWithSource(cfx, "")
+}
+
+func NewCoreRpcClientWithSource(cfx sdk.ClientOperator, sourceID string) *CoreRpcClient {
+	return &CoreRpcClient{ClientOperator: cfx, sourceID: sourceID}
 }
 
 func (c *CoreRpcClient) GetFinalizationStatus(ctx context.Context) (*FinalizationStatus, error) {
@@ -60,13 +66,17 @@ func (c *CoreRpcClient) Space() string {
 	return "cfx"
 }
 
+func (c *CoreRpcClient) SourceID() string {
+	return c.sourceID
+}
+
 func (c *CoreRpcClient) QueryChainData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
 	if fromEpoch > toEpoch {
 		return nil, errors.New("invalid epoch range")
 	}
 
 	for epochNo := fromEpoch; epochNo <= toEpoch; epochNo++ {
-		epochData, err := store.QueryEpochData(c, fromEpoch, true)
+		epochData, err := store.QueryEpochData(c, epochNo, true)
 		if err != nil {
 			return nil, err
 		}
@@ -103,6 +113,19 @@ func (c *CoreRpcClient) getPivotBlock(epochNum uint64) (*cfxTypes.Block, error) 
 		return nil, errors.New("block not found")
 	}
 	return block, nil
+}
+
+func appendPivotBlock(epochData *store.EpochData, block *cfxTypes.Block) {
+	epochData.PivotHash = &block.Hash
+
+	for i, existing := range epochData.Blocks {
+		if existing.Hash == block.Hash {
+			epochData.Blocks = append(epochData.Blocks[:i], epochData.Blocks[i+1:]...)
+			break
+		}
+	}
+
+	epochData.Blocks = append(epochData.Blocks, block)
 }
 
 func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
@@ -179,17 +202,13 @@ func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEp
 			txnReceipt.Logs = append(txnReceipt.Logs, logs[logCursor])
 		}
 
-		// Ensure to add the last block within the range
-		if epochNum == toEpoch {
-			block, err := c.getPivotBlock(epochNum)
-			if err != nil {
-				return nil, errors.WithMessagef(err, "failed to get the pivot block of epoch #%v", epochNum)
-			}
-			epochData.PivotHash = &block.Hash
-			if _, ok := blockCache[block.Hash]; !ok {
-				epochData.Blocks = append(epochData.Blocks, block)
-			}
+		// Ensure every epoch carries its canonical pivot for continuity validation.
+		block, err := c.getPivotBlock(epochNum)
+		if err != nil {
+			return nil, errors.WithMessagef(err, "failed to get the pivot block of epoch #%v", epochNum)
 		}
+		blockCache[block.Hash] = block
+		appendPivotBlock(epochData, block)
 
 		// Append the constructed epoch data to the result list
 		res = append(res, epochData)
@@ -205,14 +224,19 @@ func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEp
 
 type EvmRpcClient struct {
 	*web3go.Client
+	sourceID string
 }
 
 func MustNewEvmRpcClient(nodeUrl string) IRpcClient[*store.EthData] {
-	return NewEvmRpcClient(rpc.MustNewEthClient(nodeUrl))
+	return NewEvmRpcClientWithSource(rpc.MustNewEthClient(nodeUrl), nodeUrl)
 }
 
 func NewEvmRpcClient(w3c *web3go.Client) *EvmRpcClient {
-	return &EvmRpcClient{Client: w3c}
+	return NewEvmRpcClientWithSource(w3c, "")
+}
+
+func NewEvmRpcClientWithSource(w3c *web3go.Client, sourceID string) *EvmRpcClient {
+	return &EvmRpcClient{Client: w3c, sourceID: sourceID}
 }
 
 func (e *EvmRpcClient) GetFinalizationStatus(ctx context.Context) (*FinalizationStatus, error) {
@@ -227,6 +251,10 @@ func (e *EvmRpcClient) GetFinalizationStatus(ctx context.Context) (*Finalization
 
 func (c *EvmRpcClient) Space() string {
 	return "evm"
+}
+
+func (c *EvmRpcClient) SourceID() string {
+	return c.sourceID
 }
 
 func (c *EvmRpcClient) QueryChainData(ctx context.Context, fromBlock, toBlock uint64) ([]*store.EthData, error) {
@@ -280,29 +308,17 @@ func (c *EvmRpcClient) BoostQueryChainData(ctx context.Context, fromBlock, toBlo
 			Receipts: make(map[common.Hash]*ethTypes.Receipt),
 		}
 
-		// Ensure to retrieve the first block within the range
-		if blockNum == fromBlock {
-			block, err := c.getBlockByNumber(blockNum)
-			if err != nil {
-				return nil, errors.WithMessagef(err, "failed to get block #%v", blockNum)
-			}
-			ethData.Block = block
+		block, err := c.getBlockByNumber(blockNum)
+		if err != nil {
+			return nil, errors.WithMessagef(err, "failed to get block #%v", blockNum)
 		}
+		ethData.Block = block
 
 		// Process logs that belong to the current epoch
 		for ; logCursor < len(logs); logCursor++ {
 			if logs[logCursor].BlockNumber != blockNum {
 				// Move to next ETH data construction if current log doesn't belong here
 				break
-			}
-
-			if ethData.Block == nil {
-				// Retrieve the block by number
-				block, err := c.getBlockByNumber(blockNum)
-				if err != nil {
-					return nil, errors.WithMessagef(err, "failed to get block #%v", blockNum)
-				}
-				ethData.Block = block
 			}
 
 			// Retrieve or initialize the transaction receipt associated with the current log
@@ -319,15 +335,6 @@ func (c *EvmRpcClient) BoostQueryChainData(ctx context.Context, fromBlock, toBlo
 
 			// Append the current log to the transaction receipt's logs
 			txnReceipt.Logs = append(txnReceipt.Logs, &logs[logCursor])
-		}
-
-		// Ensure to retrieve the last block within the range
-		if blockNum == toBlock && ethData.Block == nil {
-			block, err := c.getBlockByNumber(blockNum)
-			if err != nil {
-				return nil, errors.WithMessagef(err, "failed to get block #%v", blockNum)
-			}
-			ethData.Block = block
 		}
 
 		// Append the constructed epoch data to the result list
