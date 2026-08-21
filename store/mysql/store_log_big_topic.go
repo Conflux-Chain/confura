@@ -429,6 +429,67 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 	return result, nil
 }
 
+// ScanTopicLogs scans dedicated topic log partitions using an exclusive
+// keyset cursor. The topic ID is encoded in the physical table name.
+func (btls *bigTopicLogStore[T]) ScanTopicLogs(
+	ctx context.Context,
+	tid uint64,
+	topic string,
+	params store.ScanLogParams,
+) ([]*store.Log, error) {
+	partitions, _, err := btls.searchPartitions(
+		ctx, btls.topicEntity(tid), types.RangeUint64{
+			From: params.Filter.BlockFrom,
+			To:   params.Filter.BlockTo,
+		},
+	)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to search topic log partitions")
+	}
+
+	return scanPartitions(
+		ctx, partitions, params,
+		func(
+			ctx context.Context,
+			partition *bnPartition,
+			blockFrom uint64,
+			blockTo uint64,
+			remaining int,
+		) ([]*store.Log, error) {
+			filter := scanLogFilter{
+				TableName: btls.getPartitionedTableName(
+					btls.topicTabler(tid), partition.Index,
+				),
+				BlockFrom: blockFrom,
+				BlockTo:   blockTo,
+			}
+
+			var rows []*topicLog
+			if err := filter.find(
+				ctx, btls.db, params.Cursor, params.Reverse, remaining, &rows,
+			); err != nil {
+				return nil, err
+			}
+
+			result := make([]*store.Log, 0, len(rows))
+			for _, row := range rows {
+				result = append(result, &store.Log{
+					BlockNumber: row.BlockNumber,
+					Epoch:       row.Epoch,
+					Topic0:      topic,
+					Topic1:      row.Topic1,
+					Topic2:      row.Topic2,
+					Topic3:      row.Topic3,
+					LogIndex:    row.LogIndex,
+					Extra:       row.Extra,
+				})
+			}
+
+			return result, nil
+		},
+	)
+}
+
 // extractUniqueTopic0Signatures extracts unique topic0 signature of event logs within epoch data slice.
 func extractUniqueTopic0Signatures[T store.ChainData](slice ...T) map[string]bool {
 	topic0Sigs := make(map[string]bool)

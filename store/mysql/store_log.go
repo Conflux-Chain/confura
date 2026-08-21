@@ -213,6 +213,51 @@ func (ls *logStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilter)
 	return result, nil
 }
 
+// ScanLogs scans universal event logs across block-number partitions.
+func (ls *logStore[T]) ScanLogs(
+	ctx context.Context, params store.ScanLogParams,
+) ([]*store.Log, error) {
+	partitions, _, err := ls.searchPartitions(
+		ctx, bnPartitionedLogEntity, types.RangeUint64{
+			From: params.Filter.BlockFrom,
+			To:   params.Filter.BlockTo,
+		},
+	)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to search log partitions")
+	}
+
+	return scanPartitions(
+		ctx, partitions, params,
+		func(
+			ctx context.Context,
+			partition *bnPartition,
+			blockFrom uint64,
+			blockTo uint64,
+			remaining int,
+		) ([]*store.Log, error) {
+			filter := scanLogFilter{
+				TableName: ls.getPartitionedTableName(&ls.model, partition.Index),
+				BlockFrom: blockFrom,
+				BlockTo:   blockTo,
+			}
+
+			var rows []*log
+			if err := filter.find(
+				ctx, ls.db, params.Cursor, params.Reverse, remaining, &rows,
+			); err != nil {
+				return nil, err
+			}
+
+			result := make([]*store.Log, 0, len(rows))
+			for _, row := range rows {
+				result = append(result, (*store.Log)(row))
+			}
+			return result, nil
+		},
+	)
+}
+
 // GetBnPartitionedLogs returns event logs for the specified block number partitioned log filter.
 func (ls *logStore[T]) GetBnPartitionedLogs(ctx context.Context, filter LogFilter, partition bnPartition) ([]*log, error) {
 	filter.TableName = ls.getPartitionedTableName(&log{}, partition.Index)
