@@ -27,6 +27,17 @@ func validateScanLogParams(params store.ScanLogParams) error {
 		)
 	}
 
+	if params.Cursor != nil &&
+		(params.Cursor.BlockNumber < params.Filter.BlockFrom ||
+			params.Cursor.BlockNumber > params.Filter.BlockTo) {
+		return errors.Errorf(
+			"scan log cursor block %v is outside filter range [%v, %v]",
+			params.Cursor.BlockNumber,
+			params.Filter.BlockFrom,
+			params.Filter.BlockTo,
+		)
+	}
+
 	return nil
 }
 
@@ -181,6 +192,10 @@ func (ms *MysqlStore[T]) scanTopicLogs(
 	return readMigrationAwareLogs(ctx, operation)
 }
 
+// resolveOptionalScanTopicID resolves an optional topic0 filter. The bool
+// reports whether the scan can match: it is true when topic0 is empty (with a
+// nil ID, meaning no topic predicate) or when a non-empty topic resolves to a
+// TID, and false only when a non-empty topic has no mapped TID.
 func (ms *MysqlStore[T]) resolveOptionalScanTopicID(
 	topic0 string,
 ) (*uint64, bool, error) {

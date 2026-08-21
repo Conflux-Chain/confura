@@ -135,6 +135,24 @@ func TestValidateScanLogParams(t *testing.T) {
 			},
 			valid: true,
 		},
+		{
+			name: "cursor at lower bound",
+			params: store.ScanLogParams{
+				Filter: store.ScanLogFilter{BlockFrom: 10, BlockTo: 20},
+				Cursor: &store.ScanCursor{BlockNumber: 10},
+				Limit:  1,
+			},
+			valid: true,
+		},
+		{
+			name: "cursor at upper bound",
+			params: store.ScanLogParams{
+				Filter: store.ScanLogFilter{BlockFrom: 10, BlockTo: 20},
+				Cursor: &store.ScanCursor{BlockNumber: 20},
+				Limit:  1,
+			},
+			valid: true,
+		},
 		{name: "zero limit", params: store.ScanLogParams{}},
 		{
 			name: "negative limit",
@@ -147,6 +165,22 @@ func TestValidateScanLogParams(t *testing.T) {
 			name: "inverted range",
 			params: store.ScanLogParams{
 				Filter: store.ScanLogFilter{BlockFrom: 11, BlockTo: 10},
+				Limit:  1,
+			},
+		},
+		{
+			name: "cursor before range",
+			params: store.ScanLogParams{
+				Filter: store.ScanLogFilter{BlockFrom: 10, BlockTo: 20},
+				Cursor: &store.ScanCursor{BlockNumber: 9},
+				Limit:  1,
+			},
+		},
+		{
+			name: "cursor after range",
+			params: store.ScanLogParams{
+				Filter: store.ScanLogFilter{BlockFrom: 10, BlockTo: 20},
+				Cursor: &store.ScanCursor{BlockNumber: 21},
 				Limit:  1,
 			},
 		},
