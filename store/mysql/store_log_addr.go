@@ -280,6 +280,53 @@ func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 	return result, nil
 }
 
+// ScanAddressIndexedLogs scans one address hash partition using an exclusive
+// keyset cursor. The physical table is selected by the original contract
+// string, while cid protects against hash-partition sharing.
+func (ls *AddressIndexedLogStore[T]) ScanAddressIndexedLogs(
+	ctx context.Context,
+	cid uint64,
+	contract string,
+	topic0ID *uint64,
+	params store.ScanLogParams,
+) ([]*store.Log, error) {
+	filter := AddressIndexedScanLogFilter{
+		scanLogFilter: scanLogFilter{
+			TableName: ls.GetPartitionedTableName(contract),
+			BlockFrom: params.Filter.BlockFrom,
+			BlockTo:   params.Filter.BlockTo,
+			Topic0ID:  topic0ID,
+		},
+		ContractID: cid,
+	}
+
+	rows, err := filter.Find(ctx, ls.db, params.Cursor, params.Reverse, params.Limit)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to scan address indexed logs")
+	}
+
+	result := make([]*store.Log, 0, len(rows))
+	for _, row := range rows {
+		topic0, err := resolveTopic0Hash(ls.ts, row.Topic0ID)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
+		}
+
+		result = append(result, &store.Log{
+			BlockNumber: row.BlockNumber,
+			Epoch:       row.Epoch,
+			Topic0:      topic0,
+			Topic1:      row.Topic1,
+			Topic2:      row.Topic2,
+			Topic3:      row.Topic3,
+			LogIndex:    row.LogIndex,
+			Extra:       row.Extra,
+		})
+	}
+
+	return result, nil
+}
+
 // GetPartitionedTableName returns partitioned table name with specified
 // contract address hashed partition index
 func (ls *AddressIndexedLogStore[T]) GetPartitionedTableName(contract string) string {

@@ -217,6 +217,46 @@ func (s *TopicIndexedLogStore[T]) GetTopicIndexedLogs(
 	return result, nil
 }
 
+// ScanTopicIndexedLogs scans one topic hash partition using an exclusive
+// keyset cursor. The original topic selects the physical table and tid filters
+// rows within that shared table.
+func (s *TopicIndexedLogStore[T]) ScanTopicIndexedLogs(
+	ctx context.Context,
+	tid uint64,
+	topic string,
+	params store.ScanLogParams,
+) ([]*store.Log, error) {
+	filter := TopicIndexedScanLogFilter{
+		scanLogFilter: scanLogFilter{
+			TableName: s.GetPartitionedTableName(topic),
+			BlockFrom: params.Filter.BlockFrom,
+			BlockTo:   params.Filter.BlockTo,
+		},
+		TopicID: tid,
+	}
+
+	rows, err := filter.Find(ctx, s.db, params.Cursor, params.Reverse, params.Limit)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to scan topic indexed logs")
+	}
+
+	result := make([]*store.Log, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, &store.Log{
+			BlockNumber: row.BlockNumber,
+			Epoch:       row.Epoch,
+			Topic0:      topic,
+			Topic1:      row.Topic1,
+			Topic2:      row.Topic2,
+			Topic3:      row.Topic3,
+			LogIndex:    row.LogIndex,
+			Extra:       row.Extra,
+		})
+	}
+
+	return result, nil
+}
+
 // GetPartitionedTableName returns the physical table name for a given topic hash.
 func (s *TopicIndexedLogStore[T]) GetPartitionedTableName(topic string) string {
 	return s.getPartitionedTableName(&TopicIndexedLog{}, s.getPartitionByHash(topic))

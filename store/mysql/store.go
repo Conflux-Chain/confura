@@ -351,19 +351,77 @@ func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilte
 }
 
 func (ms *MysqlStore[T]) getTopicLogs(ctx context.Context, topics []string, storeFilter store.LogFilter) ([]*store.Log, error) {
-	reader := optimisticMigrationLogReader{
-		source:    topicMigrationLogSource[T]{store: ms},
-		resolveID: ms.resolveTopicLogID,
+	var logs []*store.Log
+
+	for _, topic := range topics {
+		if err := checkGetLogsContext(ctx); err != nil {
+			return nil, err
+		}
+
+		topicID, exists, err := ms.resolveTopicLogID(topic)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			continue
+		}
+
+		operation := &topicGetLogsMigrationReadOperation[T]{
+			store:   ms,
+			topicID: topicID,
+			topic:   topic,
+			filter:  storeFilter,
+		}
+		topicLogs, err := readMigrationAwareLogs(ctx, operation)
+		if err != nil {
+			return nil, err
+		}
+
+		logs = append(logs, topicLogs...)
+		if store.IsBoundChecksEnabled(ctx) && len(logs) > int(store.MaxLogLimit) {
+			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, logs, false)
+		}
 	}
-	return reader.read(ctx, topics, storeFilter)
+
+	sort.Sort(store.LogSlice(logs))
+	return logs, nil
 }
 
 func (ms *MysqlStore[T]) getContractLogs(ctx context.Context, contracts []string, storeFilter store.LogFilter) ([]*store.Log, error) {
-	reader := optimisticMigrationLogReader{
-		source:    contractMigrationLogSource[T]{store: ms},
-		resolveID: ms.resolveContractLogID,
+	var logs []*store.Log
+
+	for _, contract := range contracts {
+		if err := checkGetLogsContext(ctx); err != nil {
+			return nil, err
+		}
+
+		contractID, exists, err := ms.resolveContractLogID(contract)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			continue
+		}
+
+		operation := &contractGetLogsMigrationReadOperation[T]{
+			store:      ms,
+			contractID: contractID,
+			contract:   contract,
+			filter:     storeFilter,
+		}
+		contractLogs, err := readMigrationAwareLogs(ctx, operation)
+		if err != nil {
+			return nil, err
+		}
+
+		logs = append(logs, contractLogs...)
+		if store.IsBoundChecksEnabled(ctx) && len(logs) > int(store.MaxLogLimit) {
+			return nil, newSuggestedFilterResultSetTooLargeError(&storeFilter, logs, false)
+		}
 	}
-	return reader.read(ctx, contracts, storeFilter)
+
+	sort.Sort(store.LogSlice(logs))
+	return logs, nil
 }
 
 func (ms *MysqlStore[T]) resolveContractLogID(address string) (uint64, bool, error) {

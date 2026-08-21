@@ -461,3 +461,69 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 
 	return result, nil
 }
+
+// ScanContractLogs scans dedicated contract log partitions using an exclusive
+// keyset cursor. The contract ID is encoded in the physical table name, while
+// an optional topic ID is applied as an indexed predicate.
+func (bcls *bigContractLogStore[T]) ScanContractLogs(
+	ctx context.Context,
+	cid uint64,
+	topic0ID *uint64,
+	params store.ScanLogParams,
+) ([]*store.Log, error) {
+	contractEntity := bcls.contractEntity(cid)
+	partitions, _, err := bcls.searchPartitions(
+		ctx, contractEntity, effectiveScanLogBlockRange(params),
+	)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to search contract log partitions")
+	}
+
+	return scanPartitions(
+		ctx, partitions, params,
+		func(
+			ctx context.Context,
+			partition *bnPartition,
+			blockFrom uint64,
+			blockTo uint64,
+			remaining int,
+		) ([]*store.Log, error) {
+			filter := scanLogFilter{
+				TableName: bcls.getPartitionedTableName(
+					bcls.contractTabler(cid), partition.Index,
+				),
+				BlockFrom: blockFrom,
+				BlockTo:   blockTo,
+				Topic0ID:  topic0ID,
+			}
+
+			var rows []*contractLog
+			if err := filter.find(
+				ctx, bcls.db, params.Cursor, params.Reverse, remaining, &rows,
+			); err != nil {
+				return nil, err
+			}
+
+			result := make([]*store.Log, 0, len(rows))
+			for _, row := range rows {
+				topic0, err := resolveTopic0Hash(bcls.ts, row.Topic0ID)
+				if err != nil {
+					return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
+				}
+
+				result = append(result, &store.Log{
+					BlockNumber: row.BlockNumber,
+					Epoch:       row.Epoch,
+					Topic0:      topic0,
+					Topic1:      row.Topic1,
+					Topic2:      row.Topic2,
+					Topic3:      row.Topic3,
+					LogIndex:    row.LogIndex,
+					Extra:       row.Extra,
+				})
+			}
+
+			return result, nil
+		},
+	)
+}
