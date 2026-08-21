@@ -88,6 +88,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 		}
 
 		// reorg version changed during data query and try again.
+		store.AddLogQueryReorgRetries(ctx, 1)
 		lastReorgVersion = reorgVersion
 	}
 }
@@ -161,6 +162,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		store.AddLogQueryFanOuts(ctx, 1)
 		fnLogs, err := eth.Logs(*fnFilter)
 		if err != nil {
 			return nil, false, err
