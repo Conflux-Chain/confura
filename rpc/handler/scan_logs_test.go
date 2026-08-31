@@ -424,6 +424,89 @@ func TestCfxScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
 	assert.Len(t, client.getLogsFilters, 2, "changed checkpoint must replay the FN segment")
 }
 
+func TestCfxScanLogsRetriesCursorEpochMismatchFromChangedCheckpoint(t *testing.T) {
+	db := newScanLogsHandlerTestDB(t)
+	handler := newTestCfxScanLogsHandler(db)
+
+	checkpointHashes := []cfxtypes.Hash{"0x10a", "0x10b", "0x10c", "0x10c"}
+	checkpointCalls := 0
+	client := &fakeCfxScanClient{
+		byEpochFn: func(epoch uint64) (*cfxtypes.BlockSummary, error) {
+			if epoch == 104 {
+				return cfxSummary("0x104", epoch, 1050), nil
+			}
+			require.Equal(t, uint64(110), epoch)
+			require.Less(t, checkpointCalls, len(checkpointHashes))
+			summary := cfxSummary(checkpointHashes[checkpointCalls], epoch, 1100)
+			checkpointCalls++
+			return summary, nil
+		},
+		byNumberFn: func(number uint64) (*cfxtypes.BlockSummary, error) {
+			require.Equal(t, uint64(1000), number)
+			if clientCall := checkpointCalls; clientCall == 1 {
+				return cfxSummary("0x1000a", 105, number), nil
+			}
+			return cfxSummary("0x1000b", 103, number), nil
+		},
+	}
+
+	result, err := handler.ScanLogs(
+		context.Background(),
+		client,
+		CfxScanLogParams{
+			CfxScanLogRequest: &CfxScanLogRequest{
+				Limit: 1,
+				Cursor: &ScanLogCursor{
+					BlockNumber: 1000,
+				},
+			},
+			EpochRange: citypes.RangeUint64{From: 100, To: 104},
+		},
+		&CfxPivotAssumption{EpochNumber: 110, PivotBlockHash: "0x10c"},
+	)
+
+	require.NoError(t, err)
+	assert.Empty(t, result.Logs)
+	assert.Equal(t, 4, checkpointCalls)
+	assert.Equal(t, 2, client.byNumberCalls)
+	assert.Len(t, client.getLogsFilters, 1, "the invalid first view must retry before scanning logs")
+}
+
+func TestCfxScanLogsCommitsStableCursorEpochMismatch(t *testing.T) {
+	handler := newTestCfxScanLogsHandler(newScanLogsHandlerTestDB(t))
+	checkpointCalls := 0
+	client := &fakeCfxScanClient{
+		byEpochFn: func(epoch uint64) (*cfxtypes.BlockSummary, error) {
+			require.Equal(t, uint64(110), epoch)
+			checkpointCalls++
+			return cfxSummary("0x110", epoch, 1100), nil
+		},
+		byNumber: map[uint64]*cfxtypes.BlockSummary{
+			1000: cfxSummary("0x1000", 105, 1000),
+		},
+	}
+
+	_, err := handler.ScanLogs(
+		context.Background(),
+		client,
+		CfxScanLogParams{
+			CfxScanLogRequest: &CfxScanLogRequest{
+				Limit: 1,
+				Cursor: &ScanLogCursor{
+					BlockNumber: 1000,
+				},
+			},
+			EpochRange: citypes.RangeUint64{From: 100, To: 104},
+		},
+		&CfxPivotAssumption{EpochNumber: 110, PivotBlockHash: "0x110"},
+	)
+
+	require.ErrorIs(t, err, ErrScanLogsInvalidCursor)
+	assert.Equal(t, 2, checkpointCalls, "stable invalid cursor must close the FN fence before publication")
+	assert.Equal(t, 1, client.byNumberCalls)
+	assert.Empty(t, client.getLogsFilters)
+}
+
 func TestCfxScanLogsBoundaryCanonicalErrorClosesFence(t *testing.T) {
 	db := newScanLogsHandlerTestDB(t)
 	insertScanLogsMapping(t, db, 0, 0, 0, "0x10")
@@ -546,6 +629,52 @@ func TestCfxRouteBReaderReverseFiltersCursorBlock(t *testing.T) {
 	assert.Equal(t, &store.ScanCursor{BlockNumber: 5008, LogIndex: 5}, batch.TailPosition)
 }
 
+func TestCfxFNReaderRejectsIncompleteLogsBeforeCursorFiltering(t *testing.T) {
+	tests := []struct {
+		name    string
+		missing string
+		mutate  func(*cfxtypes.Log)
+	}{
+		{
+			name: "block hash", missing: "missing block hash",
+			mutate: func(log *cfxtypes.Log) { log.BlockHash = nil },
+		},
+		{
+			name: "epoch number", missing: "missing epoch number",
+			mutate: func(log *cfxtypes.Log) { log.EpochNumber = nil },
+		},
+		{
+			name: "log index", missing: "missing log index",
+			mutate: func(log *cfxtypes.Log) { log.LogIndex = nil },
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			const epoch = uint64(100)
+			blockHash := cfxtypes.Hash("0x5000")
+			log := cfxLog(blockHash, epoch, 1)
+			test.mutate(&log)
+
+			client := &fakeCfxScanClient{logs: []cfxtypes.Log{log}}
+			attempt, err := newCfxFNAttemptView(
+				client, epoch, cfxSummary("0x5010", epoch, 5010),
+			)
+			require.NoError(t, err)
+			reader := cfxFNReader{client: client, attempt: attempt, spec: cfxFNReaderSpec{
+				blocks: scanRange{From: 5000, To: 5000},
+				cursor: &store.ScanCursor{BlockNumber: 5000}, cursorHash: &blockHash,
+				windowSize: 10,
+			}}
+
+			_, err = reader.Scan(context.Background(), 10)
+
+			require.Error(t, err)
+			assert.ErrorContains(t, err, test.missing)
+		})
+	}
+}
+
 func TestCfxRouteBBlockPlanReusesCheckpointAndCursorBoundary(t *testing.T) {
 	const checkpointEpoch = uint64(110)
 	cursorHash, checkpointHash := cfxtypes.Hash("0x5009"), cfxtypes.Hash("0x5100")
@@ -646,7 +775,7 @@ func TestCfxRouteBResolvesToEpochWhenCheckpointIsHigher(t *testing.T) {
 	assert.Equal(t, 2, client.byEpochCalls)
 }
 
-func TestCfxRouteBRejectsCursorAboveCheckpointWithoutLookup(t *testing.T) {
+func TestCfxRouteBKeepsCursorAboveCheckpointProvisional(t *testing.T) {
 	const checkpointEpoch = uint64(110)
 	client := &fakeCfxScanClient{}
 	attempt, err := newCfxFNAttemptView(
@@ -659,11 +788,11 @@ func TestCfxRouteBRejectsCursorAboveCheckpointWithoutLookup(t *testing.T) {
 		false,
 	)
 	require.ErrorIs(t, err, ErrScanLogsInvalidCursor)
-	assert.False(t, isCanonicalDependentError(err))
+	assert.True(t, isCanonicalDependentError(err))
 	assert.Zero(t, client.byNumberCalls)
 }
 
-func TestCfxRouteBReturnsCursorOutsideEpochRangeWithoutFence(t *testing.T) {
+func TestCfxRouteBKeepsCursorOutsideEpochRangeProvisional(t *testing.T) {
 	const checkpointEpoch = uint64(110)
 	client := &fakeCfxScanClient{byNumber: map[uint64]*cfxtypes.BlockSummary{
 		1000: cfxSummary(cfxtypes.Hash("0x1000"), 105, 1000),
@@ -678,7 +807,7 @@ func TestCfxRouteBReturnsCursorOutsideEpochRangeWithoutFence(t *testing.T) {
 		false,
 	)
 	require.ErrorIs(t, err, ErrScanLogsInvalidCursor)
-	assert.False(t, isCanonicalDependentError(err))
+	assert.True(t, isCanonicalDependentError(err))
 }
 
 func TestCfxRouteBTrustsBlockSummaryLookupContract(t *testing.T) {
@@ -1053,6 +1182,39 @@ func TestEthPivotGuardDirectionRules(t *testing.T) {
 		},
 	}, assumption, logs, nil, ethScanUsage{fn: true})
 	assert.Equal(t, EthPivotGuard(*assumption), *reverseContinuation.PivotGuard)
+}
+
+func TestFinishCfxCandidateRejectsMissingGuardEpoch(t *testing.T) {
+	valid := cfxLog("0x10", 10, 0)
+	missingEpoch := cfxLog("0x11", 11, 0)
+	missingEpoch.EpochNumber = nil
+	assumption := &CfxPivotAssumption{EpochNumber: 10, PivotBlockHash: "0x10"}
+
+	tests := []struct {
+		name    string
+		reverse bool
+		logs    []cfxtypes.Log
+	}{
+		{name: "forward tail", logs: []cfxtypes.Log{valid, missingEpoch}},
+		{name: "reverse head", reverse: true, logs: []cfxtypes.Log{missingEpoch, valid}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := (&CfxLogsApiHandler{}).finishCfxCandidate(
+				CfxScanLogParams{CfxScanLogRequest: &CfxScanLogRequest{Reverse: test.reverse}},
+				assumption,
+				cfxScanGeneration{},
+				test.logs,
+				nil,
+				false,
+				false,
+				nil,
+			)
+
+			require.EqualError(t, err, "incomplete guard log: missing epoch number")
+		})
+	}
 }
 
 func cfxSummary(hash cfxtypes.Hash, epoch, block uint64) *cfxtypes.BlockSummary {

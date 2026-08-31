@@ -391,6 +391,9 @@ func (handler *CfxLogsApiHandler) finishCfxCandidate(
 		// the guard there prevents later pages from drifting their upper view.
 		guardLog = logs[0]
 	}
+	if guardLog.EpochNumber == nil {
+		return result, errors.New("incomplete guard log: missing epoch number")
+	}
 
 	epoch := guardLog.EpochNumber.ToInt().Uint64()
 	guard := &CfxPivotGuard{EpochNumber: hexutil.Uint64(epoch)}
@@ -934,7 +937,7 @@ func (v *cfxFNAttemptView) block(number uint64) (cfxBlockRef, error) {
 
 	// Never issue a canonical lookup above the height protected by this attempt.
 	if number > v.checkpoint.blockNumber {
-		return cfxBlockRef{}, errors.WithMessagef(
+		return cfxBlockRef{}, newCanonicalDependentError(
 			ErrScanLogsInvalidCursor,
 			"cursor block %d is above checkpoint block %d",
 			number, v.checkpoint.blockNumber,
@@ -1013,7 +1016,7 @@ func (v *cfxFNAttemptView) resolveBlockPlan(
 		}
 
 		if !gen.fnEpochs.contains(ref.epochNumber) {
-			return cfxFNBlockPlan{}, errors.WithMessagef(
+			return cfxFNBlockPlan{}, newCanonicalDependentError(
 				ErrScanLogsInvalidCursor,
 				"cursor block %d belongs to epoch %d outside of segment epochs [%d, %d]",
 				segment.cursor.BlockNumber,
@@ -1057,7 +1060,7 @@ func (v *cfxFNAttemptView) resolveBlockPlan(
 	}
 
 	if segment.cursor != nil && !blocks.contains(segment.cursor.BlockNumber) {
-		return cfxFNBlockPlan{}, errors.WithMessage(
+		return cfxFNBlockPlan{}, newCanonicalDependentError(
 			ErrScanLogsInvalidCursor, "cursor is outside the resolved block range",
 		)
 	}
@@ -1100,8 +1103,8 @@ func (v *cfxFNAttemptView) firstBlockOfEpoch(gen cfxScanGeneration) (uint64, err
 }
 
 func (v *cfxFNAttemptView) tailPosition(log cfxtypes.Log) (*store.ScanCursor, error) {
-	if log.BlockHash == nil || log.LogIndex == nil {
-		return nil, errors.New("incomplete tail log")
+	if err := validateCfxFNLog(log); err != nil {
+		return nil, errors.WithMessage(err, "incomplete tail log")
 	}
 
 	ref, err := v.blockByHash(*log.BlockHash)
@@ -1214,7 +1217,32 @@ func (r *cfxFNReader) readWindow(ctx context.Context, from, to uint64) ([]cfxtyp
 	filter.FromBlock = (*hexutil.Big)(new(big.Int).SetUint64(from))
 	filter.ToBlock = (*hexutil.Big)(new(big.Int).SetUint64(to))
 
-	return r.client.GetLogs(filter)
+	logs, err := r.client.GetLogs(filter)
+	if err != nil {
+		return nil, err
+	}
+	for i := range logs {
+		if err := validateCfxFNLog(logs[i]); err != nil {
+			return nil, errors.WithMessagef(err, "invalid full node log at index %d", i)
+		}
+	}
+	return logs, nil
+}
+
+// validateCfxFNLog checks every optional identity field used after the Reader
+// boundary. Validation happens before cursor filtering, reversing or truncation
+// so an incomplete non-tail log cannot panic or silently affect pagination.
+func validateCfxFNLog(log cfxtypes.Log) error {
+	if log.BlockHash == nil {
+		return errors.New("missing block hash")
+	}
+	if log.EpochNumber == nil {
+		return errors.New("missing epoch number")
+	}
+	if log.LogIndex == nil {
+		return errors.New("missing log index")
+	}
+	return nil
 }
 
 func filterCfxCursorBlock(
