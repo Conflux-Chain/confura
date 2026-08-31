@@ -594,8 +594,10 @@ func (handler *CfxLogsApiHandler) checkCfxDBAssumption(
 	}
 
 	if !equalCfxHash(cfxtypes.Hash(pivot), assumption.PivotBlockHash) {
-		return true, errors.WithMessage(
-			ErrScanLogsAssumptionNotMet, "pivot assumption does not match",
+		return true, errors.WithMessagef(
+			ErrScanLogsAssumptionNotMet,
+			"expected pivot %s got %s for epoch %d",
+			assumption.PivotBlockHash, pivot, assumption.EpochNumber,
 		), nil
 	}
 	return true, nil, nil
@@ -801,7 +803,9 @@ func (handler *CfxLogsApiHandler) buildCfxInnerCandidate(
 		}
 		if err == nil && provisionalErr == nil && !equalCfxHash(pivot.hash, assumption.PivotBlockHash) {
 			provisionalErr = newCanonicalDependentError(
-				ErrScanLogsAssumptionNotMet, "pivot assumption does not match",
+				ErrScanLogsAssumptionNotMet,
+				"expected pivot %s got %s for epoch %d",
+				assumption.PivotBlockHash, pivot.hash, assumption.EpochNumber,
 			)
 		}
 	}

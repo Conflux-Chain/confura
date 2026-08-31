@@ -820,7 +820,7 @@ func TestEthScanLogsRejectsNullPreCheckpointBlock(t *testing.T) {
 	assert.Empty(t, client.filters, "the FN segment must not run without an opening fence")
 }
 
-func TestEthScanLogsRejectsNullPostCheckpointBlock(t *testing.T) {
+func TestEthScanLogsRetriesNullPostCheckpointBlock(t *testing.T) {
 	handler := newTestEthScanLogsHandler(newScanLogsHandlerTestDB(t))
 	checkpointHash := common.HexToHash("0x10")
 	client := &fakeEthScanClient{}
@@ -832,7 +832,7 @@ func TestEthScanLogsRejectsNullPostCheckpointBlock(t *testing.T) {
 		return &web3types.Block{Number: big.NewInt(number), Hash: checkpointHash}, nil
 	}
 
-	_, err := handler.ScanLogs(
+	result, err := handler.ScanLogs(
 		context.Background(),
 		client,
 		EthScanLogParams{
@@ -842,12 +842,13 @@ func TestEthScanLogsRejectsNullPostCheckpointBlock(t *testing.T) {
 		nil,
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsConsistency)
-	assert.Equal(t, 2, client.blockCalls)
-	assert.Len(t, client.filters, 1)
+	require.NoError(t, err)
+	assert.Empty(t, result.Logs)
+	assert.Equal(t, 4, client.blockCalls)
+	assert.Len(t, client.filters, 2, "a null post-checkpoint block must replay the FN segment")
 }
 
-func TestEthScanLogsRejectsNullBoundaryBlock(t *testing.T) {
+func TestEthScanLogsRetriesNullBoundaryBlockThenRejects(t *testing.T) {
 	db := newScanLogsHandlerTestDB(t)
 	insertScanLogsMapping(t, db, 10, 10, 10, common.HexToHash("0x10").String())
 	handler := newTestEthScanLogsHandler(db)
@@ -874,8 +875,8 @@ func TestEthScanLogsRejectsNullBoundaryBlock(t *testing.T) {
 	)
 
 	require.ErrorIs(t, err, ErrScanLogsConsistency)
-	assert.Equal(t, 2, client.blockCalls)
-	assert.Len(t, client.filters, 1)
+	assert.Equal(t, 6, client.blockCalls)
+	assert.Len(t, client.filters, 2, "a null boundary block permits one additional FN attempt")
 }
 
 func TestEthScanLogsRejectsNullFNAssumptionBlock(t *testing.T) {

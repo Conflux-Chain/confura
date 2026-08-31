@@ -13,12 +13,10 @@ import (
 )
 
 var (
-	// Handler errors intentionally do not implement ErrorCode. The JSON-RPC
-	// framework publishes them with its uniform default server-error code.
-	ErrScanLogsInvalidCursor    = errors.New("invalid scan logs cursor")
-	ErrScanLogsInvalidFilter    = errors.New("invalid scan logs filter")
-	ErrScanLogsAssumptionNotMet = errors.New("scan logs pivot assumption not met")
-	ErrScanLogsConsistency      = errors.New("canonical views are not aligned")
+	ErrScanLogsInvalidCursor    = errors.New("invalid scan cursor")
+	ErrScanLogsInvalidFilter    = errors.New("invalid scan filter")
+	ErrScanLogsAssumptionNotMet = errors.New("pivot assumption violated")
+	ErrScanLogsConsistency      = errors.New("inconsistent canonical views")
 )
 
 // canonicalDependentError marks an error observed from the current canonical
@@ -287,10 +285,10 @@ const (
 
 	// A boundary mismatch can be a transient FN reorg, so one fresh FN view is
 	// useful. Repeating forever is unsafe operationally: the DB may still contain
-	// the `latest_confirmed` data from the pre-reorg fork, in which case no amount
-	// of FN replay can align it. After one additional attempt we fail fast and let
+	// the stale data from the pre-reorg fork, in which case no amount of FN replay
+	// can align it. After one additional attempt we fail fast and let
 	// the caller retry after the indexer advances.
-	maxBoundaryInnerRetries = 3
+	maxBoundaryInnerRetries = 1
 )
 
 type fnSegmentBatch[L any] struct {

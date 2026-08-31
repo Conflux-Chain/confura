@@ -58,25 +58,6 @@ type ethScanClient interface {
 	Logs(web3types.FilterQuery) ([]web3types.Log, error)
 }
 
-// loadEthCanonicalBlock normalizes Ethereum's successful null-block response
-// into the caller's domain error. eth_getBlockByNumber is allowed to return null
-// when the requested height is unavailable, so callers must not treat a nil
-// block and nil error as a usable canonical fact.
-func loadEthCanonicalBlock(
-	eth ethScanClient, number uint64, label string, missingErr error,
-) (*web3types.Block, error) {
-	block, err := eth.BlockByNumber(web3types.BlockNumber(number), false)
-	if err != nil {
-		return nil, errors.WithMessagef(err, "failed to get %s block", label)
-	}
-	if block == nil {
-		return nil, errors.WithMessagef(
-			missingErr, "%s block %d is unavailable", label, number,
-		)
-	}
-	return block, nil
-}
-
 type ethScanGeneration struct {
 	// All fields are captured under one DB v0. dbPivot is the split identity
 	// compared with FN when a candidate actually consumes both canonical views.
@@ -499,8 +480,10 @@ func (handler *EthLogsApiHandler) checkEthDBAssumption(
 	}
 
 	if common.HexToHash(pivot) != assumption.BlockHash {
-		return true, errors.WithMessage(
-			ErrScanLogsAssumptionNotMet, "pivot assumption does not match",
+		return true, errors.WithMessagef(
+			ErrScanLogsAssumptionNotMet,
+			"expected pivot %s got %s for block %d",
+			assumption.BlockHash, pivot, assumption.BlockNumber,
 		), nil
 	}
 	return true, nil, nil
@@ -553,15 +536,20 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 			return nil, false, err
 		}
 
-		var preCheckpointMissingErr error = ErrScanLogsInvalidFilter
-		if outer.fnAssumption && uint64(assumption.BlockNumber) == checkpoint {
-			preCheckpointMissingErr = ErrScanLogsAssumptionNotMet
-		}
-		before, err := loadEthCanonicalBlock(
-			eth, checkpoint, "pre-checkpoint", preCheckpointMissingErr,
-		)
+		before, err := eth.BlockByNumber(web3types.BlockNumber(checkpoint), false)
 		if err != nil {
-			return nil, false, err
+			return nil, false, errors.WithMessage(err, "failed to get pre-checkpoint block")
+		}
+		if before == nil {
+			if outer.fnAssumption && uint64(assumption.BlockNumber) == checkpoint {
+				return nil, false, errors.WithMessagef(
+					ErrScanLogsAssumptionNotMet,
+					"assumption block %d is unavailable", assumption.BlockNumber,
+				)
+			}
+			return nil, false, errors.WithMessage(
+				ErrScanLogsInvalidFilter, "pre-checkpoint block is unavailable",
+			)
 		}
 
 		candidate, err := handler.buildEthInnerCandidate(
@@ -575,13 +563,11 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		if candidate.usage.db && candidate.usage.fn {
 			// Empty scans and auxiliary reads are canonical facts too. Align the
 			// DB watermark whenever the candidate consumed both read views.
-			boundary, err := loadEthCanonicalBlock(
-				eth, outer.gen.dbMaxBlock, "boundary", ErrScanLogsConsistency,
-			)
+			boundary, err := eth.BlockByNumber(web3types.BlockNumber(outer.gen.dbMaxBlock), false)
 			if err != nil {
-				return nil, false, err
+				return nil, false, errors.WithMessage(err, "failed to get boundary block")
 			}
-			boundaryMismatch = boundary.Hash != outer.gen.dbPivot
+			boundaryMismatch = (boundary == nil || boundary.Hash != outer.gen.dbPivot)
 		}
 
 		// This endpoint fence is optimistic, not a transaction or immutable FN
@@ -592,11 +578,9 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		// is safest; silently capping latest would break short-page exhaustion
 		// semantics. Strict prevention needs a node view token or atomic range RPC,
 		// which JSON-RPC batch does not provide.
-		after, err := loadEthCanonicalBlock(
-			eth, checkpoint, "post-checkpoint", ErrScanLogsConsistency,
-		)
+		after, err := eth.BlockByNumber(web3types.BlockNumber(checkpoint), false)
 		if err != nil {
-			return nil, false, err
+			return nil, false, errors.WithMessage(err, "failed to get post-checkpoint block")
 		}
 
 		dbStable := true
@@ -605,10 +589,10 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 			if err != nil {
 				return nil, false, errors.WithMessage(err, "failed to get reorg version")
 			}
-			dbStable = v1 == outer.version
+			dbStable = (v1 == outer.version)
 		}
 
-		checkpointStable := after.Hash == before.Hash
+		checkpointStable := (after != nil && after.Hash == before.Hash)
 		decision := decideCanonicalCommit(dbStable, checkpointStable, !boundaryMismatch)
 
 		switch decision {
