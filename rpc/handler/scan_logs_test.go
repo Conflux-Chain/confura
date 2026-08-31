@@ -801,6 +801,134 @@ func TestEthScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
 	assert.Len(t, client.filters, 2, "changed checkpoint must replay the FN segment")
 }
 
+func TestEthScanLogsRejectsNullPreCheckpointBlock(t *testing.T) {
+	handler := newTestEthScanLogsHandler(newScanLogsHandlerTestDB(t))
+	client := &fakeEthScanClient{}
+
+	_, err := handler.ScanLogs(
+		context.Background(),
+		client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 1},
+			BlockRange:        citypes.RangeUint64{From: 10, To: 10},
+		},
+		nil,
+	)
+
+	require.ErrorIs(t, err, ErrScanLogsConsistency)
+	assert.Equal(t, 1, client.blockCalls)
+	assert.Empty(t, client.filters, "the FN segment must not run without an opening fence")
+}
+
+func TestEthScanLogsRejectsNullPostCheckpointBlock(t *testing.T) {
+	handler := newTestEthScanLogsHandler(newScanLogsHandlerTestDB(t))
+	checkpointHash := common.HexToHash("0x10")
+	client := &fakeEthScanClient{}
+	client.blockFn = func(number int64) (*web3types.Block, error) {
+		require.Equal(t, int64(10), number)
+		if client.blockCalls == 2 {
+			return nil, nil
+		}
+		return &web3types.Block{Number: big.NewInt(number), Hash: checkpointHash}, nil
+	}
+
+	_, err := handler.ScanLogs(
+		context.Background(),
+		client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 1},
+			BlockRange:        citypes.RangeUint64{From: 10, To: 10},
+		},
+		nil,
+	)
+
+	require.ErrorIs(t, err, ErrScanLogsConsistency)
+	assert.Equal(t, 2, client.blockCalls)
+	assert.Len(t, client.filters, 1)
+}
+
+func TestEthScanLogsRejectsNullBoundaryBlock(t *testing.T) {
+	db := newScanLogsHandlerTestDB(t)
+	insertScanLogsMapping(t, db, 10, 10, 10, common.HexToHash("0x10").String())
+	handler := newTestEthScanLogsHandler(db)
+	client := &fakeEthScanClient{blockFn: func(number int64) (*web3types.Block, error) {
+		switch number {
+		case 11:
+			return &web3types.Block{Number: big.NewInt(number), Hash: common.HexToHash("0x11")}, nil
+		case 10:
+			return nil, nil
+		default:
+			t.Fatalf("unexpected block lookup %d", number)
+			return nil, nil
+		}
+	}}
+
+	_, err := handler.ScanLogs(
+		context.Background(),
+		client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 1},
+			BlockRange:        citypes.RangeUint64{From: 11, To: 11},
+		},
+		&EthPivotAssumption{BlockNumber: 10, BlockHash: common.HexToHash("0x10")},
+	)
+
+	require.ErrorIs(t, err, ErrScanLogsConsistency)
+	assert.Equal(t, 2, client.blockCalls)
+	assert.Len(t, client.filters, 1)
+}
+
+func TestEthScanLogsRejectsNullFNAssumptionBlock(t *testing.T) {
+	handler := newTestEthScanLogsHandler(newScanLogsHandlerTestDB(t))
+	assumptionHash := common.HexToHash("0x12")
+	client := &fakeEthScanClient{}
+	client.blockFn = func(number int64) (*web3types.Block, error) {
+		require.Equal(t, int64(12), number)
+		switch client.blockCalls {
+		case 1, 3:
+			return &web3types.Block{Number: big.NewInt(number), Hash: assumptionHash}, nil
+		case 2:
+			return nil, nil
+		default:
+			t.Fatalf("unexpected block lookup call %d", client.blockCalls)
+			return nil, nil
+		}
+	}
+
+	_, err := handler.ScanLogs(
+		context.Background(),
+		client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 1},
+			BlockRange:        citypes.RangeUint64{From: 10, To: 10},
+		},
+		&EthPivotAssumption{BlockNumber: 12, BlockHash: assumptionHash},
+	)
+
+	require.ErrorIs(t, err, ErrScanLogsStaleCursor)
+	assert.Equal(t, 3, client.blockCalls)
+	assert.Len(t, client.filters, 1)
+}
+
+func TestEthScanLogsRejectsNullCheckpointForFNAssumption(t *testing.T) {
+	handler := newTestEthScanLogsHandler(newScanLogsHandlerTestDB(t))
+	client := &fakeEthScanClient{}
+
+	_, err := handler.ScanLogs(
+		context.Background(),
+		client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 1},
+			BlockRange:        citypes.RangeUint64{From: 10, To: 10},
+		},
+		&EthPivotAssumption{BlockNumber: 12, BlockHash: common.HexToHash("0x12")},
+	)
+
+	require.ErrorIs(t, err, ErrScanLogsStaleCursor)
+	assert.Equal(t, 1, client.blockCalls)
+	assert.Empty(t, client.filters)
+}
+
 func TestEthScanLogsBoundaryBackoffPreservesContextError(t *testing.T) {
 	db := newScanLogsHandlerTestDB(t)
 	dbHash := common.HexToHash("0x10")
