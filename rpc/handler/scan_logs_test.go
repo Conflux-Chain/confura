@@ -112,7 +112,7 @@ func TestScanLogsErrorsUseFrameworkDefaultCode(t *testing.T) {
 	_, custom := interface{}(ErrScanLogsInvalidCursor).(codedError)
 	assert.False(t, custom)
 	_, custom = newCanonicalDependentError(
-		ErrScanLogsStaleCursor, "assumption validation failed",
+		ErrScanLogsAssumptionNotMet, "assumption validation failed",
 	).(codedError)
 	assert.False(t, custom)
 }
@@ -225,7 +225,7 @@ func TestBuildEthInnerCandidateReturnsInvalidCursorWithoutFence(t *testing.T) {
 	assert.False(t, isCanonicalDependentError(err))
 }
 
-func TestBuildEthInnerCandidateKeepsStaleAssumptionProvisional(t *testing.T) {
+func TestBuildEthInnerCandidateKeepsUnmetAssumptionProvisional(t *testing.T) {
 	assumption := &EthPivotAssumption{
 		BlockNumber: 150,
 		BlockHash:   common.HexToHash("0x150a"),
@@ -246,7 +246,7 @@ func TestBuildEthInnerCandidateKeepsStaleAssumptionProvisional(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.ErrorIs(t, candidate.err, ErrScanLogsStaleCursor)
+	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionNotMet)
 	assert.True(t, isCanonicalDependentError(candidate.err))
 	assert.True(t, candidate.usage.fn)
 	assert.NotNil(t, candidate.result)
@@ -391,7 +391,7 @@ func TestCfxScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 		&CfxPivotAssumption{EpochNumber: 10, PivotBlockHash: cfxtypes.Hash("0x02")},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsStaleCursor)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
 }
 
 func TestCfxScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
@@ -720,7 +720,7 @@ func TestBuildCfxInnerCandidateChecksCheckpointAssumptionHash(t *testing.T) {
 		attempt,
 	)
 	require.NoError(t, err)
-	require.ErrorIs(t, candidate.err, ErrScanLogsStaleCursor)
+	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionNotMet)
 	assert.True(t, isCanonicalDependentError(candidate.err))
 	assert.True(t, candidate.usage.fn)
 }
@@ -765,7 +765,7 @@ func TestEthScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 		&EthPivotAssumption{BlockNumber: 10, BlockHash: common.HexToHash("0x02")},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsStaleCursor)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
 }
 
 func TestEthScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
@@ -815,7 +815,7 @@ func TestEthScanLogsRejectsNullPreCheckpointBlock(t *testing.T) {
 		nil,
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsConsistency)
+	require.ErrorIs(t, err, ErrScanLogsInvalidFilter)
 	assert.Equal(t, 1, client.blockCalls)
 	assert.Empty(t, client.filters, "the FN segment must not run without an opening fence")
 }
@@ -905,7 +905,7 @@ func TestEthScanLogsRejectsNullFNAssumptionBlock(t *testing.T) {
 		&EthPivotAssumption{BlockNumber: 12, BlockHash: assumptionHash},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsStaleCursor)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
 	assert.Equal(t, 3, client.blockCalls)
 	assert.Len(t, client.filters, 1)
 }
@@ -924,7 +924,7 @@ func TestEthScanLogsRejectsNullCheckpointForFNAssumption(t *testing.T) {
 		&EthPivotAssumption{BlockNumber: 12, BlockHash: common.HexToHash("0x12")},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsStaleCursor)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
 	assert.Equal(t, 1, client.blockCalls)
 	assert.Empty(t, client.filters)
 }

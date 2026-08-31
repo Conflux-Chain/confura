@@ -500,7 +500,7 @@ func (handler *EthLogsApiHandler) checkEthDBAssumption(
 
 	if common.HexToHash(pivot) != assumption.BlockHash {
 		return true, errors.WithMessage(
-			ErrScanLogsStaleCursor, "pivot assumption does not match",
+			ErrScanLogsAssumptionNotMet, "pivot assumption does not match",
 		), nil
 	}
 	return true, nil, nil
@@ -553,12 +553,12 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 			return nil, false, err
 		}
 
-		var checkpointMissingErr error = ErrScanLogsConsistency
+		var preCheckpointMissingErr error = ErrScanLogsInvalidFilter
 		if outer.fnAssumption && uint64(assumption.BlockNumber) == checkpoint {
-			checkpointMissingErr = ErrScanLogsStaleCursor
+			preCheckpointMissingErr = ErrScanLogsAssumptionNotMet
 		}
 		before, err := loadEthCanonicalBlock(
-			eth, checkpoint, "pre-checkpoint", checkpointMissingErr,
+			eth, checkpoint, "pre-checkpoint", preCheckpointMissingErr,
 		)
 		if err != nil {
 			return nil, false, err
@@ -593,7 +593,7 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		// semantics. Strict prevention needs a node view token or atomic range RPC,
 		// which JSON-RPC batch does not provide.
 		after, err := loadEthCanonicalBlock(
-			eth, checkpoint, "post-checkpoint", checkpointMissingErr,
+			eth, checkpoint, "post-checkpoint", ErrScanLogsConsistency,
 		)
 		if err != nil {
 			return nil, false, err
@@ -685,13 +685,13 @@ func (handler *EthLogsApiHandler) buildEthInnerCandidate(
 		}
 		if candidate.err == nil && block == nil {
 			candidate.err = newCanonicalDependentError(
-				ErrScanLogsStaleCursor,
+				ErrScanLogsAssumptionNotMet,
 				"pivot assumption block %d is unavailable",
 				uint64(assumption.BlockNumber),
 			)
 		} else if candidate.err == nil && block.Hash != assumption.BlockHash {
 			candidate.err = newCanonicalDependentError(
-				ErrScanLogsStaleCursor, "pivot assumption does not match",
+				ErrScanLogsAssumptionNotMet, "pivot assumption does not match",
 			)
 		}
 	}

@@ -15,9 +15,10 @@ import (
 var (
 	// Handler errors intentionally do not implement ErrorCode. The JSON-RPC
 	// framework publishes them with its uniform default server-error code.
-	ErrScanLogsInvalidCursor = errors.New("invalid scan logs cursor")
-	ErrScanLogsStaleCursor   = errors.New("stale scan logs cursor")
-	ErrScanLogsConsistency   = errors.New("canonical views are not aligned")
+	ErrScanLogsInvalidCursor    = errors.New("invalid scan logs cursor")
+	ErrScanLogsInvalidFilter    = errors.New("invalid scan logs filter")
+	ErrScanLogsAssumptionNotMet = errors.New("scan logs pivot assumption not met")
+	ErrScanLogsConsistency      = errors.New("canonical views are not aligned")
 )
 
 // canonicalDependentError marks an error observed from the current canonical

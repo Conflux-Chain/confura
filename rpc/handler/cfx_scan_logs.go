@@ -595,7 +595,7 @@ func (handler *CfxLogsApiHandler) checkCfxDBAssumption(
 
 	if !equalCfxHash(cfxtypes.Hash(pivot), assumption.PivotBlockHash) {
 		return true, errors.WithMessage(
-			ErrScanLogsStaleCursor, "pivot assumption does not match",
+			ErrScanLogsAssumptionNotMet, "pivot assumption does not match",
 		), nil
 	}
 	return true, nil, nil
@@ -801,7 +801,7 @@ func (handler *CfxLogsApiHandler) buildCfxInnerCandidate(
 		}
 		if err == nil && provisionalErr == nil && !equalCfxHash(pivot.hash, assumption.PivotBlockHash) {
 			provisionalErr = newCanonicalDependentError(
-				ErrScanLogsStaleCursor, "pivot assumption does not match",
+				ErrScanLogsAssumptionNotMet, "pivot assumption does not match",
 			)
 		}
 	}
