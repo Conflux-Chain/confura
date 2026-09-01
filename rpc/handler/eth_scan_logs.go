@@ -525,16 +525,13 @@ func (handler *EthLogsApiHandler) ScanLogs(
 
 	defer func() {
 		recorder.Duration("duration", started)
-		recorder.Percentage("stale", errors.Is(err, ErrScanLogsStaleCursor))
-		if result == nil {
-			return
+		if result != nil {
+			recorder.Histogram("result", int64(len(result.Logs)))
+			db, fn := result.canonicalUsageDB(), result.canonicalUsageFN()
+			recorder.Percentage("source/db", db && !fn)
+			recorder.Percentage("source/fn", fn && !db)
+			recorder.Percentage("source/mixed", db && fn)
 		}
-
-		recorder.Histogram("result", int64(len(result.Logs)))
-		db, fn := result.canonicalUsageDB(), result.canonicalUsageFN()
-		recorder.Percentage("source/db", db && !fn)
-		recorder.Percentage("source/fn", fn && !db)
-		recorder.Percentage("source/mixed", db && fn)
 	}()
 
 	return handler.scanLogs(ctx, eth, req, assumption)
@@ -709,7 +706,7 @@ func (handler *EthLogsApiHandler) checkEthDBAssumption(
 
 	if common.HexToHash(pivot) != assumption.BlockHash {
 		return true, errors.WithMessagef(
-			ErrScanLogsAssumptionNotMet,
+			ErrScanLogsAssumptionFailure,
 			"expected pivot %s got %s for block %d",
 			assumption.BlockHash, pivot, assumption.BlockNumber,
 		), nil
@@ -771,7 +768,7 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		if before == nil {
 			if outer.fnAssumption && uint64(assumption.BlockNumber) == checkpoint {
 				return nil, false, errors.WithMessagef(
-					ErrScanLogsAssumptionNotMet,
+					ErrScanLogsAssumptionFailure,
 					"assumption block %d is unavailable", assumption.BlockNumber,
 				)
 			}
@@ -900,13 +897,13 @@ func (handler *EthLogsApiHandler) buildEthInnerCandidate(
 		}
 		if candidate.err == nil && block == nil {
 			candidate.err = newCanonicalDependentError(
-				ErrScanLogsAssumptionNotMet,
+				ErrScanLogsAssumptionFailure,
 				"pivot assumption block %d is unavailable",
 				uint64(assumption.BlockNumber),
 			)
 		} else if candidate.err == nil && block.Hash != assumption.BlockHash {
 			candidate.err = newCanonicalDependentError(
-				ErrScanLogsAssumptionNotMet, "pivot assumption does not match",
+				ErrScanLogsAssumptionFailure, "pivot assumption does not match",
 			)
 		}
 	}

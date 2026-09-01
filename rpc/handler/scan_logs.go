@@ -12,7 +12,7 @@ import (
 	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
-	confurametrics "github.com/Conflux-Chain/confura/util/metrics"
+	metricUtil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 )
@@ -27,19 +27,19 @@ type scanLogsMetricsRecorder interface {
 type registryScanLogsMetrics struct{ method string }
 
 func (m registryScanLogsMetrics) Histogram(name string, value int64) {
-	confurametrics.Registry.RPC.ScanLogsHistogram(m.method, name).Update(value)
+	metricUtil.GetOrRegisterHistogram("infura/rpc/%v/%v", m.method, name).Update(value)
 }
 
 func (m registryScanLogsMetrics) Mark(name string) {
-	confurametrics.Registry.RPC.ScanLogsMeter(m.method, name).Mark(1)
+	metricUtil.GetOrRegisterMeter("infura/rpc/%v/%v", m.method, name).Mark(1)
 }
 
 func (m registryScanLogsMetrics) Percentage(name string, marked bool) {
-	confurametrics.Registry.RPC.Percentage(m.method, "scanlogs/"+name).Mark(marked)
+	metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/%v/%v", m.method, name).Mark(marked)
 }
 
 func (m registryScanLogsMetrics) Duration(name string, started time.Time) {
-	confurametrics.Registry.RPC.ScanLogsTimer(m.method, name).UpdateSince(started)
+	metricUtil.GetOrRegisterTimer("infura/rpc/%v/%v", m.method, name).UpdateSince(started)
 }
 
 type scanLogsMetricsContextKey struct{}
@@ -80,17 +80,14 @@ func newScanLogsMetrics(space string, withPivotAssumption bool) scanLogsMetricsR
 }
 
 var (
+	ErrScanLogsUnavailable = errors.New("scan logs rpc unavailable")
+
 	ErrScanLogsInvalidParams = errors.New("invalid scan logs params")
 	ErrScanLogsInvalidCursor = errors.New("invalid scan logs cursor")
-	ErrScanLogsStaleCursor   = errors.New("stale scan logs cursor")
-	ErrScanLogsConsistency   = errors.New("inconsistent canonical views")
-	ErrScanLogsUnavailable   = errors.New("scan logs rpc unavailable")
+	ErrScanLogsInvalidFilter = errors.New("invalid scan log filter")
 
-	// Compatibility aliases keep the task #3 handler tests and any in-repository
-	// callers source-compatible while the externally visible categories use the
-	// protocol names above.
-	ErrScanLogsInvalidFilter    = ErrScanLogsInvalidParams
-	ErrScanLogsAssumptionNotMet = ErrScanLogsStaleCursor
+	ErrScanLogsConsistency       = errors.New("inconsistent canonical views")
+	ErrScanLogsAssumptionFailure = errors.New("pivot assumption failed")
 )
 
 // canonicalDependentError marks an error observed from the current canonical

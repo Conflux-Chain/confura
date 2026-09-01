@@ -112,7 +112,7 @@ func TestScanLogsErrorsUseFrameworkDefaultCode(t *testing.T) {
 	_, custom := interface{}(ErrScanLogsInvalidCursor).(codedError)
 	assert.False(t, custom)
 	_, custom = newCanonicalDependentError(
-		ErrScanLogsAssumptionNotMet, "assumption validation failed",
+		ErrScanLogsAssumptionFailure, "assumption validation failed",
 	).(codedError)
 	assert.False(t, custom)
 }
@@ -246,7 +246,7 @@ func TestBuildEthInnerCandidateKeepsUnmetAssumptionProvisional(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionFailure)
 	assert.True(t, isCanonicalDependentError(candidate.err))
 	assert.True(t, candidate.usage.fn)
 	assert.NotNil(t, candidate.result)
@@ -391,7 +391,7 @@ func TestCfxScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 		&CfxPivotAssumption{EpochNumber: 10, PivotBlockHash: cfxtypes.Hash("0x02")},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
 }
 
 func TestCfxScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
@@ -849,7 +849,7 @@ func TestBuildCfxInnerCandidateChecksCheckpointAssumptionHash(t *testing.T) {
 		attempt,
 	)
 	require.NoError(t, err)
-	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionFailure)
 	assert.True(t, isCanonicalDependentError(candidate.err))
 	assert.True(t, candidate.usage.fn)
 }
@@ -894,7 +894,7 @@ func TestEthScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 		&EthPivotAssumption{BlockNumber: 10, BlockHash: common.HexToHash("0x02")},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
 }
 
 func TestEthScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
@@ -1035,7 +1035,7 @@ func TestEthScanLogsRejectsNullFNAssumptionBlock(t *testing.T) {
 		&EthPivotAssumption{BlockNumber: 12, BlockHash: assumptionHash},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
 	assert.Equal(t, 3, client.blockCalls)
 	assert.Len(t, client.filters, 1)
 }
@@ -1054,7 +1054,7 @@ func TestEthScanLogsRejectsNullCheckpointForFNAssumption(t *testing.T) {
 		&EthPivotAssumption{BlockNumber: 12, BlockHash: common.HexToHash("0x12")},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
 	assert.Equal(t, 1, client.blockCalls)
 	assert.Empty(t, client.filters)
 }

@@ -645,16 +645,14 @@ func (handler *CfxLogsApiHandler) ScanLogs(
 
 	defer func() {
 		recorder.Duration("duration", started)
-		recorder.Percentage("stale", errors.Is(err, ErrScanLogsStaleCursor))
-		if result == nil {
-			return
-		}
 
-		recorder.Histogram("result", int64(len(result.Logs)))
-		db, fn := result.canonicalUsageDB(), result.canonicalUsageFN()
-		recorder.Percentage("source/db", db && !fn)
-		recorder.Percentage("source/fn", fn && !db)
-		recorder.Percentage("source/mixed", db && fn)
+		if result != nil {
+			recorder.Histogram("result", int64(len(result.Logs)))
+			db, fn := result.canonicalUsageDB(), result.canonicalUsageFN()
+			recorder.Percentage("source/db", db && !fn)
+			recorder.Percentage("source/fn", fn && !db)
+			recorder.Percentage("source/mixed", db && fn)
+		}
 	}()
 
 	return handler.scanLogs(ctx, cfx, req, assumption)
@@ -808,7 +806,7 @@ func (handler *CfxLogsApiHandler) checkCfxDBAssumption(
 
 	if !equalCfxHash(cfxtypes.Hash(pivot), assumption.PivotBlockHash) {
 		return true, errors.WithMessagef(
-			ErrScanLogsAssumptionNotMet,
+			ErrScanLogsAssumptionFailure,
 			"expected pivot %s got %s for epoch %d",
 			assumption.PivotBlockHash, pivot, assumption.EpochNumber,
 		), nil
@@ -1023,7 +1021,7 @@ func (handler *CfxLogsApiHandler) buildCfxInnerCandidate(
 		}
 		if err == nil && provisionalErr == nil && !equalCfxHash(pivot.hash, assumption.PivotBlockHash) {
 			provisionalErr = newCanonicalDependentError(
-				ErrScanLogsAssumptionNotMet,
+				ErrScanLogsAssumptionFailure,
 				"expected pivot %s got %s for epoch %d",
 				assumption.PivotBlockHash, pivot.hash, assumption.EpochNumber,
 			)
