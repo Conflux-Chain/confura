@@ -279,7 +279,7 @@ func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethS
 	if scanRange(req.BlockRange).empty() {
 		if cursor != nil {
 			return ethScanGeneration{}, errors.WithMessage(
-				ErrScanLogsInvalidCursor, "cursor is outside of the empty request range",
+				ErrScanLogsInvalidCursor, "cursor is outside of the request range",
 			)
 		}
 		return newEthFullnodeGeneration(emptyScanRange, nil, req.Reverse), nil
@@ -488,7 +488,10 @@ func finishEthCandidate(
 		log = logs[0]
 	}
 
-	result.PivotGuard = &EthPivotGuard{BlockNumber: hexutil.Uint64(log.BlockNumber), BlockHash: log.BlockHash}
+	result.PivotGuard = &EthPivotGuard{
+		BlockNumber: hexutil.Uint64(log.BlockNumber),
+		BlockHash:   log.BlockHash,
+	}
 	return result
 }
 
@@ -512,23 +515,28 @@ func (handler *EthLogsApiHandler) ScanLogs(
 			ErrScanLogsInvalidParams, "pivot assumption is required when cursor is provided",
 		)
 	}
+
 	recorder := newScanLogsMetrics("eth", req.WithPivotAssumption)
 	ctx = withScanLogsMetrics(ctx, recorder)
 	started := time.Now()
+
 	recorder.Percentage("direction/reverse", req.Reverse)
 	recorder.Histogram("limit", int64(req.Limit))
+
 	defer func() {
 		recorder.Duration("duration", started)
 		recorder.Percentage("stale", errors.Is(err, ErrScanLogsStaleCursor))
 		if result == nil {
 			return
 		}
+
 		recorder.Histogram("result", int64(len(result.Logs)))
 		db, fn := result.canonicalUsageDB(), result.canonicalUsageFN()
 		recorder.Percentage("source/db", db && !fn)
 		recorder.Percentage("source/fn", fn && !db)
 		recorder.Percentage("source/mixed", db && fn)
 	}()
+
 	return handler.scanLogs(ctx, eth, req, assumption)
 }
 
@@ -570,7 +578,7 @@ func (handler *EthLogsApiHandler) scanLogs(
 			return nil, err
 		}
 		recordScanLogsHistogram(ctx, "plan/segments", int64(len(gen.plan.segments)))
-		recordScanLogsHistogram(ctx, "plan/cursor_owner", int64(gen.owner))
+		recordScanLogsCursorOwner(ctx, gen.owner)
 
 		// Cache lifetime is exactly one outer generation. It can survive FN-only
 		// retries, but a plan without a DB segment does not allocate one.

@@ -377,13 +377,61 @@ func TestEncodeScanLogsResult(t *testing.T) {
 }
 
 type recordingScanLogsMetrics struct {
-	marks map[string]int
+	marks       map[string]int
+	percentages map[string][]bool
 }
 
-func (m *recordingScanLogsMetrics) Histogram(string, int64)    {}
-func (m *recordingScanLogsMetrics) Percentage(string, bool)    {}
+func (m *recordingScanLogsMetrics) Histogram(string, int64) {}
+func (m *recordingScanLogsMetrics) Percentage(name string, marked bool) {
+	if m.percentages == nil {
+		m.percentages = make(map[string][]bool)
+	}
+	m.percentages[name] = append(m.percentages[name], marked)
+}
 func (m *recordingScanLogsMetrics) Duration(string, time.Time) {}
 func (m *recordingScanLogsMetrics) Mark(name string)           { m.marks[name]++ }
+
+func TestRecordScanLogsCursorOwnerPercentages(t *testing.T) {
+	tests := []struct {
+		name  string
+		owner cursorOwner
+		want  map[string][]bool
+	}{
+		{
+			name: "none", owner: cursorOwnerNone,
+			want: map[string][]bool{
+				"plan/cursor_owner/none": {true},
+				"plan/cursor_owner/db":   {false},
+				"plan/cursor_owner/fn":   {false},
+			},
+		},
+		{
+			name: "db", owner: cursorOwnerDB,
+			want: map[string][]bool{
+				"plan/cursor_owner/none": {false},
+				"plan/cursor_owner/db":   {true},
+				"plan/cursor_owner/fn":   {false},
+			},
+		},
+		{
+			name: "fn", owner: cursorOwnerFN,
+			want: map[string][]bool{
+				"plan/cursor_owner/none": {false},
+				"plan/cursor_owner/db":   {false},
+				"plan/cursor_owner/fn":   {true},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &recordingScanLogsMetrics{}
+			ctx := withScanLogsMetrics(context.Background(), recorder)
+			recordScanLogsCursorOwner(ctx, test.owner)
+			require.Equal(t, test.want, recorder.percentages)
+		})
+	}
+}
 
 func TestScanLogsMetricsRecorderCoversWindowsAndDBCache(t *testing.T) {
 	recorder := &recordingScanLogsMetrics{marks: make(map[string]int)}

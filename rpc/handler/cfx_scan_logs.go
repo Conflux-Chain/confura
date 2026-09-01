@@ -46,7 +46,7 @@ func (f *CfxScanLogFilter) UnmarshalJSON(data []byte) error {
 	var decoded plain
 
 	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
-		return errors.WithMessage(err, "invalid core scan filter")
+		return errors.WithMessage(err, "invalid scan filter")
 	}
 	if err := validateJSONObjectFields(data, nil, []string{"epochRange", "address", "topic0"}); err != nil {
 		return err
@@ -75,7 +75,7 @@ func (r *CfxScanLogRequest) UnmarshalJSON(data []byte) error {
 	type plain CfxScanLogRequest
 	var decoded plain
 	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
-		return errors.WithMessage(err, "invalid core scan request")
+		return errors.WithMessage(err, "invalid scan request")
 	}
 	if err := validateJSONObjectFields(
 		data,
@@ -107,7 +107,7 @@ func (a *CfxPivotAssumption) UnmarshalJSON(data []byte) error {
 	type plain CfxPivotAssumption
 	var decoded plain
 	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
-		return errors.WithMessage(err, "invalid core pivot assumption")
+		return errors.WithMessage(err, "invalid pivot assumption")
 	}
 	if err := validateJSONObjectFields(
 		data,
@@ -635,23 +635,28 @@ func (handler *CfxLogsApiHandler) ScanLogs(
 			ErrScanLogsInvalidParams, "pivot assumption is required when cursor is provided",
 		)
 	}
+
 	recorder := newScanLogsMetrics("cfx", req.WithPivotAssumption)
 	ctx = withScanLogsMetrics(ctx, recorder)
 	started := time.Now()
+
 	recorder.Percentage("direction/reverse", req.Reverse)
 	recorder.Histogram("limit", int64(req.Limit))
+
 	defer func() {
 		recorder.Duration("duration", started)
 		recorder.Percentage("stale", errors.Is(err, ErrScanLogsStaleCursor))
 		if result == nil {
 			return
 		}
+
 		recorder.Histogram("result", int64(len(result.Logs)))
 		db, fn := result.canonicalUsageDB(), result.canonicalUsageFN()
 		recorder.Percentage("source/db", db && !fn)
 		recorder.Percentage("source/fn", fn && !db)
 		recorder.Percentage("source/mixed", db && fn)
 	}()
+
 	return handler.scanLogs(ctx, cfx, req, assumption)
 }
 
@@ -696,8 +701,9 @@ func (handler *CfxLogsApiHandler) scanLogs(
 			}
 			return nil, errors.WithMessage(err, "failed to build scan generation")
 		}
+
 		recordScanLogsHistogram(ctx, "plan/segments", int64(len(gen.plan.segments)))
-		recordScanLogsHistogram(ctx, "plan/cursor_owner", int64(gen.owner))
+		recordScanLogsCursorOwner(ctx, gen.owner)
 
 		// Cache lifetime is exactly this outer generation. FN-only plans do not
 		// allocate one; a cache survives inner retries but never an outer restart.
@@ -877,18 +883,19 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 		// The before summary both identifies the FN view and bounds all cursor BN
 		// lookups that may occur while building this candidate.
 		before, err := cfx.GetBlockSummaryByEpoch(cfxtypes.NewEpochNumberUint64(h))
-		markScanLogsMetric(ctx, "core/checkpoint_before")
+		markScanLogsMetric(ctx, "checkpoint_before")
 		if err != nil {
 			return nil, false, errors.WithMessage(err, "failed to get pivot block summary")
 		}
 
-		attempt, err := newCfxFNAttemptView(cfx, h, before)
+		attempt, err := newCfxFNAttemptView(
+			cfx, h, before, scanLogsMetricsFromContext(ctx),
+		)
 		if err != nil {
 			// A checkpoint without the fields needed by the algorithm cannot define
 			// a fence, so fail this node call directly.
 			return nil, false, err
 		}
-		attempt.metrics = scanLogsMetricsFromContext(ctx)
 
 		candidate, err := handler.buildCfxInnerCandidate(ctx, cfx, req, assumption, outer, attempt)
 		if err != nil {
@@ -923,7 +930,7 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 		// Eliminating ABA requires a node-provided immutable view token or atomic
 		// range RPC; JSON-RPC batch does not provide that guarantee.
 		after, err := cfx.GetBlockSummaryByEpoch(cfxtypes.NewEpochNumberUint64(h))
-		markScanLogsMetric(ctx, "core/checkpoint_after")
+		markScanLogsMetric(ctx, "checkpoint_after")
 		if err != nil {
 			return nil, false, errors.WithMessagef(err, "failed to get block summary for epoch %d", h)
 		}
@@ -1077,6 +1084,7 @@ func newCfxFNAttemptView(
 	client cfxScanClient,
 	checkpointEpoch uint64,
 	checkpointSummary *cfxtypes.BlockSummary,
+	metrics scanLogsMetricsRecorder,
 ) (*cfxFNAttemptView, error) {
 	checkpoint, err := newCfxBlockRef(checkpointSummary)
 	if err != nil {
@@ -1090,6 +1098,7 @@ func newCfxFNAttemptView(
 		pivots:          make(map[uint64]cfxBlockRef),
 		byNumber:        make(map[uint64]cfxBlockRef),
 		byHash:          make(map[cfxtypes.Hash]cfxBlockRef),
+		metrics:         metrics,
 	}
 	view.rememberPivot(checkpoint)
 	return view, nil
@@ -1108,7 +1117,7 @@ func (v *cfxFNAttemptView) rememberPivot(ref cfxBlockRef) {
 func (v *cfxFNAttemptView) pivot(epoch uint64) (cfxBlockRef, error) {
 	if ref, ok := v.pivots[epoch]; ok {
 		if v.metrics != nil {
-			v.metrics.Mark("core/pivot_cache_reuse")
+			v.metrics.Mark("pivot_cache_reuse")
 		}
 		return ref, nil
 	}
@@ -1122,7 +1131,7 @@ func (v *cfxFNAttemptView) pivot(epoch uint64) (cfxBlockRef, error) {
 
 	summary, err := v.client.GetBlockSummaryByEpoch(cfxtypes.NewEpochNumberUint64(epoch))
 	if v.metrics != nil {
-		v.metrics.Mark("core/pivot_rpc")
+		v.metrics.Mark("pivot_rpc")
 	}
 	if err != nil {
 		return cfxBlockRef{}, errors.WithMessagef(
@@ -1163,7 +1172,7 @@ func (v *cfxFNAttemptView) block(number uint64) (cfxBlockRef, error) {
 
 	summary, err := v.client.GetBlockSummaryByBlockNumber(hexutil.Uint64(number))
 	if v.metrics != nil {
-		v.metrics.Mark("core/cursor_summary")
+		v.metrics.Mark("cursor_summary")
 	}
 	if err != nil {
 		return cfxBlockRef{}, errors.WithMessagef(
@@ -1195,7 +1204,7 @@ func (v *cfxFNAttemptView) blockByHash(hash cfxtypes.Hash) (cfxBlockRef, error) 
 
 	summary, err := v.client.GetBlockSummaryByHash(hash)
 	if v.metrics != nil {
-		v.metrics.Mark("core/tail_position_rpc")
+		v.metrics.Mark("tail_position_rpc")
 	}
 	if err != nil {
 		return cfxBlockRef{}, errors.WithMessagef(

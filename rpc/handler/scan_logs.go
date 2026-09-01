@@ -65,6 +65,12 @@ func recordScanLogsHistogram(ctx context.Context, name string, value int64) {
 	}
 }
 
+func recordScanLogsPercentage(ctx context.Context, name string, marked bool) {
+	if recorder := scanLogsMetricsFromContext(ctx); recorder != nil {
+		recorder.Percentage(name, marked)
+	}
+}
+
 func newScanLogsMetrics(space string, withPivotAssumption bool) scanLogsMetricsRecorder {
 	method := space + "_scanLogs"
 	if withPivotAssumption {
@@ -289,6 +295,12 @@ const (
 	cursorOwnerDB
 	cursorOwnerFN
 )
+
+func recordScanLogsCursorOwner(ctx context.Context, owner cursorOwner) {
+	recordScanLogsPercentage(ctx, "plan/cursor_owner/none", owner == cursorOwnerNone)
+	recordScanLogsPercentage(ctx, "plan/cursor_owner/db", owner == cursorOwnerDB)
+	recordScanLogsPercentage(ctx, "plan/cursor_owner/fn", owner == cursorOwnerFN)
+}
 
 type canonicalCommitDecision uint8
 
