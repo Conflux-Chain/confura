@@ -37,6 +37,31 @@ func MustInitFromViper() {
 		"result body size is too large with more than %d bytes, please narrow down your filter condition",
 		maxGetLogsResponseBytes,
 	)
+
+	var scanLogs struct {
+		MaxLimit           uint64 `default:"1000"`
+		FullnodeWindowSize uint64 `default:"1000"`
+	}
+	viperutil.MustUnmarshalKey("requestControl.scanLogs", &scanLogs)
+
+	if scanLogs.MaxLimit > store.MaxLogLimit {
+		logrus.Fatalf(
+			"`scanLogs.maxLimit` is %d, but must not exceed %d",
+			scanLogs.MaxLimit, store.MaxLogLimit,
+		)
+	}
+	if scanLogs.MaxLimit < defaultScanLogsLimit {
+		logrus.Fatalf(
+			"`scanLogs.maxLimit` is %d, but must be at least the default limit %d",
+			scanLogs.MaxLimit, defaultScanLogsLimit,
+		)
+	}
+	if scanLogs.FullnodeWindowSize == 0 {
+		logrus.Fatal("`scanLogs.fullnodeWindowSize` must be greater than 0")
+	}
+
+	maxScanLogsLimit = scanLogs.MaxLimit
+	defaultScanLogsFNWindow = scanLogs.FullnodeWindowSize
 }
 
 // CfxLogsApiHandler RPC handler to get core space event logs from store or fullnode.

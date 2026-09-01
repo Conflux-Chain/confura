@@ -1,22 +1,90 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"slices"
 	"strings"
 	"time"
 
+	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
+	confurametrics "github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 )
 
+type scanLogsMetricsRecorder interface {
+	Histogram(name string, value int64)
+	Mark(name string)
+	Percentage(name string, marked bool)
+	Duration(name string, started time.Time)
+}
+
+type registryScanLogsMetrics struct{ method string }
+
+func (m registryScanLogsMetrics) Histogram(name string, value int64) {
+	confurametrics.Registry.RPC.ScanLogsHistogram(m.method, name).Update(value)
+}
+
+func (m registryScanLogsMetrics) Mark(name string) {
+	confurametrics.Registry.RPC.ScanLogsMeter(m.method, name).Mark(1)
+}
+
+func (m registryScanLogsMetrics) Percentage(name string, marked bool) {
+	confurametrics.Registry.RPC.Percentage(m.method, "scanlogs/"+name).Mark(marked)
+}
+
+func (m registryScanLogsMetrics) Duration(name string, started time.Time) {
+	confurametrics.Registry.RPC.ScanLogsTimer(m.method, name).UpdateSince(started)
+}
+
+type scanLogsMetricsContextKey struct{}
+
+func withScanLogsMetrics(ctx context.Context, recorder scanLogsMetricsRecorder) context.Context {
+	return context.WithValue(ctx, scanLogsMetricsContextKey{}, recorder)
+}
+
+func scanLogsMetricsFromContext(ctx context.Context) scanLogsMetricsRecorder {
+	recorder, _ := ctx.Value(scanLogsMetricsContextKey{}).(scanLogsMetricsRecorder)
+	return recorder
+}
+
+func markScanLogsMetric(ctx context.Context, name string) {
+	if recorder := scanLogsMetricsFromContext(ctx); recorder != nil {
+		recorder.Mark(name)
+	}
+}
+
+func recordScanLogsHistogram(ctx context.Context, name string, value int64) {
+	if recorder := scanLogsMetricsFromContext(ctx); recorder != nil {
+		recorder.Histogram(name, value)
+	}
+}
+
+func newScanLogsMetrics(space string, withPivotAssumption bool) scanLogsMetricsRecorder {
+	method := space + "_scanLogs"
+	if withPivotAssumption {
+		method += "WithPivotAssumption"
+	}
+	return registryScanLogsMetrics{method: method}
+}
+
 var (
-	ErrScanLogsInvalidCursor    = errors.New("invalid scan cursor")
-	ErrScanLogsInvalidFilter    = errors.New("invalid scan filter")
-	ErrScanLogsAssumptionNotMet = errors.New("pivot assumption violated")
-	ErrScanLogsConsistency      = errors.New("inconsistent canonical views")
+	ErrScanLogsInvalidParams = errors.New("invalid scan logs params")
+	ErrScanLogsInvalidCursor = errors.New("invalid scan logs cursor")
+	ErrScanLogsStaleCursor   = errors.New("stale scan logs cursor")
+	ErrScanLogsConsistency   = errors.New("inconsistent canonical views")
+	ErrScanLogsUnavailable   = errors.New("scan logs rpc unavailable")
+
+	// Compatibility aliases keep the task #3 handler tests and any in-repository
+	// callers source-compatible while the externally visible categories use the
+	// protocol names above.
+	ErrScanLogsInvalidFilter    = ErrScanLogsInvalidParams
+	ErrScanLogsAssumptionNotMet = ErrScanLogsStaleCursor
 )
 
 // canonicalDependentError marks an error observed from the current canonical
@@ -28,7 +96,7 @@ type canonicalDependentError struct{ err error }
 func (e *canonicalDependentError) Error() string { return e.err.Error() }
 func (e *canonicalDependentError) Unwrap() error { return e.err }
 
-func newCanonicalDependentError(err error, format string, args ...interface{}) error {
+func newCanonicalDependentError(err error, format string, args ...any) error {
 	return &canonicalDependentError{err: errors.Wrapf(err, format, args...)}
 }
 
@@ -51,6 +119,95 @@ const (
 type ScanLogCursor struct {
 	BlockNumber hexutil.Uint64 `json:"blockNumber"`
 	LogIndex    hexutil.Uint64 `json:"logIndex"`
+}
+
+func (cursor *ScanLogCursor) UnmarshalJSON(data []byte) error {
+	type plain ScanLogCursor
+	var decoded plain
+	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
+		return errors.WithMessage(err, "invalid scan cursor")
+	}
+	if err := validateJSONObjectFields(
+		data,
+		[]string{"blockNumber", "logIndex"},
+		[]string{"blockNumber", "logIndex"},
+	); err != nil {
+		return err
+	}
+	*cursor = ScanLogCursor(decoded)
+	return nil
+}
+
+// unmarshalStrictJSONObject is shared by every public scanLogs request object.
+// json.Decoder's DisallowUnknownFields only applies to the object currently
+// being decoded; nested scanLogs types implement UnmarshalJSON themselves so
+// strictness is recursive rather than only protecting the top-level request.
+func unmarshalStrictJSONObject(data []byte, dst any) error {
+	trimmed := bytes.TrimSpace(data)
+	if bytes.Equal(trimmed, []byte("null")) {
+		return errors.New("object must not be null")
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+func normalizeScanLogsLimit(limit hexutil.Uint64) (hexutil.Uint64, error) {
+	if limit == 0 {
+		return hexutil.Uint64(defaultScanLogsLimit), nil
+	}
+	if uint64(limit) > maxScanLogsLimit {
+		return 0, errors.WithMessagef(
+			ErrScanLogsInvalidParams,
+			"scan limit %d exceeds configured maximum %d", limit, maxScanLogsLimit,
+		)
+	}
+	return limit, nil
+}
+
+// EncodeScanLogsResult serializes a result once, enforces the response-size
+// limit on those exact bytes, and returns a Lazy value that reuses the payload.
+func EncodeScanLogsResult[T any](result T) (cacheTypes.Lazy[T], error) {
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return cacheTypes.Lazy[T]{}, errors.WithMessage(err, "failed to encode scan logs result")
+	}
+	if uint64(len(payload)) > maxGetLogsResponseBytes {
+		return cacheTypes.Lazy[T]{}, errors.Errorf(
+			"result body size is too large with more than %d bytes, please reduce scan limit",
+			maxGetLogsResponseBytes,
+		)
+	}
+	return cacheTypes.NewLazyWithJson[T](payload), nil
+}
+
+func validateJSONObjectFields(data []byte, required []string, nonNull []string) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+
+	for _, name := range required {
+		if _, ok := fields[name]; !ok {
+			return errors.Errorf("missing required field %q", name)
+		}
+	}
+	for _, name := range nonNull {
+		if raw, ok := fields[name]; ok && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return errors.Errorf("field %q must not be null", name)
+		}
+	}
+	return nil
 }
 
 func (cursor *ScanLogCursor) toStoreCursor() *store.ScanCursor {
@@ -279,9 +436,14 @@ func clipBlockRangeAtCursor(blocks scanRange, cursor *store.ScanCursor, reverse 
 	return blocks, nil
 }
 
-const (
+var (
+	defaultScanLogsLimit    = uint64(100)
+	maxScanLogsLimit        = uint64(1_000)
 	defaultScanLogsFNWindow = uint64(1_000)
-	boundaryRetryBackoff    = 10 * time.Millisecond
+)
+
+const (
+	boundaryRetryBackoff = 10 * time.Millisecond
 
 	// A boundary mismatch can be a transient FN reorg, so one fresh FN view is
 	// useful. Repeating forever is unsafe operationally: the DB may still contain
@@ -376,8 +538,10 @@ func scanFNBlockWindows[L any](
 			}
 
 			windowLogs, err := readWindow(ctx, low, high)
+			markScanLogsMetric(ctx, "fn/window")
 			if err != nil {
 				if isWhitelistedFNOversizedError(err) && low < high {
+					markScanLogsMetric(ctx, "fn/shrink")
 					windowSize = max(uint64(1), (high-low+1)/2)
 					continue
 				}
@@ -399,8 +563,10 @@ func scanFNBlockWindows[L any](
 		}
 
 		windowLogs, err := readWindow(ctx, low, high)
+		markScanLogsMetric(ctx, "fn/window")
 		if err != nil {
 			if isWhitelistedFNOversizedError(err) && low < high {
+				markScanLogsMetric(ctx, "fn/shrink")
 				windowSize = max(uint64(1), (high-low+1)/2)
 				continue
 			}
@@ -444,6 +610,7 @@ func (c *dbScanCache[L]) Ensure(ctx context.Context, n int) error {
 	// for reverse FN->DB: after an FN retry, remaining may grow from 20 to 40 and
 	// only the additional 20 DB rows should be queried.
 	if n <= len(c.logs) || c.exhausted {
+		markScanLogsMetric(ctx, "db/cache_reuse")
 		return nil
 	}
 
@@ -455,6 +622,11 @@ func (c *dbScanCache[L]) Ensure(ctx context.Context, n int) error {
 	}
 
 	want := n - len(c.logs)
+	if len(c.logs) == 0 {
+		markScanLogsMetric(ctx, "db/query")
+	} else {
+		markScanLogsMetric(ctx, "db/cache_extend")
+	}
 	logs, keys, err := c.scan(ctx, cursor, want)
 	if err != nil {
 		return err

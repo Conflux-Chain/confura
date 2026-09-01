@@ -37,8 +37,12 @@ type Validator interface {
 	Validate(ctx Context) error
 }
 
-// parse contract addresses from RPC method params
-type cntAddrParser func(params []interface{}) ([]string, bool)
+// contractAddressParser extracts contract addresses from RPC parameters.
+type contractAddressParser func(params []interface{}) ([]string, bool)
+
+type contractAddressProvider interface {
+	ContractAddress() (string, bool)
+}
 
 // allowlist validator. Each allowlist type is "AND"ed together,
 // while multiple entries of the same type are "OR"ed.
@@ -51,11 +55,11 @@ type validatorBase struct {
 	originRules         []string // request origins
 
 	// contract addresses mapset
-	cntAddrRules map[string]bool
+	contractAddressRules map[string]bool
 
 	// contract address parsers by RPC method params:
-	// RPC method => cntAddrParser
-	cntAddrParsers map[string]cntAddrParser
+	// RPC method => contractAddressParser
+	contractAddressParsers map[string]contractAddressParser
 }
 
 func newValidatorBase(al *AllowList) *validatorBase {
@@ -83,11 +87,11 @@ func newValidatorBase(al *AllowList) *validatorBase {
 	}
 
 	return &validatorBase{
-		AllowList:           al,
-		originRules:         originRules,
-		allowMethodRules:    allowMethodRules,
-		disallowMethodRules: disallowMethodRules,
-		cntAddrRules:        contractAddrRules,
+		AllowList:            al,
+		originRules:          originRules,
+		allowMethodRules:     allowMethodRules,
+		disallowMethodRules:  disallowMethodRules,
+		contractAddressRules: contractAddrRules,
 	}
 }
 
@@ -194,7 +198,7 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 		return nil
 	}
 
-	cntAddrParser, ok := v.cntAddrParsers[ctx.RpcMethod]
+	parseContractAddresses, ok := v.contractAddressParsers[ctx.RpcMethod]
 	if !ok {
 		return nil
 	}
@@ -204,13 +208,13 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 		return errBadRpcParams
 	}
 
-	cntAddrs, ok := cntAddrParser(inputParams)
+	contractAddresses, ok := parseContractAddresses(inputParams)
 	if !ok {
 		return errBadRpcParams
 	}
 
-	for _, caddr := range cntAddrs {
-		if !v.cntAddrRules[strings.ToLower(caddr)] {
+	for _, address := range contractAddresses {
+		if !v.contractAddressRules[strings.ToLower(address)] {
 			return errInvalidContractAddr
 		}
 	}
@@ -227,20 +231,22 @@ func NewEthValidator(al *AllowList) Validator {
 		validatorBase: newValidatorBase(al),
 	}
 
-	v.cntAddrParsers = map[string]cntAddrParser{
-		"eth_call":                v.parseCallRequest,
-		"eth_estimateGas":         v.parseCallRequest,
-		"eth_getLogs":             v.parseFilterQuery,
-		"eth_getBalance":          v.parseAddr,
-		"eth_getTransactionCount": v.parseAddr,
-		"eth_getCode":             v.parseAddr,
-		"eth_getStorageAt":        v.parseAddr,
+	v.contractAddressParsers = map[string]contractAddressParser{
+		"eth_call":                        v.parseCallRequest,
+		"eth_estimateGas":                 v.parseCallRequest,
+		"eth_getLogs":                     v.parseFilterQuery,
+		"eth_scanLogs":                    parseContractAddressProvider,
+		"eth_scanLogsWithPivotAssumption": parseContractAddressProvider,
+		"eth_getBalance":                  v.parseAddr,
+		"eth_getTransactionCount":         v.parseAddr,
+		"eth_getCode":                     v.parseAddr,
+		"eth_getStorageAt":                v.parseAddr,
 	}
 
-	for _, cntAddr := range v.ContractAddresses {
-		if !common.IsHexAddress(cntAddr) {
-			logrus.WithField("contractAddr", cntAddr).Warn("Invalid contract address for allowlist")
-			delete(v.cntAddrRules, strings.ToLower(cntAddr))
+	for _, address := range v.ContractAddresses {
+		if !common.IsHexAddress(address) {
+			logrus.WithField("contractAddr", address).Warn("Invalid contract address for allowlist")
+			delete(v.contractAddressRules, strings.ToLower(address))
 		}
 	}
 
@@ -275,6 +281,21 @@ func (v *EthValidator) parseFilterQuery(params []interface{}) (res []string, ok 
 	return
 }
 
+func parseContractAddressProvider(params []interface{}) ([]string, bool) {
+	if len(params) == 0 {
+		return nil, false
+	}
+
+	req, ok := params[0].(contractAddressProvider)
+	if !ok {
+		return nil, false
+	}
+	if address, exists := req.ContractAddress(); exists {
+		return []string{address}, true
+	}
+	return nil, true
+}
+
 func (v *EthValidator) parseAddr(params []interface{}) (res []string, ok bool) {
 	if len(params) == 0 {
 		return
@@ -297,14 +318,16 @@ func NewCfxValidator(al *AllowList) Validator {
 		validatorBase: newValidatorBase(al),
 	}
 
-	v.cntAddrParsers = map[string]cntAddrParser{
-		"cfx_call":                     v.parseCallRequest,
-		"cfx_estimateGasAndCollateral": v.parseCallRequest,
-		"cfx_getLogs":                  v.parseLogFilter,
-		"cfx_getBalance":               v.parseAddr,
-		"cfx_getNextNonce":             v.parseAddr,
-		"cfx_getCode":                  v.parseAddr,
-		"cfx_getStorageAt":             v.parseAddr,
+	v.contractAddressParsers = map[string]contractAddressParser{
+		"cfx_call":                        v.parseCallRequest,
+		"cfx_estimateGasAndCollateral":    v.parseCallRequest,
+		"cfx_getLogs":                     v.parseLogFilter,
+		"cfx_scanLogs":                    parseContractAddressProvider,
+		"cfx_scanLogsWithPivotAssumption": parseContractAddressProvider,
+		"cfx_getBalance":                  v.parseAddr,
+		"cfx_getNextNonce":                v.parseAddr,
+		"cfx_getCode":                     v.parseAddr,
+		"cfx_getStorageAt":                v.parseAddr,
 	}
 
 	v.uniformContractAddrRulesets()
@@ -312,16 +335,16 @@ func NewCfxValidator(al *AllowList) Validator {
 }
 
 func (v *CfxValidator) uniformContractAddrRulesets() {
-	v.cntAddrRules = make(map[string]bool)
+	v.contractAddressRules = make(map[string]bool)
 
-	for _, cntAddr := range v.ContractAddresses {
-		addr, err := cfxaddress.NewFromBase32(cntAddr)
+	for _, address := range v.ContractAddresses {
+		addr, err := cfxaddress.NewFromBase32(address)
 		if err != nil {
-			logrus.WithField("contractAddr", cntAddr).Warn("Invalid contract address for allowlist")
+			logrus.WithField("contractAddr", address).Warn("Invalid contract address for allowlist")
 			continue
 		}
 
-		v.cntAddrRules[addr.MustGetBase32Address()] = true
+		v.contractAddressRules[addr.MustGetBase32Address()] = true
 	}
 }
 

@@ -101,6 +101,18 @@ func (*RpcMetrics) Percentage(method, name string) metricUtil.Percentage {
 	return metricUtil.GetOrRegisterTimeWindowPercentageDefault("infura/rpc/percentage/%v/%v", method, name)
 }
 
+func (*RpcMetrics) ScanLogsHistogram(method, name string) metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/rpc/scanlogs/%v/%v", method, name)
+}
+
+func (*RpcMetrics) ScanLogsMeter(method, name string) metrics.Meter {
+	return metricUtil.GetOrRegisterMeter("infura/rpc/scanlogs/%v/%v", method, name)
+}
+
+func (*RpcMetrics) ScanLogsTimer(method, name string) metrics.Timer {
+	return metricUtil.GetOrRegisterTimer("infura/rpc/scanlogs/%v/%v", method, name)
+}
+
 // RPC metrics - store hit ratio
 
 func (*RpcMetrics) StoreHit(method, storeName string) metricUtil.Percentage {
