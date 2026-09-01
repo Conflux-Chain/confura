@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 
+	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/store"
@@ -18,8 +19,14 @@ import (
 )
 
 const (
-	rpcMethodCfxGetLogs = "cfx_getLogs"
+	rpcMethodCfxGetLogs                     = "cfx_getLogs"
+	rpcMethodCfxScanLogs                    = "cfx_scanLogs"
+	rpcMethodCfxScanLogsWithPivotAssumption = "cfx_scanLogsWithPivotAssumption"
 )
+
+func isCfxScanLogsRpcMethod(method string) bool {
+	return method == rpcMethodCfxScanLogs || method == rpcMethodCfxScanLogsWithPivotAssumption
+}
 
 var (
 	emptyEpochs             = []*types.Epoch{}
@@ -271,6 +278,54 @@ func (api *cfxAPI) Call(ctx context.Context, request types.CallRequest, epoch *t
 func (api *cfxAPI) GetLogs(ctx context.Context, fq types.LogFilter) ([]types.Log, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	return api.getLogs(ctx, cfx, fq, rpcMethodCfxGetLogs)
+}
+
+func (api *cfxAPI) ScanLogs(
+	ctx context.Context,
+	req handler.CfxScanLogRequest,
+) (cacheTypes.Lazy[*handler.CfxScanLogResult], error) {
+	return api.scanLogs(ctx, req, nil, false)
+}
+
+func (api *cfxAPI) ScanLogsWithPivotAssumption(
+	ctx context.Context,
+	req handler.CfxScanLogRequest,
+	assumption *handler.CfxPivotAssumption,
+) (cacheTypes.Lazy[*handler.CfxScanLogResult], error) {
+	return api.scanLogs(ctx, req, assumption, true)
+}
+
+func (api *cfxAPI) scanLogs(
+	ctx context.Context,
+	req handler.CfxScanLogRequest,
+	assumption *handler.CfxPivotAssumption,
+	withPivotAssumption bool,
+) (cacheTypes.Lazy[*handler.CfxScanLogResult], error) {
+	if api.LogApiHandler == nil {
+		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, errors.WithMessage(
+			handler.ErrScanLogsUnavailable, "api handler not configured",
+		)
+	}
+
+	if withPivotAssumption && req.Cursor != nil && assumption == nil {
+		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, errors.WithMessagef(
+			handler.ErrScanLogsInvalidParams, "missing pivot assumption",
+		)
+	}
+
+	cfx := GetCfxClientFromContext(ctx)
+	params, err := handler.NormalizeCfxScanLogRequest(cfx, req, withPivotAssumption)
+	if err != nil {
+		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, errors.WithMessage(err, "failed to normalize scan request")
+	}
+
+	result, err := api.LogApiHandler.ScanLogs(ctx, cfx, params, assumption)
+	if err != nil {
+		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, err
+	}
+
+	result.Logs = uniformCfxLogs(result.Logs)
+	return handler.EncodeScanLogsResult(result)
 }
 
 // getLogs helper method to get logs from store or fullnode.

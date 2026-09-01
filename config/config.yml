@@ -489,6 +489,13 @@ node:
 #     # Maximum block range to split log filters for full nodes
 #     maxSplitBlockRange: 1000
 
+#   # Cursor-paginated scanLogs limits
+#   scanLogs:
+#     # Maximum effective page size (must not exceed the Store log limit 10,000)
+#     maxLimit: 1000
+#     # Full node window size, in epochs for Core space and blocks for eSpace
+#     fullnodeWindowSize: 1000
+
 #   # Resource usage constraints
 #   resourceLimits:
 #     # Maximum response bytes for 'getLogs' requests (default 10MB)

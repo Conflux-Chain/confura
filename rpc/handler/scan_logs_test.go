@@ -112,7 +112,7 @@ func TestScanLogsErrorsUseFrameworkDefaultCode(t *testing.T) {
 	_, custom := interface{}(ErrScanLogsInvalidCursor).(codedError)
 	assert.False(t, custom)
 	_, custom = newCanonicalDependentError(
-		ErrScanLogsAssumptionNotMet, "assumption validation failed",
+		ErrScanLogsAssumptionFailure, "assumption validation failed",
 	).(codedError)
 	assert.False(t, custom)
 }
@@ -246,7 +246,7 @@ func TestBuildEthInnerCandidateKeepsUnmetAssumptionProvisional(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionFailure)
 	assert.True(t, isCanonicalDependentError(candidate.err))
 	assert.True(t, candidate.usage.fn)
 	assert.NotNil(t, candidate.result)
@@ -391,7 +391,7 @@ func TestCfxScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 		&CfxPivotAssumption{EpochNumber: 10, PivotBlockHash: cfxtypes.Hash("0x02")},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
 }
 
 func TestCfxScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
@@ -567,7 +567,7 @@ func TestCfxRouteBReaderFiltersOnlyCursorBlock(t *testing.T) {
 			cfxLog(b5010, epoch, 0),
 		},
 	}
-	attempt, err := newCfxFNAttemptView(client, epoch+1, cfxSummary(checkpointHash, epoch+1, 5015))
+	attempt, err := newCfxFNAttemptView(client, epoch+1, cfxSummary(checkpointHash, epoch+1, 5015), nil)
 	require.NoError(t, err)
 	cursor := &store.ScanCursor{BlockNumber: 5009, LogIndex: 2}
 	reader := cfxFNReader{client: client, attempt: attempt, spec: cfxFNReaderSpec{
@@ -592,7 +592,7 @@ func TestCfxRouteBReaderKeepsLaterBlockWhenCursorBlockHasNoLogs(t *testing.T) {
 		byHash: map[cfxtypes.Hash]*cfxtypes.BlockSummary{b5010: cfxSummary(b5010, epoch, 5010)},
 		logs:   []cfxtypes.Log{cfxLog(b5010, epoch, 0)},
 	}
-	attempt, err := newCfxFNAttemptView(client, epoch+1, cfxSummary(checkpointHash, epoch+1, 5015))
+	attempt, err := newCfxFNAttemptView(client, epoch+1, cfxSummary(checkpointHash, epoch+1, 5015), nil)
 	require.NoError(t, err)
 	reader := cfxFNReader{client: client, attempt: attempt, spec: cfxFNReaderSpec{
 		blocks: scanRange{From: 5009, To: 5015}, cursor: &store.ScanCursor{BlockNumber: 5009, LogIndex: 2},
@@ -614,7 +614,7 @@ func TestCfxRouteBReaderReverseFiltersCursorBlock(t *testing.T) {
 			cfxLog(b5009, epoch, 4),
 		},
 	}
-	attempt, err := newCfxFNAttemptView(client, epoch+1, cfxSummary(checkpointHash, epoch+1, 5015))
+	attempt, err := newCfxFNAttemptView(client, epoch+1, cfxSummary(checkpointHash, epoch+1, 5015), nil)
 	require.NoError(t, err)
 	reader := cfxFNReader{client: client, attempt: attempt, spec: cfxFNReaderSpec{
 		blocks: scanRange{From: 5000, To: 5009}, cursor: &store.ScanCursor{BlockNumber: 5009, LogIndex: 3},
@@ -658,7 +658,7 @@ func TestCfxFNReaderRejectsIncompleteLogsBeforeCursorFiltering(t *testing.T) {
 
 			client := &fakeCfxScanClient{logs: []cfxtypes.Log{log}}
 			attempt, err := newCfxFNAttemptView(
-				client, epoch, cfxSummary("0x5010", epoch, 5010),
+				client, epoch, cfxSummary("0x5010", epoch, 5010), nil,
 			)
 			require.NoError(t, err)
 			reader := cfxFNReader{client: client, attempt: attempt, spec: cfxFNReaderSpec{
@@ -681,7 +681,7 @@ func TestCfxRouteBBlockPlanReusesCheckpointAndCursorBoundary(t *testing.T) {
 	client := &fakeCfxScanClient{byNumber: map[uint64]*cfxtypes.BlockSummary{
 		5009: cfxSummary(cursorHash, 105, 5009),
 	}}
-	attempt, err := newCfxFNAttemptView(client, checkpointEpoch, cfxSummary(checkpointHash, checkpointEpoch, 5100))
+	attempt, err := newCfxFNAttemptView(client, checkpointEpoch, cfxSummary(checkpointHash, checkpointEpoch, 5100), nil)
 	require.NoError(t, err)
 	plan, err := attempt.resolveBlockPlan(
 		cfxScanGeneration{fnEpochs: scanRange{From: 100, To: checkpointEpoch}},
@@ -702,7 +702,7 @@ func TestCfxRouteBPureFNFirstPageUsesPreviousPivotOnce(t *testing.T) {
 	client := &fakeCfxScanClient{byEpoch: map[uint64]*cfxtypes.BlockSummary{
 		fromEpoch - 1: cfxSummary(previousHash, fromEpoch-1, 4900),
 	}}
-	attempt, err := newCfxFNAttemptView(client, checkpointEpoch, cfxSummary(checkpointHash, checkpointEpoch, 5100))
+	attempt, err := newCfxFNAttemptView(client, checkpointEpoch, cfxSummary(checkpointHash, checkpointEpoch, 5100), nil)
 	require.NoError(t, err)
 	plan, err := attempt.resolveBlockPlan(
 		cfxScanGeneration{fnEpochs: scanRange{From: fromEpoch, To: checkpointEpoch}},
@@ -718,7 +718,7 @@ func TestCfxRouteBMixedPageUsesDBBoundaryWithoutRangeRPC(t *testing.T) {
 	const checkpointEpoch = uint64(110)
 	checkpointHash := cfxtypes.Hash("0x5100")
 	client := &fakeCfxScanClient{}
-	attempt, err := newCfxFNAttemptView(client, checkpointEpoch, cfxSummary(checkpointHash, checkpointEpoch, 5100))
+	attempt, err := newCfxFNAttemptView(client, checkpointEpoch, cfxSummary(checkpointHash, checkpointEpoch, 5100), nil)
 	require.NoError(t, err)
 	plan, err := attempt.resolveBlockPlan(cfxScanGeneration{
 		dbAvailable: true,
@@ -742,7 +742,7 @@ func TestCfxRouteBReverseCursorResolvesOnlyLowerBoundary(t *testing.T) {
 			5009: cfxSummary(cursorHash, 105, 5009),
 		},
 	}
-	attempt, err := newCfxFNAttemptView(client, checkpointEpoch, cfxSummary(checkpointHash, checkpointEpoch, 5100))
+	attempt, err := newCfxFNAttemptView(client, checkpointEpoch, cfxSummary(checkpointHash, checkpointEpoch, 5100), nil)
 	require.NoError(t, err)
 	plan, err := attempt.resolveBlockPlan(
 		cfxScanGeneration{fnEpochs: scanRange{From: fromEpoch, To: checkpointEpoch}},
@@ -762,7 +762,7 @@ func TestCfxRouteBResolvesToEpochWhenCheckpointIsHigher(t *testing.T) {
 		toEpoch:       cfxSummary(cfxtypes.Hash("0x5100"), toEpoch, 5100),
 	}}
 	attempt, err := newCfxFNAttemptView(
-		client, checkpointEpoch, cfxSummary(cfxtypes.Hash("0x5200"), checkpointEpoch, 5200),
+		client, checkpointEpoch, cfxSummary(cfxtypes.Hash("0x5200"), checkpointEpoch, 5200), nil,
 	)
 	require.NoError(t, err)
 	plan, err := attempt.resolveBlockPlan(
@@ -779,7 +779,7 @@ func TestCfxRouteBKeepsCursorAboveCheckpointProvisional(t *testing.T) {
 	const checkpointEpoch = uint64(110)
 	client := &fakeCfxScanClient{}
 	attempt, err := newCfxFNAttemptView(
-		client, checkpointEpoch, cfxSummary(cfxtypes.Hash("0x5100"), checkpointEpoch, 5100),
+		client, checkpointEpoch, cfxSummary(cfxtypes.Hash("0x5100"), checkpointEpoch, 5100), nil,
 	)
 	require.NoError(t, err)
 	_, err = attempt.resolveBlockPlan(
@@ -798,7 +798,7 @@ func TestCfxRouteBKeepsCursorOutsideEpochRangeProvisional(t *testing.T) {
 		1000: cfxSummary(cfxtypes.Hash("0x1000"), 105, 1000),
 	}}
 	attempt, err := newCfxFNAttemptView(
-		client, checkpointEpoch, cfxSummary(cfxtypes.Hash("0x1100"), checkpointEpoch, 1100),
+		client, checkpointEpoch, cfxSummary(cfxtypes.Hash("0x1100"), checkpointEpoch, 1100), nil,
 	)
 	require.NoError(t, err)
 	_, err = attempt.resolveBlockPlan(
@@ -816,7 +816,7 @@ func TestCfxRouteBTrustsBlockSummaryLookupContract(t *testing.T) {
 		5009: cfxSummary(cfxtypes.Hash("0x5010"), 105, 5010),
 	}}
 	attempt, err := newCfxFNAttemptView(
-		client, checkpointEpoch, cfxSummary(cfxtypes.Hash("0x5100"), checkpointEpoch, 5100),
+		client, checkpointEpoch, cfxSummary(cfxtypes.Hash("0x5100"), checkpointEpoch, 5100), nil,
 	)
 	require.NoError(t, err)
 	plan, err := attempt.resolveBlockPlan(
@@ -834,7 +834,7 @@ func TestBuildCfxInnerCandidateChecksCheckpointAssumptionHash(t *testing.T) {
 	const epoch = uint64(150)
 	realHash := cfxtypes.Hash("0x150b")
 	client := &fakeCfxScanClient{}
-	attempt, err := newCfxFNAttemptView(client, epoch, cfxSummary(realHash, epoch, 6000))
+	attempt, err := newCfxFNAttemptView(client, epoch, cfxSummary(realHash, epoch, 6000), nil)
 	require.NoError(t, err)
 	assumption := &CfxPivotAssumption{EpochNumber: hexutil.Uint64(epoch), PivotBlockHash: cfxtypes.Hash("0x150a")}
 	candidate, err := (&CfxLogsApiHandler{}).buildCfxInnerCandidate(
@@ -849,7 +849,7 @@ func TestBuildCfxInnerCandidateChecksCheckpointAssumptionHash(t *testing.T) {
 		attempt,
 	)
 	require.NoError(t, err)
-	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, candidate.err, ErrScanLogsAssumptionFailure)
 	assert.True(t, isCanonicalDependentError(candidate.err))
 	assert.True(t, candidate.usage.fn)
 }
@@ -894,7 +894,7 @@ func TestEthScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 		&EthPivotAssumption{BlockNumber: 10, BlockHash: common.HexToHash("0x02")},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
 }
 
 func TestEthScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
@@ -1035,7 +1035,7 @@ func TestEthScanLogsRejectsNullFNAssumptionBlock(t *testing.T) {
 		&EthPivotAssumption{BlockNumber: 12, BlockHash: assumptionHash},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
 	assert.Equal(t, 3, client.blockCalls)
 	assert.Len(t, client.filters, 1)
 }
@@ -1054,7 +1054,7 @@ func TestEthScanLogsRejectsNullCheckpointForFNAssumption(t *testing.T) {
 		&EthPivotAssumption{BlockNumber: 12, BlockHash: common.HexToHash("0x12")},
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsAssumptionNotMet)
+	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
 	assert.Equal(t, 1, client.blockCalls)
 	assert.Empty(t, client.filters)
 }

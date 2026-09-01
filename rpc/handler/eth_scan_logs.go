@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"time"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -16,10 +17,36 @@ type EthBlockRange struct {
 	To   *web3types.BlockNumber `json:"toBlock,omitempty"`
 }
 
+func (r *EthBlockRange) UnmarshalJSON(data []byte) error {
+	type plain EthBlockRange
+	var decoded plain
+	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
+		return errors.WithMessage(err, "invalid eSpace block range")
+	}
+	if err := validateJSONObjectFields(data, nil, []string{"fromBlock", "toBlock"}); err != nil {
+		return err
+	}
+	*r = EthBlockRange(decoded)
+	return nil
+}
+
 type EthScanLogFilter struct {
 	BlockRange *EthBlockRange  `json:"blockRange,omitempty"`
 	Address    *common.Address `json:"address,omitempty"`
 	Topic0     *common.Hash    `json:"topic0,omitempty"`
+}
+
+func (f *EthScanLogFilter) UnmarshalJSON(data []byte) error {
+	type plain EthScanLogFilter
+	var decoded plain
+	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
+		return errors.WithMessage(err, "invalid eSpace scan filter")
+	}
+	if err := validateJSONObjectFields(data, nil, []string{"blockRange", "address", "topic0"}); err != nil {
+		return err
+	}
+	*f = EthScanLogFilter(decoded)
+	return nil
 }
 
 type EthScanLogRequest struct {
@@ -29,9 +56,34 @@ type EthScanLogRequest struct {
 	Reverse bool             `json:"reverse,omitempty"`
 }
 
+func (r EthScanLogRequest) ContractAddress() (string, bool) {
+	if r.Filter.Address == nil {
+		return "", false
+	}
+	return r.Filter.Address.String(), true
+}
+
+func (r *EthScanLogRequest) UnmarshalJSON(data []byte) error {
+	type plain EthScanLogRequest
+	var decoded plain
+	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
+		return errors.WithMessage(err, "invalid eSpace scan request")
+	}
+	if err := validateJSONObjectFields(
+		data,
+		[]string{"filter"},
+		[]string{"filter", "limit", "cursor", "reverse"},
+	); err != nil {
+		return err
+	}
+	*r = EthScanLogRequest(decoded)
+	return nil
+}
+
 type EthScanLogParams struct {
 	*EthScanLogRequest
-	BlockRange types.RangeUint64
+	BlockRange          types.RangeUint64
+	WithPivotAssumption bool
 }
 
 // EthPivotAssumption identifies one canonical eSpace block and doubles as the
@@ -40,6 +92,24 @@ type EthPivotAssumption struct {
 	BlockNumber hexutil.Uint64 `json:"blockNumber"`
 	BlockHash   common.Hash    `json:"blockHash"`
 }
+
+func (a *EthPivotAssumption) UnmarshalJSON(data []byte) error {
+	type plain EthPivotAssumption
+	var decoded plain
+	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
+		return errors.WithMessage(err, "invalid eSpace pivot assumption")
+	}
+	if err := validateJSONObjectFields(
+		data,
+		[]string{"blockNumber", "blockHash"},
+		[]string{"blockNumber", "blockHash"},
+	); err != nil {
+		return err
+	}
+	*a = EthPivotAssumption(decoded)
+	return nil
+}
+
 type EthPivotGuard EthPivotAssumption
 
 // EthScanLogResult keeps native web3go logs. The unexported usage field tracks
@@ -56,6 +126,112 @@ type EthScanLogResult struct {
 type ethScanClient interface {
 	BlockByNumber(web3types.BlockNumber, bool) (*web3types.Block, error)
 	Logs(web3types.FilterQuery) ([]web3types.Log, error)
+}
+
+type ethBlockNumberResolver interface {
+	BlockByNumber(web3types.BlockNumber, bool) (*web3types.Block, error)
+}
+
+func NormalizeEthScanLogRequest(
+	resolver ethBlockNumberResolver,
+	hardfork web3types.BlockNumber,
+	req EthScanLogRequest,
+	withPivotAssumption bool,
+) (EthScanLogParams, error) {
+	effectiveLimit, err := normalizeScanLogsLimit(req.Limit)
+	if err != nil {
+		return EthScanLogParams{}, err
+	}
+	req.Limit = effectiveLimit
+
+	from, to := web3types.LatestBlockNumber, web3types.LatestBlockNumber
+	if req.Filter.BlockRange != nil {
+		if req.Filter.BlockRange.From != nil {
+			from = *req.Filter.BlockRange.From
+		}
+		if req.Filter.BlockRange.To != nil {
+			to = *req.Filter.BlockRange.To
+		}
+	}
+
+	resolvedTags := make(map[web3types.BlockNumber]uint64)
+	resolveBlock := func(blockNum web3types.BlockNumber) (uint64, error) {
+		if blockNum > 0 {
+			return uint64(blockNum), nil
+		}
+
+		if resolved, ok := resolvedTags[blockNum]; ok {
+			return resolved, nil
+		}
+
+		block, err := resolver.BlockByNumber(blockNum, false)
+		if err != nil {
+			return 0, errors.WithMessagef(err, "failed to resolve block by tag %s", blockNum)
+		}
+		if block == nil || block.Number == nil {
+			return 0, errors.WithMessagef(
+				ErrScanLogsInvalidParams,
+				"unavailable block by tag %s", blockNum,
+			)
+		}
+		resolved := block.Number.Uint64()
+		resolvedTags[blockNum] = resolved
+		return resolved, nil
+	}
+
+	fromNumber, err := resolveBlock(from)
+	if err != nil {
+		return EthScanLogParams{}, err
+	}
+	toNumber, err := resolveBlock(to)
+	if err != nil {
+		return EthScanLogParams{}, err
+	}
+	if fromNumber > toNumber {
+		return EthScanLogParams{}, errors.WithMessagef(
+			ErrScanLogsInvalidParams,
+			"invalid block range: from block %s exceeds to block %s", from, to,
+		)
+	}
+
+	// A numeric upper bound is explicit caller input. Compare it with one frozen
+	// latest head and fail instead of truncating the requested range.
+	if to >= 0 {
+		latest, err := resolveBlock(web3types.LatestBlockNumber)
+		if err != nil {
+			return EthScanLogParams{}, err
+		}
+		if toNumber > latest {
+			return EthScanLogParams{}, errors.WithMessagef(
+				ErrScanLogsInvalidParams,
+				"explicit toBlock %d exceeds frozen latest %d", toNumber, latest,
+			)
+		}
+	}
+
+	// eSpace has no logs before the transition height. Preserve a wholly
+	// pre-transition request as empty instead of moving it onto the hardfork block.
+	var effectiveBlockRange scanRange
+	if hardforkNumber := uint64(hardfork); toNumber <= hardforkNumber {
+		effectiveBlockRange = emptyScanRange
+	} else {
+		effectiveBlockRange = scanRange{
+			From: max(fromNumber, hardforkNumber),
+			To:   toNumber,
+		}
+	}
+
+	if req.Cursor != nil && !effectiveBlockRange.contains(uint64(req.Cursor.BlockNumber)) {
+		return EthScanLogParams{}, errors.WithMessage(
+			ErrScanLogsInvalidCursor, "cursor is outside the normalized block range",
+		)
+	}
+
+	return EthScanLogParams{
+		EthScanLogRequest:   &req,
+		BlockRange:          types.RangeUint64(effectiveBlockRange),
+		WithPivotAssumption: withPivotAssumption,
+	}, nil
 }
 
 type ethScanGeneration struct {
@@ -95,11 +271,19 @@ func ethFNFilter(scanFilter EthScanLogFilter) web3types.FilterQuery {
 }
 
 // buildEthGeneration captures one DB-version-specific block split. The RPC
-// adapter has already resolved tags and capped a future numeric upper bound;
+// adapter has already resolved tags and rejected a future numeric upper bound;
 // this layer must not resolve latest again because doing so would change the
 // meaning of a normalized safe/finalized request.
 func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethScanGeneration, error) {
 	cursor := req.Cursor.toStoreCursor()
+	if scanRange(req.BlockRange).empty() {
+		if cursor != nil {
+			return ethScanGeneration{}, errors.WithMessage(
+				ErrScanLogsInvalidCursor, "cursor is outside of the request range",
+			)
+		}
+		return newEthFullnodeGeneration(emptyScanRange, nil, req.Reverse), nil
+	}
 
 	earliest, ok, err := handler.es.EarliestBlockMapping()
 	if err != nil {
@@ -149,7 +333,7 @@ func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethS
 		dbPivot:       common.HexToHash(latest.PivotHash),
 	}
 
-	// Block tags and future numeric bounds are normalized/capped by RPC before
+	// Block tags and future numeric bounds are normalized/validated by RPC before
 	// this call. Handler planning only splits the frozen effective range at the
 	// DB watermark and must not read a newer latest head of its own.
 	if latest.BnMax >= req.BlockRange.To {
@@ -289,7 +473,7 @@ func finishEthCandidate(
 	tail *ScanLogCursor, usage ethScanUsage,
 ) *EthScanLogResult {
 	result := &EthScanLogResult{Logs: logs, NextCursor: tail.clone(), usage: usage}
-	if assumption == nil {
+	if assumption == nil && (!req.WithPivotAssumption || len(logs) == 0) {
 		return result
 	}
 
@@ -304,13 +488,14 @@ func finishEthCandidate(
 		log = logs[0]
 	}
 
-	result.PivotGuard = &EthPivotGuard{BlockNumber: hexutil.Uint64(log.BlockNumber), BlockHash: log.BlockHash}
+	result.PivotGuard = &EthPivotGuard{
+		BlockNumber: hexutil.Uint64(log.BlockNumber),
+		BlockHash:   log.BlockHash,
+	}
 	return result
 }
 
 // ScanLogs executes an eSpace scan over an already frozen numeric request.
-// Public RPC parsing, ACL and error-code mapping are added by task #4.
-//
 // It uses the same two-level protocol as Core:
 //
 //	outer: v0 -> DB coverage/assumption/cache -> v1
@@ -324,9 +509,42 @@ func (handler *EthLogsApiHandler) ScanLogs(
 	eth ethScanClient,
 	req EthScanLogParams,
 	assumption *EthPivotAssumption,
+) (result *EthScanLogResult, err error) {
+	if req.WithPivotAssumption && req.Cursor != nil && assumption == nil {
+		return nil, errors.WithMessage(
+			ErrScanLogsInvalidParams, "pivot assumption is required when cursor is provided",
+		)
+	}
+
+	recorder := newScanLogsMetrics("eth", req.WithPivotAssumption)
+	ctx = withScanLogsMetrics(ctx, recorder)
+	started := time.Now()
+
+	recorder.Percentage("direction/reverse", req.Reverse)
+	recorder.Histogram("limit", int64(req.Limit))
+
+	defer func() {
+		recorder.Duration("duration", started)
+		if result != nil {
+			recorder.Histogram("result", int64(len(result.Logs)))
+			db, fn := result.canonicalUsageDB(), result.canonicalUsageFN()
+			recorder.Percentage("source/db", db && !fn)
+			recorder.Percentage("source/fn", fn && !db)
+			recorder.Percentage("source/mixed", db && fn)
+		}
+	}()
+
+	return handler.scanLogs(ctx, eth, req, assumption)
+}
+
+func (handler *EthLogsApiHandler) scanLogs(
+	ctx context.Context,
+	eth ethScanClient,
+	req EthScanLogParams,
+	assumption *EthPivotAssumption,
 ) (*EthScanLogResult, error) {
-	if req.Limit == 0 || uint64(req.Limit) > store.MaxLogLimit {
-		return nil, errors.Errorf("scan limit must be in [1, %d]", store.MaxLogLimit)
+	if req.Limit == 0 || uint64(req.Limit) > maxScanLogsLimit {
+		return nil, errors.WithMessagef(ErrScanLogsInvalidParams, "scan limit must be in [1, %d]", maxScanLogsLimit)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
@@ -349,12 +567,15 @@ func (handler *EthLogsApiHandler) ScanLogs(
 			if errors.Is(err, ErrScanLogsConsistency) {
 				_, retryOuter, commitErr := handler.commitEthDBGeneration(v0, nil, err)
 				if retryOuter {
+					markScanLogsMetric(ctx, "retry/db_outer")
 					continue
 				}
 				return nil, commitErr
 			}
 			return nil, err
 		}
+		recordScanLogsHistogram(ctx, "plan/segments", int64(len(gen.plan.segments)))
+		recordScanLogsCursorOwner(ctx, gen.owner)
 
 		// Cache lifetime is exactly one outer generation. It can survive FN-only
 		// retries, but a plan without a DB segment does not allocate one.
@@ -370,6 +591,7 @@ func (handler *EthLogsApiHandler) ScanLogs(
 		if assumptionErr != nil {
 			_, retryOuter, commitErr := handler.commitEthDBGeneration(v0, nil, assumptionErr)
 			if retryOuter {
+				markScanLogsMetric(ctx, "retry/db_outer")
 				continue
 			}
 			return nil, commitErr
@@ -394,6 +616,7 @@ func (handler *EthLogsApiHandler) ScanLogs(
 				)
 				result, retryOuter, commitErr := handler.commitEthDBGeneration(v0, result, nil)
 				if retryOuter {
+					markScanLogsMetric(ctx, "retry/db_outer")
 					continue
 				}
 				return result, commitErr
@@ -411,6 +634,7 @@ func (handler *EthLogsApiHandler) ScanLogs(
 
 			result, retryOuter, commitErr := handler.commitEthDBGeneration(v0, result, provisionalErr)
 			if retryOuter {
+				markScanLogsMetric(ctx, "retry/db_outer")
 				continue
 			}
 			return result, commitErr
@@ -427,6 +651,7 @@ func (handler *EthLogsApiHandler) ScanLogs(
 			ctx, eth, req, assumption, outer,
 		)
 		if retryOuter {
+			markScanLogsMetric(ctx, "retry/db_outer")
 			continue
 		}
 		return result, err
@@ -481,7 +706,7 @@ func (handler *EthLogsApiHandler) checkEthDBAssumption(
 
 	if common.HexToHash(pivot) != assumption.BlockHash {
 		return true, errors.WithMessagef(
-			ErrScanLogsAssumptionNotMet,
+			ErrScanLogsAssumptionFailure,
 			"expected pivot %s got %s for block %d",
 			assumption.BlockHash, pivot, assumption.BlockNumber,
 		), nil
@@ -543,7 +768,7 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		if before == nil {
 			if outer.fnAssumption && uint64(assumption.BlockNumber) == checkpoint {
 				return nil, false, errors.WithMessagef(
-					ErrScanLogsAssumptionNotMet,
+					ErrScanLogsAssumptionFailure,
 					"assumption block %d is unavailable", assumption.BlockNumber,
 				)
 			}
@@ -599,8 +824,11 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		case canonicalRetryOuter:
 			return nil, true, nil
 		case canonicalRetryInner:
+			markScanLogsMetric(ctx, "retry/fn_inner")
 			if boundaryMismatch && checkpointStable {
+				markScanLogsMetric(ctx, "boundary/mismatch")
 				if boundaryRetries >= maxBoundaryInnerRetries {
+					markScanLogsMetric(ctx, "boundary/convergence_failure")
 					return nil, false, errors.WithMessagef(
 						ErrScanLogsConsistency, "mixed boundary mismatch after %d retry", boundaryRetries,
 					)
@@ -669,13 +897,13 @@ func (handler *EthLogsApiHandler) buildEthInnerCandidate(
 		}
 		if candidate.err == nil && block == nil {
 			candidate.err = newCanonicalDependentError(
-				ErrScanLogsAssumptionNotMet,
+				ErrScanLogsAssumptionFailure,
 				"pivot assumption block %d is unavailable",
 				uint64(assumption.BlockNumber),
 			)
 		} else if candidate.err == nil && block.Hash != assumption.BlockHash {
 			candidate.err = newCanonicalDependentError(
-				ErrScanLogsAssumptionNotMet, "pivot assumption does not match",
+				ErrScanLogsAssumptionFailure, "pivot assumption does not match",
 			)
 		}
 	}
