@@ -5,6 +5,14 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"gorm.io/gorm"
+	"gorm.io/hints"
+)
+
+const (
+	indexUniversalScanLogs    = "idx_bn_li"
+	indexAddressScanLogs      = "idx_cid_bn_li"
+	indexAddressTopicScanLogs = "idx_cid_tid_bn_li"
+	indexTopicScanLogs        = "idx_tid_bn_li"
 )
 
 // scanLogFilter contains the predicates shared by all keyset log queries.
@@ -22,6 +30,15 @@ type scanLogFilter struct {
 
 func (filter *scanLogFilter) newQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db.WithContext(ctx).Table(filter.TableName)
+}
+
+func forceScanLogIndex(db *gorm.DB, indexName string) *gorm.DB {
+	// The store runs on MySQL. Keeping non-MySQL dialects hint-free preserves
+	// lightweight SQLite unit tests, whose grammar has no FORCE INDEX clause.
+	if db.Dialector.Name() != "mysql" {
+		return db
+	}
+	return db.Clauses(hints.ForceIndex(indexName))
 }
 
 func (filter *scanLogFilter) finishQuery(
@@ -68,7 +85,11 @@ func (filter *scanLogFilter) find(
 	limit int,
 	destSlicePtr any,
 ) error {
-	query := filter.newQuery(ctx, db)
+	indexName := indexUniversalScanLogs
+	if filter.Topic0ID != nil {
+		indexName = indexTopicScanLogs
+	}
+	query := forceScanLogIndex(filter.newQuery(ctx, db), indexName)
 	return filter.finishQuery(query, cursor, reverse, limit, destSlicePtr)
 }
 
@@ -86,7 +107,12 @@ func (filter *AddressIndexedScanLogFilter) Find(
 	reverse bool,
 	limit int,
 ) ([]*AddressIndexedLog, error) {
-	query := filter.newQuery(ctx, db).Where("cid = ?", filter.ContractID)
+	indexName := indexAddressScanLogs
+	if filter.Topic0ID != nil {
+		indexName = indexAddressTopicScanLogs
+	}
+	query := forceScanLogIndex(filter.newQuery(ctx, db), indexName).
+		Where("cid = ?", filter.ContractID)
 
 	var result []*AddressIndexedLog
 	if err := filter.finishQuery(query, cursor, reverse, limit, &result); err != nil {
@@ -110,7 +136,8 @@ func (filter *TopicIndexedScanLogFilter) Find(
 	reverse bool,
 	limit int,
 ) ([]*TopicIndexedLog, error) {
-	query := filter.newQuery(ctx, db).Where("tid = ?", filter.TopicID)
+	query := forceScanLogIndex(filter.newQuery(ctx, db), indexTopicScanLogs).
+		Where("tid = ?", filter.TopicID)
 
 	var result []*TopicIndexedLog
 	if err := filter.finishQuery(query, cursor, reverse, limit, &result); err != nil {

@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -113,6 +114,95 @@ func TestTopicIndexedScanLogFilterPredicate(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, uint64(8), rows[0].Topic0ID)
+}
+
+func TestIndexedScanLogFiltersForceRouteIndex(t *testing.T) {
+	db, err := gorm.Open(mysql.New(mysql.Config{
+		DSN:                       "gorm:gorm@tcp(127.0.0.1:9910)/gorm?parseTime=True",
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name      string
+		find      func(*gorm.DB) error
+		forceHint string
+	}{
+		{
+			name: "universal or dedicated without topic0",
+			find: func(db *gorm.DB) error {
+				filter := scanLogFilter{TableName: "logs_0", BlockTo: 100}
+				var rows []*log
+				return filter.find(context.Background(), db, nil, false, 10, &rows)
+			},
+			forceHint: "FORCE INDEX (`idx_bn_li`)",
+		},
+		{
+			name: "dedicated contract with topic0",
+			find: func(db *gorm.DB) error {
+				topicID := uint64(2)
+				filter := scanLogFilter{
+					TableName: "clogs_1_0", BlockTo: 100, Topic0ID: &topicID,
+				}
+				var rows []*log
+				return filter.find(context.Background(), db, nil, false, 10, &rows)
+			},
+			forceHint: "FORCE INDEX (`idx_tid_bn_li`)",
+		},
+		{
+			name: "address only",
+			find: func(db *gorm.DB) error {
+				filter := AddressIndexedScanLogFilter{
+					scanLogFilter: scanLogFilter{TableName: "addr_logs_1", BlockTo: 100},
+					ContractID:    1,
+				}
+				_, err := filter.Find(context.Background(), db, nil, false, 10)
+				return err
+			},
+			forceHint: "FORCE INDEX (`idx_cid_bn_li`)",
+		},
+		{
+			name: "address and topic0",
+			find: func(db *gorm.DB) error {
+				topicID := uint64(2)
+				filter := AddressIndexedScanLogFilter{
+					scanLogFilter: scanLogFilter{
+						TableName: "addr_logs_1", BlockTo: 100, Topic0ID: &topicID,
+					},
+					ContractID: 1,
+				}
+				_, err := filter.Find(context.Background(), db, nil, false, 10)
+				return err
+			},
+			forceHint: "FORCE INDEX (`idx_cid_tid_bn_li`)",
+		},
+		{
+			name: "topic0 only",
+			find: func(db *gorm.DB) error {
+				filter := TopicIndexedScanLogFilter{
+					scanLogFilter: scanLogFilter{TableName: "topic_logs_1", BlockTo: 100},
+					TopicID:       2,
+				}
+				_, err := filter.Find(context.Background(), db, nil, false, 10)
+				return err
+			},
+			forceHint: "FORCE INDEX (`idx_tid_bn_li`)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var sql string
+			callbackName := "test:capture-force-index"
+			require.NoError(t, db.Callback().Query().After("gorm:query").Register(
+				callbackName, func(tx *gorm.DB) { sql = tx.Statement.SQL.String() },
+			))
+			t.Cleanup(func() { _ = db.Callback().Query().Remove(callbackName) })
+
+			require.NoError(t, test.find(db))
+			assert.Contains(t, sql, test.forceHint)
+		})
+	}
 }
 
 func newScanLogFilterTestDB(t *testing.T) *gorm.DB {

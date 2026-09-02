@@ -267,7 +267,6 @@ func TestScanLogsStrictJSON(t *testing.T) {
 		data string
 		dst  interface{}
 	}{
-		{"missing filter", `{}`, new(CfxScanLogRequest)},
 		{"null filter", `{"filter":null}`, new(EthScanLogRequest)},
 		{"request unknown", `{"filter":{},"blockHash":"0x1"}`, new(CfxScanLogRequest)},
 		{"filter unknown", `{"filter":{"topics":[]}}`, new(EthScanLogRequest)},
@@ -280,6 +279,22 @@ func TestScanLogsStrictJSON(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			require.Error(t, json.Unmarshal([]byte(test.data), test.dst))
+		})
+	}
+}
+
+func TestScanLogsOptionalFilter(t *testing.T) {
+	tests := []struct {
+		name string
+		dst  interface{}
+	}{
+		{"cfx", new(CfxScanLogRequest)},
+		{"eth", new(EthScanLogRequest)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.NoError(t, json.Unmarshal([]byte(`{}`), test.dst))
 		})
 	}
 }
