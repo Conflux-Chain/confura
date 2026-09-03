@@ -142,30 +142,6 @@ func TestScanLogsErrorsUseFrameworkDefaultCode(t *testing.T) {
 	assert.False(t, custom)
 }
 
-func TestScanLogsHandlersRequireAssumptionForCursor(t *testing.T) {
-	cfxReq := CfxScanLogParams{
-		CfxScanLogRequest: &CfxScanLogRequest{
-			Limit:  1,
-			Cursor: &ScanLogCursor{},
-		},
-		WithPivotAssumption: true,
-	}
-	_, err := (&CfxLogsApiHandler{}).ScanLogs(context.Background(), nil, cfxReq, nil)
-	require.ErrorIs(t, err, ErrScanLogsInvalidParams)
-	require.EqualError(t, err, "invalid scan logs params: missing pivot assumption")
-
-	ethReq := EthScanLogParams{
-		EthScanLogRequest: &EthScanLogRequest{
-			Limit:  1,
-			Cursor: &ScanLogCursor{},
-		},
-		WithPivotAssumption: true,
-	}
-	_, err = (&EthLogsApiHandler{}).ScanLogs(context.Background(), nil, ethReq, nil)
-	require.ErrorIs(t, err, ErrScanLogsInvalidParams)
-	require.EqualError(t, err, "invalid scan logs params: missing pivot assumption")
-}
-
 func TestClassifyCursorOwnerRejectsCursorOutsideRequestDBRange(t *testing.T) {
 	dbRange := scanRange{From: 100, To: 150}
 	owner, err := classifyCursorOwner(&store.ScanCursor{BlockNumber: 90}, dbRange, 200)

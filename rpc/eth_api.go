@@ -532,6 +532,9 @@ func (api *ethAPI) scanLogs(
 			handler.ErrScanLogsUnavailable, "api handler not configured",
 		)
 	}
+	if err := validateScanLogsRequest(withPivotAssumption, req.Cursor, assumption != nil); err != nil {
+		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, err
+	}
 
 	w3c := GetEthClientFromContext(ctx)
 	params, err := handler.NormalizeEthScanLogRequest(w3c.Eth, api.hardforkBlockNumber, req, withPivotAssumption)

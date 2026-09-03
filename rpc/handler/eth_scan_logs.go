@@ -511,12 +511,6 @@ func (handler *EthLogsApiHandler) ScanLogs(
 	req EthScanLogParams,
 	assumption *EthPivotAssumption,
 ) (result *EthScanLogResult, err error) {
-	if req.WithPivotAssumption && req.Cursor != nil && assumption == nil {
-		return nil, NewScanLogsErrorf(
-			ErrScanLogsInvalidParams, "missing pivot assumption",
-		)
-	}
-
 	recorder := newScanLogsMetrics("eth", req.WithPivotAssumption)
 	ctx = withScanLogsMetrics(ctx, recorder)
 	started := time.Now()

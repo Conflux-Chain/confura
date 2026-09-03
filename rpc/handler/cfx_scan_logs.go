@@ -629,12 +629,6 @@ func (handler *CfxLogsApiHandler) ScanLogs(
 	req CfxScanLogParams,
 	assumption *CfxPivotAssumption,
 ) (result *CfxScanLogResult, err error) {
-	if req.WithPivotAssumption && req.Cursor != nil && assumption == nil {
-		return nil, NewScanLogsErrorf(
-			ErrScanLogsInvalidParams, "missing pivot assumption",
-		)
-	}
-
 	recorder := newScanLogsMetrics("cfx", req.WithPivotAssumption)
 	ctx = withScanLogsMetrics(ctx, recorder)
 	started := time.Now()

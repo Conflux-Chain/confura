@@ -306,6 +306,9 @@ func (api *cfxAPI) scanLogs(
 			handler.ErrScanLogsUnavailable, "api handler not configured",
 		)
 	}
+	if err := validateScanLogsRequest(withPivotAssumption, req.Cursor, assumption != nil); err != nil {
+		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, err
+	}
 
 	cfx := GetCfxClientFromContext(ctx)
 	params, err := handler.NormalizeCfxScanLogRequest(cfx, req, withPivotAssumption)
