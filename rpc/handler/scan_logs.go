@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -84,11 +85,41 @@ var (
 
 	ErrScanLogsInvalidParams = errors.New("invalid scan logs params")
 	ErrScanLogsInvalidCursor = errors.New("invalid scan logs cursor")
-	ErrScanLogsInvalidFilter = errors.New("invalid scan log filter")
 
 	ErrScanLogsConsistency       = errors.New("inconsistent canonical views")
 	ErrScanLogsAssumptionFailure = errors.New("pivot assumption failed")
 )
+
+// scanLogsError keeps the stable client-facing category outside the concrete
+// cause. This makes the message read "category: cause" while preserving both
+// errors.Is category matching and conventional cause traversal.
+type scanLogsError struct {
+	category error
+	cause    error
+}
+
+func (e *scanLogsError) Error() string        { return fmt.Sprintf("%s: %s", e.category, e.cause) }
+func (e *scanLogsError) Unwrap() error        { return e.cause }
+func (e *scanLogsError) Cause() error         { return e.cause }
+func (e *scanLogsError) Is(target error) bool { return errors.Is(e.category, target) }
+
+// NewScanLogsError constructs a categorized scanLogs error. The category is
+// the externally visible manifestation; cause is the concrete failure reason.
+// Neither the returned error nor its category implements a JSON-RPC error code.
+func NewScanLogsError(category, cause error) error {
+	if category == nil {
+		return cause
+	}
+	if cause == nil {
+		return category
+	}
+	return &scanLogsError{category: category, cause: cause}
+}
+
+// NewScanLogsErrorf is the formatted counterpart of NewScanLogsError.
+func NewScanLogsErrorf(category error, format string, args ...any) error {
+	return NewScanLogsError(category, errors.Errorf(format, args...))
+}
 
 // canonicalDependentError marks an error observed from the current canonical
 // chain view. It is provisional until the applicable FN after-check and DB v1
@@ -98,9 +129,10 @@ type canonicalDependentError struct{ err error }
 
 func (e *canonicalDependentError) Error() string { return e.err.Error() }
 func (e *canonicalDependentError) Unwrap() error { return e.err }
+func (e *canonicalDependentError) Cause() error  { return errors.Cause(e.err) }
 
-func newCanonicalDependentError(err error, format string, args ...any) error {
-	return &canonicalDependentError{err: errors.Wrapf(err, format, args...)}
+func newCanonicalDependentError(category error, format string, args ...any) error {
+	return &canonicalDependentError{err: NewScanLogsErrorf(category, format, args...)}
 }
 
 func isCanonicalDependentError(err error) bool {
@@ -170,9 +202,8 @@ func normalizeScanLogsLimit(limit hexutil.Uint64) (hexutil.Uint64, error) {
 		return hexutil.Uint64(defaultScanLogsLimit), nil
 	}
 	if uint64(limit) > maxScanLogsLimit {
-		return 0, errors.WithMessagef(
-			ErrScanLogsInvalidParams,
-			"scan limit %d exceeds configured maximum %d", limit, maxScanLogsLimit,
+		return 0, errors.Errorf(
+			"page limit %d exceeds configured maximum %d", limit, maxScanLogsLimit,
 		)
 	}
 	return limit, nil
@@ -413,8 +444,15 @@ func classifyCursorOwner(
 		return cursorOwnerFN, nil
 	}
 
-	if dbBlocks.empty() || !dbBlocks.contains(cursor.BlockNumber) {
-		return cursorOwnerNone, errors.WithMessage(ErrScanLogsInvalidCursor, "cursor is outside scan range")
+	if dbBlocks.empty() {
+		return cursorOwnerNone, errors.New("cursor is specified while the split DB segment is empty")
+	}
+
+	if !dbBlocks.contains(cursor.BlockNumber) {
+		return cursorOwnerNone, errors.Errorf(
+			"cursor %d is outside the block range [%d, %d] of the split DB segment",
+			cursor.BlockNumber, dbBlocks.From, dbBlocks.To,
+		)
 	}
 	return cursorOwnerDB, nil
 }
@@ -434,7 +472,10 @@ func clipBlockRangeAtCursor(blocks scanRange, cursor *store.ScanCursor, reverse 
 	}
 
 	if blocks.empty() || !blocks.contains(cursor.BlockNumber) {
-		return emptyScanRange, errors.WithMessage(ErrScanLogsInvalidCursor, "cursor is outside block range")
+		return emptyScanRange, errors.Errorf(
+			"cursor %d is outside block range [%d, %d]",
+			cursor.BlockNumber, blocks.From, blocks.To,
+		)
 	}
 
 	if reverse {

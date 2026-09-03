@@ -528,21 +528,15 @@ func (api *ethAPI) scanLogs(
 	withPivotAssumption bool,
 ) (cacheTypes.Lazy[*handler.EthScanLogResult], error) {
 	if api.LogApiHandler == nil {
-		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, errors.WithMessage(
+		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, handler.NewScanLogsErrorf(
 			handler.ErrScanLogsUnavailable, "api handler not configured",
-		)
-	}
-
-	if withPivotAssumption && req.Cursor != nil && assumption == nil {
-		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, errors.WithMessagef(
-			handler.ErrScanLogsInvalidParams, "missing pivot assumption",
 		)
 	}
 
 	w3c := GetEthClientFromContext(ctx)
 	params, err := handler.NormalizeEthScanLogRequest(w3c.Eth, api.hardforkBlockNumber, req, withPivotAssumption)
 	if err != nil {
-		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, errors.WithMessage(err, "failed to normalize scan request")
+		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, err
 	}
 
 	result, err := api.LogApiHandler.ScanLogs(ctx, w3c.Client.Eth, params, assumption)

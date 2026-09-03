@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3types "github.com/openweb3/web3go/types"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -109,18 +110,67 @@ func newTestEthScanLogsHandler(db *gorm.DB) *EthLogsApiHandler {
 func TestScanLogsErrorsUseFrameworkDefaultCode(t *testing.T) {
 	type codedError interface{ ErrorCode() int }
 
-	_, custom := interface{}(ErrScanLogsInvalidCursor).(codedError)
-	assert.False(t, custom)
-	_, custom = newCanonicalDependentError(
+	categories := []error{
+		ErrScanLogsUnavailable,
+		ErrScanLogsInvalidParams,
+		ErrScanLogsInvalidCursor,
+		ErrScanLogsConsistency,
+		ErrScanLogsAssumptionFailure,
+	}
+	for _, category := range categories {
+		t.Run(category.Error(), func(t *testing.T) {
+			cause := errors.New("concrete reason")
+			err := NewScanLogsError(category, cause)
+
+			require.EqualError(t, err, category.Error()+": concrete reason")
+			require.ErrorIs(t, err, category)
+			require.ErrorIs(t, err, cause)
+			assert.Same(t, cause, errors.Cause(err))
+			_, custom := err.(codedError)
+			assert.False(t, custom)
+		})
+	}
+
+	canonical := newCanonicalDependentError(
 		ErrScanLogsAssumptionFailure, "assumption validation failed",
-	).(codedError)
+	)
+	require.EqualError(t, canonical, "pivot assumption failed: assumption validation failed")
+	require.ErrorIs(t, canonical, ErrScanLogsAssumptionFailure)
+	assert.True(t, isCanonicalDependentError(canonical))
+	require.EqualError(t, errors.Cause(canonical), "assumption validation failed")
+	_, custom := canonical.(codedError)
 	assert.False(t, custom)
+}
+
+func TestScanLogsHandlersRequireAssumptionForCursor(t *testing.T) {
+	cfxReq := CfxScanLogParams{
+		CfxScanLogRequest: &CfxScanLogRequest{
+			Limit:  1,
+			Cursor: &ScanLogCursor{},
+		},
+		WithPivotAssumption: true,
+	}
+	_, err := (&CfxLogsApiHandler{}).ScanLogs(context.Background(), nil, cfxReq, nil)
+	require.ErrorIs(t, err, ErrScanLogsInvalidParams)
+	require.EqualError(t, err, "invalid scan logs params: missing pivot assumption")
+
+	ethReq := EthScanLogParams{
+		EthScanLogRequest: &EthScanLogRequest{
+			Limit:  1,
+			Cursor: &ScanLogCursor{},
+		},
+		WithPivotAssumption: true,
+	}
+	_, err = (&EthLogsApiHandler{}).ScanLogs(context.Background(), nil, ethReq, nil)
+	require.ErrorIs(t, err, ErrScanLogsInvalidParams)
+	require.EqualError(t, err, "invalid scan logs params: missing pivot assumption")
 }
 
 func TestClassifyCursorOwnerRejectsCursorOutsideRequestDBRange(t *testing.T) {
 	dbRange := scanRange{From: 100, To: 150}
 	owner, err := classifyCursorOwner(&store.ScanCursor{BlockNumber: 90}, dbRange, 200)
-	require.ErrorIs(t, err, ErrScanLogsInvalidCursor)
+	require.EqualError(t, err, "cursor 90 is outside the block range [100, 150] of the split DB segment")
+	require.NotErrorIs(t, err, ErrScanLogsInvalidCursor)
 	assert.Equal(t, cursorOwnerNone, owner)
 
 	owner, err = classifyCursorOwner(&store.ScanCursor{BlockNumber: 120}, dbRange, 200)
@@ -944,7 +994,8 @@ func TestEthScanLogsRejectsNullPreCheckpointBlock(t *testing.T) {
 		nil,
 	)
 
-	require.ErrorIs(t, err, ErrScanLogsInvalidFilter)
+	require.ErrorIs(t, err, ErrScanLogsConsistency)
+	require.EqualError(t, err, "inconsistent canonical views: pre-checkpoint block 10 is unavailable")
 	assert.Equal(t, 1, client.blockCalls)
 	assert.Empty(t, client.filters, "the FN segment must not run without an opening fence")
 }
@@ -1117,6 +1168,22 @@ func TestEthFNReaderDoesNotApplyCursorIndexToLaterBlocks(t *testing.T) {
 	assert.Equal(t, uint(0), batch.Logs[0].Index)
 	require.Len(t, client.filters, 1)
 	assert.Equal(t, web3types.BlockNumber(5009), *client.filters[0].FromBlock)
+}
+
+func TestEthFNReaderClassifiesCursorRangeReason(t *testing.T) {
+	client := &fakeEthScanClient{}
+	reader := ethFNReader{
+		client: client,
+		spec: ethFNReaderSpec{
+			blocks: scanRange{From: 5000, To: 5015},
+			cursor: &store.ScanCursor{BlockNumber: 4999},
+		},
+	}
+
+	_, err := reader.Scan(context.Background(), 10)
+	require.ErrorIs(t, err, ErrScanLogsInvalidCursor)
+	require.EqualError(t, err, "invalid scan logs cursor: cursor 4999 is outside block range [5000, 5015]")
+	assert.Empty(t, client.filters)
 }
 
 func TestEthFNReaderUsesHigherFenceInsteadOfCursorHashLookup(t *testing.T) {

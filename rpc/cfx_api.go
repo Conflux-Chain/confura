@@ -302,21 +302,15 @@ func (api *cfxAPI) scanLogs(
 	withPivotAssumption bool,
 ) (cacheTypes.Lazy[*handler.CfxScanLogResult], error) {
 	if api.LogApiHandler == nil {
-		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, errors.WithMessage(
+		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, handler.NewScanLogsErrorf(
 			handler.ErrScanLogsUnavailable, "api handler not configured",
-		)
-	}
-
-	if withPivotAssumption && req.Cursor != nil && assumption == nil {
-		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, errors.WithMessagef(
-			handler.ErrScanLogsInvalidParams, "missing pivot assumption",
 		)
 	}
 
 	cfx := GetCfxClientFromContext(ctx)
 	params, err := handler.NormalizeCfxScanLogRequest(cfx, req, withPivotAssumption)
 	if err != nil {
-		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, errors.WithMessage(err, "failed to normalize scan request")
+		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, err
 	}
 
 	result, err := api.LogApiHandler.ScanLogs(ctx, cfx, params, assumption)

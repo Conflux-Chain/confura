@@ -137,10 +137,10 @@ func NormalizeEthScanLogRequest(
 	hardfork web3types.BlockNumber,
 	req EthScanLogRequest,
 	withPivotAssumption bool,
-) (EthScanLogParams, error) {
+) (params EthScanLogParams, err error) {
 	effectiveLimit, err := normalizeScanLogsLimit(req.Limit)
 	if err != nil {
-		return EthScanLogParams{}, err
+		return params, NewScanLogsError(ErrScanLogsInvalidParams, err)
 	}
 	req.Limit = effectiveLimit
 
@@ -169,7 +169,7 @@ func NormalizeEthScanLogRequest(
 			return 0, errors.WithMessagef(err, "failed to resolve block by tag %s", blockNum)
 		}
 		if block == nil || block.Number == nil {
-			return 0, errors.WithMessagef(
+			return 0, NewScanLogsErrorf(
 				ErrScanLogsInvalidParams,
 				"unavailable block by tag %s", blockNum,
 			)
@@ -181,14 +181,14 @@ func NormalizeEthScanLogRequest(
 
 	fromNumber, err := resolveBlock(from)
 	if err != nil {
-		return EthScanLogParams{}, err
+		return params, err
 	}
 	toNumber, err := resolveBlock(to)
 	if err != nil {
-		return EthScanLogParams{}, err
+		return params, err
 	}
 	if fromNumber > toNumber {
-		return EthScanLogParams{}, errors.WithMessagef(
+		return params, NewScanLogsErrorf(
 			ErrScanLogsInvalidParams,
 			"invalid block range: from block %s exceeds to block %s", from, to,
 		)
@@ -199,10 +199,10 @@ func NormalizeEthScanLogRequest(
 	if to >= 0 {
 		latest, err := resolveBlock(web3types.LatestBlockNumber)
 		if err != nil {
-			return EthScanLogParams{}, err
+			return params, err
 		}
 		if toNumber > latest {
-			return EthScanLogParams{}, errors.WithMessagef(
+			return params, NewScanLogsErrorf(
 				ErrScanLogsInvalidParams,
 				"explicit toBlock %d exceeds frozen latest %d", toNumber, latest,
 			)
@@ -222,7 +222,7 @@ func NormalizeEthScanLogRequest(
 	}
 
 	if req.Cursor != nil && !effectiveBlockRange.contains(uint64(req.Cursor.BlockNumber)) {
-		return EthScanLogParams{}, errors.WithMessage(
+		return params, NewScanLogsErrorf(
 			ErrScanLogsInvalidCursor, "cursor is outside the normalized block range",
 		)
 	}
@@ -278,7 +278,7 @@ func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethS
 	cursor := req.Cursor.toStoreCursor()
 	if scanRange(req.BlockRange).empty() {
 		if cursor != nil {
-			return ethScanGeneration{}, errors.WithMessage(
+			return ethScanGeneration{}, NewScanLogsErrorf(
 				ErrScanLogsInvalidCursor, "cursor is outside of the request range",
 			)
 		}
@@ -295,7 +295,7 @@ func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethS
 		// whole range; do not invent a DB split from zero-value mappings.
 		gen := newEthFullnodeGeneration(scanRange(req.BlockRange), cursor, req.Reverse)
 		if cursor != nil && gen.fnBlocks.empty() {
-			return ethScanGeneration{}, errors.WithMessage(
+			return ethScanGeneration{}, NewScanLogsErrorf(
 				ErrScanLogsInvalidCursor, "cursor is outside of the request range",
 			)
 		}
@@ -310,7 +310,7 @@ func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethS
 		// Both endpoints come from the same mapping table. Earliest-without-latest
 		// is not an ordinary empty Store; it is a cross-generation read or a broken
 		// Store invariant and must pass through the outer v0/v1 error gate.
-		return ethScanGeneration{}, errors.WithMessage(
+		return ethScanGeneration{}, NewScanLogsErrorf(
 			ErrScanLogsConsistency, "latest mapping is unavailable while earliest mapping exists",
 		)
 	}
@@ -347,11 +347,12 @@ func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethS
 
 	owner, err := classifyCursorOwner(cursor, gen.dbBlocks, latest.BnMax)
 	if err != nil {
-		return ethScanGeneration{}, errors.WithMessage(err, "invalid cursor placement")
+		return gen, NewScanLogsError(ErrScanLogsInvalidCursor, err)
 	}
 	if owner == cursorOwnerFN && gen.fnBlocks.empty() {
-		return ethScanGeneration{}, errors.WithMessage(
-			ErrScanLogsInvalidCursor, "cursor is outside of the segment range",
+		return gen, NewScanLogsErrorf(
+			ErrScanLogsInvalidCursor,
+			"cursor is specified while the split FN segment is empty",
 		)
 	}
 	gen.owner = owner
@@ -511,8 +512,8 @@ func (handler *EthLogsApiHandler) ScanLogs(
 	assumption *EthPivotAssumption,
 ) (result *EthScanLogResult, err error) {
 	if req.WithPivotAssumption && req.Cursor != nil && assumption == nil {
-		return nil, errors.WithMessage(
-			ErrScanLogsInvalidParams, "pivot assumption is required when cursor is provided",
+		return nil, NewScanLogsErrorf(
+			ErrScanLogsInvalidParams, "missing pivot assumption",
 		)
 	}
 
@@ -543,10 +544,6 @@ func (handler *EthLogsApiHandler) scanLogs(
 	req EthScanLogParams,
 	assumption *EthPivotAssumption,
 ) (*EthScanLogResult, error) {
-	if req.Limit == 0 || uint64(req.Limit) > maxScanLogsLimit {
-		return nil, errors.WithMessagef(ErrScanLogsInvalidParams, "scan limit must be in [1, %d]", maxScanLogsLimit)
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
 	defer cancel()
 
@@ -698,14 +695,14 @@ func (handler *EthLogsApiHandler) checkEthDBAssumption(
 	if !ok {
 		// The captured watermarks advertised this block as covered. Missing its
 		// identity is therefore a Store fault, not a stale client assumption.
-		return true, errors.WithMessage(
+		return true, NewScanLogsErrorf(
 			ErrScanLogsConsistency,
 			"pivot mapping is unavailable within captured coverage",
 		), nil
 	}
 
 	if common.HexToHash(pivot) != assumption.BlockHash {
-		return true, errors.WithMessagef(
+		return true, NewScanLogsErrorf(
 			ErrScanLogsAssumptionFailure,
 			"expected pivot %s got %s for block %d",
 			assumption.BlockHash, pivot, assumption.BlockNumber,
@@ -767,13 +764,14 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		}
 		if before == nil {
 			if outer.fnAssumption && uint64(assumption.BlockNumber) == checkpoint {
-				return nil, false, errors.WithMessagef(
+				return nil, false, NewScanLogsErrorf(
 					ErrScanLogsAssumptionFailure,
 					"assumption block %d is unavailable", assumption.BlockNumber,
 				)
 			}
-			return nil, false, errors.WithMessage(
-				ErrScanLogsInvalidFilter, "pre-checkpoint block is unavailable",
+			return nil, false, NewScanLogsErrorf(
+				ErrScanLogsConsistency,
+				"pre-checkpoint block %d is unavailable", checkpoint,
 			)
 		}
 
@@ -829,7 +827,7 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 				markScanLogsMetric(ctx, "boundary/mismatch")
 				if boundaryRetries >= maxBoundaryInnerRetries {
 					markScanLogsMetric(ctx, "boundary/convergence_failure")
-					return nil, false, errors.WithMessagef(
+					return nil, false, NewScanLogsErrorf(
 						ErrScanLogsConsistency, "mixed boundary mismatch after %d retry", boundaryRetries,
 					)
 				}
@@ -870,7 +868,7 @@ func (handler *EthLogsApiHandler) buildEthInnerCandidate(
 		candidate.usage.fn = true
 		cursorBlock := uint64(req.Cursor.BlockNumber)
 		if cursorBlock > checkpoint || !outer.gen.fnBlocks.contains(cursorBlock) {
-			return ethInnerCandidate{}, errors.WithMessage(
+			return ethInnerCandidate{}, NewScanLogsErrorf(
 				ErrScanLogsInvalidCursor, "cursor is outside the request segment",
 			)
 		}
@@ -948,7 +946,7 @@ func (r *ethFNReader) Scan(ctx context.Context, remaining int) (fnSegmentBatch[w
 
 	blocks, err := clipBlockRangeAtCursor(r.spec.blocks, r.spec.cursor, r.spec.reverse)
 	if err != nil {
-		return fnSegmentBatch[web3types.Log]{}, errors.WithMessage(err, "invalid cursor range")
+		return fnSegmentBatch[web3types.Log]{}, NewScanLogsError(ErrScanLogsInvalidCursor, err)
 	}
 
 	var filterFirstWindow func([]web3types.Log) []web3types.Log

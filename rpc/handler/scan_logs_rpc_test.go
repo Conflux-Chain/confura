@@ -369,7 +369,8 @@ func TestNormalizeScanLogsLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, hexutil.Uint64(25), limit)
 	_, err = normalizeScanLogsLimit(51)
-	require.ErrorIs(t, err, ErrScanLogsInvalidParams)
+	require.NotErrorIs(t, err, ErrScanLogsInvalidParams)
+	require.EqualError(t, err, "page limit 51 exceeds configured maximum 50")
 }
 
 func TestEncodeScanLogsResult(t *testing.T) {

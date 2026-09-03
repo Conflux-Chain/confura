@@ -146,11 +146,11 @@ func NormalizeCfxScanLogRequest(
 	resolver cfxEpochNumberResolver,
 	req CfxScanLogRequest,
 	withPivotAssumption bool,
-) (CfxScanLogParams, error) {
+) (params CfxScanLogParams, err error) {
 	// Normalize log limit
 	effectiveLimit, err := normalizeScanLogsLimit(req.Limit)
 	if err != nil {
-		return CfxScanLogParams{}, errors.WithMessage(err, "failed to normalize scan log limit")
+		return params, NewScanLogsError(ErrScanLogsInvalidParams, err)
 	}
 	req.Limit = effectiveLimit
 
@@ -198,7 +198,7 @@ func NormalizeCfxScanLogRequest(
 		return CfxScanLogParams{}, err
 	}
 	if fromNumber > toNumber {
-		return CfxScanLogParams{}, errors.WithMessagef(
+		return CfxScanLogParams{}, NewScanLogsErrorf(
 			ErrScanLogsInvalidParams,
 			"invalid epoch range: from epoch %s exceeds to epoch %s", from, to,
 		)
@@ -214,7 +214,7 @@ func NormalizeCfxScanLogRequest(
 		}
 
 		if toNumber > latestState {
-			return CfxScanLogParams{}, errors.WithMessagef(
+			return CfxScanLogParams{}, NewScanLogsErrorf(
 				ErrScanLogsInvalidParams,
 				"explicit toEpoch %d exceeds frozen latest_state %d", toNumber, latestState,
 			)
@@ -302,7 +302,7 @@ func (handler *CfxLogsApiHandler) buildCfxGeneration(req CfxScanLogParams) (cfxS
 		// failing or guessing a DB split.
 		gen := newCfxFullnodeGeneration(scanRange(req.EpochRange), cursor, req.Reverse)
 		if cursor != nil && gen.fnEpochs.empty() {
-			return cfxScanGeneration{}, errors.WithMessage(
+			return gen, NewScanLogsErrorf(
 				ErrScanLogsInvalidCursor, "cursor is outside of the request range",
 			)
 		}
@@ -325,7 +325,7 @@ func (handler *CfxLogsApiHandler) buildCfxGeneration(req CfxScanLogParams) (cfxS
 		// latest must also exist in a stable Store view. Missing only this endpoint
 		// means the two non-transactional reads crossed a Store change, or the table
 		// is inconsistent; let the outer v0/v1 gate retry or publish the fault.
-		return cfxScanGeneration{}, errors.WithMessage(
+		return cfxScanGeneration{}, NewScanLogsErrorf(
 			ErrScanLogsConsistency, "latest mapping is unavailable while earliest mapping exists",
 		)
 	}
@@ -350,19 +350,19 @@ func (handler *CfxLogsApiHandler) buildCfxGeneration(req CfxScanLogParams) (cfxS
 		// contradicts the continuous DB coverage claimed by the captured watermarks.
 		fromMapping, fromOK, err := handler.ms.BlockMapping(gen.dbEpochs.From)
 		if err != nil {
-			return cfxScanGeneration{}, errors.WithMessage(err, "failed to load block mapping")
+			return gen, errors.WithMessage(err, "failed to load block mapping")
 		}
 
 		toMapping, toOK, err := handler.ms.BlockMapping(gen.dbEpochs.To)
 		if err != nil {
-			return cfxScanGeneration{}, errors.WithMessage(err, "failed to load block mapping")
+			return gen, errors.WithMessage(err, "failed to load block mapping")
 		}
 
 		if !fromOK || !toOK ||
 			fromMapping.BnMin > fromMapping.BnMax ||
 			toMapping.BnMin > toMapping.BnMax ||
 			fromMapping.BnMin > toMapping.BnMax {
-			return cfxScanGeneration{}, errors.WithMessage(
+			return gen, NewScanLogsErrorf(
 				ErrScanLogsConsistency, "inconsistent block mappings",
 			)
 		}
@@ -384,11 +384,12 @@ func (handler *CfxLogsApiHandler) buildCfxGeneration(req CfxScanLogParams) (cfxS
 
 	owner, err := classifyCursorOwner(cursor, gen.dbBlocks, latest.BnMax)
 	if err != nil {
-		return cfxScanGeneration{}, errors.WithMessage(err, "invalid cursor placement")
+		return gen, NewScanLogsError(ErrScanLogsInvalidCursor, err)
 	}
 	if owner == cursorOwnerFN && gen.fnEpochs.empty() {
-		return cfxScanGeneration{}, errors.WithMessage(
-			ErrScanLogsInvalidCursor, "cursor is outside of the segment range",
+		return gen, NewScanLogsErrorf(
+			ErrScanLogsInvalidCursor,
+			"cursor is specified while the split FN segment is empty",
 		)
 	}
 	gen.owner = owner
@@ -498,7 +499,7 @@ func (handler *CfxLogsApiHandler) runCfxPlan(
 			blockPlan, err := attempt.resolveBlockPlan(gen, segment, req.Reverse)
 			if err != nil {
 				result.usage = usage
-				return result, errors.WithMessage(err, "failed to resolve block segment")
+				return result, err
 			}
 
 			reader := &cfxFNReader{
@@ -512,7 +513,7 @@ func (handler *CfxLogsApiHandler) runCfxPlan(
 			batch, err := reader.Scan(ctx, remaining)
 			if err != nil {
 				result.usage = usage
-				return result, errors.WithMessage(err, "failed to scan full node logs")
+				return result, err
 			}
 
 			result.Logs = append(result.Logs, batch.Logs...)
@@ -594,9 +595,7 @@ func (handler *CfxLogsApiHandler) finishCfxCandidate(
 		}
 		pivot, err := attempt.pivot(epoch)
 		if err != nil {
-			return result, errors.WithMessagef(
-				err, "failed to get pivot block for epoch %d", epoch,
-			)
+			return result, err
 		}
 		guard.PivotBlockHash = pivot.hash
 	}
@@ -631,8 +630,8 @@ func (handler *CfxLogsApiHandler) ScanLogs(
 	assumption *CfxPivotAssumption,
 ) (result *CfxScanLogResult, err error) {
 	if req.WithPivotAssumption && req.Cursor != nil && assumption == nil {
-		return nil, errors.WithMessage(
-			ErrScanLogsInvalidParams, "pivot assumption is required when cursor is provided",
+		return nil, NewScanLogsErrorf(
+			ErrScanLogsInvalidParams, "missing pivot assumption",
 		)
 	}
 
@@ -664,10 +663,6 @@ func (handler *CfxLogsApiHandler) scanLogs(
 	req CfxScanLogParams,
 	assumption *CfxPivotAssumption,
 ) (*CfxScanLogResult, error) {
-	if req.Limit == 0 || uint64(req.Limit) > maxScanLogsLimit {
-		return nil, errors.WithMessagef(ErrScanLogsInvalidParams, "scan limit must be in [1, %d]", maxScanLogsLimit)
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
 	defer cancel()
 
@@ -697,7 +692,7 @@ func (handler *CfxLogsApiHandler) scanLogs(
 				}
 				return nil, commitErr
 			}
-			return nil, errors.WithMessage(err, "failed to build scan generation")
+			return nil, err
 		}
 
 		recordScanLogsHistogram(ctx, "plan/segments", int64(len(gen.plan.segments)))
@@ -713,7 +708,7 @@ func (handler *CfxLogsApiHandler) scanLogs(
 		// Check DB assumptions if the provided pivot is within the captured DB coverage.
 		dbAssumption, assumptionErr, err := handler.checkCfxDBAssumption(gen, assumption)
 		if err != nil {
-			return nil, errors.WithMessage(err, "failed to check DB assumption")
+			return nil, err
 		}
 		if assumptionErr != nil {
 			_, retryOuter, err := handler.commitCfxDBGeneration(v0, nil, assumptionErr)
@@ -799,13 +794,13 @@ func (handler *CfxLogsApiHandler) checkCfxDBAssumption(
 		return true, nil, errors.WithMessage(err, "failed to load pivot hash")
 	}
 	if !ok {
-		return true, errors.WithMessage(
+		return true, NewScanLogsErrorf(
 			ErrScanLogsConsistency, "pivot mapping is unavailable within captured coverage",
 		), nil
 	}
 
 	if !equalCfxHash(cfxtypes.Hash(pivot), assumption.PivotBlockHash) {
-		return true, errors.WithMessagef(
+		return true, NewScanLogsErrorf(
 			ErrScanLogsAssumptionFailure,
 			"expected pivot %s got %s for epoch %d",
 			assumption.PivotBlockHash, pivot, assumption.EpochNumber,
@@ -905,13 +900,9 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 			boundary, err := attempt.pivot(outer.gen.dbMaxEpoch)
 			if err != nil {
 				if !isCanonicalDependentError(err) {
-					return nil, false, errors.WithMessagef(
-						err, "failed to get boundary summary for epoch %d", outer.gen.dbMaxEpoch,
-					)
+					return nil, false, err
 				}
-				candidate.err = errors.WithMessagef(
-					err, "failed to get boundary summary for epoch %d", outer.gen.dbMaxEpoch,
-				)
+				candidate.err = err
 			} else {
 				boundaryMismatch = !equalCfxHash(boundary.hash, outer.gen.dbPivot)
 			}
@@ -958,7 +949,7 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 				markScanLogsMetric(ctx, "boundary/mismatch")
 				if boundaryRetries >= maxBoundaryInnerRetries {
 					markScanLogsMetric(ctx, "boundary/convergence_failure")
-					return nil, false, errors.WithMessagef(
+					return nil, false, NewScanLogsErrorf(
 						ErrScanLogsConsistency, "mixed boundary mismatch after %d retry", boundaryRetries,
 					)
 				}
@@ -1013,7 +1004,7 @@ func (handler *CfxLogsApiHandler) buildCfxInnerCandidate(
 		pivot, err := attempt.pivot(assumptionEpoch)
 		if err != nil {
 			if !isCanonicalDependentError(err) {
-				return cfxInnerCandidate{}, errors.WithMessagef(err, "failed to get block summary for epoch %d", assumptionEpoch)
+				return cfxInnerCandidate{}, err
 			}
 			if provisionalErr == nil {
 				provisionalErr = err
@@ -1235,7 +1226,7 @@ func (v *cfxFNAttemptView) resolveBlockPlan(
 	reverse bool,
 ) (cfxFNBlockPlan, error) {
 	if gen.fnEpochs.empty() {
-		return cfxFNBlockPlan{}, errors.New("empty epoch range")
+		return cfxFNBlockPlan{}, errors.New("cannot resolve block plan for an empty FN epoch range")
 	}
 
 	var cursorRef *cfxBlockRef
@@ -1248,7 +1239,7 @@ func (v *cfxFNAttemptView) resolveBlockPlan(
 		if !gen.fnEpochs.contains(ref.epochNumber) {
 			return cfxFNBlockPlan{}, newCanonicalDependentError(
 				ErrScanLogsInvalidCursor,
-				"cursor block %d belongs to epoch %d outside of segment epochs [%d, %d]",
+				"cursor block %d belongs to epoch %d outside of the FN segment epochs [%d, %d]",
 				segment.cursor.BlockNumber,
 				ref.epochNumber,
 				gen.fnEpochs.From,
@@ -1291,7 +1282,8 @@ func (v *cfxFNAttemptView) resolveBlockPlan(
 
 	if segment.cursor != nil && !blocks.contains(segment.cursor.BlockNumber) {
 		return cfxFNBlockPlan{}, newCanonicalDependentError(
-			ErrScanLogsInvalidCursor, "cursor is outside the resolved block range",
+			ErrScanLogsInvalidCursor,
+			"cursor is outside the resolved FN block range",
 		)
 	}
 
