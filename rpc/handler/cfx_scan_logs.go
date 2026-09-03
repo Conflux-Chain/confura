@@ -79,7 +79,7 @@ func (r *CfxScanLogRequest) UnmarshalJSON(data []byte) error {
 	}
 	if err := validateJSONObjectFields(
 		data,
-		[]string{"filter"},
+		nil,
 		[]string{"filter", "limit", "cursor", "reverse"},
 	); err != nil {
 		return err
