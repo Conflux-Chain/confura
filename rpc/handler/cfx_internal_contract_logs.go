@@ -95,6 +95,7 @@ func (h *CfxInternalContractLogsApiHandler) GetLogs(
 		}
 
 		// reorg version changed during data query and try again.
+		store.AddLogQueryReorgRetries(ctx, 1)
 		lastReorgVersion = reorgVersion
 	}
 }
