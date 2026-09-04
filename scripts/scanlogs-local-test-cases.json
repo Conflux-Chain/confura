@@ -1,0 +1,162 @@
+{
+  "metadata": {
+    "generatedAt": "2026-09-03T18:35:00+08:00",
+    "purpose": "Dense natural-data manifest: 24 release-gate cases plus Route B and shared-route smoke coverage",
+    "pageLimit": 7,
+    "watermarks": {
+      "cfx": {
+        "latestDbEpoch": 85491039,
+        "latestDbEpochHex": "0x5187d5f",
+        "latestDbBlockNumber": 205654534,
+        "latestDbPivotHash": "0xe332fbd43b3433e17349c90a2ee2b882ef8c38b9d4067110a22b5e65555d3544"
+      },
+      "eth": {
+        "latestDbBlockNumber": 85498309,
+        "latestDbBlockNumberHex": "0x51899c5",
+        "latestDbBlockHash": "0xa89a1b5724081077c0c0d98d13c09af3bb23d4c1c30071cd6ba2c5a328d46810"
+      }
+    },
+    "dataQualification": {
+      "cfx": "Single-height DB/FN ranges contain 14-36 matching logs; mixed ranges contain matches on both sides of the DB watermark.",
+      "eth": "Single-height DB/FN ranges contain 28-99 matching logs; mixed ranges contain matches on both sides of the DB watermark.",
+      "releaseGate": "All 24 base cases require at least 14 oracle logs at page limit 7. The runner rejects an under-qualified case."
+    }
+  },
+  "cases": [
+    {
+      "name": "cfx-db-no-filter", "enabled": true, "tier": "gate", "space": "cfx", "source": "db",
+      "qualification": {"minLogs": 14},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d5f", "toEpoch": "0x5187d5f"}}
+    },
+    {
+      "name": "cfx-db-address", "enabled": true, "tier": "gate", "space": "cfx", "source": "db",
+      "qualification": {"minLogs": 14},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d5f", "toEpoch": "0x5187d5f"}, "address": "cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaa2sn102vjv"}
+    },
+    {
+      "name": "cfx-db-topic0", "enabled": true, "tier": "gate", "space": "cfx", "source": "db",
+      "qualification": {"minLogs": 14, "exactMultipleOfPageLimit": true},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d5f", "toEpoch": "0x5187d5f"}, "topic0": "0x124d1efd3ac32fa6aadb7a06e066c113471e0411fb56a5079cedbc3cdf7796e4"}
+    },
+    {
+      "name": "cfx-db-address-topic0", "enabled": true, "tier": "gate", "space": "cfx", "source": "db",
+      "qualification": {"minLogs": 14, "exactMultipleOfPageLimit": true},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d5f", "toEpoch": "0x5187d5f"}, "address": "cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaa2sn102vjv", "topic0": "0x124d1efd3ac32fa6aadb7a06e066c113471e0411fb56a5079cedbc3cdf7796e4"}
+    },
+    {
+      "name": "cfx-fn-no-filter", "enabled": true, "tier": "gate", "space": "cfx", "source": "fn",
+      "qualification": {"minLogs": 14},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d60", "toEpoch": "0x5187d60"}}
+    },
+    {
+      "name": "cfx-fn-address", "enabled": true, "tier": "gate", "space": "cfx", "source": "fn",
+      "qualification": {"minLogs": 14},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d60", "toEpoch": "0x5187d60"}, "address": "cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaa2sn102vjv"}
+    },
+    {
+      "name": "cfx-fn-topic0", "enabled": true, "tier": "gate", "space": "cfx", "source": "fn",
+      "qualification": {"minLogs": 14},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d60", "toEpoch": "0x5187d60"}, "topic0": "0x124d1efd3ac32fa6aadb7a06e066c113471e0411fb56a5079cedbc3cdf7796e4"}
+    },
+    {
+      "name": "cfx-fn-address-topic0", "enabled": true, "tier": "gate", "space": "cfx", "source": "fn",
+      "qualification": {"minLogs": 14},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d60", "toEpoch": "0x5187d60"}, "address": "cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaa2sn102vjv", "topic0": "0x124d1efd3ac32fa6aadb7a06e066c113471e0411fb56a5079cedbc3cdf7796e4"}
+    },
+    {
+      "name": "cfx-mixed-no-filter", "enabled": true, "tier": "gate", "space": "cfx", "source": "mixed",
+      "qualification": {"minLogs": 28},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d5f", "toEpoch": "0x5187d60"}}
+    },
+    {
+      "name": "cfx-mixed-address", "enabled": true, "tier": "gate", "space": "cfx", "source": "mixed",
+      "qualification": {"minLogs": 28},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d5f", "toEpoch": "0x5187d60"}, "address": "cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaa2sn102vjv"}
+    },
+    {
+      "name": "cfx-mixed-topic0", "enabled": true, "tier": "gate", "space": "cfx", "source": "mixed",
+      "qualification": {"minLogs": 28},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d5f", "toEpoch": "0x5187d60"}, "topic0": "0x124d1efd3ac32fa6aadb7a06e066c113471e0411fb56a5079cedbc3cdf7796e4"}
+    },
+    {
+      "name": "cfx-mixed-address-topic0", "enabled": true, "tier": "gate", "space": "cfx", "source": "mixed",
+      "qualification": {"minLogs": 28},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d5f", "toEpoch": "0x5187d60"}, "address": "cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaa2sn102vjv", "topic0": "0x124d1efd3ac32fa6aadb7a06e066c113471e0411fb56a5079cedbc3cdf7796e4"}
+    },
+    {
+      "name": "eth-db-no-filter", "enabled": true, "tier": "gate", "space": "eth", "source": "db",
+      "qualification": {"minLogs": 14, "exactMultipleOfPageLimit": true},
+      "filter": {"blockRange": {"fromBlock": "0x51899c5", "toBlock": "0x51899c5"}}
+    },
+    {
+      "name": "eth-db-address", "enabled": true, "tier": "gate", "space": "eth", "source": "db",
+      "qualification": {"minLogs": 14, "exactMultipleOfPageLimit": true},
+      "filter": {"blockRange": {"fromBlock": "0x51899c5", "toBlock": "0x51899c5"}, "address": "0xC6e865c213C89Ca42A622c5572D19f00d84d7a16"}
+    },
+    {
+      "name": "eth-db-topic0", "enabled": true, "tier": "gate", "space": "eth", "source": "db",
+      "qualification": {"minLogs": 14, "exactMultipleOfPageLimit": true},
+      "filter": {"blockRange": {"fromBlock": "0x51899c5", "toBlock": "0x51899c5"}, "topic0": "0xc619c1c30b367378bda467d6bebdd6f994ab4a6e274528b8707fa97c4752ca48"}
+    },
+    {
+      "name": "eth-db-address-topic0", "enabled": true, "tier": "gate", "space": "eth", "source": "db",
+      "qualification": {"minLogs": 14, "exactMultipleOfPageLimit": true},
+      "filter": {"blockRange": {"fromBlock": "0x51899c5", "toBlock": "0x51899c5"}, "address": "0xC6e865c213C89Ca42A622c5572D19f00d84d7a16", "topic0": "0xc619c1c30b367378bda467d6bebdd6f994ab4a6e274528b8707fa97c4752ca48"}
+    },
+    {
+      "name": "eth-fn-no-filter", "enabled": true, "tier": "gate", "space": "eth", "source": "fn",
+      "qualification": {"minLogs": 14},
+      "filter": {"blockRange": {"fromBlock": "0x51899c6", "toBlock": "0x51899c6"}}
+    },
+    {
+      "name": "eth-fn-address", "enabled": true, "tier": "gate", "space": "eth", "source": "fn",
+      "qualification": {"minLogs": 14},
+      "filter": {"blockRange": {"fromBlock": "0x51899c6", "toBlock": "0x51899c6"}, "address": "0xC6e865c213C89Ca42A622c5572D19f00d84d7a16"}
+    },
+    {
+      "name": "eth-fn-topic0", "enabled": true, "tier": "gate", "space": "eth", "source": "fn",
+      "qualification": {"minLogs": 14},
+      "filter": {"blockRange": {"fromBlock": "0x51899c6", "toBlock": "0x51899c6"}, "topic0": "0xc619c1c30b367378bda467d6bebdd6f994ab4a6e274528b8707fa97c4752ca48"}
+    },
+    {
+      "name": "eth-fn-address-topic0", "enabled": true, "tier": "gate", "space": "eth", "source": "fn",
+      "qualification": {"minLogs": 14},
+      "filter": {"blockRange": {"fromBlock": "0x51899c6", "toBlock": "0x51899c6"}, "address": "0xC6e865c213C89Ca42A622c5572D19f00d84d7a16", "topic0": "0xc619c1c30b367378bda467d6bebdd6f994ab4a6e274528b8707fa97c4752ca48"}
+    },
+    {
+      "name": "eth-mixed-no-filter", "enabled": true, "tier": "gate", "space": "eth", "source": "mixed",
+      "qualification": {"minLogs": 28},
+      "filter": {"blockRange": {"fromBlock": "0x51899c5", "toBlock": "0x51899c6"}}
+    },
+    {
+      "name": "eth-mixed-address", "enabled": true, "tier": "gate", "space": "eth", "source": "mixed",
+      "qualification": {"minLogs": 28},
+      "filter": {"blockRange": {"fromBlock": "0x51899c5", "toBlock": "0x51899c6"}, "address": "0xC6e865c213C89Ca42A622c5572D19f00d84d7a16"}
+    },
+    {
+      "name": "eth-mixed-topic0", "enabled": true, "tier": "gate", "space": "eth", "source": "mixed",
+      "qualification": {"minLogs": 28},
+      "filter": {"blockRange": {"fromBlock": "0x51899c5", "toBlock": "0x51899c6"}, "topic0": "0xc619c1c30b367378bda467d6bebdd6f994ab4a6e274528b8707fa97c4752ca48"}
+    },
+    {
+      "name": "eth-mixed-address-topic0", "enabled": true, "tier": "gate", "space": "eth", "source": "mixed",
+      "qualification": {"minLogs": 28},
+      "filter": {"blockRange": {"fromBlock": "0x51899c5", "toBlock": "0x51899c6"}, "address": "0xC6e865c213C89Ca42A622c5572D19f00d84d7a16", "topic0": "0xc619c1c30b367378bda467d6bebdd6f994ab4a6e274528b8707fa97c4752ca48"}
+    },
+    {
+      "name": "cfx-db-routeb-address-topic0", "enabled": true, "tier": "supplemental", "space": "cfx", "source": "db",
+      "qualification": {"minLogs": 14},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d5d", "toEpoch": "0x5187d5d"}, "address": "cfx:aaejuaaaaaaaaaaaaaaaaaaaaaaaaaaaa2sn102vjv", "topic0": "0x124d1efd3ac32fa6aadb7a06e066c113471e0411fb56a5079cedbc3cdf7796e4"}
+    },
+    {
+      "name": "cfx-db-shared-address-topic0", "enabled": true, "tier": "smoke", "space": "cfx", "source": "db",
+      "qualification": {"minLogs": 1},
+      "filter": {"epochRange": {"fromEpoch": "0x5187d3b", "toEpoch": "0x5187d3b"}, "address": "cfx:acfe0k9kap5dv15cb8zdnaukafgfz5e1kuzp4yrsxz", "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    },
+    {
+      "name": "eth-db-shared-address-topic0", "enabled": true, "tier": "smoke", "space": "eth", "source": "db",
+      "qualification": {"minLogs": 1},
+      "filter": {"blockRange": {"fromBlock": "0x5189971", "toBlock": "0x5189971"}, "address": "0x0736b3384531cda2f545f5449e84c6c6bCd6F01b", "topic0": "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"}
+    }
+  ]
+}

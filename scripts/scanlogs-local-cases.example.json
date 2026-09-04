@@ -1,0 +1,56 @@
+{
+  "cases": [
+    {
+      "name": "cfx-db-no-filter",
+      "enabled": false,
+      "space": "cfx",
+      "source": "db",
+      "filter": {
+        "epochRange": {
+          "fromEpoch": "0x0",
+          "toEpoch": "0x0"
+        }
+      }
+    },
+    {
+      "name": "cfx-mixed-address-topic0",
+      "enabled": false,
+      "space": "cfx",
+      "source": "mixed",
+      "filter": {
+        "epochRange": {
+          "fromEpoch": "0x0",
+          "toEpoch": "0x0"
+        },
+        "address": "REPLACE_WITH_VALID_CFX_ADDRESS",
+        "topic0": "0xREPLACE_WITH_64_HEX_DIGITS"
+      }
+    },
+    {
+      "name": "eth-fn-no-filter",
+      "enabled": false,
+      "space": "eth",
+      "source": "fn",
+      "filter": {
+        "blockRange": {
+          "fromBlock": "0x0",
+          "toBlock": "0x0"
+        }
+      }
+    },
+    {
+      "name": "eth-db-address-topic0",
+      "enabled": false,
+      "space": "eth",
+      "source": "db",
+      "filter": {
+        "blockRange": {
+          "fromBlock": "0x0",
+          "toBlock": "0x0"
+        },
+        "address": "0xREPLACE_WITH_40_HEX_DIGITS",
+        "topic0": "0xREPLACE_WITH_64_HEX_DIGITS"
+      }
+    }
+  ]
+}

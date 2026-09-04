@@ -1,0 +1,21 @@
+{
+  "cases": [
+    {"id":"CON-01","status":"covered","tests":["TestCanonicalCommitDecisionKeepsFNRetryInsideDBGeneration","TestEthScanLogsOuterRetryRebuildsInnerStateAndDBCache"],"gap":""},
+    {"id":"CON-02","status":"covered","tests":["TestEthScanLogsOuterRetryRebuildsInnerStateAndDBCache"],"gap":""},
+    {"id":"CON-03","status":"covered","tests":["TestNormalizeCfxScanLogRequest","TestNormalizeEthScanLogRequest","TestEthScanLogsRetryKeepsNormalizedLatestFrozen"],"gap":""},
+    {"id":"CON-04","status":"covered","tests":["TestDBScanCacheIncrementallyUsesCachedTail","TestDBScanCacheRemembersExhaustion"],"gap":""},
+    {"id":"CON-05","status":"covered","tests":["TestScanFNBlockWindowsShrinksOversizedRangesToSuccess"],"gap":""},
+    {"id":"CON-06","status":"covered","tests":["TestScanFNBlockWindowsStopsOnSingleHeightOversizedError"],"gap":""},
+    {"id":"CON-07","status":"covered","tests":["TestWhitelistedFNOversizedErrorUsesMessageOnly","TestScanFNBlockWindowsReturnsNonWhitelistedErrorImmediately"],"gap":""},
+    {"id":"CON-08","status":"covered","tests":["TestEthScanLogsBoundaryMismatchConvergesOnRetry","TestEthScanLogsBoundaryBackoffPreservesContextError"],"gap":""},
+    {"id":"CON-09","status":"covered","tests":["TestEthScanLogsRepeatedBoundaryMismatchRejectsCandidate","TestEthScanLogsRetriesNullBoundaryBlockThenRejects","TestCfxScanLogsBoundaryCanonicalErrorClosesFence"],"gap":""},
+    {"id":"CON-10","status":"covered","tests":["TestCfxScanLogsPublicEntryCommitsStableDBError","TestEthScanLogsPublicEntryCommitsStableDBError"],"gap":""},
+    {"id":"CON-11","status":"covered","tests":["TestCfxScanLogsPublicEntryRetriesChangedCheckpoint","TestEthScanLogsPublicEntryRetriesChangedCheckpoint"],"gap":""},
+    {"id":"CON-12","status":"covered","tests":["TestEthScanLogsDBResultWithFNAssumptionValidatesBoundary"],"gap":""},
+    {"id":"CON-13","status":"covered","tests":["TestCfxScanLogsCommitsStableCursorEpochMismatch","TestBuildEthInnerCandidateReturnsInvalidCursorWithoutFence"],"gap":""},
+    {"id":"CON-14","status":"covered","tests":["TestEthScanLogsRepeatedCheckpointChangeRejectsCandidate"],"gap":""},
+    {"id":"CON-15","status":"covered","tests":["TestEthScanLogsCheckpointTransportErrorReturnsImmediately","TestScanLogsCheckpointClientRetrySuccessAndExhaustion"],"gap":""},
+    {"id":"CON-16","status":"covered","tests":["TestCanonicalCommitDecisionKeepsFNRetryInsideDBGeneration","TestEthScanLogsOuterRetryRebuildsInnerStateAndDBCache"],"gap":""},
+    {"id":"CON-17","status":"documented","tests":[],"gap":"Known ABA limitation; documentation audit only, not a detectable invariant."}
+  ]
+}

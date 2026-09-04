@@ -95,6 +95,41 @@ func insertScanLogsMapping(t *testing.T, db *gorm.DB, epoch, bnMin, bnMax uint64
 	).Error)
 }
 
+func insertEthScanLogsTestPartition(t *testing.T, db *gorm.DB, block uint64) {
+	t.Helper()
+	require.NoError(t, db.Exec(`
+		CREATE TABLE bn_partitions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entity TEXT NOT NULL,
+			pi INTEGER NOT NULL,
+			count INTEGER NOT NULL,
+			bn_min INTEGER,
+			bn_max INTEGER,
+			created_at DATETIME,
+			updated_at DATETIME
+		)
+	`).Error)
+	require.NoError(t, db.Exec(`
+		CREATE TABLE logs_0 (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			bn INTEGER NOT NULL,
+			epoch INTEGER NOT NULL,
+			topic0 TEXT NOT NULL,
+			topic1 TEXT,
+			topic2 TEXT,
+			topic3 TEXT,
+			log_index INTEGER NOT NULL,
+			extra BLOB
+		)
+	`).Error)
+	require.NoError(t, db.Exec(
+		"INSERT INTO bn_partitions (entity, pi, count, bn_min, bn_max) VALUES ('logs', 0, 1, ?, ?)", block, block,
+	).Error)
+	require.NoError(t, db.Exec(
+		"INSERT INTO logs_0 (bn, epoch, topic0, log_index, extra) VALUES (?, ?, '', 0, '{}')", block, block,
+	).Error)
+}
+
 func newTestCfxScanLogsHandler(db *gorm.DB) *CfxLogsApiHandler {
 	return NewCfxLogsApiHandler(
 		mysql.NewCfxStore(db, &mysql.Config{}, store.StoreConfig()), nil, 0,
@@ -358,18 +393,19 @@ func TestCanonicalCommitDecisionKeepsFNRetryInsideDBGeneration(t *testing.T) {
 }
 
 type fakeCfxScanClient struct {
-	byHash         map[cfxtypes.Hash]*cfxtypes.BlockSummary
-	byNumber       map[uint64]*cfxtypes.BlockSummary
-	byEpoch        map[uint64]*cfxtypes.BlockSummary
-	logs           []cfxtypes.Log
-	byHashFn       func(cfxtypes.Hash) (*cfxtypes.BlockSummary, error)
-	byNumberFn     func(uint64) (*cfxtypes.BlockSummary, error)
-	byEpochFn      func(uint64) (*cfxtypes.BlockSummary, error)
-	getLogsFn      func(cfxtypes.LogFilter) ([]cfxtypes.Log, error)
-	byHashCalls    int
-	byNumberCalls  int
-	byEpochCalls   int
-	getLogsFilters []cfxtypes.LogFilter
+	byHash          map[cfxtypes.Hash]*cfxtypes.BlockSummary
+	byNumber        map[uint64]*cfxtypes.BlockSummary
+	byEpoch         map[uint64]*cfxtypes.BlockSummary
+	logs            []cfxtypes.Log
+	byHashFn        func(cfxtypes.Hash) (*cfxtypes.BlockSummary, error)
+	byNumberFn      func(uint64) (*cfxtypes.BlockSummary, error)
+	byEpochFn       func(uint64) (*cfxtypes.BlockSummary, error)
+	getLogsFn       func(cfxtypes.LogFilter) ([]cfxtypes.Log, error)
+	byHashCalls     int
+	byNumberCalls   int
+	byEpochCalls    int
+	byEpochRequests []uint64
+	getLogsFilters  []cfxtypes.LogFilter
 }
 
 func (f *fakeCfxScanClient) GetBlockSummaryByHash(hash cfxtypes.Hash) (*cfxtypes.BlockSummary, error) {
@@ -382,6 +418,7 @@ func (f *fakeCfxScanClient) GetBlockSummaryByHash(hash cfxtypes.Hash) (*cfxtypes
 func (f *fakeCfxScanClient) GetBlockSummaryByEpoch(epoch *cfxtypes.Epoch) (*cfxtypes.BlockSummary, error) {
 	f.byEpochCalls++
 	value, _ := epoch.ToInt()
+	f.byEpochRequests = append(f.byEpochRequests, value.Uint64())
 	if f.byEpochFn != nil {
 		return f.byEpochFn(value.Uint64())
 	}
@@ -407,9 +444,10 @@ func TestCfxScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 	insertScanLogsMapping(t, db, 10, 100, 100, "0x01")
 	handler := newTestCfxScanLogsHandler(db)
 
+	client := &fakeCfxScanClient{}
 	_, err := handler.ScanLogs(
 		context.Background(),
-		&fakeCfxScanClient{},
+		client,
 		CfxScanLogParams{
 			CfxScanLogRequest: &CfxScanLogRequest{Limit: 1},
 			EpochRange:        citypes.RangeUint64{From: 10, To: 10},
@@ -418,6 +456,10 @@ func TestCfxScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 	)
 
 	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
+	assert.Zero(t, client.byHashCalls)
+	assert.Zero(t, client.byNumberCalls)
+	assert.Zero(t, client.byEpochCalls)
+	assert.Empty(t, client.getLogsFilters)
 }
 
 func TestCfxScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
@@ -447,6 +489,7 @@ func TestCfxScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, result.Logs)
 	assert.Equal(t, 4, client.byEpochCalls)
+	assert.Equal(t, []uint64{0, 0, 0, 0}, client.byEpochRequests)
 	assert.Len(t, client.getLogsFilters, 2, "changed checkpoint must replay the FN segment")
 }
 
@@ -881,16 +924,18 @@ func TestBuildCfxInnerCandidateChecksCheckpointAssumptionHash(t *testing.T) {
 }
 
 type fakeEthScanClient struct {
-	blocks     map[int64]*web3types.Block
-	logs       []web3types.Log
-	blockFn    func(int64) (*web3types.Block, error)
-	logsFn     func(web3types.FilterQuery) ([]web3types.Log, error)
-	blockCalls int
-	filters    []web3types.FilterQuery
+	blocks       map[int64]*web3types.Block
+	logs         []web3types.Log
+	blockFn      func(int64) (*web3types.Block, error)
+	logsFn       func(web3types.FilterQuery) ([]web3types.Log, error)
+	blockCalls   int
+	blockNumbers []int64
+	filters      []web3types.FilterQuery
 }
 
 func (f *fakeEthScanClient) BlockByNumber(number web3types.BlockNumber, _ bool) (*web3types.Block, error) {
 	f.blockCalls++
+	f.blockNumbers = append(f.blockNumbers, int64(number))
 	if f.blockFn != nil {
 		return f.blockFn(int64(number))
 	}
@@ -910,9 +955,10 @@ func TestEthScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 	insertScanLogsMapping(t, db, 10, 10, 10, common.HexToHash("0x01").String())
 	handler := newTestEthScanLogsHandler(db)
 
+	client := &fakeEthScanClient{}
 	_, err := handler.ScanLogs(
 		context.Background(),
-		&fakeEthScanClient{},
+		client,
 		EthScanLogParams{
 			EthScanLogRequest: &EthScanLogRequest{Limit: 1},
 			BlockRange:        citypes.RangeUint64{From: 10, To: 10},
@@ -921,6 +967,8 @@ func TestEthScanLogsPublicEntryCommitsStableDBError(t *testing.T) {
 	)
 
 	require.ErrorIs(t, err, ErrScanLogsAssumptionFailure)
+	assert.Zero(t, client.blockCalls)
+	assert.Empty(t, client.filters)
 }
 
 func TestEthScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
@@ -953,7 +1001,221 @@ func TestEthScanLogsPublicEntryRetriesChangedCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, result.Logs)
 	assert.Equal(t, 4, client.blockCalls)
+	assert.Equal(t, []int64{0, 0, 0, 0}, client.blockNumbers)
 	assert.Len(t, client.filters, 2, "changed checkpoint must replay the FN segment")
+}
+
+func TestEthScanLogsRepeatedCheckpointChangeRejectsCandidate(t *testing.T) {
+	db := newScanLogsHandlerTestDB(t)
+	dbHash := common.HexToHash("0x10")
+	insertScanLogsMapping(t, db, 0, 0, 0, dbHash.String())
+	insertEthScanLogsTestPartition(t, db, 0)
+
+	hashes := []common.Hash{
+		common.HexToHash("0x11a"), common.HexToHash("0x11b"),
+		common.HexToHash("0x11c"), common.HexToHash("0x11d"),
+	}
+	hCalls := 0
+	client := &fakeEthScanClient{blockFn: func(number int64) (*web3types.Block, error) {
+		switch number {
+		case 0:
+			return &web3types.Block{Number: big.NewInt(number), Hash: dbHash}, nil
+		case 1:
+			hash := hashes[hCalls]
+			hCalls++
+			return &web3types.Block{Number: big.NewInt(number), Hash: hash}, nil
+		default:
+			t.Fatalf("unexpected block lookup %d", number)
+			return nil, nil
+		}
+	}}
+
+	result, err := newTestEthScanLogsHandler(db).ScanLogs(
+		context.Background(), client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 2},
+			BlockRange:        citypes.RangeUint64{From: 0, To: 1},
+		},
+		nil,
+	)
+
+	assert.Nil(t, result)
+	require.ErrorIs(t, err, ErrScanLogsConsistency)
+	assert.Equal(t, 4, hCalls)
+	assert.Len(t, client.filters, 2)
+}
+
+func TestEthScanLogsCheckpointTransportErrorReturnsImmediately(t *testing.T) {
+	wantErr := errors.New("checkpoint transport failed")
+	tests := []struct {
+		name       string
+		failOnCall int
+		wantCalls  int
+		wantScans  int
+	}{
+		{name: "before", failOnCall: 1, wantCalls: 1, wantScans: 0},
+		{name: "after", failOnCall: 2, wantCalls: 2, wantScans: 1},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeEthScanClient{blockFn: func(number int64) (*web3types.Block, error) {
+				if test.failOnCall == 1 || test.failOnCall == 2 {
+					test.failOnCall--
+					if test.failOnCall == 0 {
+						return nil, wantErr
+					}
+				}
+				return &web3types.Block{Number: big.NewInt(number), Hash: common.HexToHash("0x10")}, nil
+			}}
+
+			result, err := newTestEthScanLogsHandler(newScanLogsHandlerTestDB(t)).ScanLogs(
+				context.Background(), client,
+				EthScanLogParams{
+					EthScanLogRequest: &EthScanLogRequest{Limit: 1},
+					BlockRange:        citypes.RangeUint64{From: 0, To: 0},
+				},
+				nil,
+			)
+
+			assert.Nil(t, result)
+			assert.ErrorIs(t, err, wantErr)
+			assert.Equal(t, test.wantCalls, client.blockCalls)
+			assert.Len(t, client.filters, test.wantScans)
+		})
+	}
+}
+
+func TestEthScanLogsOuterRetryRebuildsInnerStateAndDBCache(t *testing.T) {
+	db := newScanLogsHandlerTestDB(t)
+	dbHash := common.HexToHash("0x10")
+	fnHashA, fnHashB := common.HexToHash("0x11a"), common.HexToHash("0x11b")
+	insertScanLogsMapping(t, db, 0, 0, 0, dbHash.String())
+	insertEthScanLogsTestPartition(t, db, 0)
+	require.NoError(t, db.Exec(
+		"INSERT INTO configs (name, value) VALUES ('reorg.version', '1')",
+	).Error)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	configReads, logReads := 0, 0
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(
+		"scanlogs_test_change_version", func(tx *gorm.DB) {
+			if tx.Statement.Table != "configs" {
+				return
+			}
+			configReads++
+			if configReads == 3 {
+				_, updateErr := sqlDB.Exec("UPDATE configs SET value = '2' WHERE name = 'reorg.version'")
+				require.NoError(t, updateErr)
+			}
+		},
+	))
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register(
+		"scanlogs_test_count_log_reads", func(tx *gorm.DB) {
+			if tx.Statement.Table == "logs_0" {
+				logReads++
+			}
+		},
+	))
+
+	hCalls, scanCalls := 0, 0
+	client := &fakeEthScanClient{blockFn: func(number int64) (*web3types.Block, error) {
+		if number == 0 {
+			return &web3types.Block{Number: big.NewInt(number), Hash: dbHash}, nil
+		}
+		hCalls++
+		hash := fnHashB
+		if hCalls == 1 {
+			hash = fnHashA
+		}
+		return &web3types.Block{Number: big.NewInt(number), Hash: hash}, nil
+	}, logsFn: func(web3types.FilterQuery) ([]web3types.Log, error) {
+		scanCalls++
+		return []web3types.Log{{
+			BlockNumber: 1, BlockHash: common.BigToHash(big.NewInt(int64(scanCalls))), Index: 0,
+		}}, nil
+	}}
+
+	result, err := newTestEthScanLogsHandler(db).ScanLogs(
+		context.Background(), client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 2},
+			BlockRange:        citypes.RangeUint64{From: 0, To: 1},
+		},
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.Logs, 2)
+	assert.Equal(t, common.BigToHash(big.NewInt(3)), result.Logs[1].BlockHash,
+		"only the candidate from the second outer generation may be committed")
+	assert.Equal(t, 3, len(client.filters), "one inner retry plus one rebuilt outer attempt")
+	assert.Equal(t, 2, logReads, "DB cache is reused by inner retry and rebuilt by outer retry")
+	assert.Equal(t, 5, configReads)
+}
+
+func TestEthScanLogsRetryKeepsNormalizedLatestFrozen(t *testing.T) {
+	hashes := []common.Hash{
+		common.HexToHash("0x1a"), common.HexToHash("0x1b"),
+		common.HexToHash("0x1c"), common.HexToHash("0x1c"),
+	}
+	hashIndex := 0
+	client := &fakeEthScanClient{blockFn: func(number int64) (*web3types.Block, error) {
+		if number == int64(web3types.LatestBlockNumber) {
+			return &web3types.Block{Number: big.NewInt(1), Hash: common.HexToHash("0xhead")}, nil
+		}
+		require.Equal(t, int64(1), number)
+		hash := hashes[hashIndex]
+		hashIndex++
+		return &web3types.Block{Number: big.NewInt(number), Hash: hash}, nil
+	}}
+
+	params, err := NormalizeEthScanLogRequest(client, 0, EthScanLogRequest{Limit: 1}, false)
+	require.NoError(t, err)
+	result, err := newTestEthScanLogsHandler(newScanLogsHandlerTestDB(t)).ScanLogs(
+		context.Background(), client, params, nil,
+	)
+
+	require.NoError(t, err)
+	assert.Empty(t, result.Logs)
+	assert.Equal(t, []int64{int64(web3types.LatestBlockNumber), 1, 1, 1, 1}, client.blockNumbers)
+	assert.Len(t, client.filters, 2)
+}
+
+func TestEthScanLogsDBResultWithFNAssumptionValidatesBoundary(t *testing.T) {
+	db := newScanLogsHandlerTestDB(t)
+	dbHash := common.HexToHash("0x10")
+	assumptionHash := common.HexToHash("0x11")
+	insertScanLogsMapping(t, db, 0, 0, 0, dbHash.String())
+	insertEthScanLogsTestPartition(t, db, 0)
+
+	client := &fakeEthScanClient{blockFn: func(number int64) (*web3types.Block, error) {
+		switch number {
+		case 0:
+			return &web3types.Block{Number: big.NewInt(number), Hash: dbHash}, nil
+		case 1:
+			return &web3types.Block{Number: big.NewInt(number), Hash: assumptionHash}, nil
+		default:
+			t.Fatalf("unexpected block lookup %d", number)
+			return nil, nil
+		}
+	}}
+	result, err := newTestEthScanLogsHandler(db).ScanLogs(
+		context.Background(),
+		client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 2},
+			BlockRange:        citypes.RangeUint64{From: 0, To: 0},
+		},
+		&EthPivotAssumption{BlockNumber: 1, BlockHash: assumptionHash},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.Logs, 1)
+	assert.Equal(t, uint64(0), result.Logs[0].BlockNumber)
+	assert.Equal(t, []int64{1, 1, 0, 1}, client.blockNumbers)
+	assert.Empty(t, client.filters, "the FN is used only for the out-of-DB assumption")
 }
 
 func TestEthScanLogsRejectsNullPreCheckpointBlock(t *testing.T) {
@@ -1033,6 +1295,96 @@ func TestEthScanLogsRetriesNullBoundaryBlockThenRejects(t *testing.T) {
 	require.ErrorIs(t, err, ErrScanLogsConsistency)
 	assert.Equal(t, 6, client.blockCalls)
 	assert.Len(t, client.filters, 2, "a null boundary block permits one additional FN attempt")
+}
+
+func TestEthScanLogsBoundaryMismatchConvergesOnRetry(t *testing.T) {
+	db := newScanLogsHandlerTestDB(t)
+	dbHash := common.HexToHash("0x10")
+	insertScanLogsMapping(t, db, 0, 0, 0, dbHash.String())
+	handler := newTestEthScanLogsHandler(db)
+
+	hCalls, boundaryCalls := 0, 0
+	client := &fakeEthScanClient{blockFn: func(number int64) (*web3types.Block, error) {
+		switch number {
+		case 1:
+			hCalls++
+			return &web3types.Block{Number: big.NewInt(number), Hash: common.HexToHash("0x11")}, nil
+		case 0:
+			boundaryCalls++
+			hash := common.HexToHash("0x12")
+			if boundaryCalls == 2 {
+				hash = dbHash
+			}
+			return &web3types.Block{Number: big.NewInt(number), Hash: hash}, nil
+		default:
+			t.Fatalf("unexpected block lookup %d", number)
+			return nil, nil
+		}
+	}}
+
+	result, err := handler.ScanLogs(
+		context.Background(),
+		client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 1},
+			BlockRange:        citypes.RangeUint64{From: 1, To: 1},
+		},
+		&EthPivotAssumption{BlockNumber: 0, BlockHash: dbHash},
+	)
+
+	require.NoError(t, err)
+	assert.Empty(t, result.Logs)
+	assert.Equal(t, 4, hCalls, "each FN attempt must read its checkpoint before and after")
+	assert.Equal(t, 2, boundaryCalls)
+	assert.Len(t, client.filters, 2, "the boundary mismatch must replay exactly one FN attempt")
+}
+
+func TestEthScanLogsRepeatedBoundaryMismatchRejectsCandidate(t *testing.T) {
+	db := newScanLogsHandlerTestDB(t)
+	dbHash := common.HexToHash("0x10")
+	insertScanLogsMapping(t, db, 0, 0, 0, dbHash.String())
+	insertEthScanLogsTestPartition(t, db, 0)
+	handler := newTestEthScanLogsHandler(db)
+	logReads := 0
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register(
+		"scanlogs_test_count_boundary_log_reads", func(tx *gorm.DB) {
+			if tx.Statement.Table == "logs_0" {
+				logReads++
+			}
+		},
+	))
+
+	hCalls, boundaryCalls := 0, 0
+	client := &fakeEthScanClient{blockFn: func(number int64) (*web3types.Block, error) {
+		switch number {
+		case 1:
+			hCalls++
+			return &web3types.Block{Number: big.NewInt(number), Hash: common.HexToHash("0x11")}, nil
+		case 0:
+			boundaryCalls++
+			return &web3types.Block{Number: big.NewInt(number), Hash: common.HexToHash("0x12")}, nil
+		default:
+			t.Fatalf("unexpected block lookup %d", number)
+			return nil, nil
+		}
+	}}
+
+	result, err := handler.ScanLogs(
+		context.Background(),
+		client,
+		EthScanLogParams{
+			EthScanLogRequest: &EthScanLogRequest{Limit: 2},
+			BlockRange:        citypes.RangeUint64{From: 0, To: 1},
+		},
+		&EthPivotAssumption{BlockNumber: 0, BlockHash: dbHash},
+	)
+
+	assert.Nil(t, result)
+	require.ErrorIs(t, err, ErrScanLogsConsistency)
+	assert.Equal(t, 4, hCalls)
+	assert.Equal(t, 2, boundaryCalls)
+	assert.Len(t, client.filters, 2, "only one boundary retry is allowed")
+	assert.Equal(t, 1, logReads, "boundary-only inner retry must reuse the DB cache")
 }
 
 func TestEthScanLogsRejectsNullFNAssumptionBlock(t *testing.T) {
@@ -1281,4 +1633,90 @@ func TestWhitelistedFNOversizedErrorUsesMessageOnly(t *testing.T) {
 	assert.False(t, isWhitelistedFNOversizedError(fmt.Errorf(
 		"query returned more than 10000 results. Try with this block range: [0x10, 0x20]",
 	)))
+}
+
+func TestScanFNBlockWindowsShrinksOversizedRangesToSuccess(t *testing.T) {
+	tests := []struct {
+		name      string
+		reverse   bool
+		wantLogs  []uint64
+		wantCalls [][2]uint64
+	}{
+		{
+			name:     "forward",
+			wantLogs: []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+			wantCalls: [][2]uint64{
+				{1, 8}, {1, 4}, {1, 2}, {3, 4}, {5, 6}, {7, 8}, {9, 9},
+			},
+		},
+		{
+			name:     "reverse",
+			reverse:  true,
+			wantLogs: []uint64{9, 8, 7, 6, 5, 4, 3, 2, 1},
+			wantCalls: [][2]uint64{
+				{2, 9}, {6, 9}, {8, 9}, {6, 7}, {4, 5}, {2, 3}, {1, 1},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var calls [][2]uint64
+			logs, err := scanFNBlockWindows(
+				context.Background(), scanRange{From: 1, To: 9}, test.reverse, 8, 9,
+				func(_ context.Context, low, high uint64) ([]uint64, error) {
+					calls = append(calls, [2]uint64{low, high})
+					if high-low+1 > 2 {
+						return nil, errors.New("the query set is too large")
+					}
+					window := make([]uint64, 0, high-low+1)
+					for block := low; block <= high; block++ {
+						window = append(window, block)
+					}
+					return window, nil
+				},
+				nil,
+			)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.wantLogs, logs)
+			assert.Equal(t, test.wantCalls, calls)
+		})
+	}
+}
+
+func TestScanFNBlockWindowsStopsOnSingleHeightOversizedError(t *testing.T) {
+	wantErr := errors.New("the query set is too large")
+	calls := 0
+	logs, err := scanFNBlockWindows(
+		context.Background(), scanRange{From: 7, To: 7}, false, 100, 1,
+		func(_ context.Context, low, high uint64) ([]int, error) {
+			calls++
+			assert.Equal(t, uint64(7), low)
+			assert.Equal(t, uint64(7), high)
+			return nil, wantErr
+		},
+		nil,
+	)
+
+	assert.Nil(t, logs)
+	assert.ErrorIs(t, err, wantErr)
+	assert.Equal(t, 1, calls)
+}
+
+func TestScanFNBlockWindowsReturnsNonWhitelistedErrorImmediately(t *testing.T) {
+	wantErr := errors.New("execution reverted")
+	calls := 0
+	logs, err := scanFNBlockWindows(
+		context.Background(), scanRange{From: 1, To: 100}, false, 64, 10,
+		func(context.Context, uint64, uint64) ([]int, error) {
+			calls++
+			return nil, wantErr
+		},
+		nil,
+	)
+
+	assert.Nil(t, logs)
+	assert.ErrorIs(t, err, wantErr)
+	assert.Equal(t, 1, calls)
 }

@@ -861,7 +861,7 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 		h = uint64(assumption.EpochNumber)
 	}
 
-	boundaryRetries := 0
+	boundaryRetries, checkpointRetries := 0, 0
 	for {
 		if err := checkTimeout(ctx); err != nil {
 			return nil, false, err
@@ -939,6 +939,14 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 			return nil, true, nil
 		case canonicalRetryInner:
 			markScanLogsMetric(ctx, "retry/fn_inner")
+			if !checkpointStable {
+				if checkpointRetries >= maxCheckpointInnerRetries {
+					return nil, false, NewScanLogsErrorf(
+						ErrScanLogsConsistency, "checkpoint changed after %d retry", checkpointRetries,
+					)
+				}
+				checkpointRetries++
+			}
 			if boundaryMismatch && checkpointStable {
 				markScanLogsMetric(ctx, "boundary/mismatch")
 				if boundaryRetries >= maxBoundaryInnerRetries {

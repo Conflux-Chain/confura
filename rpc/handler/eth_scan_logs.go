@@ -746,7 +746,7 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		checkpoint = uint64(assumption.BlockNumber)
 	}
 
-	boundaryRetries := 0
+	boundaryRetries, checkpointRetries := 0, 0
 	for {
 		if err := checkTimeout(ctx); err != nil {
 			return nil, false, err
@@ -817,6 +817,14 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 			return nil, true, nil
 		case canonicalRetryInner:
 			markScanLogsMetric(ctx, "retry/fn_inner")
+			if !checkpointStable {
+				if checkpointRetries >= maxCheckpointInnerRetries {
+					return nil, false, NewScanLogsErrorf(
+						ErrScanLogsConsistency, "checkpoint changed after %d retry", checkpointRetries,
+					)
+				}
+				checkpointRetries++
+			}
 			if boundaryMismatch && checkpointStable {
 				markScanLogsMetric(ctx, "boundary/mismatch")
 				if boundaryRetries >= maxBoundaryInnerRetries {

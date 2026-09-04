@@ -141,11 +141,10 @@ func GetClientGroupFromContext(ctx context.Context) node.Group {
 
 func getEthClientFromProviderWithContext(
 	ctx context.Context, rpcMethod string, p *node.EthClientProvider) (*node.Web3goClient, node.Group, error) {
-	grp := node.GroupEthHttp
+	grp := ethClientGroupForMethod(rpcMethod)
 
 	switch {
-	case rpcMethod == rpcMethodEthGetLogs || isEthScanLogsRpcMethod(rpcMethod):
-		grp = node.GroupEthLogs
+	case grp == node.GroupEthLogs:
 	case isEthFilterRpcMethod(rpcMethod):
 		grp = node.GroupEthFilter
 	default:
@@ -162,13 +161,19 @@ func getEthClientFromProviderWithContext(
 	return client, grp, err
 }
 
+func ethClientGroupForMethod(rpcMethod string) node.Group {
+	if rpcMethod == rpcMethodEthGetLogs || isEthScanLogsRpcMethod(rpcMethod) {
+		return node.GroupEthLogs
+	}
+	return node.GroupEthHttp
+}
+
 func getCfxClientFromProviderWithContext(
 	ctx context.Context, rpcMethod string, p *node.CfxClientProvider) (sdk.ClientOperator, node.Group, error) {
-	grp := node.GroupCfxHttp
+	grp := cfxClientGroupForMethod(rpcMethod)
 
 	switch {
-	case rpcMethod == rpcMethodCfxGetLogs || isCfxScanLogsRpcMethod(rpcMethod):
-		grp = node.GroupCfxLogs
+	case grp == node.GroupCfxLogs:
 	case isCfxFilterRpcMethod(rpcMethod):
 		grp = node.GroupCfxFilter
 	default:
@@ -183,4 +188,11 @@ func getCfxClientFromProviderWithContext(
 
 	client, err := p.GetClientByIP(ctx, grp)
 	return client, grp, err
+}
+
+func cfxClientGroupForMethod(rpcMethod string) node.Group {
+	if rpcMethod == rpcMethodCfxGetLogs || isCfxScanLogsRpcMethod(rpcMethod) {
+		return node.GroupCfxLogs
+	}
+	return node.GroupCfxHttp
 }

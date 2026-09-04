@@ -1,0 +1,114 @@
+{
+  "metadata": {
+    "generatedAt": "2026-09-02T09:00:00+08:00",
+    "purpose": "Natural-data manifest: 24 cases expand to 96 direction/variant runs",
+    "pageLimit": 7,
+    "watermarks": {
+      "cfx": {"latestDbEpoch": 92659, "latestDbEpochHex": "0x169f3", "latestDbBlockNumber": 189442, "latestDbPivotHash": "0xd79254c68c55be53b637dafc583587d15ab1f681f33826917b141bfe0325e9f0"},
+      "eth": {"latestDbBlockNumber": 37164599, "latestDbBlockNumberHex": "0x2371637", "latestDbBlockHash": "0xa42ceacce347e10f632f14a7f780eab0f29f50bb836bfcbcbfb746a93882c161"}
+    },
+    "dataQualification": {
+      "cfx": "DB, FN and mixed ranges are non-empty; selected mixed filters occur on both sides of the watermark.",
+      "eth": "DB and FN ranges are non-empty. No logs were found in at least the first 200000 blocks above the DB watermark, so mixed cases cover DB-nonempty/FN-empty boundary behavior, not two-sided merging.",
+      "releaseGate": "Use the deterministic LogEmitter fixture in doc/scanlogs_test_cases.md for eSpace two-sided mixed and dense DB multi-page release coverage."
+    }
+  },
+  "cases": [
+    {
+      "name": "cfx-db-no-filter", "enabled": true, "space": "cfx", "source": "db",
+      "filter": {"epochRange": {"fromEpoch": "0x1660c", "toEpoch": "0x169f3"}}
+    },
+    {
+      "name": "cfx-db-address", "enabled": true, "space": "cfx", "source": "db",
+      "filter": {"epochRange": {"fromEpoch": "0x1660c", "toEpoch": "0x169f3"}, "address": "cfx:aca28drg1k3t7m7n5m8dhxb0gaf0cfx9z2eypabc5y"}
+    },
+    {
+      "name": "cfx-db-topic0", "enabled": true, "space": "cfx", "source": "db",
+      "filter": {"epochRange": {"fromEpoch": "0x1660c", "toEpoch": "0x169f3"}, "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    },
+    {
+      "name": "cfx-db-address-topic0", "enabled": true, "space": "cfx", "source": "db",
+      "filter": {"epochRange": {"fromEpoch": "0x1660c", "toEpoch": "0x169f3"}, "address": "cfx:aca28drg1k3t7m7n5m8dhxb0gaf0cfx9z2eypabc5y", "topic0": "0x31e18216f8b2ca46fa286ccb3d0ee6bd32435c0bbe4108625808581e661c52ca"}
+    },
+    {
+      "name": "cfx-fn-no-filter", "enabled": true, "space": "cfx", "source": "fn",
+      "filter": {"epochRange": {"fromEpoch": "0x169f4", "toEpoch": "0x16a57"}}
+    },
+    {
+      "name": "cfx-fn-address", "enabled": true, "space": "cfx", "source": "fn",
+      "filter": {"epochRange": {"fromEpoch": "0x169f4", "toEpoch": "0x16a57"}, "address": "cfx:aca28drg1k3t7m7n5m8dhxb0gaf0cfx9z2eypabc5y"}
+    },
+    {
+      "name": "cfx-fn-topic0", "enabled": true, "space": "cfx", "source": "fn",
+      "filter": {"epochRange": {"fromEpoch": "0x169f4", "toEpoch": "0x16a57"}, "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    },
+    {
+      "name": "cfx-fn-address-topic0", "enabled": true, "space": "cfx", "source": "fn",
+      "filter": {"epochRange": {"fromEpoch": "0x169f4", "toEpoch": "0x16a57"}, "address": "cfx:aca28drg1k3t7m7n5m8dhxb0gaf0cfx9z2eypabc5y", "topic0": "0x31e18216f8b2ca46fa286ccb3d0ee6bd32435c0bbe4108625808581e661c52ca"}
+    },
+    {
+      "name": "cfx-mixed-no-filter", "enabled": true, "space": "cfx", "source": "mixed",
+      "filter": {"epochRange": {"fromEpoch": "0x1698f", "toEpoch": "0x16a57"}}
+    },
+    {
+      "name": "cfx-mixed-address", "enabled": true, "space": "cfx", "source": "mixed",
+      "filter": {"epochRange": {"fromEpoch": "0x1698f", "toEpoch": "0x16a57"}, "address": "cfx:aca28drg1k3t7m7n5m8dhxb0gaf0cfx9z2eypabc5y"}
+    },
+    {
+      "name": "cfx-mixed-topic0", "enabled": true, "space": "cfx", "source": "mixed",
+      "filter": {"epochRange": {"fromEpoch": "0x1698f", "toEpoch": "0x16a57"}, "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    },
+    {
+      "name": "cfx-mixed-address-topic0", "enabled": true, "space": "cfx", "source": "mixed",
+      "filter": {"epochRange": {"fromEpoch": "0x1698f", "toEpoch": "0x16a57"}, "address": "cfx:aca28drg1k3t7m7n5m8dhxb0gaf0cfx9z2eypabc5y", "topic0": "0x31e18216f8b2ca46fa286ccb3d0ee6bd32435c0bbe4108625808581e661c52ca"}
+    },
+    {
+      "name": "eth-db-no-filter", "enabled": true, "space": "eth", "source": "db",
+      "filter": {"blockRange": {"fromBlock": "0x236ef7a", "toBlock": "0x236f361"}}
+    },
+    {
+      "name": "eth-db-address", "enabled": true, "space": "eth", "source": "db",
+      "filter": {"blockRange": {"fromBlock": "0x236ef7a", "toBlock": "0x236f361"}, "address": "0x03173fb5a9686d1b0822240a44d6c63504a42ad5"}
+    },
+    {
+      "name": "eth-db-topic0", "enabled": true, "space": "eth", "source": "db",
+      "filter": {"blockRange": {"fromBlock": "0x236ef7a", "toBlock": "0x236f361"}, "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    },
+    {
+      "name": "eth-db-address-topic0", "enabled": true, "space": "eth", "source": "db",
+      "filter": {"blockRange": {"fromBlock": "0x236ef7a", "toBlock": "0x236f361"}, "address": "0x03173fb5a9686d1b0822240a44d6c63504a42ad5", "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    },
+    {
+      "name": "eth-fn-no-filter", "enabled": true, "space": "eth", "source": "fn",
+      "filter": {"blockRange": {"fromBlock": "0x9490b03", "toBlock": "0x9490eea"}}
+    },
+    {
+      "name": "eth-fn-address", "enabled": true, "space": "eth", "source": "fn",
+      "filter": {"blockRange": {"fromBlock": "0x9490b03", "toBlock": "0x9490eea"}, "address": "0x14b2d3bc65e74dae1030eafd8ac30c533c976a9b"}
+    },
+    {
+      "name": "eth-fn-topic0", "enabled": true, "space": "eth", "source": "fn",
+      "filter": {"blockRange": {"fromBlock": "0x9490b03", "toBlock": "0x9490eea"}, "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    },
+    {
+      "name": "eth-fn-address-topic0", "enabled": true, "space": "eth", "source": "fn",
+      "filter": {"blockRange": {"fromBlock": "0x9490b03", "toBlock": "0x9490eea"}, "address": "0x14b2d3bc65e74dae1030eafd8ac30c533c976a9b", "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    },
+    {
+      "name": "eth-mixed-no-filter", "enabled": true, "space": "eth", "source": "mixed",
+      "filter": {"blockRange": {"fromBlock": "0x236ef7a", "toBlock": "0x237169b"}}
+    },
+    {
+      "name": "eth-mixed-address", "enabled": true, "space": "eth", "source": "mixed",
+      "filter": {"blockRange": {"fromBlock": "0x236ef7a", "toBlock": "0x237169b"}, "address": "0x03173fb5a9686d1b0822240a44d6c63504a42ad5"}
+    },
+    {
+      "name": "eth-mixed-topic0", "enabled": true, "space": "eth", "source": "mixed",
+      "filter": {"blockRange": {"fromBlock": "0x236ef7a", "toBlock": "0x237169b"}, "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    },
+    {
+      "name": "eth-mixed-address-topic0", "enabled": true, "space": "eth", "source": "mixed",
+      "filter": {"blockRange": {"fromBlock": "0x236ef7a", "toBlock": "0x237169b"}, "address": "0x03173fb5a9686d1b0822240a44d6c63504a42ad5", "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"}
+    }
+  ]
+}

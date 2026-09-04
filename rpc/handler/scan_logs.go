@@ -500,7 +500,8 @@ const (
 	// the stale data from the pre-reorg fork, in which case no amount of FN replay
 	// can align it. After one additional attempt we fail fast and let
 	// the caller retry after the indexer advances.
-	maxBoundaryInnerRetries = 1
+	maxBoundaryInnerRetries   = 1
+	maxCheckpointInnerRetries = 1
 )
 
 type fnSegmentBatch[L any] struct {

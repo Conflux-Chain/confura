@@ -1,0 +1,38 @@
+{
+  "anchors": {
+    "cfx": "cfx-db-address-topic0",
+    "eth": "eth-db-address-topic0"
+  },
+  "boundaryCases": [
+    {"id": "CUR-01", "operation": "cursor-exclusive", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "CUR-04", "operation": "invalid-cursor-low", "spaces": ["cfx", "eth"], "directions": ["forward"]},
+    {"id": "CUR-05", "operation": "invalid-cursor-high", "spaces": ["cfx", "eth"], "directions": ["reverse"]},
+    {"id": "LIM-01-OMITTED", "operation": "limit", "value": "omit", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "LIM-01-ZERO", "operation": "limit", "value": "0x0", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "LIM-02-ONE", "operation": "limit", "value": "0x1", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "LIM-02-MAX", "operation": "limit", "value": "max", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "RNG-01", "operation": "endpoint", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "RNG-02", "operation": "invalid-range", "spaces": ["cfx", "eth"], "directions": ["forward"]},
+    {"id": "RNG-03", "operation": "future-upper", "spaces": ["cfx", "eth"], "directions": ["forward"]},
+    {"id": "EMP-01", "operation": "empty", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "PIV-05", "operation": "empty-with-assumption", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "PIV-06", "operation": "missing-assumption", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "PIV-07", "operation": "stale-hash", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]},
+    {"id": "PIV-08", "operation": "stale-height", "spaces": ["cfx", "eth"], "directions": ["forward", "reverse"]}
+  ],
+  "apiCases": [
+    {"id": "API-01-REQUEST", "mutation": "unknown-request", "spaces": ["cfx", "eth"]},
+    {"id": "API-01-FILTER", "mutation": "unknown-filter", "spaces": ["cfx", "eth"]},
+    {"id": "API-01-RANGE", "mutation": "unknown-range", "spaces": ["cfx", "eth"]},
+    {"id": "API-01-CURSOR", "mutation": "unknown-cursor", "spaces": ["cfx", "eth"]},
+    {"id": "API-01-ASSUMPTION", "mutation": "unknown-assumption", "spaces": ["cfx", "eth"]},
+    {"id": "API-02-DECIMAL", "mutation": "decimal-limit", "spaces": ["cfx", "eth"]},
+    {"id": "API-02-NEGATIVE", "mutation": "negative-limit", "spaces": ["cfx", "eth"]},
+    {"id": "API-02-LEADING-ZERO", "mutation": "leading-zero-limit", "spaces": ["cfx", "eth"]},
+    {"id": "API-02-NONHEX", "mutation": "nonhex-limit", "spaces": ["cfx", "eth"]},
+    {"id": "API-02-OVERFLOW", "mutation": "overflow-limit", "spaces": ["cfx", "eth"]},
+    {"id": "API-03-NULL-FILTER", "mutation": "null-filter", "spaces": ["cfx", "eth"]},
+    {"id": "API-03-WRONG-BOOLEAN", "mutation": "wrong-reverse-type", "spaces": ["cfx", "eth"]},
+    {"id": "API-12-EXTRA-PARAM", "mutation": "extra-param", "spaces": ["cfx", "eth"]}
+  ]
+}
