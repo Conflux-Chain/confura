@@ -18,6 +18,9 @@ MYSQL_USER=""
 EXECUTE=false
 PAUSE_SECONDS=0
 MYSQL_QUERY_ABORT_RETRIES=3
+LOCK_WAIT_TIMEOUT=10
+DDL_MAX_ATTEMPTS=5
+DDL_RETRY_INTERVAL=10
 
 usage() {
   cat <<'USAGE'
@@ -27,6 +30,7 @@ Usage:
     [--host HOST --port PORT --user USER] \
     [--defaults-extra-file FILE | --login-path NAME] \
     [--mysql-bin PATH] [--pause-seconds N] \
+    [--lock-wait-timeout N] [--ddl-max-attempts N] [--ddl-retry-interval N] \
     --mode plan|add|verify|drop [--execute]
 
 Modes:
@@ -34,6 +38,11 @@ Modes:
   add     Add missing scanLogs indexes. Requires --execute.
   verify  Read-only index and EXPLAIN verification.
   drop    Re-verify, drop replaced indexes, then verify again. Requires --execute.
+
+DDL options:
+  --lock-wait-timeout N   Metadata lock wait timeout in seconds (default: 10).
+  --ddl-max-attempts N    Maximum attempts per DDL, including the first (default: 5).
+  --ddl-retry-interval N  Seconds between lock timeout retries (default: 10).
 
 For direct credentials, pass host/port/user and provide the password through
 MYSQL_PWD. A defaults file or login path can still be used instead.
@@ -99,6 +108,18 @@ while (($# > 0)); do
       PAUSE_SECONDS="${2:-}"
       shift 2
       ;;
+    --lock-wait-timeout)
+      LOCK_WAIT_TIMEOUT="${2:-}"
+      shift 2
+      ;;
+    --ddl-max-attempts)
+      DDL_MAX_ATTEMPTS="${2:-}"
+      shift 2
+      ;;
+    --ddl-retry-interval)
+      DDL_RETRY_INTERVAL="${2:-}"
+      shift 2
+      ;;
     --mode)
       MODE="${2:-}"
       shift 2
@@ -122,6 +143,10 @@ done
 [[ "$ADDRESS_PARTITIONS" =~ ^[0-9]+$ ]] || die "--address-partitions must be a non-negative integer" 2
 [[ "$TOPIC_PARTITIONS" =~ ^[0-9]+$ ]] || die "--topic-partitions must be a non-negative integer" 2
 [[ "$PAUSE_SECONDS" =~ ^[0-9]+$ ]] || die "--pause-seconds must be a non-negative integer" 2
+# Bound arithmetic inputs to avoid overflow; use canonical decimal integers.
+[[ "$LOCK_WAIT_TIMEOUT" =~ ^[1-9][0-9]{0,8}$ ]] || die "--lock-wait-timeout must be an integer from 1 to 999999999" 2
+[[ "$DDL_MAX_ATTEMPTS" =~ ^[1-9][0-9]{0,8}$ ]] || die "--ddl-max-attempts must be an integer from 1 to 999999999" 2
+[[ "$DDL_RETRY_INTERVAL" =~ ^(0|[1-9][0-9]{0,8})$ ]] || die "--ddl-retry-interval must be an integer from 0 to 999999999" 2
 [[ "$MODE" =~ ^(plan|add|verify|drop)$ ]] || die "--mode must be plan, add, verify, or drop" 2
 [[ -z "$DEFAULTS_EXTRA_FILE" || -z "$LOGIN_PATH" ]] || die "--defaults-extra-file and --login-path are mutually exclusive" 2
 if [[ -z "$DEFAULTS_EXTRA_FILE$LOGIN_PATH" ]]; then
@@ -431,14 +456,44 @@ validate_replaced_indexes() {
   done <"$targets"
 }
 
+ddl_sql() {
+  printf 'SET SESSION lock_wait_timeout = %s;\n%s\n' "$LOCK_WAIT_TIMEOUT" "$1"
+}
+
+mysql_ddl() {
+  local sql
+  sql="$(ddl_sql "$1")"
+  local attempt=1
+  local exit_code
+  local error_file="$TEMP_DIR/mysql-ddl.err"
+
+  while ((attempt <= DDL_MAX_ATTEMPTS)); do
+    log INFO "DDL attempt $attempt/$DDL_MAX_ATTEMPTS: $1"
+    # Disable force even when enabled in client defaults: a failed SET must stop DDL.
+    if "${MYSQL_COMMAND[@]}" --skip-force --execute="$sql" </dev/null >/dev/null 2>"$error_file"; then
+      cat "$error_file" >&2
+      return 0
+    else
+      exit_code=$?
+    fi
+    cat "$error_file" >&2
+    if ((attempt == DDL_MAX_ATTEMPTS)) || ! grep -Eq '^ERROR 1205 \(HY000\)' "$error_file"; then
+      log ERROR "DDL failed on attempt $attempt/$DDL_MAX_ATTEMPTS (exit $exit_code)" >&2
+      return "$exit_code"
+    fi
+    log WARN "DDL lock wait timed out; retrying attempt $((attempt + 1))/$DDL_MAX_ATTEMPTS in $DDL_RETRY_INTERVAL seconds" >&2
+    sleep "$DDL_RETRY_INTERVAL"
+    attempt=$((attempt + 1))
+  done
+}
+
 execute_or_print() {
   local sql=$1
   if [[ "$MODE" == "plan" ]]; then
-    printf '%s\n' "$sql"
+    ddl_sql "$sql"
     return
   fi
-  log INFO "$sql"
-  mysql_query "$sql" >/dev/null
+  mysql_ddl "$sql"
   refresh_schema_snapshot
   if ((PAUSE_SECONDS > 0)); then
     sleep "$PAUSE_SECONDS"
@@ -504,7 +559,7 @@ print_replaced_index_drops() {
     ((${#clause_array[@]} > 0)) || continue
     clauses="$(join_by_comma "${clause_array[@]}")"
     sql="ALTER TABLE $(quote_identifier "$table") $clauses, ALGORITHM=INPLACE, LOCK=NONE;"
-    printf '%s\n' "$sql"
+    ddl_sql "$sql"
   done <"$targets"
 }
 
