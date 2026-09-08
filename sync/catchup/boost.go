@@ -92,9 +92,10 @@ func (pq *syncTaskPriorityQueue) Pop() interface{} {
 
 // syncTaskResult holds the result of a completed syncTask.
 type syncTaskResult[T store.ChainData] struct {
-	task   syncTask
-	err    error
-	result []T
+	task     syncTask
+	err      error
+	result   []T
+	sourceID string
 }
 
 // coordinator orchestrates the synchronization process by:
@@ -126,15 +127,19 @@ type coordinator[T store.ChainData] struct {
 
 	// Result pipeline
 	nextWriteEpoch  uint64
-	epochDataStore  map[uint64]T
-	epochResultChan chan<- T
+	epochDataStore  map[uint64]sourcedChainData[T]
+	epochResultChan chan<- sourcedChainData[T]
 
 	// Backpressure control
 	backpressureControl *atomic.Value
 }
 
 func newCoordinator[T store.ChainData](
-	cfg boostConfig, workers []*boostWorker[T], fullRange types.RangeUint64, resultChan chan<- T) *coordinator[T] {
+	cfg boostConfig,
+	workers []*boostWorker[T],
+	fullRange types.RangeUint64,
+	resultChan chan<- sourcedChainData[T],
+) *coordinator[T] {
 	backpressureControl := new(atomic.Value)
 	backpressureControl.Store(make(chan struct{}))
 	return &coordinator[T]{
@@ -144,7 +149,7 @@ func newCoordinator[T store.ChainData](
 		nextAssignEpoch:     fullRange.From,
 		nextWriteEpoch:      fullRange.From,
 		epochResultChan:     resultChan,
-		epochDataStore:      make(map[uint64]T),
+		epochDataStore:      make(map[uint64]sourcedChainData[T]),
 		pendingTaskQueue:    make(chan syncTask, cfg.TaskQueueSize),
 		taskResultQueue:     make(chan syncTaskResult[T], cfg.ResultQueueSize),
 		backpressureControl: backpressureControl,
@@ -207,9 +212,10 @@ func (c *coordinator[T]) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup
 					}).WithError(err).Debug("Catch-up boost worker processed task")
 				}
 				c.taskResultQueue <- syncTaskResult[T]{
-					task:   task,
-					result: data,
-					err:    err,
+					task:     task,
+					result:   data,
+					err:      err,
+					sourceID: w.sourceID,
 				}
 			}
 		}
@@ -258,7 +264,7 @@ func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 					}
 
 					// Collect epoch data
-					if err := c.collectResult(ctx, r.result); err != nil {
+					if err := c.collectResult(ctx, r.sourceID, r.result); err != nil {
 						return
 					}
 					resultHistory = append(resultHistory, r)
@@ -312,15 +318,18 @@ func (c *coordinator[T]) estimateTaskSize(results []syncTaskResult[T]) uint64 {
 }
 
 // collectResult accumulates results in memory until contiguous and flushes them in order.
-func (c *coordinator[T]) collectResult(ctx context.Context, result []T) error {
+func (c *coordinator[T]) collectResult(ctx context.Context, sourceID string, result []T) error {
 	// Cache store epoch data
 	for _, data := range result {
-		c.epochDataStore[data.Number()] = data
+		c.epochDataStore[data.Number()] = sourcedChainData[T]{
+			data:     data,
+			sourceID: sourceID,
+		}
 	}
 
 	// Flush any stored epochs that are now contiguous
 	for {
-		data, ok := c.epochDataStore[c.nextWriteEpoch]
+		result, ok := c.epochDataStore[c.nextWriteEpoch]
 		if !ok {
 			break
 		}
@@ -335,8 +344,8 @@ func (c *coordinator[T]) collectResult(ctx context.Context, result []T) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case c.epochResultChan <- data:
-			delete(c.epochDataStore, data.Number())
+		case c.epochResultChan <- result:
+			delete(c.epochDataStore, c.nextWriteEpoch)
 			c.nextWriteEpoch++
 		}
 	}
@@ -409,7 +418,7 @@ type boostSyncer[T store.ChainData] struct {
 	workers []*boostWorker[T]
 
 	// Result channel
-	resultChan chan T
+	resultChan chan sourcedChainData[T]
 }
 
 func newBoostSyncer[T store.ChainData](s *Syncer[T]) *boostSyncer[T] {
@@ -420,7 +429,7 @@ func newBoostSyncer[T store.ChainData](s *Syncer[T]) *boostSyncer[T] {
 	return &boostSyncer[T]{
 		Syncer:     s,
 		workers:    workers,
-		resultChan: make(chan T, s.Boost.WriteBufferSize),
+		resultChan: make(chan sourcedChainData[T], s.Boost.WriteBufferSize),
 	}
 }
 
@@ -521,7 +530,8 @@ func (s *boostSyncer[T]) fetchAndPersistResults(ctx context.Context, start, end 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case epochData := <-s.resultChan:
+		case result := <-s.resultChan:
+			epochData := result.data
 			// collect epoch data
 			if epochData.Number() != eno {
 				return errors.Errorf("unexpected epoch collected, expected %v got %v", eno, epochData.Number())
@@ -532,10 +542,18 @@ func (s *boostSyncer[T]) fetchAndPersistResults(ctx context.Context, start, end 
 			eno++
 			s.monitor.Update(eno)
 
-			epochDbRows, storeDbRows := state.update(s.filter, epochData)
+			if !state.canAppend(result.sourceID) {
+				if err := s.persist(ctx, &state, bmarker); err != nil {
+					return err
+				}
+				state.reset()
+			}
+
+			epochDbRows, storeDbRows := state.update(s.filter, result)
 			if logrus.IsLevelEnabled(logrus.DebugLevel) {
 				logrus.WithFields(logrus.Fields{
 					"resultBufLen":       len(s.resultChan),
+					"sourceID":           result.sourceID,
 					"epochNo":            epochData.Number(),
 					"epochDbRows":        epochDbRows,
 					"storeDbRows":        storeDbRows,
