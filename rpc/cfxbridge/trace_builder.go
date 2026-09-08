@@ -150,7 +150,7 @@ func (ttb *TransactionTraceBuilder) Append(trace, traceResult *types.LocalizedTr
 
 type BlockTraceBuilder struct {
 	txTraces []types.LocalizedTransactionTrace
-	builer   TransactionTraceBuilder
+	builder  TransactionTraceBuilder
 }
 
 func (btb *BlockTraceBuilder) Build() ([]types.LocalizedTransactionTrace, error) {
@@ -170,7 +170,7 @@ func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, t
 		return nil
 	}
 
-	next, err := btb.builer.Append(trace, traceResult, traceAddress)
+	next, err := btb.builder.Append(trace, traceResult, traceAddress)
 	if err != nil || next {
 		return err
 	}
@@ -179,19 +179,19 @@ func (btb *BlockTraceBuilder) Append(trace, traceResult *types.LocalizedTrace, t
 		return err
 	}
 
-	_, err = btb.builer.Append(trace, traceResult, traceAddress)
+	_, err = btb.builder.Append(trace, traceResult, traceAddress)
 	return err
 }
 
 func (btb *BlockTraceBuilder) seal() error {
-	txTrace, ok, err := btb.builer.Build()
+	txTrace, ok, err := btb.builder.Build()
 	if err != nil {
 		return err
 	}
 
 	if ok {
 		btb.txTraces = append(btb.txTraces, *txTrace)
-		btb.builer = TransactionTraceBuilder{}
+		btb.builder = TransactionTraceBuilder{}
 	}
 
 	return nil
