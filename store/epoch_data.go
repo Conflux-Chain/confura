@@ -37,7 +37,7 @@ func RequireContinuous[T ChainData](slice []T, currentEpoch uint64) error {
 
 	for _, v := range slice {
 		if epochNo := v.Number(); epochNo != nextEpoch {
-			return errors.WithMessagef(ErrContinousEpochRequired,
+			return errors.WithMessagef(ErrContinuousEpochRequired,
 				"Epoch not continuous, expected %v, but got %v", nextEpoch, epochNo,
 			)
 		}
