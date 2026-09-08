@@ -559,6 +559,8 @@ func (api *ethAPI) getLogs(
 	rpcMethod string,
 ) ([]web3Types.Log, error) {
 	metrics.UpdateEthRpcLogFilter(rpcMethod, w3c.Eth, fq)
+	ctx, finishLogQueryStats := withLogQueryStats(ctx, rpcMethod)
+	defer finishLogQueryStats()
 
 	flag, ok := ParseEthLogFilterType(fq)
 	if !ok {
@@ -585,6 +587,7 @@ func (api *ethAPI) getLogs(
 	}
 
 	// fail over to fullnode if no handler configured
+	store.AddLogQueryFanOuts(ctx, 1)
 	return w3c.Eth.Logs(*fq)
 }
 

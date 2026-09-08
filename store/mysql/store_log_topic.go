@@ -185,6 +185,9 @@ func (s *TopicIndexedLogStore[T]) GetTopicIndexedLogs(
 	topic string,
 	sfilter store.LogFilter,
 ) ([]*store.Log, error) {
+	store.AddLogQueryPartitionHits(ctx, 1)
+	store.AddLogQueryFanOuts(ctx, 1)
+
 	filter := LogFilter{
 		TableName: s.GetPartitionedTableName(topic),
 		BlockFrom: sfilter.BlockFrom,

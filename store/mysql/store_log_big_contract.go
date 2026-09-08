@@ -416,6 +416,9 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 		filter.Topics[0] = normalized
 	}
 
+	store.AddLogQueryPartitionHits(ctx, int64(len(partitions)))
+	store.AddLogQueryFanOuts(ctx, int64(len(partitions)))
+
 	var result []*store.Log
 	for _, partition := range partitions {
 		// check timeout before query

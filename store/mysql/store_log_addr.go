@@ -252,6 +252,9 @@ func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 		filter.Topics[0] = normalized
 	}
 
+	store.AddLogQueryPartitionHits(ctx, 1)
+	store.AddLogQueryFanOuts(ctx, 1)
+
 	addrFilter := AddressIndexedLogFilter{filter, cid}
 	addrLogs, err := addrFilter.Find(ctx, ls.db)
 	if err != nil {
