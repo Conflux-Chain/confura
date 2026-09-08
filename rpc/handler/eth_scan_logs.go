@@ -34,7 +34,7 @@ func (f *EthScanLogFilter) UnmarshalJSON(data []byte) error {
 
 type EthScanLogRequest struct {
 	Filter  EthScanLogFilter `json:"filter"`
-	Limit   hexutil.Uint64   `json:"limit"`
+	Limit   uint64           `json:"limit"`
 	Cursor  *ScanLogCursor   `json:"cursor,omitempty"`
 	Reverse bool             `json:"reverse,omitempty"`
 }

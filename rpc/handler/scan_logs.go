@@ -197,11 +197,11 @@ func unmarshalStrictJSONObject(data []byte, dst any) error {
 	return nil
 }
 
-func normalizeScanLogsLimit(limit hexutil.Uint64) (hexutil.Uint64, error) {
+func normalizeScanLogsLimit(limit uint64) (uint64, error) {
 	if limit == 0 {
-		return hexutil.Uint64(defaultScanLogsLimit), nil
+		return defaultScanLogsLimit, nil
 	}
-	if uint64(limit) > maxScanLogsLimit {
+	if limit > maxScanLogsLimit {
 		return 0, errors.Errorf(
 			"page limit %d exceeds configured maximum %d", limit, maxScanLogsLimit,
 		)

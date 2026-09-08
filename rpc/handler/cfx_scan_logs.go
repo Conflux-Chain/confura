@@ -39,7 +39,7 @@ func (f *CfxScanLogFilter) UnmarshalJSON(data []byte) error {
 // tags and must be normalized before entering the Handler.
 type CfxScanLogRequest struct {
 	Filter  CfxScanLogFilter `json:"filter"`
-	Limit   hexutil.Uint64   `json:"limit"`
+	Limit   uint64           `json:"limit"`
 	Cursor  *ScanLogCursor   `json:"cursor,omitempty"`
 	Reverse bool             `json:"reverse,omitempty"`
 }
