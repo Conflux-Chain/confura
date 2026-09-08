@@ -2,6 +2,7 @@ package gasstation
 
 import (
 	"math/big"
+	"slices"
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -158,8 +159,7 @@ func (e *GasPriceEstimater) gather() (bool, error) {
 		tx2EstimateSamples := make(map[types.Hash]*gasPriceUsedSample, len(blockHashes))
 
 		// fetch epoch block one by one
-		for i := len(blockHashes) - 1; i >= 0; i-- {
-			blkHash := blockHashes[i]
+		for i, blkHash := range slices.Backward(blockHashes) {
 
 			block, err := e.cfx.GetBlockByHash(blkHash)
 			if err != nil {
