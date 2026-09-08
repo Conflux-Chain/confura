@@ -257,22 +257,42 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 			}
 
 			if len(latestBlockHash) > 0 && data.Block.ParentHash.Hex() != latestBlockHash {
-				if err := syncer.reorgRevert(ctx, syncer.latestStoreBlock()); err != nil {
-					parentBlockHash := data.Block.ParentHash.Hex()
+				parentBlockHash := data.Block.ParentHash.Hex()
+				commonAncestor, found, err := syncer.findCommonAncestorBlock(parentBlockHash)
+				if err != nil {
+					blogger.WithError(err).Error(
+						"ETH syncer failed to find common ancestor for re-org rollback",
+					)
+					return false, errors.WithMessage(err, "failed to find common ancestor")
+				}
+				if !found {
+					blogger.WithFields(logrus.Fields{
+						"parentBlockHash": parentBlockHash,
+						"latestBlockHash": latestBlockHash,
+					}).Warn("ETH syncer failed to find common ancestor for re-org rollback")
+					return false, errors.New("failed to find common ancestor for re-org rollback")
+				}
+
+				revertTo := commonAncestor + 1
+				if err := syncer.reorgRevert(ctx, revertTo); err != nil {
 
 					blogger.WithFields(logrus.Fields{
 						"parentBlockHash": parentBlockHash,
 						"latestBlockHash": latestBlockHash,
+						"commonAncestor":  commonAncestor,
+						"revertTo":        revertTo,
 					}).WithError(err).Warn(
-						"ETH syncer failed to revert block data from ethdb store due to parent hash mismatched",
+						"ETH syncer failed to rollback block data from ethdb store due to parent hash mismatched",
 					)
 
-					return false, errors.WithMessage(err, "failed to revert block data from ethdb")
+					return false, errors.WithMessage(err, "failed to rollback block data from ethdb")
 				}
 
-				blogger.WithField("latestBlockHash", latestBlockHash).Info(
-					"ETH syncer reverted latest block from ethdb store due to parent hash mismatched",
-				)
+				blogger.WithFields(logrus.Fields{
+					"commonAncestor":  commonAncestor,
+					"revertTo":        revertTo,
+					"latestBlockHash": latestBlockHash,
+				}).Info("ETH syncer rolled back block data from ethdb store due to parent hash mismatched")
 
 				return false, nil
 			}
@@ -425,6 +445,15 @@ func (syncer *EthSyncer) getStoreLatestBlockHash() (string, error) {
 
 	pivotHash, _, err := syncer.db.PivotHash(latestBlockNo)
 	return pivotHash, err
+}
+
+func (syncer *EthSyncer) findCommonAncestorBlock(parentHash string) (uint64, bool, error) {
+	return findCommonAncestor(syncer.latestStoreBlock(), parentHash, func(block uint64) (string, bool, error) {
+		if blockHash, ok := syncer.pivotWin.Get(block); ok {
+			return blockHash.String(), true, nil
+		}
+		return syncer.db.PivotHash(block)
+	})
 }
 
 func (syncer *EthSyncer) latestStoreBlock() uint64 {
