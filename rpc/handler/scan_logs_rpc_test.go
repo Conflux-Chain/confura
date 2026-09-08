@@ -305,10 +305,10 @@ func TestScanLogsJSONQuantitiesAndFirstPageGuard(t *testing.T) {
 	var req EthScanLogRequest
 	require.NoError(t, json.Unmarshal([]byte(`{
 		"filter":{"fromBlock":"0x1","toBlock":"latest"},
-		"limit":"0x64",
+		"limit":100,
 		"cursor":{"blockNumber":"0xa","logIndex":"0x2"}
 	}`), &req))
-	require.Equal(t, hexutil.Uint64(100), req.Limit)
+	require.Equal(t, uint64(100), req.Limit)
 	require.Equal(t, hexutil.Uint64(10), req.Cursor.BlockNumber)
 
 	log := web3types.Log{BlockNumber: 10, BlockHash: common.HexToHash("0x1234")}
@@ -360,6 +360,63 @@ func TestScanLogsJSONQuantitiesAndFirstPageGuard(t *testing.T) {
 	require.Equal(t, cfxtypes.Hash(pivot.String()), cfxResult.PivotGuard.PivotBlockHash)
 }
 
+func TestScanLogsLimitJSON(t *testing.T) {
+	tests := []struct {
+		name  string
+		data  string
+		valid bool
+	}{
+		{"integer", `{"filter":{},"limit":100}`, true},
+		{"omitted", `{"filter":{}}`, true},
+		{"zero", `{"filter":{},"limit":0}`, true},
+		{"hex string", `{"filter":{},"limit":"0x64"}`, false},
+		{"decimal string", `{"filter":{},"limit":"100"}`, false},
+		{"negative", `{"filter":{},"limit":-1}`, false},
+		{"fraction", `{"filter":{},"limit":1.5}`, false},
+		{"too large for uint64", `{"filter":{},"limit":18446744073709551616}`, false},
+	}
+
+	for _, chain := range []struct {
+		name    string
+		newReq  func() interface{}
+		limitOf func(interface{}) uint64
+	}{
+		{
+			name:   "cfx",
+			newReq: func() interface{} { return new(CfxScanLogRequest) },
+			limitOf: func(req interface{}) uint64 {
+				return req.(*CfxScanLogRequest).Limit
+			},
+		},
+		{
+			name:   "eth",
+			newReq: func() interface{} { return new(EthScanLogRequest) },
+			limitOf: func(req interface{}) uint64 {
+				return req.(*EthScanLogRequest).Limit
+			},
+		},
+	} {
+		t.Run(chain.name, func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					req := chain.newReq()
+					err := json.Unmarshal([]byte(test.data), req)
+					if !test.valid {
+						require.Error(t, err)
+						return
+					}
+					require.NoError(t, err)
+					if test.name == "integer" {
+						require.Equal(t, uint64(100), chain.limitOf(req))
+					} else {
+						require.Zero(t, chain.limitOf(req))
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestNormalizeScanLogsLimit(t *testing.T) {
 	oldDefault, oldMax := defaultScanLogsLimit, maxScanLogsLimit
 	t.Cleanup(func() {
@@ -369,7 +426,7 @@ func TestNormalizeScanLogsLimit(t *testing.T) {
 
 	limit, err := normalizeScanLogsLimit(0)
 	require.NoError(t, err)
-	require.Equal(t, hexutil.Uint64(25), limit)
+	require.Equal(t, uint64(25), limit)
 	_, err = normalizeScanLogsLimit(51)
 	require.NotErrorIs(t, err, ErrScanLogsInvalidParams)
 	require.EqualError(t, err, "page limit 51 exceeds configured maximum 50")
