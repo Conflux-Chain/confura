@@ -14,31 +14,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-type CfxEpochRange struct {
-	From *cfxtypes.Epoch `json:"fromEpoch,omitempty"`
-	To   *cfxtypes.Epoch `json:"toEpoch,omitempty"`
-}
-
-func (r *CfxEpochRange) UnmarshalJSON(data []byte) error {
-	type plain CfxEpochRange
-	var decoded plain
-
-	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
-		return errors.WithMessage(err, "invalid epoch range")
-	}
-
-	if err := validateJSONObjectFields(data, nil, []string{"fromEpoch", "toEpoch"}); err != nil {
-		return err
-	}
-
-	*r = CfxEpochRange(decoded)
-	return nil
-}
-
 type CfxScanLogFilter struct {
-	EpochRange *CfxEpochRange      `json:"epochRange,omitempty"`
-	Address    *cfxaddress.Address `json:"address,omitempty"`
-	Topic0     *cfxtypes.Hash      `json:"topic0,omitempty"`
+	FromEpoch *cfxtypes.Epoch     `json:"fromEpoch,omitempty"`
+	ToEpoch   *cfxtypes.Epoch     `json:"toEpoch,omitempty"`
+	Address   *cfxaddress.Address `json:"address,omitempty"`
+	Topic0    *cfxtypes.Hash      `json:"topic0,omitempty"`
 }
 
 func (f *CfxScanLogFilter) UnmarshalJSON(data []byte) error {
@@ -48,14 +28,14 @@ func (f *CfxScanLogFilter) UnmarshalJSON(data []byte) error {
 	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
 		return errors.WithMessage(err, "invalid scan filter")
 	}
-	if err := validateJSONObjectFields(data, nil, []string{"epochRange", "address", "topic0"}); err != nil {
+	if err := validateJSONObjectFields(data, nil, []string{"fromEpoch", "toEpoch", "address", "topic0"}); err != nil {
 		return err
 	}
 	*f = CfxScanLogFilter(decoded)
 	return nil
 }
 
-// CfxScanLogRequest is the JSON-RPC request shape. EpochRange may still contain
+// CfxScanLogRequest is the JSON-RPC request shape. Epoch bounds may still contain
 // tags and must be normalized before entering the Handler.
 type CfxScanLogRequest struct {
 	Filter  CfxScanLogFilter `json:"filter"`
@@ -156,13 +136,11 @@ func NormalizeCfxScanLogRequest(
 
 	// Normalize epoch range
 	from, to := cfxtypes.EpochLatestState, cfxtypes.EpochLatestState
-	if req.Filter.EpochRange != nil {
-		if req.Filter.EpochRange.From != nil {
-			from = req.Filter.EpochRange.From
-		}
-		if req.Filter.EpochRange.To != nil {
-			to = req.Filter.EpochRange.To
-		}
+	if req.Filter.FromEpoch != nil {
+		from = req.Filter.FromEpoch
+	}
+	if req.Filter.ToEpoch != nil {
+		to = req.Filter.ToEpoch
 	}
 
 	resolvedTags := make(map[string]uint64)
