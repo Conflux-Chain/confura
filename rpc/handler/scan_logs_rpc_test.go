@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	citypes "github.com/Conflux-Chain/confura/types"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3types "github.com/openweb3/web3go/types"
@@ -117,7 +119,7 @@ func TestNormalizeCfxScanLogRequest(t *testing.T) {
 			params, err := NormalizeCfxScanLogRequest(
 				resolver,
 				CfxScanLogRequest{
-					Filter: CfxScanLogFilter{EpochRange: &CfxEpochRange{From: test.from, To: test.to}},
+					Filter: CfxScanLogFilter{FromEpoch: test.from, ToEpoch: test.to},
 					Limit:  1,
 				},
 				false,
@@ -234,7 +236,7 @@ func TestNormalizeEthScanLogRequest(t *testing.T) {
 				resolver,
 				test.hardfork,
 				EthScanLogRequest{
-					Filter: EthScanLogFilter{BlockRange: &EthBlockRange{From: test.from, To: test.to}},
+					Filter: EthScanLogFilter{FromBlock: test.from, ToBlock: test.to},
 					Limit:  1,
 					Cursor: test.cursor,
 				},
@@ -302,7 +304,7 @@ func TestScanLogsOptionalFilter(t *testing.T) {
 func TestScanLogsJSONQuantitiesAndFirstPageGuard(t *testing.T) {
 	var req EthScanLogRequest
 	require.NoError(t, json.Unmarshal([]byte(`{
-		"filter":{"blockRange":{"fromBlock":"0x1","toBlock":"latest"}},
+		"filter":{"fromBlock":"0x1","toBlock":"latest"},
 		"limit":"0x64",
 		"cursor":{"blockNumber":"0xa","logIndex":"0x2"}
 	}`), &req))
@@ -481,4 +483,75 @@ func TestScanLogsMetricsRecorderCoversWindowsAndDBCache(t *testing.T) {
 	require.NoError(t, cache.Ensure(ctx, 1))
 	require.Equal(t, 1, recorder.marks["db/query"])
 	require.Equal(t, 1, recorder.marks["db/cache_reuse"])
+}
+
+func TestScanLogsFlatFilterJSON(t *testing.T) {
+	for _, chain := range []string{"cfx", "eth"} {
+		t.Run(chain, func(t *testing.T) {
+			suffix, wrapper := "Block", "blockRange"
+			address := common.HexToAddress("0x8111111111111111111111111111111111111111").String()
+			newRequest := func() interface{} { return new(EthScanLogRequest) }
+			if chain == "cfx" {
+				suffix, wrapper = "Epoch", "epochRange"
+				cfxAddress := cfxaddress.MustNewFromHex(address, 1029)
+				address = cfxAddress.MustGetBase32Address()
+				newRequest = func() interface{} { return new(CfxScanLogRequest) }
+			}
+			payload := fmt.Sprintf(`{"from%s":"0x1","to%s":"0x64","address":"%s","topic0":"%s"}`, suffix, suffix, address, common.HexToHash("0x1").String())
+			req := newRequest()
+			require.NoError(t, json.Unmarshal([]byte(`{"filter":`+payload+`}`), req))
+			var filter interface{}
+			switch req := req.(type) {
+			case *CfxScanLogRequest:
+				require.Equal(t, epochNumber(1), req.Filter.FromEpoch)
+				require.Equal(t, epochNumber(100), req.Filter.ToEpoch)
+				filter = req.Filter
+			case *EthScanLogRequest:
+				require.Equal(t, blockNumber(1), req.Filter.FromBlock)
+				require.Equal(t, blockNumber(100), req.Filter.ToBlock)
+				filter = req.Filter
+			}
+			encoded, err := json.Marshal(filter)
+			require.NoError(t, err)
+			require.JSONEq(t, payload, string(encoded))
+
+			for _, invalid := range []string{
+				fmt.Sprintf(`{"%s":{"from%s":"0x1"}}`, wrapper, suffix),
+				fmt.Sprintf(`{"from%s":null}`, suffix),
+				fmt.Sprintf(`{"to%s":null}`, suffix),
+				fmt.Sprintf(`{"from%s":"invalid"}`, suffix),
+				fmt.Sprintf(`{"to%s":"invalid"}`, suffix),
+				`{"from":"0x1"}`,
+			} {
+				require.Error(t, json.Unmarshal([]byte(`{"filter":`+invalid+`}`), newRequest()), invalid)
+			}
+
+			for _, test := range []struct {
+				payload  string
+				from, to uint64
+			}{
+				{`{}`, 100, 100},
+				{`{"filter":{}}`, 100, 100},
+				{fmt.Sprintf(`{"filter":{"from%s":"0x1"}}`, suffix), 1, 100},
+				{fmt.Sprintf(`{"filter":{"to%s":"0x64"}}`, suffix), 100, 100},
+			} {
+				t.Run(test.payload, func(t *testing.T) {
+					req := newRequest()
+					require.NoError(t, json.Unmarshal([]byte(test.payload), req))
+					var got citypes.RangeUint64
+					switch req := req.(type) {
+					case *CfxScanLogRequest:
+						params, err := NormalizeCfxScanLogRequest(&fakeCfxEpochNumberResolver{values: map[string]uint64{cfxtypes.EpochLatestState.String(): 100}}, *req, false)
+						require.NoError(t, err)
+						got = params.EpochRange
+					case *EthScanLogRequest:
+						params, err := NormalizeEthScanLogRequest(&fakeEthBlockNumberResolver{values: map[web3types.BlockNumber]uint64{web3types.LatestBlockNumber: 100}}, 0, *req, false)
+						require.NoError(t, err)
+						got = params.BlockRange
+					}
+					require.Equal(t, citypes.RangeUint64{From: test.from, To: test.to}, got)
+				})
+			}
+		})
+	}
 }

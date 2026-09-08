@@ -12,28 +12,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-type EthBlockRange struct {
-	From *web3types.BlockNumber `json:"fromBlock,omitempty"`
-	To   *web3types.BlockNumber `json:"toBlock,omitempty"`
-}
-
-func (r *EthBlockRange) UnmarshalJSON(data []byte) error {
-	type plain EthBlockRange
-	var decoded plain
-	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
-		return errors.WithMessage(err, "invalid eSpace block range")
-	}
-	if err := validateJSONObjectFields(data, nil, []string{"fromBlock", "toBlock"}); err != nil {
-		return err
-	}
-	*r = EthBlockRange(decoded)
-	return nil
-}
-
 type EthScanLogFilter struct {
-	BlockRange *EthBlockRange  `json:"blockRange,omitempty"`
-	Address    *common.Address `json:"address,omitempty"`
-	Topic0     *common.Hash    `json:"topic0,omitempty"`
+	FromBlock *web3types.BlockNumber `json:"fromBlock,omitempty"`
+	ToBlock   *web3types.BlockNumber `json:"toBlock,omitempty"`
+	Address   *common.Address        `json:"address,omitempty"`
+	Topic0    *common.Hash           `json:"topic0,omitempty"`
 }
 
 func (f *EthScanLogFilter) UnmarshalJSON(data []byte) error {
@@ -42,7 +25,7 @@ func (f *EthScanLogFilter) UnmarshalJSON(data []byte) error {
 	if err := unmarshalStrictJSONObject(data, &decoded); err != nil {
 		return errors.WithMessage(err, "invalid eSpace scan filter")
 	}
-	if err := validateJSONObjectFields(data, nil, []string{"blockRange", "address", "topic0"}); err != nil {
+	if err := validateJSONObjectFields(data, nil, []string{"fromBlock", "toBlock", "address", "topic0"}); err != nil {
 		return err
 	}
 	*f = EthScanLogFilter(decoded)
@@ -145,13 +128,11 @@ func NormalizeEthScanLogRequest(
 	req.Limit = effectiveLimit
 
 	from, to := web3types.LatestBlockNumber, web3types.LatestBlockNumber
-	if req.Filter.BlockRange != nil {
-		if req.Filter.BlockRange.From != nil {
-			from = *req.Filter.BlockRange.From
-		}
-		if req.Filter.BlockRange.To != nil {
-			to = *req.Filter.BlockRange.To
-		}
+	if req.Filter.FromBlock != nil {
+		from = *req.Filter.FromBlock
+	}
+	if req.Filter.ToBlock != nil {
+		to = *req.Filter.ToBlock
 	}
 
 	resolvedTags := make(map[web3types.BlockNumber]uint64)
