@@ -99,7 +99,13 @@ func (sub *delegateSubscription) deliver(result interface{}) bool {
 	case 1: // sub.channel<-
 		return true
 	case 2: // never blocking for subscription queue overflow
-		sub.err <- rpc.ErrSubscriptionQueueOverflow
+		// The error channel is buffered for a single terminal error. If one is already
+		// pending the subscriber is being torn down anyway, so drop the duplicate rather
+		// than block here while the delegate read lock is held.
+		select {
+		case sub.err <- rpc.ErrSubscriptionQueueOverflow:
+		default:
+		}
 		return false
 	}
 
@@ -201,7 +207,14 @@ func (dctx *delegateContext) cancel(err error) {
 
 	dctx.delegateSubs.Range(func(key, value interface{}) bool {
 		dsub := value.(*delegateSubscription)
-		dsub.err <- err
+		// Non-blocking send: the error channel is buffered for a single terminal error,
+		// and this runs while the delegate write lock is held. If an error is already
+		// pending the subscriber will observe it and tear down, so a full channel here
+		// must not stall the whole delegate.
+		select {
+		case dsub.err <- err:
+		default:
+		}
 
 		dctx.delegateSubs.Delete(key)
 		return true
