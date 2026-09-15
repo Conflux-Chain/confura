@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -136,12 +137,13 @@ func (filter *LogFilter) suggestBlockRange(db *gorm.DB, queryRange types.RangeUi
 }
 
 // validateQuerySetSize checks if the query set size exceeds limits, suggesting a narrower range if necessary.
-func (filter *LogFilter) validateQuerySetSize(db *gorm.DB) error {
+func (filter *LogFilter) validateQuerySetSize(ctx context.Context, db *gorm.DB) error {
 	// estimate the query range and log count in the dataset
 	queryRange, numLogs, err := filter.calculateQuerySetSize(db)
 	if err != nil {
 		return err
 	}
+	store.AddLogQueryDBRowScans(ctx, int64(numLogs))
 
 	// check if query size exceeds max allowed
 	if numLogs > maxLogQuerySetSize {
@@ -220,8 +222,9 @@ func (filter *LogFilter) hasTopicsFilter() bool {
 }
 
 func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr interface{}) error {
-	if store.IsBoundChecksEnabled(ctx) {
-		if err := filter.validateQuerySetSize(db); err != nil {
+	boundChecksEnabled := store.IsBoundChecksEnabled(ctx)
+	if boundChecksEnabled {
+		if err := filter.validateQuerySetSize(ctx, db); err != nil {
 			return err
 		}
 	}
@@ -232,7 +235,29 @@ func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr int
 	db = db.Order("bn ASC")
 	db = db.Limit(int(store.MaxLogLimit) + 1)
 
-	return db.Find(destSlicePtr).Error
+	if err := db.Find(destSlicePtr).Error; err != nil {
+		return err
+	}
+
+	if !boundChecksEnabled {
+		store.AddLogQueryDBRowScans(ctx, int64(sliceLen(destSlicePtr)))
+	}
+
+	return nil
+}
+
+func sliceLen(slicePtr interface{}) int {
+	val := reflect.ValueOf(slicePtr)
+	if val.Kind() != reflect.Ptr || val.IsNil() {
+		return 0
+	}
+
+	elem := val.Elem()
+	if elem.Kind() != reflect.Slice {
+		return 0
+	}
+
+	return elem.Len()
 }
 
 // AddressIndexedLogFilter is used to query event logs that indexed by contract id and block number.
@@ -265,6 +290,7 @@ func (filter *AddressIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([
 	if err := db.Find(&result).Error; err != nil {
 		return nil, err
 	}
+	store.AddLogQueryDBRowScans(ctx, int64(len(result)))
 
 	return result, nil
 }
@@ -298,6 +324,7 @@ func (filter *TopicIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([]*
 	if err := db.Find(&result).Error; err != nil {
 		return nil, err
 	}
+	store.AddLogQueryDBRowScans(ctx, int64(len(result)))
 
 	return result, nil
 }

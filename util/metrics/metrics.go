@@ -95,6 +95,22 @@ func (*RpcMetrics) LogFilterSplit(method, name string) metrics.Histogram {
 	return metricUtil.GetOrRegisterHistogram("infura/rpc/handler/%v/filter/split/%v", method, name)
 }
 
+func (*RpcMetrics) LogQueryDBRowScans(method string) metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/rpc/handler/%v/logs/db/rowScans", method)
+}
+
+func (*RpcMetrics) LogQueryPartitionHits(method string) metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/rpc/handler/%v/logs/partitionHits", method)
+}
+
+func (*RpcMetrics) LogQueryFanOuts(method string) metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/rpc/handler/%v/logs/fanOuts", method)
+}
+
+func (*RpcMetrics) LogQueryReorgRetries(method string) metrics.Histogram {
+	return metricUtil.GetOrRegisterHistogram("infura/rpc/handler/%v/logs/reorgRetries", method)
+}
+
 // PRC metrics - percentages
 
 func (*RpcMetrics) Percentage(method, name string) metricUtil.Percentage {
