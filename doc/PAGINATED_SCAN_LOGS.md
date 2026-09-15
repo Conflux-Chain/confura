@@ -11,7 +11,7 @@ The four RPC methods are:
 | Core Space | `cfx_scanLogs` | `cfx_scanLogsWithPivotAssumption` |
 | eSpace | `eth_scanLogs` | `eth_scanLogsWithPivotAssumption` |
 
-Each successful call returns standard chain-native log objects plus an exclusive `nextCursor`. A continuation sends that cursor back with the same filter and direction. Confura resumes strictly after the cursor in forward mode or strictly before it in reverse mode, so the boundary log is not returned twice.
+Each successful non-empty page returns standard chain-native log objects plus an exclusive `nextCursor`; an exhausted page returns an empty `logs` array and omits `nextCursor`. A continuation sends the cursor back with the same filter and direction. Confura resumes strictly after the cursor in forward mode or strictly before it in reverse mode, so the boundary log is not returned twice.
 
 Use `scanLogs` when you need to:
 
@@ -31,7 +31,7 @@ Use `scanLogs` when you need to:
 
 ## Quick Start
 
-The following eSpace request scans forward through blocks `0x100000` to `0x200000`, returning at most 100 matching logs:
+The following eSpace request scans forward through blocks `0x3b00000` to `0x3b01000`, a range after the eSpace activation heights used by both the supported mainnet and testnet configurations, returning at most 100 matching logs:
 
 ```shell
 curl -X POST http://127.0.0.1:8545 \
@@ -42,8 +42,8 @@ curl -X POST http://127.0.0.1:8545 \
     "params": [
       {
         "filter": {
-          "fromBlock": "0x100000",
-          "toBlock": "0x200000",
+          "fromBlock": "0x3b00000",
+          "toBlock": "0x3b01000",
           "address": "0x1111111111111111111111111111111111111111",
           "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
         },
@@ -67,12 +67,12 @@ An abbreviated response has this shape:
         "topics": [
           "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
         ],
-        "blockNumber": "0x100120",
+        "blockNumber": "0x3b00120",
         "logIndex": "0x3"
       }
     ],
     "nextCursor": {
-      "blockNumber": "0x100120",
+      "blockNumber": "0x3b00120",
       "logIndex": "0x3"
     }
   }
@@ -88,14 +88,14 @@ To fetch the next page, keep the filter, range, limit, and direction unchanged a
   "params": [
     {
       "filter": {
-        "fromBlock": "0x100000",
-        "toBlock": "0x200000",
+        "fromBlock": "0x3b00000",
+        "toBlock": "0x3b01000",
         "address": "0x1111111111111111111111111111111111111111",
         "topic0": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
       },
       "limit": 100,
       "cursor": {
-        "blockNumber": "0x100120",
+        "blockNumber": "0x3b00120",
         "logIndex": "0x3"
       }
     }
@@ -267,8 +267,8 @@ Address and topic are optional. The following scans every eSpace log in the sele
   "params": [
     {
       "filter": {
-        "fromBlock": "0x100000",
-        "toBlock": "0x110000"
+        "fromBlock": "0x3b00000",
+        "toBlock": "0x3b01000"
       },
       "limit": 500
     }
@@ -287,8 +287,8 @@ This dependency-free example scans a fixed eSpace block range. It persists only 
 const endpoint = "http://127.0.0.1:8545";
 const limit = 500;
 const filter = {
-  fromBlock: "0x100000",
-  toBlock: "0x200000",
+  fromBlock: "0x3b00000",
+  toBlock: "0x3b01000",
   address: "0x1111111111111111111111111111111111111111",
   topic0: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
 };
@@ -363,8 +363,8 @@ Both fields are required. Quantity fields use hex encoding.
   "params": [
     {
       "filter": {
-        "fromBlock": "0x100000",
-        "toBlock": "0x200000",
+        "fromBlock": "0x3b00000",
+        "toBlock": "0x3b01000",
         "address": "0x1111111111111111111111111111111111111111"
       },
       "limit": 100
@@ -380,11 +380,11 @@ Assume it returns:
 {
   "logs": ["..."],
   "nextCursor": {
-    "blockNumber": "0x100120",
+    "blockNumber": "0x3b00120",
     "logIndex": "0x3"
   },
   "pivotGuard": {
-    "blockNumber": "0x100120",
+    "blockNumber": "0x3b00120",
     "blockHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
 }
@@ -399,18 +399,18 @@ Assume it returns:
   "params": [
     {
       "filter": {
-        "fromBlock": "0x100000",
-        "toBlock": "0x200000",
+        "fromBlock": "0x3b00000",
+        "toBlock": "0x3b01000",
         "address": "0x1111111111111111111111111111111111111111"
       },
       "limit": 100,
       "cursor": {
-        "blockNumber": "0x100120",
+        "blockNumber": "0x3b00120",
         "logIndex": "0x3"
       }
     },
     {
-      "blockNumber": "0x100120",
+      "blockNumber": "0x3b00120",
       "blockHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   ],
@@ -497,8 +497,8 @@ These checks substantially reduce mixed-view pages, but they are not a transacti
 | Message category | Meaning | Client action |
 |:-----------------|:--------|:--------------|
 | `scan logs rpc unavailable` | The RPC server was started without the required log-store handler. | Check the endpoint or server database configuration; retrying the same endpoint will not help until configuration changes. |
-| `invalid scan logs params` | Invalid range, limit, or missing pivot assumption. JSON decoding errors can also reject malformed request shapes before this category is produced. | Correct the request. Do not retry unchanged. |
-| `invalid scan logs cursor` | Cursor is incomplete, outside the normalized request range, or incompatible with the current source segment. | Restore the cursor and exact request parameters saved from the preceding page, or restart the scan. |
+| `invalid scan logs params` | Invalid range, limit, or missing pivot assumption. Malformed or incomplete cursor JSON is rejected during argument decoding before the handler can attach the cursor-specific category. | Correct the request. Do not retry unchanged. |
+| `invalid scan logs cursor` | A successfully decoded cursor is outside the normalized request range or incompatible with the current source segment. | Restore the cursor and exact request parameters saved from the preceding page, or restart the scan. |
 | `inconsistent canonical views` | Database and full-node canonical views could not be aligned, or required mapping data was inconsistent. | Retry with backoff. If persistent, wait for indexing/reorg convergence or alert the operator. |
 | `pivot assumption failed` | The supplied pivot/hash is no longer canonical or is unavailable. | Apply the application's reorg rollback policy; do not continue from the cursor without reconciliation. |
 
