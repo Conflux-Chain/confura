@@ -1,11 +1,12 @@
 package catchup
 
 import (
+	"cmp"
 	"container/heap"
 	"context"
 	"math"
 	"runtime"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -244,9 +245,8 @@ func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 					taskResults = append(taskResults, <-c.taskResultQueue)
 				}
 				// Sort the task result
-				sort.Slice(taskResults, func(i, j int) bool {
-					r0, r1 := taskResults[i], taskResults[j]
-					return r0.task.From < r1.task.From
+				slices.SortFunc(taskResults, func(a, b syncTaskResult[T]) int {
+					return cmp.Compare(a.task.From, b.task.From)
 				})
 				// Process the batch of results
 				for _, r := range taskResults {
@@ -265,12 +265,11 @@ func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 					r.result = nil // free memory
 				}
 				// Sort the task result history
-				sort.Slice(resultHistory, func(i, j int) bool {
-					r0, r1 := resultHistory[i], resultHistory[j]
-					if r0.task.From == r1.task.From {
-						return r0.task.To > r1.task.To
-					}
-					return r0.task.From < r1.task.From
+				slices.SortFunc(resultHistory, func(a, b syncTaskResult[T]) int {
+					return cmp.Or(
+						cmp.Compare(a.task.From, b.task.From),
+						cmp.Compare(b.task.To, a.task.To),
+					)
 				})
 				// Retain the recent result history for estimation
 				if len(resultHistory) > c.MaxSampleSize {
