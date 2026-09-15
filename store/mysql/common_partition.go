@@ -98,11 +98,11 @@ func (mrp *mysqlRangePartitioner) addPartition(db *gorm.DB, index int, threshold
 	return db.Exec(sql).Error
 }
 
-func (mrp *mysqlRangePartitioner) removePartition(db *gorm.DB, partiton *mysqlPartition) error {
+func (mrp *mysqlRangePartitioner) removePartition(db *gorm.DB, partition *mysqlPartition) error {
 	sql := fmt.Sprintf(
 		"ALTER TABLE %v DROP PARTITION %v;",
 		mrp.tableName,
-		partiton.Name,
+		partition.Name,
 	)
 	return db.Exec(sql).Error
 }
