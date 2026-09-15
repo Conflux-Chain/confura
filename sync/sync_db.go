@@ -256,19 +256,38 @@ func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 			}
 
 			if len(latestPivotHash) > 0 && data.GetPivotBlock().ParentHash != latestPivotHash {
-				latestStoreEpochNo := syncer.latestStoreEpoch()
-				eplogger.WithFields(logrus.Fields{
-					"latestStoreEpoch": latestStoreEpochNo,
-					"latestPivotHash":  latestPivotHash,
-				}).Warn("Db syncer popping latest epoch from db store due to parent hash mismatched")
-
-				if err := syncer.pivotSwitchRevert(ctx, latestStoreEpochNo); err != nil {
+				parentHash := data.GetPivotBlock().ParentHash
+				commonAncestor, found, err := syncer.findCommonAncestorEpoch(parentHash)
+				if err != nil {
 					eplogger.WithError(err).Error(
-						"Db syncer failed to pop latest epoch from db store due to parent hash mismatched",
+						"Db syncer failed to find common ancestor for pivot switch revert",
+					)
+					return false, errors.WithMessage(err, "failed to find common ancestor")
+				}
+				if !found {
+					eplogger.WithFields(logrus.Fields{
+						"parentHash":      parentHash,
+						"latestPivotHash": latestPivotHash,
+					}).Warn("Db syncer failed to find common ancestor for pivot switch revert")
+					return false, errors.New("failed to find common ancestor for pivot switch revert")
+				}
+
+				revertTo := commonAncestor + 1
+				eplogger.WithFields(logrus.Fields{
+					"commonAncestor":   commonAncestor,
+					"revertToEpoch":    revertTo,
+					"latestStoreEpoch": syncer.latestStoreEpoch(),
+					"latestPivotHash":  latestPivotHash,
+					"parentHash":       parentHash,
+				}).Warn("Db syncer rolling back epoch data due to parent hash mismatched")
+
+				if err := syncer.pivotSwitchRevert(ctx, revertTo); err != nil {
+					eplogger.WithError(err).Error(
+						"Db syncer failed to rollback epoch data due to parent hash mismatched",
 					)
 
 					return false, errors.WithMessage(
-						err, "failed to pop latest epoch from db store due to parent hash mismatched",
+						err, "failed to rollback epoch data due to parent hash mismatched",
 					)
 				}
 
@@ -427,6 +446,15 @@ func (syncer *DatabaseSyncer) getStoreLatestPivotHash() (types.Hash, error) {
 
 	pivotHash, _, err := syncer.db.PivotHash(latestEpochNo)
 	return types.Hash(pivotHash), err
+}
+
+func (syncer *DatabaseSyncer) findCommonAncestorEpoch(parentHash types.Hash) (uint64, bool, error) {
+	return findCommonAncestor(syncer.latestStoreEpoch(), parentHash.String(), func(epoch uint64) (string, bool, error) {
+		if pivotHash, ok := syncer.pivotWin.Get(epoch); ok {
+			return pivotHash.String(), true, nil
+		}
+		return syncer.db.PivotHash(epoch)
+	})
 }
 
 func (syncer *DatabaseSyncer) latestStoreEpoch() uint64 {
