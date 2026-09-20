@@ -88,10 +88,10 @@ type DlockLeaderManager struct {
 	Config // election configuration
 
 	electionKey    string       // election key
-	electionStatus LeaderStatus // election status
+	electionStatus atomic.Int32 // election status
 
 	lockMan        *dlock.LockManager // provides lock operations
-	lockExpiryTime int64              // expiry timestamp for the dlock
+	lockExpiryTime atomic.Int64       // expiry timestamp for the dlock
 
 	mu               sync.Mutex        // mutex lock
 	cancel           atomic.Value      // function to cancel the campaign process.
@@ -124,8 +124,8 @@ func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 		case <-ctx.Done():
 			return false
 		case <-timer.C:
-			if atomic.LoadInt32(&l.electionStatus) == StatusElected &&
-				atomic.LoadInt64(&l.lockExpiryTime) > time.Now().Unix() {
+			if l.electionStatus.Load() == StatusElected &&
+				l.lockExpiryTime.Load() > time.Now().Unix() {
 				return true
 			}
 
@@ -136,7 +136,7 @@ func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 
 // Extend extends leadership lease.
 func (l *DlockLeaderManager) Extend(ctx context.Context) error {
-	if atomic.LoadInt32(&l.electionStatus) == StatusElected {
+	if l.electionStatus.Load() == StatusElected {
 		err := l.acquireLock(ctx)
 		if err == nil {
 			return nil
@@ -269,7 +269,7 @@ func (l *DlockLeaderManager) acquireLock(ctx context.Context) error {
 	start := time.Now()
 	err := l.lockMan.Acquire(ctx, l.lockIntent())
 	if err == nil {
-		atomic.StoreInt64(&l.lockExpiryTime, start.Add(l.Lease).Unix())
+		l.lockExpiryTime.Store(start.Add(l.Lease).Unix())
 		return nil
 	}
 
@@ -307,7 +307,7 @@ func (l *DlockLeaderManager) onElected(ctx context.Context) {
 		cb(ctx, l)
 	}
 
-	atomic.StoreInt32(&l.electionStatus, StatusElected)
+	l.electionStatus.Store(StatusElected)
 }
 
 // OnOusted registers a callback function to be invoked on leader ousted.
@@ -326,7 +326,7 @@ func (l *DlockLeaderManager) onOusted(ctx context.Context) {
 		"leaderID":    l.ID,
 	}).Info("Leader ousted")
 
-	atomic.StoreInt32(&l.electionStatus, int32(StatusOusted))
+	l.electionStatus.Store(StatusOusted)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
