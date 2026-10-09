@@ -17,10 +17,13 @@ func (api *traceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 	return api.stateHandler.TraceBlock(ctx, cfx, blockHash)
 }
 
+// Filter is disabled for now, because bug in Conflux node.
+/*
 func (api *traceAPI) Filter(ctx context.Context, filter types.TraceFilter) ([]types.LocalizedTrace, error) {
 	cfx := GetCfxClientFromContext(ctx)
 	return api.stateHandler.TraceFilter(ctx, cfx, filter)
 }
+*/
 
 func (api *traceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]types.LocalizedTrace, error) {
 	cfx := GetCfxClientFromContext(ctx)
