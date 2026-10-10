@@ -3,10 +3,14 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Conflux-Chain/confura/store"
+	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -238,14 +242,10 @@ func TestRangeScanCompletedMigrationAndPublicDispatch(t *testing.T) {
 	}
 }
 
-func TestRangeScanExcludesCoreAndPropagatesErrors(t *testing.T) {
-	core, _ := newScanMysqlStoreTestHarness(t)
-	_, hit, e := core.tryRangeScanLogs(context.Background(), store.LogFilter{})
-	require.NoError(t, e)
-	require.False(t, hit)
+func TestRangeScanPropagatesErrors(t *testing.T) {
 	ms, f := rangeScanFixture(t, 1)
 	require.NoError(t, ms.ls.db.Table("logs_0").Where("id = 1").Update("extra", []byte("invalid JSON")).Error)
-	_, hit, e = ms.tryRangeScanLogs(context.Background(), f)
+	_, hit, e := ms.tryRangeScanLogs(context.Background(), f)
 	require.Error(t, e)
 	require.False(t, hit)
 	require.NoError(t, ms.ls.db.Exec("DROP TABLE logs_0").Error)
@@ -264,4 +264,90 @@ func TestRangeScanConfiguration(t *testing.T) {
 	require.Zero(t, cfg.GetLogsRangeScan.MaxBlocks)
 	viper.Set(key, map[string]interface{}{"enabled": true, "getLogsRangeScan": map[string]interface{}{"enabled": true, "minAddresses": 0}})
 	require.Panics(t, func() { mustNewConfigFromViper(key) })
+}
+
+func TestRangeScanCoreMatchesSharedAndDedicated(t *testing.T) {
+	ms, db := newScanMysqlStoreTestHarness(t)
+	ms.config = &Config{GetLogsRangeScan: GetLogsRangeScanConfig{Enabled: true, MinAddresses: 2}}
+	createAddressScanTable(t, db)
+	require.NoError(t, db.Table("logs_0").AutoMigrate(&log{}))
+	require.NoError(t, db.Create(&bnPartition{Entity: "logs", BnMin: sql.NullInt64{Int64: 10, Valid: true}, BnMax: sql.NullInt64{Int64: 20, Valid: true}}).Error)
+	addresses := []cfxtypes.Address{
+		cfxaddress.MustNewFromHex("0x1000000000000000000000000000000000000001", 1029),
+		cfxaddress.MustNewFromHex("0x1000000000000000000000000000000000000002", 1029),
+	}
+	topic0 := cfxtypes.Hash(fmt.Sprintf("0x%064x", 1))
+	topic1 := cfxtypes.Hash(fmt.Sprintf("0x%064x", 2))
+	absent := cfxtypes.Hash(fmt.Sprintf("0x%064x", 3))
+	tid, _, err := ms.ts.GetOrCreate(topic0.String())
+	require.NoError(t, err)
+	var cids []uint64
+	for i, addr := range addresses {
+		cid, _, err := ms.cs.AddContractIfAbsent(addr.String())
+		require.NoError(t, err)
+		cids = append(cids, cid)
+		for j := 0; j < 2; j++ {
+			extra, err := json.Marshal(map[string]interface{}{"addr": addr})
+			require.NoError(t, err)
+			bn := uint64(10 + i*2 + j)
+			row := log{BlockNumber: bn, Epoch: 1, Topic0: topic0.String(), LogIndex: 0, Extra: extra}
+			if j == 0 {
+				row.Topic1 = topic1.String()
+			}
+			require.NoError(t, db.Table("logs_0").Create(&row).Error)
+			require.NoError(t, db.Table("addr_logs_0").Create(&AddressIndexedLog{ContractID: cid, BlockNumber: bn, Epoch: 1, Topic0ID: tid, Topic1: row.Topic1, Extra: extra}).Error)
+		}
+	}
+	filters := []struct {
+		name   string
+		topics [][]cfxtypes.Hash
+		count  int
+	}{
+		{"all", nil, 4},
+		{"or", [][]cfxtypes.Hash{{absent, topic0}}, 4},
+		{"and", [][]cfxtypes.Hash{{topic0}, {topic1}}, 2},
+		{"wildcard", [][]cfxtypes.Hash{nil, {topic1}}, 2},
+		{"missing topic", [][]cfxtypes.Hash{nil, nil, {topic1}}, 0},
+	}
+	compare := func(t *testing.T) {
+		for _, test := range filters {
+			t.Run(test.name, func(t *testing.T) {
+				filter := store.ParseCfxLogFilter(10, 13, &cfxtypes.LogFilter{Address: addresses, Topics: test.topics})
+				old, err := ms.getContractLogs(context.Background(), filter.Contracts.ToSlice(), filter)
+				require.NoError(t, err)
+				got, err := ms.GetLogs(context.Background(), filter)
+				require.NoError(t, err)
+				require.Len(t, got, test.count)
+				require.Equal(t, old, got)
+			})
+		}
+	}
+	t.Run("shared", compare)
+	// Move one contract to the dedicated side while retaining universal logs.
+	require.NoError(t, db.Exec("CREATE TABLE clogs_1_0 AS SELECT * FROM addr_logs_0 WHERE cid = ?", cids[0]).Error)
+	require.NoError(t, db.Table("addr_logs_0").Where("cid = ?", cids[0]).Delete(&AddressIndexedLog{}).Error)
+	require.NoError(t, db.Create(&bnPartition{Entity: "clogs_1", Count: 2, BnMin: sql.NullInt64{Int64: 10, Valid: true}, BnMax: sql.NullInt64{Int64: 20, Valid: true}}).Error)
+	t.Run("mixed dedicated and shared", compare)
+	// Canonical matching also accepts uppercase base32 and deduplicates address casing.
+	f := store.LogFilter{BlockFrom: 10, BlockTo: 13, Contracts: store.NewVariadicValue(strings.ToUpper(addresses[0].String()), addresses[1].String())}
+	got, hit, err := ms.tryRangeScanLogs(context.Background(), f)
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Len(t, got, 4)
+	f.Contracts = store.NewVariadicValue(addresses[0].String(), strings.ToUpper(addresses[0].String()))
+	_, hit, err = ms.tryRangeScanLogs(context.Background(), f)
+	require.NoError(t, err)
+	require.False(t, hit)
+}
+
+func TestFilterRangeScanLogsDoesNotDecodeRPCPayload(t *testing.T) {
+	// Only the address and indexed topics are needed for filtering. RPC payload
+	// conversion and final byte limits remain the handler's responsibility.
+	row := &log{ID: 7, Topic0: "0xabc", Extra: []byte(`{"addr":"0xAbCd","data":"invalid hex"}`)}
+	got, err := filterRangeScanLogs(context.Background(), []*log{row}, map[string]bool{"0xabcd": true}, []store.VariadicValue[string]{store.NewVariadicValue("0xABC")})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Zero(t, got[0].ID)
+	require.Equal(t, uint64(7), row.ID)
+	require.Equal(t, row.Extra, got[0].Extra)
 }

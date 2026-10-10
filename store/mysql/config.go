@@ -33,7 +33,7 @@ var allModels = []interface{}{
 	&CfxTraceSyncEpochBlockMap{},
 }
 
-// GetLogsRangeScanConfig controls the eSpace universal-log fast path.
+// GetLogsRangeScanConfig controls the universal-log fast path in either space.
 type GetLogsRangeScanConfig struct {
 	Enabled      bool
 	MinAddresses int    `default:"32"`
