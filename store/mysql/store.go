@@ -335,6 +335,9 @@ func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilte
 		contracts := storeFilter.Contracts.ToSlice()
 		slices.Sort(contracts)
 
+		if logs, handled, err := ms.tryRangeScanLogs(ctx, storeFilter); handled || err != nil {
+			return logs, err
+		}
 		return ms.getContractLogs(ctx, contracts, storeFilter)
 	}
 

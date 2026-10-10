@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -9,6 +10,8 @@ import (
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
+
+var errInvalidLogIDRange = errors.New("invalid log ID range")
 
 const (
 	maxLogQuerySetSize = 100_000
@@ -84,14 +87,25 @@ func (filter *LogFilter) calculateQuerySetSize(db *gorm.DB) (types.RangeUint64, 
 		Joins("INNER JOIN (?) AS t1 ON t0.bn IN (t1.minb, t1.maxb)", subQuery)
 
 	// execute the main query to fetch the ID range
+	var bounds struct {
+		From sql.NullInt64
+		To   sql.NullInt64
+	}
 	var pidRange types.RangeUint64
-	if err := mainQuery.Take(&pidRange).Error; err != nil {
+	if err := mainQuery.Take(&bounds).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return pidRange, 0, nil
 		}
 		return pidRange, 0, err
 	}
 
+	if !bounds.From.Valid || !bounds.To.Valid {
+		return pidRange, 0, nil
+	}
+	if bounds.From.Int64 < 0 || bounds.To.Int64 < bounds.From.Int64 {
+		return pidRange, 0, errInvalidLogIDRange
+	}
+	pidRange.From, pidRange.To = uint64(bounds.From.Int64), uint64(bounds.To.Int64)
 	estimatedSize := pidRange.To - pidRange.From + 1
 	return pidRange, estimatedSize, nil
 }
@@ -220,17 +234,23 @@ func (filter *LogFilter) hasTopicsFilter() bool {
 }
 
 func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr interface{}) error {
+	db = db.WithContext(ctx)
 	if store.IsBoundChecksEnabled(ctx) {
 		if err := filter.validateQuerySetSize(db); err != nil {
 			return err
 		}
 	}
 
-	db = db.Table(filter.TableName)
+	return filter.read(ctx, db, int(store.MaxLogLimit)+1, destSlicePtr)
+}
+
+// read executes a range query without applying public result-set checks.
+func (filter *LogFilter) read(ctx context.Context, db *gorm.DB, limit int, destSlicePtr interface{}) error {
+	db = db.WithContext(ctx).Table(filter.TableName)
 	db = db.Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
 	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
-	db = db.Order("bn ASC")
-	db = db.Limit(int(store.MaxLogLimit) + 1)
+	db = db.Order("bn ASC").Order("log_index ASC")
+	db = db.Limit(limit)
 
 	return db.Find(destSlicePtr).Error
 }

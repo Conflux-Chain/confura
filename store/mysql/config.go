@@ -33,9 +33,17 @@ var allModels = []interface{}{
 	&CfxTraceSyncEpochBlockMap{},
 }
 
+// GetLogsRangeScanConfig controls the eSpace universal-log fast path.
+type GetLogsRangeScanConfig struct {
+	Enabled      bool
+	MinAddresses int    `default:"32"`
+	MaxBlocks    uint64 // zero means unlimited
+}
+
 // Config represents the mysql configurations to open a database instance.
 type Config struct {
-	Enabled bool
+	Enabled          bool
+	GetLogsRangeScan GetLogsRangeScanConfig
 
 	Host     string `default:"127.0.0.1:3306"`
 	Username string
@@ -58,6 +66,10 @@ type Config struct {
 func mustNewConfigFromViper(key string) *Config {
 	var cfg Config
 	viper.MustUnmarshalKey(key, &cfg)
+
+	if cfg.GetLogsRangeScan.Enabled && cfg.GetLogsRangeScan.MinAddresses <= 0 {
+		panic("getLogsRangeScan.minAddresses must be positive")
+	}
 
 	if !cfg.Enabled {
 		return &Config{}

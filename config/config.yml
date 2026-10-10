@@ -300,6 +300,14 @@ eth:
 #     maxOpenConns: 10
 #     maxIdleConns: 10
 #     createBatchSize: 500
+#     # Read universal logs and filter multi-address eth_getLogs in memory.
+#     # Candidate log count is capped at 10000 in code.
+#     getLogsRangeScan:
+#       enabled: false
+#       # Minimum number of distinct addresses (inclusive).
+#       minAddresses: 32
+#       # Maximum block count; 0 means unlimited.
+#       maxBlocks: 0
 #     addressIndexedLogEnabled: true
 #     addressIndexedLogPartitions: 100
 #     topicIndexedLogEnabled: true
