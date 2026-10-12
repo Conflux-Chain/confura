@@ -68,7 +68,7 @@ func mustNewConfigFromViper(key string) *Config {
 	viper.MustUnmarshalKey(key, &cfg)
 
 	if cfg.GetLogsRangeScan.Enabled && cfg.GetLogsRangeScan.MinAddresses <= 0 {
-		panic("getLogsRangeScan.minAddresses must be positive")
+		logrus.Fatal("getLogsRangeScan.minAddresses must be positive")
 	}
 
 	if !cfg.Enabled {

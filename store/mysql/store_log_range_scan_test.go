@@ -12,6 +12,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -264,7 +265,16 @@ func TestRangeScanConfiguration(t *testing.T) {
 	require.Equal(t, 32, cfg.GetLogsRangeScan.MinAddresses)
 	require.Zero(t, cfg.GetLogsRangeScan.MaxBlocks)
 	viper.Set(key, map[string]interface{}{"enabled": true, "getLogsRangeScan": map[string]interface{}{"enabled": true, "minAddresses": 0}})
+	logger := logrus.StandardLogger()
+	originalExit := logger.ExitFunc
+	t.Cleanup(func() { logger.ExitFunc = originalExit })
+	var exitCode int
+	logger.ExitFunc = func(code int) {
+		exitCode = code
+		panic("intercept fatal exit")
+	}
 	require.Panics(t, func() { mustNewConfigFromViper(key) })
+	require.Equal(t, 1, exitCode)
 }
 
 func TestRangeScanCoreMatchesSharedAndDedicated(t *testing.T) {
