@@ -332,9 +332,13 @@ func (ms *MysqlStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilte
 
 	// if address specified, query from address indexed or big contract event log table
 	if !storeFilter.Contracts.IsNull() {
+		// if range scan is enabled and the filter meets the criteria, try to get logs from range scan.
+		if logs, handled, err := ms.tryRangeScanLogs(ctx, storeFilter); handled || err != nil {
+			return logs, err
+		}
+
 		contracts := storeFilter.Contracts.ToSlice()
 		slices.Sort(contracts)
-
 		return ms.getContractLogs(ctx, contracts, storeFilter)
 	}
 
