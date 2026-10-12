@@ -249,7 +249,7 @@ func (filter *LogFilter) read(ctx context.Context, db *gorm.DB, limit int, destS
 	db = db.WithContext(ctx).Table(filter.TableName)
 	db = db.Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
 	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
-	db = db.Order("bn ASC").Order("log_index ASC")
+	db = db.Order("bn ASC")
 	db = db.Limit(limit)
 
 	return db.Find(destSlicePtr).Error
