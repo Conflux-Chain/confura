@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Conflux-Chain/confura/store"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
@@ -328,13 +329,14 @@ func TestRangeScanCoreMatchesSharedAndDedicated(t *testing.T) {
 	require.NoError(t, db.Table("addr_logs_0").Where("cid = ?", cids[0]).Delete(&AddressIndexedLog{}).Error)
 	require.NoError(t, db.Create(&bnPartition{Entity: "clogs_1", Count: 2, BnMin: sql.NullInt64{Int64: 10, Valid: true}, BnMax: sql.NullInt64{Int64: 20, Valid: true}}).Error)
 	t.Run("mixed dedicated and shared", compare)
-	// Canonical matching also accepts uppercase base32 and deduplicates address casing.
+	// Canonical matching also accepts uppercase base32.
 	f := store.LogFilter{BlockFrom: 10, BlockTo: 13, Contracts: store.NewVariadicValue(strings.ToUpper(addresses[0].String()), addresses[1].String())}
 	got, hit, err := ms.tryRangeScanLogs(context.Background(), f)
 	require.NoError(t, err)
 	require.True(t, hit)
 	require.Len(t, got, 4)
-	f.Contracts = store.NewVariadicValue(addresses[0].String(), strings.ToUpper(addresses[0].String()))
+	// RPC handlers normalize and deduplicate addresses before the store call.
+	f.Contracts = store.NewVariadicValue(addresses[0].String())
 	_, hit, err = ms.tryRangeScanLogs(context.Background(), f)
 	require.NoError(t, err)
 	require.False(t, hit)
@@ -344,10 +346,52 @@ func TestFilterRangeScanLogsDoesNotDecodeRPCPayload(t *testing.T) {
 	// Only the address and indexed topics are needed for filtering. RPC payload
 	// conversion and final byte limits remain the handler's responsibility.
 	row := &log{ID: 7, Topic0: "0xabc", Extra: []byte(`{"addr":"0xAbCd","data":"invalid hex"}`)}
-	got, err := filterRangeScanLogs(context.Background(), []*log{row}, map[string]bool{"0xabcd": true}, []store.VariadicValue[string]{store.NewVariadicValue("0xABC")})
+	filter := store.LogFilter{
+		Contracts: store.NewVariadicValue("0xabcd"),
+		Topics:    []store.VariadicValue[string]{store.NewVariadicValue("0xABC")},
+	}
+	got, err := filterRangeScanLogs(context.Background(), filter, []*log{row})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	require.Zero(t, got[0].ID)
 	require.Equal(t, uint64(7), row.ID)
 	require.Equal(t, row.Extra, got[0].Extra)
+}
+
+func TestFilterRangeScanLogsMatchesTopicsBeforeDecodingAddress(t *testing.T) {
+	row := &log{Topic0: "0xabc", Extra: []byte("invalid JSON")}
+	filter := store.LogFilter{
+		Contracts: store.NewVariadicValue("0xabcd"),
+		Topics:    []store.VariadicValue[string]{store.NewVariadicValue("0xdef")},
+	}
+	result, err := filterRangeScanLogs(context.Background(), filter, []*log{row})
+	require.NoError(t, err)
+	require.Empty(t, result)
+
+	// A matching topic still requires address parsing, including its errors.
+	filter.Topics[0] = store.NewVariadicValue("0xabc")
+	_, err = filterRangeScanLogs(context.Background(), filter, []*log{row})
+	require.Error(t, err)
+}
+
+func TestRangeScanContextErrors(t *testing.T) {
+	t.Run("expired deadline", func(t *testing.T) {
+		ms, filter := rangeScanFixture(t, 1)
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+		defer cancel()
+		_, _, err := ms.tryRangeScanLogs(ctx, filter)
+		require.ErrorIs(t, err, store.ErrGetLogsTimeout)
+	})
+	t.Run("cancel between metadata and candidate queries", func(t *testing.T) {
+		ms, filter := rangeScanFixture(t, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		require.NoError(t, ms.ls.db.Callback().Query().After("gorm:query").Register("cancel_after_metadata", func(db *gorm.DB) {
+			if !db.DryRun && db.Statement.Table == "bn_partitions" {
+				cancel()
+			}
+		}))
+		_, _, err := ms.tryRangeScanLogs(ctx, filter)
+		require.ErrorIs(t, err, store.ErrGetLogsTimeout)
+	})
 }

@@ -11,7 +11,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Independent of the public RPC result limit.
+// maxRangeScanCandidateLogs is the maximum number of candidate logs to read for a range scan.
+// If the estimated or actual number of logs exceeds this limit, the range scan will be aborted
+// and routing will be left to the caller.
 const maxRangeScanCandidateLogs = 10_000
 
 // tryRangeScanLogs distinguishes an empty successful result from a route miss.
@@ -20,8 +22,8 @@ func (ms *MysqlStore[T]) tryRangeScanLogs(ctx context.Context, filter store.LogF
 	if !cfg.Enabled {
 		return nil, false, nil
 	}
-	addresses := rangeScanValues(filter.Contracts)
-	if len(addresses) < cfg.MinAddresses || filter.BlockFrom > filter.BlockTo ||
+
+	if filter.Contracts.Count() < cfg.MinAddresses ||
 		(cfg.MaxBlocks > 0 && filter.BlockTo-filter.BlockFrom >= cfg.MaxBlocks) {
 		return nil, false, nil
 	}
@@ -33,28 +35,33 @@ func (ms *MysqlStore[T]) tryRangeScanLogs(ctx context.Context, filter store.LogF
 		}
 		return nil, false, err
 	}
+
 	if !handled {
 		return nil, false, nil
 	}
-	result, err := filterRangeScanLogs(ctx, candidates, addresses, filter.Topics)
+
+	result, err := filterRangeScanLogs(ctx, filter, candidates)
 	if err != nil {
 		return nil, false, err
 	}
+
 	sort.Sort(store.LogSlice(result))
 	if store.IsBoundChecksEnabled(ctx) && len(result) > int(store.MaxLogLimit) {
 		return nil, true, newSuggestedFilterResultSetTooLargeError(&filter, result, true)
 	}
+
 	return result, true, nil
 }
 
 // getRangeScanCandidates reads a fully covered range only when its estimated
 // and actual row counts fit the candidate cap. A miss leaves routing to the caller.
 func (ls *logStore[T]) getRangeScanCandidates(ctx context.Context, filter store.LogFilter) ([]*log, bool, error) {
-	if err := checkGetLogsContext(ctx); err != nil {
-		return nil, false, err
-	}
-	partitions, uncovered, err := ls.searchPartitions(ctx, bnPartitionedLogEntity,
-		types.RangeUint64{From: filter.BlockFrom, To: filter.BlockTo})
+	partitions, uncovered, err := ls.searchPartitions(
+		ctx, bnPartitionedLogEntity, types.RangeUint64{
+			From: filter.BlockFrom,
+			To:   filter.BlockTo,
+		},
+	)
 	if errors.Is(err, store.ErrAlreadyPruned) {
 		return nil, false, nil
 	}
@@ -68,7 +75,11 @@ func (ls *logStore[T]) getRangeScanCandidates(ctx context.Context, filter store.
 	queries := make([]LogFilter, 0, len(partitions))
 	var estimated uint64
 	for _, partition := range partitions {
-		query := LogFilter{TableName: ls.getPartitionedTableName(&log{}, partition.Index), BlockFrom: filter.BlockFrom, BlockTo: filter.BlockTo}
+		query := LogFilter{
+			TableName: ls.getPartitionedTableName(&log{}, partition.Index),
+			BlockFrom: filter.BlockFrom,
+			BlockTo:   filter.BlockTo,
+		}
 		_, count, err := query.calculateQuerySetSize(ls.db.WithContext(ctx))
 		if errors.Is(err, errInvalidLogIDRange) {
 			return nil, false, nil
@@ -76,18 +87,23 @@ func (ls *logStore[T]) getRangeScanCandidates(ctx context.Context, filter store.
 		if err != nil {
 			return nil, false, err
 		}
-		if count > maxRangeScanCandidateLogs-estimated {
+
+		if count+estimated > maxRangeScanCandidateLogs {
 			return nil, false, nil
 		}
+
 		estimated += count
 		queries = append(queries, query)
 	}
+
 	var candidates []*log
 	for _, query := range queries {
 		var rows []*log
-		if err := query.read(ctx, ls.db, maxRangeScanCandidateLogs+1-len(candidates), &rows); err != nil {
+		limit := maxRangeScanCandidateLogs + 1 - len(candidates)
+		if err := query.read(ctx, ls.db, limit, &rows); err != nil {
 			return nil, false, err
 		}
+
 		candidates = append(candidates, rows...)
 		if len(candidates) > maxRangeScanCandidateLogs {
 			return nil, false, nil
@@ -96,52 +112,61 @@ func (ls *logStore[T]) getRangeScanCandidates(ctx context.Context, filter store.
 	return candidates, true, nil
 }
 
-// Both spaces persist canonical address strings in Extra.addr. Case folding
-// handles eSpace checksum casing and core-space base32 casing alike.
-func rangeScanValues(values store.VariadicValue[string]) map[string]bool {
-	result := make(map[string]bool, values.Count())
-	for _, value := range values.ToSlice() {
-		result[strings.ToLower(value)] = true
+func filterRangeScanLogs(ctx context.Context, filter store.LogFilter, candidates []*log) ([]*store.Log, error) {
+	addrSets := make(map[string]bool, filter.Contracts.Count())
+	for _, addr := range filter.Contracts.ToSlice() {
+		addrSets[strings.ToLower(addr)] = true
 	}
-	return result
-}
 
-func filterRangeScanLogs(ctx context.Context, candidates []*log, addresses map[string]bool, topics []store.VariadicValue[string]) ([]*store.Log, error) {
-	topicSets := make([]map[string]bool, len(topics))
-	for i, topic := range topics {
-		topicSets[i] = rangeScanValues(topic)
+	topicSets := make([]map[string]bool, len(filter.Topics))
+	for i, topics := range filter.Topics {
+		topicSets[i] = make(map[string]bool, topics.Count())
+		for _, v := range topics.ToSlice() {
+			topicSets[i][strings.ToLower(v)] = true
+		}
 	}
+
 	var result []*store.Log
 	for _, row := range candidates {
 		if err := checkGetLogsContext(ctx); err != nil {
 			return nil, err
 		}
+
+		matches := true
+		topics := [4]string{
+			row.Topic0, row.Topic1, row.Topic2, row.Topic3,
+		}
+
+		for i, set := range topicSets {
+			if i >= len(topics) {
+				break
+			}
+
+			if len(set) > 0 && !set[strings.ToLower(topics[i])] {
+				matches = false
+				break
+			}
+		}
+
+		if !matches {
+			continue
+		}
+
 		var extra struct {
 			Address string `json:"addr"`
 		}
 		if err := json.Unmarshal(row.Extra, &extra); err != nil {
 			return nil, errors.WithMessage(err, "failed to decode log address")
 		}
-		if !addresses[strings.ToLower(extra.Address)] {
+
+		if !addrSets[strings.ToLower(extra.Address)] {
 			continue
 		}
-		values := [4]string{row.Topic0, row.Topic1, row.Topic2, row.Topic3}
-		matches := true
-		for i, set := range topicSets {
-			if i >= len(values) {
-				break
-			}
-			if len(set) > 0 && !set[strings.ToLower(values[i])] {
-				matches = false
-				break
-			}
-		}
-		if matches {
-			// Address-indexed readers do not expose physical row IDs.
-			value := store.Log(*row)
-			value.ID = 0
-			result = append(result, &value)
-		}
+
+		// Address-indexed readers do not expose physical row IDs.
+		value := store.Log(*row)
+		value.ID = 0
+		result = append(result, &value)
 	}
 	return result, nil
 }
