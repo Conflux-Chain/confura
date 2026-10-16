@@ -213,6 +213,13 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 		return errBadRpcParams
 	}
 
+	// A request that constrains no contract address, such as a getLogs filter with an
+	// empty address list, would match every contract and bypass the allowlist. Reject
+	// it when an allowlist is configured for this method.
+	if len(contractAddresses) == 0 {
+		return errInvalidContractAddr
+	}
+
 	for _, address := range contractAddresses {
 		if !v.contractAddressRules[strings.ToLower(address)] {
 			return errInvalidContractAddr
