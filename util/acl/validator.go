@@ -221,7 +221,7 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 	}
 
 	for _, address := range contractAddresses {
-		if !v.contractAddressRules[strings.ToLower(caddr)] {
+		if !v.contractAddressRules[strings.ToLower(address)] {
 			return errInvalidContractAddr
 		}
 	}
