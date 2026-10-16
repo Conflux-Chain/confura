@@ -14,13 +14,13 @@ import (
 // For high-frequency topics (e.g., Transfer) are typically stored in separate special tables.
 type TopicIndexedLog struct {
 	ID          uint64
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_tid_bn,priority:2"`
-	Epoch       uint64 `gorm:"not null;index"`                                  // to support pop logs when reorg
-	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn,priority:1"` // topic0 id
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_tid_bn_li,priority:2"`
+	Epoch       uint64 `gorm:"not null;index"`                                     // to support pop logs when reorg
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn_li,priority:1"` // topic0 id
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	LogIndex    uint64 `gorm:"not null"`
+	LogIndex    uint64 `gorm:"not null;index:idx_tid_bn_li,priority:3"`
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
@@ -211,6 +211,46 @@ func (s *TopicIndexedLogStore[T]) GetTopicIndexedLogs(
 			Topic3:      v.Topic3,
 			LogIndex:    v.LogIndex,
 			Extra:       v.Extra,
+		})
+	}
+
+	return result, nil
+}
+
+// ScanTopicIndexedLogs scans one topic hash partition using an exclusive
+// keyset cursor. The original topic selects the physical table and tid filters
+// rows within that shared table.
+func (s *TopicIndexedLogStore[T]) ScanTopicIndexedLogs(
+	ctx context.Context,
+	tid uint64,
+	topic string,
+	params store.ScanLogParams,
+) ([]*store.Log, error) {
+	filter := TopicIndexedScanLogFilter{
+		scanLogFilter: scanLogFilter{
+			TableName: s.GetPartitionedTableName(topic),
+			BlockFrom: params.Filter.BlockFrom,
+			BlockTo:   params.Filter.BlockTo,
+		},
+		TopicID: tid,
+	}
+
+	rows, err := filter.Find(ctx, s.db, params.Cursor, params.Reverse, params.Limit)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to scan topic indexed logs")
+	}
+
+	result := make([]*store.Log, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, &store.Log{
+			BlockNumber: row.BlockNumber,
+			Epoch:       row.Epoch,
+			Topic0:      topic,
+			Topic1:      row.Topic1,
+			Topic2:      row.Topic2,
+			Topic3:      row.Topic3,
+			LogIndex:    row.LogIndex,
+			Extra:       row.Extra,
 		})
 	}
 

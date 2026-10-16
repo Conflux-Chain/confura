@@ -21,7 +21,9 @@ import (
 )
 
 const (
-	rpcMethodEthGetLogs = "eth_getLogs"
+	rpcMethodEthGetLogs                     = "eth_getLogs"
+	rpcMethodEthScanLogs                    = "eth_scanLogs"
+	rpcMethodEthScanLogsWithPivotAssumption = "eth_scanLogsWithPivotAssumption"
 
 	// The maximum number of percentile values to sample from each block's
 	// effective priority fees per gas in ascending order.
@@ -29,6 +31,10 @@ const (
 	// The maximum number of blocks in the requested range for fee history.
 	maxFeeHistoryBlockCnt = 1024
 )
+
+func isEthScanLogsRpcMethod(method string) bool {
+	return method == rpcMethodEthScanLogs || method == rpcMethodEthScanLogsWithPivotAssumption
+}
 
 var (
 	ethEmptyLogs = []web3Types.Log{}
@@ -300,6 +306,18 @@ func (api *ethAPI) EstimateGas(
 	return (*hexutil.Big)(gas), err
 }
 
+// CreateAccessList generates an EIP-2930 access list for a transaction request.
+func (api *ethAPI) CreateAccessList(
+	ctx context.Context,
+	request web3Types.CallRequest,
+	blockNumOrHash *web3Types.BlockNumberOrHash,
+	overrides *web3Types.StateOverride,
+) (*web3Types.CreateAccessListResult, error) {
+	w3c := GetEthClientFromContext(ctx)
+	api.inputBlockMetric.Update2(blockNumOrHash, "eth_createAccessList", w3c.Eth)
+	return api.stateHandler.CreateAccessList(ctx, w3c, request, blockNumOrHash, overrides)
+}
+
 // GetTransactionByHash returns the transaction with the given hash.
 func (api *ethAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (any, error) {
 	if txn, ok := api.tryGetTxnFromStore(ctx, hash); ok && txn != nil {
@@ -486,6 +504,51 @@ func (api *ethAPI) GetAccountPendingTransactions(
 func (api *ethAPI) GetLogs(ctx context.Context, fq web3Types.FilterQuery) ([]web3Types.Log, error) {
 	w3c := GetEthClientFromContext(ctx)
 	return api.getLogs(ctx, w3c, &fq, rpcMethodEthGetLogs)
+}
+
+func (api *ethAPI) ScanLogs(
+	ctx context.Context,
+	req handler.EthScanLogRequest,
+) (cacheTypes.Lazy[*handler.EthScanLogResult], error) {
+	return api.scanLogs(ctx, req, nil, false)
+}
+
+func (api *ethAPI) ScanLogsWithPivotAssumption(
+	ctx context.Context,
+	req handler.EthScanLogRequest,
+	assumption *handler.EthPivotAssumption,
+) (cacheTypes.Lazy[*handler.EthScanLogResult], error) {
+	return api.scanLogs(ctx, req, assumption, true)
+}
+
+func (api *ethAPI) scanLogs(
+	ctx context.Context,
+	req handler.EthScanLogRequest,
+	assumption *handler.EthPivotAssumption,
+	withPivotAssumption bool,
+) (cacheTypes.Lazy[*handler.EthScanLogResult], error) {
+	if api.LogApiHandler == nil {
+		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, handler.NewScanLogsErrorf(
+			handler.ErrScanLogsUnavailable, "api handler not configured",
+		)
+	}
+	if err := validateScanLogsRequest(withPivotAssumption, req.Cursor, assumption != nil); err != nil {
+		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, err
+	}
+
+	w3c := GetEthClientFromContext(ctx)
+	params, err := handler.NormalizeEthScanLogRequest(w3c.Eth, api.hardforkBlockNumber, req, withPivotAssumption)
+	if err != nil {
+		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, err
+	}
+
+	result, err := api.LogApiHandler.ScanLogs(ctx, w3c.Client.Eth, params, assumption)
+	if err != nil {
+		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, err
+	}
+
+	result.Logs = uniformEthLogs(result.Logs)
+	return handler.EncodeScanLogsResult(result)
 }
 
 // getLogs helper method to get logs from store or fullnode.

@@ -144,7 +144,7 @@ func getEthClientFromProviderWithContext(
 	grp := node.GroupEthHttp
 
 	switch {
-	case rpcMethod == rpcMethodEthGetLogs:
+	case rpcMethod == rpcMethodEthGetLogs || isEthScanLogsRpcMethod(rpcMethod):
 		grp = node.GroupEthLogs
 	case isEthFilterRpcMethod(rpcMethod):
 		grp = node.GroupEthFilter
@@ -167,7 +167,7 @@ func getCfxClientFromProviderWithContext(
 	grp := node.GroupCfxHttp
 
 	switch {
-	case rpcMethod == rpcMethodCfxGetLogs:
+	case rpcMethod == rpcMethodCfxGetLogs || isCfxScanLogsRpcMethod(rpcMethod):
 		grp = node.GroupCfxLogs
 	case isCfxFilterRpcMethod(rpcMethod):
 		grp = node.GroupCfxFilter

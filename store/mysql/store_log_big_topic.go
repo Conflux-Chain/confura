@@ -20,13 +20,13 @@ const (
 // topicLog represents a log entry stored in a dedicated topic table.
 type topicLog struct {
 	ID          uint64
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn_li,priority:1"`
 	Epoch       uint64 `gorm:"not null"`
 	Topic0ID    uint64 `gorm:"-"` // topic0 id (not persisted, used for table naming)
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	LogIndex    uint64 `gorm:"not null"`
+	LogIndex    uint64 `gorm:"not null;index:idx_bn_li,priority:2"`
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
@@ -118,16 +118,25 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 	tlTableName := btls.getPartitionedTableName(tlTabler, partition.Index)
 
 	return btls.db.Transaction(func(dbTx *gorm.DB) error {
+		eBlockMap, ok, err := btls.ebms.earliestBlockMapping(dbTx)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get earliest block mapping")
+		}
+		if !ok {
+			return errors.New("earliest block mapping not found")
+		}
+
+		bnMin, bnMax := eBlockMap.BnMin, uint64(0)
 		var tiLogs []*TopicIndexedLog
-		var bnMin, bnMax uint64
 
 		tidb := dbTx.Table(tiTableName).Where("tid = ?", topic.ID)
-
-		res := tidb.FindInBatches(&tiLogs, defaultBatchSizeForLogMigrating, func(tx *gorm.DB, batch int) error {
+		res := tidb.FindInBatches(&tiLogs, defaultBatchSizeForLogMigrating, func(_ *gorm.DB, _ int) error {
 			delIDs := make([]uint64, 0, len(tiLogs))
 			tlLogs := make([]*topicLog, 0, len(tiLogs))
 
 			for _, tilog := range tiLogs {
+				bnMax = max(bnMax, tilog.BlockNumber)
+
 				// copy topic indexed event log
 				tlog := (topicLog)(*tilog)
 				tlog.ID = 0 // clear primary id
@@ -146,27 +155,32 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 				return errors.WithMessage(err, "failed to delete topic indexed logs")
 			}
 
-			// Track block range stats
-			if batch == 1 {
-				bnMin = tiLogs[0].BlockNumber
-			}
-			bnMax = tiLogs[len(tiLogs)-1].BlockNumber
-
 			return nil
 		})
 
 		if err := res.Error; err != nil {
 			return errors.WithMessage(err, "failed to batch migrate topic indexed logs")
 		}
+		if res.RowsAffected == 0 {
+			return errors.New("no topic indexed logs found for migration")
+		}
+
+		// validate migration block range
+		if bnMin > bnMax {
+			return errors.Errorf(
+				"first covered block %v exceeds last indexed block %v", bnMin, bnMax,
+			)
+		}
 
 		// expand partition block number range
-		if err := btls.expandBnRange(dbTx, tlEntity, int(partition.Index), 0, bnMax); err != nil {
+		if err := btls.expandBnRange(dbTx, tlEntity, int(partition.Index), bnMin, bnMax); err != nil {
 			return errors.WithMessage(err, "failed to expand partition bn range")
 		}
 
 		// update dedicated topic log partition count
-		err := btls.deltaUpdateCount(dbTx, tlEntity, int(partition.Index), int(res.RowsAffected))
-		if err != nil {
+		if err := btls.deltaUpdateCount(
+			dbTx, tlEntity, int(partition.Index), int(res.RowsAffected),
+		); err != nil {
 			return errors.WithMessage(err, "failed to update topic log partition count")
 		}
 
@@ -338,14 +352,15 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 	return nil
 }
 
-// IsBigTopic check if the topic is a big topic managed by this store.
-func (btls *bigTopicLogStore[T]) IsBigTopic(tid uint64) (bool, error) {
+// IsMigrationCompleted reports whether the topic logs have been moved from
+// the topic hash partition to dedicated block-number partitions.
+func (btls *bigTopicLogStore[T]) IsMigrationCompleted(tid uint64) (bool, error) {
 	partition, existed, err := btls.oldestPartition(btls.topicEntity(tid))
 	if err != nil || !existed {
 		return false, errors.WithMessage(err, "failed to get oldest partition")
 	}
 
-	// regarded as big topic with the following two cases:
+	// The topic is regarded as migrated in the following two cases:
 	// 1. oldest partition is not the initial one;
 	// 2. oldest partition is the initial one and has data on it.
 	return !partition.IsInitial() || partition.Count > 0, nil
@@ -358,7 +373,7 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 	topic string,
 	storeFilter store.LogFilter,
 ) ([]*store.Log, error) {
-	partitions, _, err := btls.searchPartitions(btls.topicEntity(tid), types.RangeUint64{
+	partitions, _, err := btls.searchPartitions(ctx, btls.topicEntity(tid), types.RangeUint64{
 		From: storeFilter.BlockFrom,
 		To:   storeFilter.BlockTo,
 	})
@@ -412,6 +427,64 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 	}
 
 	return result, nil
+}
+
+// ScanTopicLogs scans dedicated topic log partitions using an exclusive
+// keyset cursor. The topic ID is encoded in the physical table name.
+func (btls *bigTopicLogStore[T]) ScanTopicLogs(
+	ctx context.Context,
+	tid uint64,
+	topic string,
+	params store.ScanLogParams,
+) ([]*store.Log, error) {
+	partitions, _, err := btls.searchPartitions(
+		ctx, btls.topicEntity(tid), effectiveScanLogBlockRange(params),
+	)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to search topic log partitions")
+	}
+
+	return scanPartitions(
+		ctx, partitions, params,
+		func(
+			ctx context.Context,
+			partition *bnPartition,
+			blockFrom uint64,
+			blockTo uint64,
+			remaining int,
+		) ([]*store.Log, error) {
+			filter := scanLogFilter{
+				TableName: btls.getPartitionedTableName(
+					btls.topicTabler(tid), partition.Index,
+				),
+				BlockFrom: blockFrom,
+				BlockTo:   blockTo,
+			}
+
+			var rows []*topicLog
+			if err := filter.find(
+				ctx, btls.db, params.Cursor, params.Reverse, remaining, &rows,
+			); err != nil {
+				return nil, err
+			}
+
+			result := make([]*store.Log, 0, len(rows))
+			for _, row := range rows {
+				result = append(result, &store.Log{
+					BlockNumber: row.BlockNumber,
+					Epoch:       row.Epoch,
+					Topic0:      topic,
+					Topic1:      row.Topic1,
+					Topic2:      row.Topic2,
+					Topic3:      row.Topic3,
+					LogIndex:    row.LogIndex,
+					Extra:       row.Extra,
+				})
+			}
+
+			return result, nil
+		},
+	)
 }
 
 // extractUniqueTopic0Signatures extracts unique topic0 signature of event logs within epoch data slice.

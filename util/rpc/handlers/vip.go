@@ -70,26 +70,34 @@ func VipStatusFromContext(ctx context.Context) (*VipStatus, bool) {
 }
 
 func GetVipStatusBySubscriptionStatus(vss *web3pay.VipSubscriptionStatus) (*VipStatus, bool) {
-	vi, err := vss.GetVipInfo()
-	if err != nil {
+	if vss == nil {
 		return nil, false
 	}
 
-	expiredAt := time.Unix(vi.ExpireAt.Int64(), 0)
-	return &VipStatus{
-		ID:       vi.Account.String(),
-		Tier:     GetVipTierBySubscription(vi),
-		ExpireAt: &expiredAt,
-	}, true
+	vi, err := vss.GetVipInfo()
+	if err != nil || vi == nil {
+		return nil, false
+	}
+
+	vs := &VipStatus{
+		ID:   vi.Account.String(),
+		Tier: GetVipTierBySubscription(vi),
+	}
+	if vi.ExpireAt != nil {
+		expiredAt := time.Unix(vi.ExpireAt.Int64(), 0)
+		vs.ExpireAt = &expiredAt
+	}
+
+	return vs, true
 }
 
 func GetVipStatusByBillingStatus(bs *web3pay.BillingStatus) (*VipStatus, bool) {
-	if bs.Success() {
-		vs := &VipStatus{Tier: VipTierBilling, ID: bs.Receipt.Customer.String()}
-		return vs, true
+	if bs == nil || !bs.Success() || bs.Receipt == nil {
+		return nil, false
 	}
 
-	return nil, false
+	vs := &VipStatus{Tier: VipTierBilling, ID: bs.Receipt.Customer.String()}
+	return vs, true
 }
 
 func GetVipTierBySubscription(vi *types.VipInfo) VipTier {

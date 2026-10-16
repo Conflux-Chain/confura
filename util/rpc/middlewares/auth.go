@@ -61,15 +61,7 @@ func Authenticate(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 func resolveAuthID(ctx context.Context) (string, error) {
 	// Web3Pay VIP user
 	if vs, ok := handlers.VipStatusFromContext(ctx); ok {
-		if vs.Tier == handlers.VipTierNone {
-			return "", errInvalidApiKey
-		}
-
-		if vs.ExpireAt.Before(time.Now()) {
-			return "", errApiKeyExpired
-		}
-
-		return vs.ID, nil
+		return resolveVipStatus(vs)
 	}
 
 	// SVIP user
@@ -78,4 +70,22 @@ func resolveAuthID(ctx context.Context) (string, error) {
 	}
 
 	return "", errInvalidApiKey
+}
+
+func resolveVipStatus(vs *handlers.VipStatus) (string, error) {
+	if vs == nil || vs.Tier == handlers.VipTierNone {
+		return "", errInvalidApiKey
+	}
+
+	if vs.Tier != handlers.VipTierBilling {
+		if vs.ExpireAt == nil {
+			return "", errInvalidApiKey
+		}
+
+		if vs.ExpireAt.Before(time.Now()) {
+			return "", errApiKeyExpired
+		}
+	}
+
+	return vs.ID, nil
 }

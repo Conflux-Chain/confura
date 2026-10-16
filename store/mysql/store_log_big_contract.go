@@ -24,13 +24,13 @@ const (
 type contractLog struct {
 	ID          uint64
 	ContractID  uint64 `gorm:"-"`
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn;index:idx_tid_bn,priority:2"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn_li,priority:1;index:idx_tid_bn_li,priority:2"`
 	Epoch       uint64 `gorm:"not null"`
-	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn,priority:1"`
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_tid_bn_li,priority:1"`
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	LogIndex    uint64 `gorm:"not null"`
+	LogIndex    uint64 `gorm:"not null;index:idx_bn_li,priority:2;index:idx_tid_bn_li,priority:3"`
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
@@ -127,16 +127,25 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 	clTableName := bcls.getPartitionedTableName(clTabler, partition.Index)
 
 	return bcls.db.Transaction(func(dbTx *gorm.DB) error {
+		eBlockMap, ok, err := bcls.ebms.earliestBlockMapping(dbTx)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get earliest block mapping")
+		}
+		if !ok {
+			return errors.New("earliest block mapping not found")
+		}
+
+		bnMin, bnMax := eBlockMap.BnMin, uint64(0)
 		var aiLogs []*AddressIndexedLog
-		var bnMin, bnMax uint64
 
 		aidb := dbTx.Table(aiTableName).Where("cid = ?", contract.ID)
-
-		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeForLogMigrating, func(tx *gorm.DB, batch int) error {
+		res := aidb.FindInBatches(&aiLogs, defaultBatchSizeForLogMigrating, func(_ *gorm.DB, _ int) error {
 			deleteIds := make([]uint64, 0, len(aiLogs))
 			clLogs := make([]*contractLog, 0, len(aiLogs))
 
 			for _, aiLog := range aiLogs {
+				bnMax = max(bnMax, aiLog.BlockNumber)
+
 				// copy address indexed event log
 				clog := (contractLog)(*aiLog)
 				// clear primary id
@@ -157,26 +166,32 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 				return errors.WithMessage(err, "failed to delete address indexed log")
 			}
 
-			if batch == 1 { // least block number of the first batch
-				bnMin = aiLogs[0].BlockNumber
-			}
-			bnMax = aiLogs[len(aiLogs)-1].BlockNumber
-
 			return nil
 		})
 
 		if err := res.Error; err != nil {
 			return errors.WithMessage(err, "failed to batch get address indexed logs for migration")
 		}
+		if res.RowsAffected == 0 {
+			return errors.New("no address indexed logs found for migration")
+		}
+
+		// validate migration block range
+		if bnMin > bnMax {
+			return errors.Errorf(
+				"first covered block %v exceeds last indexed block %v", bnMin, bnMax,
+			)
+		}
 
 		// expand partition block number range
-		if err := bcls.expandBnRange(dbTx, clEntity, int(partition.Index), 0, bnMax); err != nil {
+		if err := bcls.expandBnRange(dbTx, clEntity, int(partition.Index), bnMin, bnMax); err != nil {
 			return errors.WithMessage(err, "failed to expand partition bn range")
 		}
 
 		// update separate contract log partition count
-		err := bcls.deltaUpdateCount(dbTx, clEntity, int(partition.Index), int(res.RowsAffected))
-		if err != nil {
+		if err := bcls.deltaUpdateCount(
+			dbTx, clEntity, int(partition.Index), int(res.RowsAffected),
+		); err != nil {
 			return errors.WithMessage(err, "failed to update contract log partition count")
 		}
 
@@ -348,15 +363,16 @@ func (bcls *bigContractLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error
 	return nil
 }
 
-// IsBigContract check if the contract is big contract or not.
-func (bcls *bigContractLogStore[T]) IsBigContract(cid uint64) (bool, error) {
+// IsMigrationCompleted reports whether the contract logs have been moved from
+// the address hash partition to dedicated block-number partitions.
+func (bcls *bigContractLogStore[T]) IsMigrationCompleted(cid uint64) (bool, error) {
 	contractEntity := bcls.contractEntity(cid)
 	partition, existed, err := bcls.oldestPartition(contractEntity)
 	if err != nil || !existed {
 		return false, errors.WithMessage(err, "failed to get oldest partition")
 	}
 
-	// regarded as big contract with the following two cases:
+	// The contract is regarded as migrated in the following two cases:
 	// 1. oldest partition is not the initial one;
 	// 2. oldest partition is the initial one and has data on it.
 	return !partition.IsInitial() || partition.Count > 0, nil
@@ -370,7 +386,7 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 ) ([]*store.Log, error) {
 	contractEntity := bcls.contractEntity(cid)
 	partitions, _, err := bcls.searchPartitions(
-		contractEntity, types.RangeUint64{
+		ctx, contractEntity, types.RangeUint64{
 			From: storeFilter.BlockFrom,
 			To:   storeFilter.BlockTo,
 		},
@@ -444,4 +460,70 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 	}
 
 	return result, nil
+}
+
+// ScanContractLogs scans dedicated contract log partitions using an exclusive
+// keyset cursor. The contract ID is encoded in the physical table name, while
+// an optional topic ID is applied as an indexed predicate.
+func (bcls *bigContractLogStore[T]) ScanContractLogs(
+	ctx context.Context,
+	cid uint64,
+	topic0ID *uint64,
+	params store.ScanLogParams,
+) ([]*store.Log, error) {
+	contractEntity := bcls.contractEntity(cid)
+	partitions, _, err := bcls.searchPartitions(
+		ctx, contractEntity, effectiveScanLogBlockRange(params),
+	)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to search contract log partitions")
+	}
+
+	return scanPartitions(
+		ctx, partitions, params,
+		func(
+			ctx context.Context,
+			partition *bnPartition,
+			blockFrom uint64,
+			blockTo uint64,
+			remaining int,
+		) ([]*store.Log, error) {
+			filter := scanLogFilter{
+				TableName: bcls.getPartitionedTableName(
+					bcls.contractTabler(cid), partition.Index,
+				),
+				BlockFrom: blockFrom,
+				BlockTo:   blockTo,
+				Topic0ID:  topic0ID,
+			}
+
+			var rows []*contractLog
+			if err := filter.find(
+				ctx, bcls.db, params.Cursor, params.Reverse, remaining, &rows,
+			); err != nil {
+				return nil, err
+			}
+
+			result := make([]*store.Log, 0, len(rows))
+			for _, row := range rows {
+				topic0, err := resolveTopic0Hash(bcls.ts, row.Topic0ID)
+				if err != nil {
+					return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
+				}
+
+				result = append(result, &store.Log{
+					BlockNumber: row.BlockNumber,
+					Epoch:       row.Epoch,
+					Topic0:      topic0,
+					Topic1:      row.Topic1,
+					Topic2:      row.Topic2,
+					Topic3:      row.Topic3,
+					LogIndex:    row.LogIndex,
+					Extra:       row.Extra,
+				})
+			}
+
+			return result, nil
+		},
+	)
 }

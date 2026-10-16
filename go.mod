@@ -6,7 +6,7 @@ toolchain go1.23.10
 
 require (
 	github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20260414083601-cfb736638339
-	github.com/Conflux-Chain/go-conflux-sdk v1.6.1
+	github.com/Conflux-Chain/go-conflux-sdk v1.6.2-0.20260723071534-0585f1e2e56b
 	github.com/Conflux-Chain/go-conflux-util v0.7.4
 	github.com/Conflux-Chain/web3pay-service v1.0.2
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
@@ -20,7 +20,7 @@ require (
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/montanaflynn/stats v0.6.6
 	github.com/openweb3/go-rpc-provider v0.3.7
-	github.com/openweb3/web3go v0.3.3
+	github.com/openweb3/web3go v0.3.5
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9
 	github.com/rs/cors v1.7.0
@@ -39,6 +39,7 @@ require (
 	google.golang.org/protobuf v1.36.6
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.0
+	gorm.io/hints v1.1.0
 )
 
 require (

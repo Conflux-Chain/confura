@@ -110,6 +110,23 @@ func (h *EthStateHandler) EstimateGas(
 	return est, err
 }
 
+func (h *EthStateHandler) CreateAccessList(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	callRequest types.CallRequest,
+	blockNum *types.BlockNumberOrHash,
+	overrides *types.StateOverride,
+) (*types.CreateAccessListResult, error) {
+	result, err, usefs := tryResolveState(h, ctx, w3c,
+		func(w3c *node.Web3goClient) (*types.CreateAccessListResult, error) {
+			return w3c.Eth.CreateAccessList(callRequest, blockNum, overrides)
+		},
+	)
+
+	metrics.Registry.RPC.Percentage("eth_createAccessList", "fullState").Mark(usefs)
+	return result, err
+}
+
 func (h *EthStateHandler) DebugTraceTransaction(
 	ctx context.Context,
 	w3c *node.Web3goClient,
@@ -247,6 +264,23 @@ func (h *EthStateHandler) TraceFilter(
 	})
 
 	metrics.Registry.RPC.Percentage("trace_filter", "fullState").Mark(usefs)
+	return result, err
+}
+
+func (h *EthStateHandler) TraceCall(
+	ctx context.Context,
+	w3c *node.Web3goClient,
+	callRequest types.CallRequest,
+	options types.TraceOptions,
+	blockNum *types.BlockNumberOrHash,
+) (types.TraceResults, error) {
+	result, err, usefs := tryResolveState(h, ctx, w3c,
+		func(w3c *node.Web3goClient) (types.TraceResults, error) {
+			return w3c.Trace.Call(callRequest, options, blockNum)
+		},
+	)
+
+	metrics.Registry.RPC.Percentage("trace_call", "fullState").Mark(usefs)
 	return result, err
 }
 

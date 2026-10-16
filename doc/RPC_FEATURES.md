@@ -1,6 +1,6 @@
 # Enhanced RPC Features
 
-Confura behaves like a full-node-compatible JSON-RPC gateway, but several high-traffic methods are backed by indexed storage, trace-derived data, and request-control middleware. This document describes three user-visible differences from a plain full node: dynamic `getLogs` query bounds, early internal contract event logs, and rate limit diagnostics.
+Confura behaves like a full-node-compatible JSON-RPC gateway, but several high-traffic methods are backed by indexed storage, trace-derived data, and request-control middleware. This document describes four user-visible differences from a plain full node: dynamic `getLogs` query bounds, cursor-paginated `scanLogs`, early internal contract event logs, and rate limit diagnostics.
 
 ## `getLogs` with Dynamic Query Bounds
 
@@ -54,6 +54,18 @@ If the matching logs are sparse, this can complete in one request. If the result
 ### Full Node Delegation
 
 Confura may still delegate the newest, not-yet-indexed part of a log query to an upstream full node. That delegated portion is checked with configured split ranges, because it is still subject to full-node query constraints. Once data has been indexed, the dynamic result-size and latency controls described above apply.
+
+## Cursor-Paginated `scanLogs`
+
+For large exports and backfills, Confura exposes `cfx_scanLogs` and `eth_scanLogs`. Unlike `getLogs`, these methods return a bounded page and an exclusive `(blockNumber, logIndex)` cursor. The next request sends the cursor back with the same filter and direction, allowing a client to scan a large inclusive epoch or block range without inventing fixed range windows.
+
+The filter supports one optional contract address and one optional `topic0`. Core Space uses `fromEpoch`/`toEpoch`; eSpace uses `fromBlock`/`toBlock`. Results are ordered ascending by default or descending with `reverse: true`. The default page size is 100 logs, and the configured maximum is 1,000 by default.
+
+For workflows that need to detect reorganizations between pages, use `cfx_scanLogsWithPivotAssumption` or `eth_scanLogsWithPivotAssumption`. The first non-empty page returns a `pivotGuard`; pass it as the next call's second argument together with `nextCursor`. Confura rejects the continuation if that guarded pivot or block hash is no longer canonical.
+
+Confura transparently joins indexed historical data with a not-yet-indexed full-node suffix while preserving ordering and cursor exclusivity. It also checks database versions, full-node checkpoints, and the database/full-node boundary so one page is not knowingly assembled from inconsistent canonical views.
+
+For complete request and response schemas, Core Space and eSpace examples, pagination loops, pivot-guard semantics, error handling, implementation details, and operator configuration, see [Paginated Event Log Scanning with `scanLogs`](./PAGINATED_SCAN_LOGS.md).
 
 ## Early Internal Contract Event Logs
 

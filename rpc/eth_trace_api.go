@@ -15,6 +15,16 @@ type ethTraceAPI struct {
 	stateHandler *handler.EthStateHandler
 }
 
+func (api *ethTraceAPI) Call(
+	ctx context.Context,
+	request types.CallRequest,
+	options types.TraceOptions,
+	blockNumOrHash *types.BlockNumberOrHash,
+) (types.TraceResults, error) {
+	w3c := GetEthClientFromContext(ctx)
+	return api.stateHandler.TraceCall(ctx, w3c, request, options, blockNumOrHash)
+}
+
 func (api *ethTraceAPI) Block(ctx context.Context, blockNumOrHash types.BlockNumberOrHash) (cacheTypes.Lazy[[]types.LocalizedTrace], error) {
 	w3c := GetEthClientFromContext(ctx)
 	return api.stateHandler.LazyTraceBlock(ctx, w3c, blockNumOrHash)

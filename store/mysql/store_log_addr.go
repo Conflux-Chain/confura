@@ -15,14 +15,14 @@ import (
 
 type AddressIndexedLog struct {
 	ID          uint64
-	ContractID  uint64 `gorm:"column:cid;not null;index:idx_cid_bn,priority:1;index:idx_cid_tid_bn,priority:1"`
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_cid_bn,priority:2;index:idx_cid_tid_bn,priority:3"`
+	ContractID  uint64 `gorm:"column:cid;not null;index:idx_cid_bn_li,priority:1;index:idx_cid_tid_bn_li,priority:1"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_cid_bn_li,priority:2;index:idx_cid_tid_bn_li,priority:3"`
 	Epoch       uint64 `gorm:"not null;index"` // to support pop logs when reorg
-	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_cid_tid_bn,priority:2"`
+	Topic0ID    uint64 `gorm:"column:tid;not null;index:idx_cid_tid_bn_li,priority:2"`
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	LogIndex    uint64 `gorm:"not null"`
+	LogIndex    uint64 `gorm:"not null;index:idx_cid_bn_li,priority:3;index:idx_cid_tid_bn_li,priority:4"`
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
@@ -274,6 +274,53 @@ func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 			Topic3:      v.Topic3,
 			LogIndex:    v.LogIndex,
 			Extra:       v.Extra,
+		})
+	}
+
+	return result, nil
+}
+
+// ScanAddressIndexedLogs scans one address hash partition using an exclusive
+// keyset cursor. The physical table is selected by the original contract
+// string, while cid protects against hash-partition sharing.
+func (ls *AddressIndexedLogStore[T]) ScanAddressIndexedLogs(
+	ctx context.Context,
+	cid uint64,
+	contract string,
+	topic0ID *uint64,
+	params store.ScanLogParams,
+) ([]*store.Log, error) {
+	filter := AddressIndexedScanLogFilter{
+		scanLogFilter: scanLogFilter{
+			TableName: ls.GetPartitionedTableName(contract),
+			BlockFrom: params.Filter.BlockFrom,
+			BlockTo:   params.Filter.BlockTo,
+			Topic0ID:  topic0ID,
+		},
+		ContractID: cid,
+	}
+
+	rows, err := filter.Find(ctx, ls.db, params.Cursor, params.Reverse, params.Limit)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to scan address indexed logs")
+	}
+
+	result := make([]*store.Log, 0, len(rows))
+	for _, row := range rows {
+		topic0, err := resolveTopic0Hash(ls.ts, row.Topic0ID)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
+		}
+
+		result = append(result, &store.Log{
+			BlockNumber: row.BlockNumber,
+			Epoch:       row.Epoch,
+			Topic0:      topic0,
+			Topic1:      row.Topic1,
+			Topic2:      row.Topic2,
+			Topic3:      row.Topic3,
+			LogIndex:    row.LogIndex,
+			Extra:       row.Extra,
 		})
 	}
 

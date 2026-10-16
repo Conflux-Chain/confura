@@ -19,13 +19,13 @@ const (
 
 type log struct {
 	ID          uint64
-	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn"`
+	BlockNumber uint64 `gorm:"column:bn;not null;index:idx_bn_li,priority:1"`
 	Epoch       uint64 `gorm:"not null"`
 	Topic0      string `gorm:"size:66;not null"`
 	Topic1      string `gorm:"size:66"`
 	Topic2      string `gorm:"size:66"`
 	Topic3      string `gorm:"size:66"`
-	LogIndex    uint64 `gorm:"not null"`
+	LogIndex    uint64 `gorm:"not null;index:idx_bn_li,priority:2"`
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
@@ -170,7 +170,7 @@ func (ls *logStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 func (ls *logStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilter) ([]*store.Log, error) {
 	// find the partitions that holds the event logs
 	partitions, _, err := ls.searchPartitions(
-		bnPartitionedLogEntity, types.RangeUint64{
+		ctx, bnPartitionedLogEntity, types.RangeUint64{
 			From: storeFilter.BlockFrom,
 			To:   storeFilter.BlockTo,
 		},
@@ -211,6 +211,48 @@ func (ls *logStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilter)
 	}
 
 	return result, nil
+}
+
+// ScanLogs scans universal event logs across block-number partitions.
+func (ls *logStore[T]) ScanLogs(
+	ctx context.Context, params store.ScanLogParams,
+) ([]*store.Log, error) {
+	partitions, _, err := ls.searchPartitions(
+		ctx, bnPartitionedLogEntity, effectiveScanLogBlockRange(params),
+	)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to search log partitions")
+	}
+
+	return scanPartitions(
+		ctx, partitions, params,
+		func(
+			ctx context.Context,
+			partition *bnPartition,
+			blockFrom uint64,
+			blockTo uint64,
+			remaining int,
+		) ([]*store.Log, error) {
+			filter := scanLogFilter{
+				TableName: ls.getPartitionedTableName(&ls.model, partition.Index),
+				BlockFrom: blockFrom,
+				BlockTo:   blockTo,
+			}
+
+			var rows []*log
+			if err := filter.find(
+				ctx, ls.db, params.Cursor, params.Reverse, remaining, &rows,
+			); err != nil {
+				return nil, err
+			}
+
+			result := make([]*store.Log, 0, len(rows))
+			for _, row := range rows {
+				result = append(result, (*store.Log)(row))
+			}
+			return result, nil
+		},
+	)
 }
 
 // GetBnPartitionedLogs returns event logs for the specified block number partitioned log filter.
