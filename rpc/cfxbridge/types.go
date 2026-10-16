@@ -14,7 +14,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// EthBlockNumber accepts number and epoch tag latest_state, other values are invalid, e.g. latest_confirmed.
+// EthBlockNumber accepts numeric block numbers and the latest_state and earliest epoch tags.
+// Other epoch tags are invalid, e.g. latest_confirmed.
 type EthBlockNumber struct {
 	value ethTypes.BlockNumber
 }
@@ -67,7 +68,8 @@ func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// EthBlockNumberOrHash accepts hex number, hash and epoch tag latest_state, other values are invalid, e.g. latest_confirmed.
+// EthBlockNumberOrHash accepts a hex number, hash, and the latest_state and earliest epoch tags.
+// Other epoch tags are invalid, e.g. latest_confirmed.
 type EthBlockNumberOrHash struct {
 	number           ethTypes.BlockNumber
 	hash             *common.Hash

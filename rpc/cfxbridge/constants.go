@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	// ETH space only accept latest_state as block number. Other epoch tags, e.g. latest_checkpoint,
-	// latest_confirmed and latest_mined are not supported.
+	// ETH space supports latest_state and earliest as block numbers. Other epoch tags, e.g.
+	// latest_checkpoint, latest_confirmed and latest_mined are not supported.
 	ErrEpochUnsupported = errors.New("epoch not supported")
 
 	// ETH space only have pivot blocks as a list, and do not require to query non-pivot blocks.
