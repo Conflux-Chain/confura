@@ -186,7 +186,7 @@ type EventDef struct {
 	// UseRawArgsAsData indicates that input[4:] should be used verbatim as log data.
 	UseRawArgsAsData bool
 
-	// EventIndex is a compact numeric identifier to reference event definitions.
+	// eventIndex is a compact numeric identifier to reference event definitions.
 	eventIndex uint8
 
 	// Precomputed values (populated by Register)
