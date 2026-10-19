@@ -86,7 +86,7 @@ func (cs *ContractStore) GetContractIdByAddress(address string) (uint64, bool, e
 
 // GetContractById gets contract by id from db and also loads the cache.
 //
-// For contract `LogCount` and `LastUpdatedEpoch` fields, they are quite mutable
+// For contract `LogCount` and `LatestUpdatedEpoch` fields, they are quite mutable
 // while cache maybe rarely updated.
 func (cs *ContractStore) GetContractById(cid uint64) (*Contract, bool, error) {
 	return cs.enforceCache("id = ?", cid)
