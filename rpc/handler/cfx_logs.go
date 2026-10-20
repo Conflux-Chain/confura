@@ -37,6 +37,12 @@ func MustInitFromViper() {
 		maxGetLogsResponseBytes,
 	)
 
+	var getLogs struct {
+		CheckMixedSourceConsistency bool `default:"true"`
+	}
+	viperutil.MustUnmarshalKey("requestControl.getLogs", &getLogs)
+	checkMixedSourceConsistency = getLogs.CheckMixedSourceConsistency
+
 	var scanLogs struct {
 		MaxLimit           uint64 `default:"1000"`
 		FullnodeWindowSize uint64 `default:"1000"`
@@ -91,12 +97,30 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	}
 
 	var (
-		suggestErr   error
-		suggestCount int
+		suggestErr         error
+		suggestCount       int
+		consistencyRetries int
 	)
 
 	for {
 		logs, hitStore, err := handler.getLogsReorgGuard(ctx, cfx, filter, delegatedRpcMethod)
+		if errors.Is(err, ErrGetLogsConsistency) {
+			version, versionErr := handler.ms.GetReorgVersion()
+			if versionErr != nil {
+				return nil, false, versionErr
+			}
+			if version != lastReorgVersion {
+				if err := checkTimeout(ctx); err != nil {
+					return nil, false, err
+				}
+				lastReorgVersion = version
+				continue
+			}
+			if err := retryLogsConsistency(ctx, "cfx_getLogs", &consistencyRetries); err != nil {
+				return nil, false, err
+			}
+			continue
+		}
 		if err != nil {
 			if maxAttempts := handler.maxSuggestAttempts; maxAttempts > 0 && suggestCount < maxAttempts {
 				var (
@@ -179,6 +203,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	}
 
 	var logs []types.Log
+	var dbBoundary *store.LogFilter
 	var accumulator int
 
 	useBoundCheck := RequireBoundChecks(filter)
@@ -203,6 +228,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 
 		// succeeded to get logs from database
 		if err == nil {
+			dbBoundary = &dbFilters[i]
 			for _, v := range dbLogs {
 				if accumulator += len(v.Extra); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
 					return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, v)
@@ -279,8 +305,16 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		fence, err := handler.newLogsFence(cfx, dbBoundary, fnFilter)
+		if err != nil {
+			return nil, false, err
+		}
 		fnLogs, err := cfx.GetLogs(*fnFilter)
 		if err != nil {
+			return nil, false, err
+		}
+
+		if err := fence.check(); err != nil {
 			return nil, false, err
 		}
 

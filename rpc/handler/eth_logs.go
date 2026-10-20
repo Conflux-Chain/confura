@@ -47,12 +47,30 @@ func (handler *EthLogsApiHandler) GetLogs(
 	}
 
 	var (
-		suggestErr   *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
-		suggestCount int
+		suggestErr         *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
+		suggestCount       int
+		consistencyRetries int
 	)
 
 	for {
 		logs, hitStore, err := handler.getLogsReorgGuard(ctx, eth, filter, delegatedRpcMethod)
+		if errors.Is(err, ErrGetLogsConsistency) {
+			version, versionErr := handler.es.GetReorgVersion()
+			if versionErr != nil {
+				return nil, false, versionErr
+			}
+			if version != lastReorgVersion {
+				if err := checkTimeout(ctx); err != nil {
+					return nil, false, err
+				}
+				lastReorgVersion = version
+				continue
+			}
+			if err := retryLogsConsistency(ctx, "eth_getLogs", &consistencyRetries); err != nil {
+				return nil, false, err
+			}
+			continue
+		}
 		if err != nil {
 			if maxAttempts := handler.maxSuggestAttempts; maxAttempts > 0 && suggestCount < maxAttempts &&
 				filter.ToBlock != nil && errors.As(err, &suggestErr) {
@@ -166,8 +184,16 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		fence, err := handler.newLogsFence(eth, dbFilter, fnFilter)
+		if err != nil {
+			return nil, false, err
+		}
 		fnLogs, err := eth.Logs(*fnFilter)
 		if err != nil {
+			return nil, false, err
+		}
+
+		if err := fence.check(); err != nil {
 			return nil, false, err
 		}
 
@@ -239,6 +265,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 	}
 
 	if block == nil {
+		markGetLogsMetric("eth_getLogs", "hash/fallback/unknown")
 		return nil, filter, nil
 	}
 	if block.Number == nil || block.Number.Sign() < 0 || !block.Number.IsUint64() {
@@ -259,6 +286,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, nil, err
 	}
 	if !ok || !strings.EqualFold(pivot, filter.BlockHash.Hex()) {
+		markGetLogsMetric("eth_getLogs", "hash/fallback/identity")
 		return nil, filter, nil
 	}
 	dbFilter := store.ParseEthLogFilter(bn, bn, filter)
