@@ -106,3 +106,27 @@ func TestEthHashLogsFallbackKeepsFilter(t *testing.T) {
 	require.Empty(t, logs)
 	require.Equal(t, *filter, client.filter)
 }
+
+func TestEthHashLogsDatabaseEmptyOrFailure(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "empty", true: "query_error"}[failed], func(t *testing.T) {
+			db := newScanLogsHandlerTestDB(t)
+			createGetLogsTables(t, db)
+			hash := common.HexToHash("0x1234")
+			insertScanLogsMapping(t, db, 10, 10, 10, hash.Hex())
+			if failed {
+				require.NoError(t, db.Exec("DROP TABLE logs_0").Error)
+			}
+			client := &ethHashLogsClient{block: &web3types.Block{Number: big.NewInt(10)}}
+			logs, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, &web3types.FilterQuery{BlockHash: &hash}, "")
+			if failed {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.True(t, hit)
+				require.Empty(t, logs)
+			}
+			require.Zero(t, client.calls)
+		})
+	}
+}

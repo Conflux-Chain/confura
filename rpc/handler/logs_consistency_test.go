@@ -25,15 +25,19 @@ func (*mixedEthLogsClient) BlockByHash(common.Hash, bool) (*web3types.Block, err
 
 type mixedCfxLogsClient struct {
 	sdk.ClientOperator
-	block func(*cfxtypes.Epoch) (*cfxtypes.BlockSummary, error)
-	logs  func(cfxtypes.LogFilter) ([]cfxtypes.Log, error)
+	block       func(*cfxtypes.Epoch) (*cfxtypes.BlockSummary, error)
+	logs        func(cfxtypes.LogFilter) ([]cfxtypes.Log, error)
+	numberBlock func(hexutil.Uint64) (*cfxtypes.BlockSummary, error)
 }
 
 func (c *mixedCfxLogsClient) GetBlockSummaryByEpoch(e *cfxtypes.Epoch) (*cfxtypes.BlockSummary, error) {
 	return c.block(e)
 }
 func (c *mixedCfxLogsClient) GetLogs(f cfxtypes.LogFilter) ([]cfxtypes.Log, error) { return c.logs(f) }
-func (*mixedCfxLogsClient) GetBlockSummaryByBlockNumber(hexutil.Uint64) (*cfxtypes.BlockSummary, error) {
+func (c *mixedCfxLogsClient) GetBlockSummaryByBlockNumber(n hexutil.Uint64) (*cfxtypes.BlockSummary, error) {
+	if c.numberBlock != nil {
+		return c.numberBlock(n)
+	}
 	panic("unexpected numbered lookup")
 }
 func (*mixedCfxLogsClient) GetBlockSummaryByHash(cfxtypes.Hash) (*cfxtypes.BlockSummary, error) {
@@ -185,4 +189,87 @@ func TestGetLogsConsistencyConfiguration(t *testing.T) {
 	viper.Set("requestControl.getLogs.checkMixedSourceConsistency", true)
 	MustInitFromViper()
 	require.True(t, checkMixedSourceConsistency)
+}
+
+func TestGetLogsCheckpointDoesNotChangeRange(t *testing.T) {
+	oldCheck, oldBlocks, oldEpochs, oldBytes := checkMixedSourceConsistency, store.MaxLogBlockRange, store.MaxLogEpochRange, maxGetLogsResponseBytes
+	checkMixedSourceConsistency = true
+	store.MaxLogBlockRange = 1000
+	store.MaxLogEpochRange = 1000
+	maxGetLogsResponseBytes = 1 << 20
+	t.Cleanup(func() {
+		checkMixedSourceConsistency, store.MaxLogBlockRange, store.MaxLogEpochRange, maxGetLogsResponseBytes = oldCheck, oldBlocks, oldEpochs, oldBytes
+	})
+	hash := common.HexToHash("0x1234")
+	for _, upper := range []uint64{12, 30} {
+		db := newScanLogsHandlerTestDB(t)
+		createGetLogsTables(t, db)
+		insertScanLogsMapping(t, db, 10, 10, 10, hash.Hex())
+		var numbers []uint64
+		client := &mixedEthLogsClient{fakeEthScanClient: &fakeEthScanClient{}}
+		client.blockFn = func(n int64) (*web3types.Block, error) {
+			if n == int64(web3types.LatestBlockNumber) {
+				n = 20
+			}
+			numbers = append(numbers, uint64(n))
+			return &web3types.Block{Number: big.NewInt(n), Hash: hash}, nil
+		}
+		client.logsFn = func(f web3types.FilterQuery) ([]web3types.Log, error) {
+			require.EqualValues(t, 11, *f.FromBlock)
+			require.EqualValues(t, upper, *f.ToBlock)
+			return nil, nil
+		}
+		_, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(web3types.BlockNumber(upper))}, "")
+		require.NoError(t, err)
+		require.Equal(t, min(upper, uint64(20)), numbers[len(numbers)-1])
+	}
+	for _, mode := range []string{"epoch", "block", "future"} {
+		db := newScanLogsHandlerTestDB(t)
+		createGetLogsTables(t, db)
+		insertScanLogsMapping(t, db, 1, 10, 10, hash.Hex())
+		var epochs []uint64
+		filter := &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(2)}
+		if mode == "block" {
+			filter = &cfxtypes.LogFilter{FromBlock: cfxtypes.NewBigInt(10), ToBlock: cfxtypes.NewBigInt(12)}
+		}
+		if mode == "future" {
+			filter.ToEpoch = epochNumber(4)
+		}
+		client := &mixedCfxLogsClient{}
+		client.block = func(e *cfxtypes.Epoch) (*cfxtypes.BlockSummary, error) {
+			n, numeric := e.ToInt()
+			number := uint64(3)
+			if numeric {
+				number = n.Uint64()
+			}
+			epochs = append(epochs, number)
+			blockNumber := number + 9
+			if number == 2 {
+				blockNumber = 12
+			}
+			if number == 3 {
+				blockNumber = 20
+			}
+			return cfxSummary(cfxtypes.Hash(hash.Hex()), number, blockNumber), nil
+		}
+		client.numberBlock = func(n hexutil.Uint64) (*cfxtypes.BlockSummary, error) {
+			require.EqualValues(t, 12, n)
+			return cfxSummary(cfxtypes.Hash(hash.Hex()), 2, 12), nil
+		}
+		client.logs = func(f cfxtypes.LogFilter) ([]cfxtypes.Log, error) {
+			if mode == "block" {
+				require.EqualValues(t, 12, f.ToBlock.ToInt().Uint64())
+			} else {
+				require.True(t, filter.ToEpoch.Equals(f.ToEpoch))
+			}
+			return nil, nil
+		}
+		_, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, filter, "")
+		require.NoError(t, err)
+		checkpoint := uint64(2)
+		if mode == "future" {
+			checkpoint = 3
+		}
+		require.Equal(t, checkpoint, epochs[len(epochs)-1])
+	}
 }
