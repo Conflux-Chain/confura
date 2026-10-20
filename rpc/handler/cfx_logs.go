@@ -204,7 +204,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 
 	var logs []types.Log
 	var dbBoundary *store.LogFilter
-	var accumulator int
+	accumulator := uint64(2) // JSON array brackets
 
 	useBoundCheck := RequireBoundChecks(filter)
 	if len(dbFilters) > 0 {
@@ -230,13 +230,16 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		if err == nil {
 			dbBoundary = &dbFilters[i]
 			for _, v := range dbLogs {
-				if accumulator += len(v.Extra); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
-					return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, v)
-				}
-
 				log, err := v.ToCfxLog()
 				if err != nil {
 					return nil, false, errors.WithMessage(err, "failed to convert to cfx log")
+				}
+				if len(logs) > 0 {
+					accumulator++
+				}
+				accumulator += cfxLogJSONSize(log)
+				if useBoundCheck && accumulator > maxGetLogsResponseBytes {
+					return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, v)
 				}
 				logs = append(logs, *log)
 			}
@@ -286,7 +289,11 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for i := range fnLogs {
-			if accumulator += len(fnLogs[i].Data); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
+			if len(logs)+i > 0 {
+				accumulator++
+			}
+			accumulator += cfxLogJSONSize(&fnLogs[i])
+			if useBoundCheck && accumulator > maxGetLogsResponseBytes {
 				return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, &fnLogs[i])
 			}
 		}
@@ -319,7 +326,11 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for i := range fnLogs {
-			if accumulator += len(fnLogs[i].Data); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
+			if len(logs)+i > 0 {
+				accumulator++
+			}
+			accumulator += cfxLogJSONSize(&fnLogs[i])
+			if useBoundCheck && accumulator > maxGetLogsResponseBytes {
 				return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, &fnLogs[i])
 			}
 		}
@@ -332,14 +343,14 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	}
 
 	// Rare case: log context information for diagnostic purposes if the result exceeds limits.
-	if uint64(len(logs)) > store.MaxLogLimit || uint64(accumulator) > maxGetLogsResponseBytes {
+	if uint64(len(logs)) > store.MaxLogLimit || accumulator > maxGetLogsResponseBytes {
 		logrus.WithFields(logrus.Fields{
 			"logFilter":         filter,
 			"databaseFilters":   dbFilters,
 			"fullnodeFilter":    fnFilter,
 			"boundCheckEnabled": useBoundCheck,
 			"resultSetCount":    len(logs),
-			"responseSizeBytes": uint64(accumulator),
+			"responseSizeBytes": accumulator,
 		}).Info("Exceeded limits for getLogs response")
 	}
 

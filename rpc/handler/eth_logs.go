@@ -139,7 +139,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	}
 
 	var logs []types.Log
-	var accumulator int
+	accumulator := uint64(2) // JSON array brackets
 
 	useBoundCheck := handler.RequiresBoundChecks(filter)
 	if dbFilter != nil {
@@ -160,13 +160,16 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for _, v := range dbLogs {
-			if accumulator += len(v.Extra); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
-				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, v.BlockNumber)
-			}
-
 			log, err := v.ToEthLog()
 			if err != nil {
 				return nil, false, errors.WithMessage(err, "failed to convert to eth log")
+			}
+			if len(logs) > 0 {
+				accumulator++
+			}
+			accumulator += ethLogJSONSize(log)
+			if useBoundCheck && accumulator > maxGetLogsResponseBytes {
+				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, v.BlockNumber)
 			}
 			logs = append(logs, *log)
 		}
@@ -198,7 +201,11 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for i := range fnLogs {
-			if accumulator += len(fnLogs[i].Data); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
+			if len(logs)+i > 0 {
+				accumulator++
+			}
+			accumulator += ethLogJSONSize(&fnLogs[i])
+			if useBoundCheck && accumulator > maxGetLogsResponseBytes {
 				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, fnLogs[i].BlockNumber)
 			}
 		}
@@ -212,14 +219,14 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	}
 
 	// Rare case: log context information for diagnostic purposes if the result exceeds limits.
-	if uint64(len(logs)) > store.MaxLogLimit || uint64(accumulator) > maxGetLogsResponseBytes {
+	if uint64(len(logs)) > store.MaxLogLimit || accumulator > maxGetLogsResponseBytes {
 		logrus.WithFields(logrus.Fields{
 			"logFilter":         filter,
 			"databaseFilter":    dbFilter,
 			"fullnodeFilter":    fnFilter,
 			"boundCheckEnabled": useBoundCheck,
 			"resultSetCount":    len(logs),
-			"responseSizeBytes": uint64(accumulator),
+			"responseSizeBytes": accumulator,
 		}).Info("Exceeded limits for getLogs response")
 	}
 
