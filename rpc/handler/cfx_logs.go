@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"sort"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
@@ -82,6 +81,9 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	filter *types.LogFilter,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
+	if len(filter.BlockHashes) > 0 {
+		return handler.getLogsReorgGuard(ctx, cfx, filter, delegatedRpcMethod)
+	}
 	// record the reorg version before query to ensure data consistence
 	lastReorgVersion, err := handler.ms.GetReorgVersion()
 	if err != nil {
@@ -156,9 +158,7 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	filter *types.LogFilter,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
-	// Try to query event logs from database and fullnode.
-	// Note, if multiple block hashes specified in log filter, then split the block hashes
-	// into multiple block number ranges.
+	// Hash queries retain their block identities and bypass the database.
 	dbFilters, fnFilter, err := handler.splitLogFilter(cfx, filter)
 	if err != nil {
 		return nil, false, err
@@ -316,6 +316,9 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 ) ([]store.LogFilter, *types.LogFilter, error) {
+	if len(filter.BlockHashes) > 0 {
+		return nil, filter, nil
+	}
 	earliestMapping, ok, err := handler.ms.EarliestBlockMapping()
 	if err != nil {
 		return nil, nil, err
@@ -332,12 +335,6 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 		return nil, filter, nil
 	}
 
-	if len(filter.BlockHashes) > 0 {
-		return handler.splitLogFilterByBlockHashes(
-			cfx, filter, earliestMapping.Epoch, latestMapping.Epoch, earliestMapping.BnMin,
-		)
-	}
-
 	if filter.FromBlock != nil && filter.ToBlock != nil {
 		return handler.splitLogFilterByBlockRange(
 			cfx, filter, earliestMapping.BnMin, latestMapping.BnMax,
@@ -347,77 +344,6 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 	return handler.splitLogFilterByEpochRange(
 		cfx, filter, earliestMapping.Epoch, latestMapping.Epoch, latestMapping.BnMax,
 	)
-}
-
-func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
-	cfx sdk.ClientOperator,
-	filter *types.LogFilter,
-	minEpoch, maxEpoch, minBlock uint64,
-) ([]store.LogFilter, *types.LogFilter, error) {
-	var dbBlockNumbers []int
-	var fnBlockHashes []types.Hash
-
-	blockNumToHash := make(map[int]types.Hash)
-
-	// convert block hash to number to query from database
-	for _, hash := range filter.BlockHashes {
-		block, err := cfx.GetBlockSummaryByHash(hash)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Fullnode will return error if any block hash not found.
-		// Error processing request: Filter error: Unable to identify block 0xaaaa...
-		if block == nil {
-			return nil, nil, fmt.Errorf("unable to identify block %v", hash)
-		}
-
-		if block.BlockNumber == nil { // block already mined but not ordered yet?
-			return nil, nil, fmt.Errorf("block with hash %v is not executed yet", hash)
-		}
-
-		blockNumber := block.BlockNumber.ToInt().Uint64()
-		epoch := block.EpochNumber.ToInt().Uint64()
-		if epoch <= maxEpoch && (epoch < minEpoch || blockNumber < minBlock) {
-			return nil, nil, store.ErrAlreadyPruned
-		}
-
-		bn := int(blockNumber)
-
-		// dedupe
-		if _, ok := blockNumToHash[bn]; ok {
-			continue
-		}
-
-		blockNumToHash[bn] = hash
-
-		if epoch <= maxEpoch {
-			dbBlockNumbers = append(dbBlockNumbers, bn)
-		} else {
-			fnBlockHashes = append(fnBlockHashes, hash)
-		}
-	}
-
-	sort.Ints(dbBlockNumbers) // sort block numbers ascendingly
-
-	var dbFilters []store.LogFilter
-	for _, bn := range dbBlockNumbers {
-		partialFilter := *filter
-		partialFilter.BlockHashes = []types.Hash{blockNumToHash[bn]}
-
-		logfilter := store.ParseCfxLogFilter(uint64(bn), uint64(bn), &partialFilter)
-		dbFilters = append(dbFilters, logfilter)
-	}
-
-	if len(fnBlockHashes) == 0 {
-		return dbFilters, nil, nil
-	}
-
-	return dbFilters, &types.LogFilter{
-		BlockHashes: fnBlockHashes,
-		Address:     filter.Address,
-		Topics:      filter.Topics,
-	}, nil
 }
 
 func (handler *CfxLogsApiHandler) splitLogFilterByBlockRange(
