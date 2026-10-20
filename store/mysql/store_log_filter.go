@@ -7,6 +7,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -233,15 +234,51 @@ func (filter *LogFilter) hasTopicsFilter() bool {
 	return false
 }
 
-func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr interface{}) error {
+// findLogRows preserves bounded-query checks but reads irreducible queries to exhaustion.
+func findLogRows[T interface{ logCursor() store.ScanCursor }](ctx context.Context, db *gorm.DB, filter *LogFilter, dest *[]T) error {
 	db = db.WithContext(ctx)
 	if store.IsBoundChecksEnabled(ctx) {
 		if err := filter.validateQuerySetSize(db); err != nil {
 			return err
 		}
 	}
+	return readLogRows(ctx, db, filter, dest)
+}
 
-	return filter.read(ctx, db, int(store.MaxLogLimit)+1, destSlicePtr)
+const getLogsPageSize = 1_000
+
+func readLogRows[T interface{ logCursor() store.ScanCursor }](ctx context.Context, db *gorm.DB, filter *LogFilter, dest *[]T) error {
+	if store.IsBoundChecksEnabled(ctx) {
+		return filter.read(ctx, db, int(store.MaxLogLimit)+1, dest)
+	}
+	query := db.WithContext(ctx).Table(filter.TableName).Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
+	query = applyTopicsFilter(query, filter.Topics, filter.Schema).Order("bn ASC, log_index ASC").Session(&gorm.Session{})
+	var result []T
+	var cursor *store.ScanCursor
+	pages := int64(0)
+	for {
+		if err := checkGetLogsContext(ctx); err != nil {
+			return err
+		}
+		pageQuery := query
+		if cursor != nil {
+			pageQuery = pageQuery.Where("(bn > ? OR (bn = ? AND log_index > ?))", cursor.BlockNumber, cursor.BlockNumber, cursor.LogIndex)
+		}
+		var page []T
+		if err := pageQuery.Limit(getLogsPageSize).Find(&page).Error; err != nil {
+			return err
+		}
+		pages++
+		result = append(result, page...)
+		if len(page) < getLogsPageSize {
+			break
+		}
+		last := page[len(page)-1].logCursor()
+		cursor = &last
+	}
+	metrics.Registry.RPC.LogFilterSplit("getLogs", "database/pages").Update(pages)
+	*dest = result
+	return nil
 }
 
 // read executes a range query without applying public result-set checks.
@@ -249,7 +286,7 @@ func (filter *LogFilter) read(ctx context.Context, db *gorm.DB, limit int, destS
 	db = db.WithContext(ctx).Table(filter.TableName)
 	db = db.Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
 	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
-	db = db.Order("bn ASC")
+	db = db.Order("bn ASC, log_index ASC")
 	db = db.Limit(limit)
 
 	return db.Find(destSlicePtr).Error
@@ -268,24 +305,16 @@ func (filter *AddressIndexedLogFilter) validateCount(db *gorm.DB) error {
 }
 
 func (filter *AddressIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([]*AddressIndexedLog, error) {
+	db = db.WithContext(ctx)
 	if store.IsBoundChecksEnabled(ctx) {
 		if err := filter.validateCount(db); err != nil {
 			return nil, err
 		}
 	}
-
-	db = db.Table(filter.TableName).
-		Where("cid = ?", filter.ContractId).
-		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
-		Order("bn ASC").
-		Limit(int(store.MaxLogLimit) + 1)
-	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
-
 	var result []*AddressIndexedLog
-	if err := db.Find(&result).Error; err != nil {
+	if err := readLogRows(ctx, db.Where("cid = ?", filter.ContractId), &filter.LogFilter, &result); err != nil {
 		return nil, err
 	}
-
 	return result, nil
 }
 
@@ -301,23 +330,15 @@ func (filter *TopicIndexedLogFilter) validateCount(db *gorm.DB) error {
 }
 
 func (filter *TopicIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([]*TopicIndexedLog, error) {
+	db = db.WithContext(ctx)
 	if store.IsBoundChecksEnabled(ctx) {
 		if err := filter.validateCount(db); err != nil {
 			return nil, err
 		}
 	}
-
-	db = db.Table(filter.TableName).
-		Where("tid = ?", filter.TopicId).
-		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
-		Order("bn ASC").
-		Limit(int(store.MaxLogLimit) + 1)
-	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
-
 	var result []*TopicIndexedLog
-	if err := db.Find(&result).Error; err != nil {
+	if err := readLogRows(ctx, db.Where("tid = ?", filter.TopicId), &filter.LogFilter, &result); err != nil {
 		return nil, err
 	}
-
 	return result, nil
 }

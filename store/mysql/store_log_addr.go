@@ -26,6 +26,10 @@ type AddressIndexedLog struct {
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
+func (row *AddressIndexedLog) logCursor() store.ScanCursor {
+	return store.ScanCursor{BlockNumber: row.BlockNumber, LogIndex: row.LogIndex}
+}
+
 func (AddressIndexedLog) TableName() string {
 	return "addr_logs"
 }

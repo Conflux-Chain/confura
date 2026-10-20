@@ -30,6 +30,10 @@ type log struct {
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
+func (row *log) logCursor() store.ScanCursor {
+	return store.ScanCursor{BlockNumber: row.BlockNumber, LogIndex: row.LogIndex}
+}
+
 func (log) TableName() string {
 	return "logs"
 }
@@ -260,7 +264,7 @@ func (ls *logStore[T]) GetBnPartitionedLogs(ctx context.Context, filter LogFilte
 	filter.TableName = ls.getPartitionedTableName(&log{}, partition.Index)
 
 	var res []*log
-	err := filter.find(ctx, ls.db, &res)
+	err := findLogRows(ctx, ls.db, &filter, &res)
 
 	return res, err
 }
