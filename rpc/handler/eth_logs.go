@@ -2,13 +2,13 @@ package handler
 
 import (
 	"context"
+	"strings"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -21,6 +21,11 @@ type EthLogsApiHandler struct {
 	maxSuggestAttempts int
 }
 
+type ethLogsClient interface {
+	ethScanClient
+	ethBlockByHashClient
+}
+
 type ethBlockByHashClient interface {
 	BlockByHash(blockHash common.Hash, isFull bool) (*types.Block, error)
 }
@@ -31,7 +36,7 @@ func NewEthLogsApiHandler(es *mysql.EthStore, maxAttempts int) *EthLogsApiHandle
 
 func (handler *EthLogsApiHandler) GetLogs(
 	ctx context.Context,
-	eth *client.RpcEthClient,
+	eth ethLogsClient,
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
@@ -94,7 +99,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 
 func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	ctx context.Context,
-	eth *client.RpcEthClient,
+	eth ethLogsClient,
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
@@ -196,7 +201,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 }
 
 func (handler *EthLogsApiHandler) splitLogFilter(
-	eth *client.RpcEthClient,
+	eth ethLogsClient,
 	filter *types.FilterQuery,
 ) (*store.LogFilter, *types.FilterQuery, error) {
 	earliestMapping, ok, err := handler.es.EarliestBlockMapping()
@@ -233,8 +238,11 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, nil, err
 	}
 
-	if block == nil || block.Number == nil {
-		return nil, nil, errors.New("unknown block")
+	if block == nil {
+		return nil, filter, nil
+	}
+	if block.Number == nil || block.Number.Sign() < 0 || !block.Number.IsUint64() {
+		return nil, nil, errors.New("invalid block number in fullnode response")
 	}
 
 	bn := block.Number.Uint64()
@@ -246,6 +254,13 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, filter, nil
 	}
 
+	pivot, ok, err := handler.es.PivotHash(bn)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ok || !strings.EqualFold(pivot, filter.BlockHash.Hex()) {
+		return nil, filter, nil
+	}
 	dbFilter := store.ParseEthLogFilter(bn, bn, filter)
 	return &dbFilter, nil, err
 }
