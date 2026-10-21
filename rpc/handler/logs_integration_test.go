@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -14,6 +15,52 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestGetLogsSplitRangeKeepsBoundChecks(t *testing.T) {
+	oldBytes := maxGetLogsResponseBytes
+	oldBlocks, oldEpochs := store.MaxLogBlockRange, store.MaxLogEpochRange
+	maxGetLogsResponseBytes = 1 << 30
+	store.MaxLogBlockRange, store.MaxLogEpochRange = 1000, 1000
+	t.Cleanup(func() {
+		maxGetLogsResponseBytes = oldBytes
+		store.MaxLogBlockRange, store.MaxLogEpochRange = oldBlocks, oldEpochs
+	})
+	for _, space := range []string{"espace", "core"} {
+		t.Run(space, func(t *testing.T) {
+			db := newScanLogsHandlerTestDB(t)
+			createGetLogsTables(t, db)
+			epoch := uint64(10)
+			if space == "core" {
+				epoch = 1
+			}
+			insertScanLogsMapping(t, db, epoch, 10, 10, common.HexToHash("0x1234").Hex())
+			require.NoError(t, db.Exec("UPDATE bn_partitions SET count = 10002").Error)
+			require.NoError(t, db.Exec(`WITH RECURSIVE seq(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM seq WHERE n < 10001) INSERT INTO logs_0 (id,bn,epoch,log_index,extra) SELECT n+1,10,?,n,'{}' FROM seq`, epoch).Error)
+			observed := false
+			require.NoError(t, db.Callback().Query().Before("gorm:query").Register("test:split_range_bounds", func(tx *gorm.DB) {
+				if strings.Contains(tx.Statement.Table, "logs_0") {
+					observed = true
+					require.True(t, store.IsBoundChecksEnabled(tx.Statement.Context))
+				}
+			}))
+			// Only the DB segment is one unit; the original RPC range spans two.
+			if space == "core" {
+				client := &hashLogsClient{}
+				logs, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(2)}, "")
+				require.ErrorIs(t, err, store.ErrFilterResultSetTooLarge)
+				require.Empty(t, logs)
+				require.Zero(t, client.calls)
+			} else {
+				client := &ethHashLogsClient{}
+				logs, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(11)}, "")
+				require.ErrorIs(t, err, store.ErrFilterResultSetTooLarge)
+				require.Empty(t, logs)
+				require.Zero(t, client.calls)
+			}
+			require.True(t, observed, "must inspect the DB log query context")
+		})
+	}
+}
 
 func TestGetLogsSmallestUnitReturnsAllLogs(t *testing.T) {
 	oldLimit := maxGetLogsResponseBytes
