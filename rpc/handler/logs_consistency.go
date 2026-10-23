@@ -1,12 +1,10 @@
 package handler
 
 import (
-	"context"
 	"strings"
 
 	"github.com/Conflux-Chain/confura/store"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
-	metricutil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -41,20 +39,6 @@ func (f *logsConsistencyFence) check() error {
 	if f.before == "" || after == "" || f.dbBoundary == "" || !strings.EqualFold(boundary, f.dbBoundary) || !strings.EqualFold(after, f.before) {
 		return ErrGetLogsConsistency
 	}
-	return nil
-}
-
-func retryLogsConsistency(ctx context.Context, method string, retries *int) error {
-	metricutil.GetOrRegisterMeter("infura/rpc/%v/consistency/mismatch", method).Mark(1)
-	if *retries >= maxBoundaryInnerRetries {
-		metricutil.GetOrRegisterMeter("infura/rpc/%v/consistency/failure", method).Mark(1)
-		return ErrGetLogsConsistency
-	}
-	if err := waitBoundaryRetry(ctx); err != nil {
-		return store.ErrGetLogsTimeout
-	}
-	(*retries)++
-	metricutil.GetOrRegisterMeter("infura/rpc/%v/consistency/retry", method).Mark(1)
 	return nil
 }
 

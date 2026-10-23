@@ -41,6 +41,12 @@ func (handler *EthLogsApiHandler) GetLogs(
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
+	retry := newLogsQueryRetry(ctx, handler.RequiresBoundChecks(filter), "eth_getLogs")
+	defer retry.close()
+	if err := retry.check(); err != nil {
+		return nil, false, err
+	}
+
 	// record the reorg version before query to ensure data consistence
 	lastReorgVersion, err := handler.es.GetReorgVersion()
 	if err != nil {
@@ -48,26 +54,30 @@ func (handler *EthLogsApiHandler) GetLogs(
 	}
 
 	var (
-		suggestErr         *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
-		suggestCount       int
-		consistencyRetries int
+		suggestErr   *store.SuggestedFilterOversizedError[store.SuggestedBlockRange]
+		suggestCount int
 	)
 
 	for {
-		logs, hitStore, err := handler.queryLogsOnce(ctx, eth, filter, delegatedRpcMethod)
+		if err := retry.check(); err != nil {
+			return nil, false, err
+		}
+		ctx = retry.ctx
+		logs, hitStore, err := handler.queryLogsOnce(ctx, ethLogsWithContext(ctx, eth), filter, delegatedRpcMethod, retry.bounded)
+		if timeoutErr := retry.check(); timeoutErr != nil {
+			return nil, false, timeoutErr
+		}
 		if errors.Is(err, ErrGetLogsConsistency) {
 			version, versionErr := handler.es.GetReorgVersion()
 			if versionErr != nil {
 				return nil, false, versionErr
 			}
+			reason := "stitch"
 			if version != lastReorgVersion {
-				if err := checkTimeout(ctx); err != nil {
-					return nil, false, err
-				}
-				lastReorgVersion = version
-				continue
+				reason = "database"
 			}
-			if err := retryLogsConsistency(ctx, "eth_getLogs", &consistencyRetries); err != nil {
+			lastReorgVersion = version
+			if err := retry.retry(reason); err != nil {
 				return nil, false, err
 			}
 			continue
@@ -86,9 +96,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 				continue
 			}
 
-			if suggestErr == nil {
-				return nil, false, err
-			}
+			return nil, false, err
 		}
 
 		// If for any reason a suggestion error was set, propagate it.
@@ -106,13 +114,11 @@ func (handler *EthLogsApiHandler) GetLogs(
 			return logs, hitStore, nil
 		}
 
-		// when reorg occurred, check timeout before retry.
-		if err := checkTimeout(ctx); err != nil {
+		// Discard the entire attempt, including empty results, on any DB reorg.
+		lastReorgVersion = reorgVersion
+		if err := retry.retry("database"); err != nil {
 			return nil, false, err
 		}
-
-		// reorg version changed during data query and try again.
-		lastReorgVersion = reorgVersion
 	}
 }
 
@@ -121,6 +127,7 @@ func (handler *EthLogsApiHandler) queryLogsOnce(
 	eth ethLogsClient,
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
+	useBoundCheck bool,
 ) ([]types.Log, bool, error) {
 	// Try to query event logs from database and fullnode.
 	dbFilter, fnFilter, err := handler.splitLogFilter(eth, filter)
@@ -142,14 +149,8 @@ func (handler *EthLogsApiHandler) queryLogsOnce(
 	var logs []types.Log
 	accumulator := uint64(2) // JSON array brackets
 
-	useBoundCheck := handler.RequiresBoundChecks(filter)
 	if dbFilter != nil {
-		if useBoundCheck {
-			// add db query timeout
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
-			defer cancel()
-		} else {
+		if !useBoundCheck {
 			ctx = store.NewContextWithBoundChecksDisabled(ctx)
 		}
 

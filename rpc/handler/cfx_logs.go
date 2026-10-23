@@ -87,8 +87,18 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	filter *types.LogFilter,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
+	retry := newLogsQueryRetry(ctx, RequireBoundChecks(filter), "cfx_getLogs")
+	defer retry.close()
+	if err := retry.check(); err != nil {
+		return nil, false, err
+	}
+
 	if len(filter.BlockHashes) > 0 {
-		return handler.queryLogsOnce(ctx, cfx, filter, delegatedRpcMethod)
+		logs, hitStore, err := handler.queryLogsOnce(retry.ctx, cfxLogsWithContext(retry.ctx, cfx), filter, delegatedRpcMethod, retry.bounded)
+		if timeoutErr := retry.check(); timeoutErr != nil {
+			return nil, false, timeoutErr
+		}
+		return logs, hitStore, err
 	}
 	// record the reorg version before query to ensure data consistence
 	lastReorgVersion, err := handler.ms.GetReorgVersion()
@@ -97,26 +107,30 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	}
 
 	var (
-		suggestErr         error
-		suggestCount       int
-		consistencyRetries int
+		suggestErr   error
+		suggestCount int
 	)
 
 	for {
-		logs, hitStore, err := handler.queryLogsOnce(ctx, cfx, filter, delegatedRpcMethod)
+		if err := retry.check(); err != nil {
+			return nil, false, err
+		}
+		ctx = retry.ctx
+		logs, hitStore, err := handler.queryLogsOnce(ctx, cfxLogsWithContext(ctx, cfx), filter, delegatedRpcMethod, retry.bounded)
+		if timeoutErr := retry.check(); timeoutErr != nil {
+			return nil, false, timeoutErr
+		}
 		if errors.Is(err, ErrGetLogsConsistency) {
 			version, versionErr := handler.ms.GetReorgVersion()
 			if versionErr != nil {
 				return nil, false, versionErr
 			}
+			reason := "stitch"
 			if version != lastReorgVersion {
-				if err := checkTimeout(ctx); err != nil {
-					return nil, false, err
-				}
-				lastReorgVersion = version
-				continue
+				reason = "database"
 			}
-			if err := retryLogsConsistency(ctx, "cfx_getLogs", &consistencyRetries); err != nil {
+			lastReorgVersion = version
+			if err := retry.retry(reason); err != nil {
 				return nil, false, err
 			}
 			continue
@@ -146,9 +160,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 				}
 			}
 
-			if suggestErr == nil {
-				return nil, false, err
-			}
+			return nil, false, err
 		}
 
 		// If for any reason a suggestion error was set, propagate it.
@@ -166,13 +178,11 @@ func (handler *CfxLogsApiHandler) GetLogs(
 			return logs, hitStore, nil
 		}
 
-		// when reorg occurred, check timeout before retry.
-		if err := checkTimeout(ctx); err != nil {
+		// Discard the entire attempt, including empty results, on any DB reorg.
+		lastReorgVersion = reorgVersion
+		if err := retry.retry("database"); err != nil {
 			return nil, false, err
 		}
-
-		// reorg version changed during data query and try again.
-		lastReorgVersion = reorgVersion
 	}
 }
 
@@ -181,6 +191,7 @@ func (handler *CfxLogsApiHandler) queryLogsOnce(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 	delegatedRpcMethod string,
+	useBoundCheck bool,
 ) ([]types.Log, bool, error) {
 	// Hash queries retain their block identities and bypass the database.
 	dbFilters, fnFilter, err := handler.splitLogFilter(cfx, filter)
@@ -206,16 +217,8 @@ func (handler *CfxLogsApiHandler) queryLogsOnce(
 	var dbBoundary *store.LogFilter
 	accumulator := uint64(2) // JSON array brackets
 
-	useBoundCheck := RequireBoundChecks(filter)
-	if len(dbFilters) > 0 {
-		if useBoundCheck {
-			// add db query timeout
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
-			defer cancel()
-		} else {
-			ctx = store.NewContextWithBoundChecksDisabled(ctx)
-		}
+	if !useBoundCheck {
+		ctx = store.NewContextWithBoundChecksDisabled(ctx)
 	}
 
 	// query data from database

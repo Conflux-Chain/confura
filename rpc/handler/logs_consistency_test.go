@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/Conflux-Chain/confura/store"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -59,7 +60,7 @@ func TestGetLogsMixedConsistency(t *testing.T) {
 	t.Cleanup(func() { checkMixedSourceConsistency = oldCheck; maxGetLogsResponseBytes = oldLimit })
 	maxGetLogsResponseBytes = 1 << 20
 	for _, space := range []string{"espace", "core"} {
-		for _, scenario := range []string{"aligned", "mismatch", "converge", "checkpoint", "disabled", "metadata_error", "missing_checkpoint", "cancel_retry", "db_reorg"} {
+		for _, scenario := range []string{"aligned", "mismatch", "converge", "checkpoint", "disabled", "metadata_error", "missing_checkpoint", "cancel_retry", "db_reorg", "converge_many", "db_reorg_many", "alternating"} {
 			t.Run(space+"/"+scenario, func(t *testing.T) {
 				checkMixedSourceConsistency = scenario != "disabled"
 				db := newScanLogsHandlerTestDB(t)
@@ -73,10 +74,18 @@ func TestGetLogsMixedConsistency(t *testing.T) {
 				insertScanLogsMapping(t, db, epoch, 10, 10, hash.Hex())
 				calls, metadata := 0, 0
 				ctx, cancel := context.WithCancel(context.Background())
+				if scenario == "mismatch" || scenario == "missing_checkpoint" {
+					var deadlineCancel context.CancelFunc
+					ctx, deadlineCancel = context.WithTimeout(ctx, 150*time.Millisecond)
+					defer deadlineCancel()
+				}
 				defer cancel()
 				nodeErr := errors.New("metadata rpc failed")
 				readHash := func(boundary bool) (common.Hash, error) {
 					metadata++
+					if boundary && calls < 4 && (scenario == "converge_many" || scenario == "alternating" && calls%2 == 1) {
+						return other, nil
+					}
 					if scenario == "metadata_error" {
 						return common.Hash{}, nodeErr
 					}
@@ -93,8 +102,8 @@ func TestGetLogsMixedConsistency(t *testing.T) {
 					if scenario == "cancel_retry" {
 						cancel()
 					}
-					if scenario == "db_reorg" && calls == 1 {
-						require.NoError(t, db.Exec(`INSERT INTO configs (name,value) VALUES ('reorg.version','1')`).Error)
+					if scenario == "db_reorg" && calls == 1 || scenario == "db_reorg_many" && calls < 4 || scenario == "alternating" && calls < 4 && calls%2 == 0 {
+						require.NoError(t, db.Exec(`INSERT OR REPLACE INTO configs (name,value) VALUES ('reorg.version',?)`, calls).Error)
 					}
 				}
 				var hit bool
@@ -138,7 +147,7 @@ func TestGetLogsMixedConsistency(t *testing.T) {
 				}
 				switch scenario {
 				case "mismatch", "missing_checkpoint":
-					require.ErrorIs(t, err, ErrGetLogsConsistency)
+					require.ErrorIs(t, err, store.ErrGetLogsTimeout)
 				case "metadata_error":
 					require.ErrorIs(t, err, nodeErr)
 				case "cancel_retry":
@@ -151,7 +160,9 @@ func TestGetLogsMixedConsistency(t *testing.T) {
 				case "converge", "checkpoint", "db_reorg":
 					require.Equal(t, 2, calls)
 				case "mismatch":
-					require.Equal(t, 2, calls)
+					require.GreaterOrEqual(t, calls, 2)
+				case "converge_many", "db_reorg_many", "alternating":
+					require.Equal(t, 4, calls)
 				case "missing_checkpoint", "metadata_error":
 					require.Zero(t, calls)
 				default:
