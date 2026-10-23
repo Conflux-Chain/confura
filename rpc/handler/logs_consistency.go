@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/Conflux-Chain/confura/store"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -15,34 +17,77 @@ var (
 	ErrGetLogsConsistency       = errors.New("inconsistent canonical views")
 )
 
-// A fence detects lasting canonical changes; separate RPCs cannot exclude ABA.
-// Empty log results consume a chain view too, so validation uses block metadata.
+// LogQueryOptions preserves normalization provenance; it never changes the FN
+// log range. ResolvedHead is a block number in eSpace and an epoch in Core.
+// Use it only for an upper bound originally specified as latest/latest_state
+// (including the default), and only while that numeric upper bound is unchanged.
+type LogQueryOptions struct {
+	ResolvedHead *uint64
+}
+
+func (o LogQueryOptions) matchesHead(upper uint64) bool {
+	return o.ResolvedHead != nil && *o.ResolvedHead == upper
+}
+
+// Keep the cause for metrics while allowing both causes to share retry policy.
+type logsConsistencyError string
+
+func (e logsConsistencyError) Error() string {
+	return fmt.Sprintf("%s: %s", ErrGetLogsConsistency, string(e))
+}
+func (e logsConsistencyError) Unwrap() error { return ErrGetLogsConsistency }
+
+type logBlockIdentity struct {
+	number uint64 // Core uses the epoch's pivot identity, not an arbitrary block.
+	hash   string
+}
+
+// A fence spans the FN log read: DB identity must match FN at the seam, and FN
+// must retain the pre-read checkpoint at a fixed height. Empty results also use
+// a chain view, so inspect metadata even with no logs. Independent RPCs cannot
+// exclude ABA or prove that a range above head was returned completely.
 type logsConsistencyFence struct {
-	dbBoundary string
-	before     string
-	boundary   func() (string, error)
-	checkpoint func() (string, error)
+	boundary   logBlockIdentity
+	checkpoint logBlockIdentity
+	readHash   func(uint64) (string, error)
 }
 
 func (f *logsConsistencyFence) check() error {
 	if f == nil {
 		return nil
 	}
-	boundary, err := f.boundary()
+	boundary, err := f.checkIdentity(f.boundary, "boundary")
 	if err != nil {
 		return err
 	}
-	after, err := f.checkpoint()
-	if err != nil {
-		return err
+	// A bad seam already invalidates the attempt. If the heights coincide,
+	// one metadata read can validate both identities.
+	if f.checkpoint.number == f.boundary.number {
+		if !strings.EqualFold(boundary, f.checkpoint.hash) {
+			return logsConsistencyError("checkpoint")
+		}
+		return nil
 	}
-	if f.before == "" || after == "" || f.dbBoundary == "" || !strings.EqualFold(boundary, f.dbBoundary) || !strings.EqualFold(after, f.before) {
-		return ErrGetLogsConsistency
-	}
-	return nil
+	_, err = f.checkIdentity(f.checkpoint, "checkpoint")
+	return err
 }
 
-func (h *EthLogsApiHandler) newLogsFence(eth ethLogsClient, dbFilter *store.LogFilter, fnFilter *web3types.FilterQuery) (*logsConsistencyFence, error) {
+func (f *logsConsistencyFence) checkIdentity(expected logBlockIdentity, reason string) (string, error) {
+	hash, err := f.readHash(expected.number)
+	if err != nil {
+		if errors.Is(err, ErrGetLogsConsistency) {
+			return "", logsConsistencyError(reason)
+		}
+		return "", err
+	}
+	if hash == "" || !strings.EqualFold(hash, expected.hash) {
+		return "", logsConsistencyError(reason)
+	}
+	return hash, nil
+}
+
+// newLogsFence reads the DB seam, then fixes an FN checkpoint for this attempt.
+func (h *EthLogsApiHandler) newLogsFence(eth ethLogsClient, dbFilter *store.LogFilter, fnFilter *web3types.FilterQuery, options LogQueryOptions) (*logsConsistencyFence, error) {
 	if !checkMixedSourceConsistency || dbFilter == nil || fnFilter == nil {
 		return nil, nil
 	}
@@ -50,122 +95,153 @@ func (h *EthLogsApiHandler) newLogsFence(eth ethLogsClient, dbFilter *store.LogF
 	if err != nil {
 		return nil, err
 	}
-	if !ok {
-		return nil, ErrGetLogsConsistency
+	if !ok || pivot == "" {
+		return nil, logsConsistencyError("boundary")
 	}
-	latest, err := eth.BlockByNumber(web3types.LatestBlockNumber, false)
+	checkpoint, err := ethLogCheckpoint(eth, fnFilter, options)
 	if err != nil {
 		return nil, err
 	}
-	if latest == nil || latest.Number == nil || !latest.Number.IsUint64() {
-		return nil, ErrGetLogsConsistency
-	}
-	checkpoint := latest.Number.Uint64()
-	before := latest
-	if fnFilter.ToBlock != nil && *fnFilter.ToBlock >= 0 && uint64(*fnFilter.ToBlock) < checkpoint {
-		checkpoint = uint64(*fnFilter.ToBlock)
-		before, err = eth.BlockByNumber(web3types.BlockNumber(checkpoint), false)
-		if err != nil {
-			return nil, err
-		}
-		if before == nil {
-			return nil, ErrGetLogsConsistency
-		}
-	}
-	readHash := func(number uint64) (string, error) {
-		block, err := eth.BlockByNumber(web3types.BlockNumber(number), false)
-		if err != nil {
-			return "", err
-		}
-		if block == nil {
-			return "", nil
-		}
-		return block.Hash.Hex(), nil
-	}
 	return &logsConsistencyFence{
-		dbBoundary: pivot,
-		before:     before.Hash.Hex(),
-		boundary:   func() (string, error) { return readHash(dbFilter.BlockTo) },
-		checkpoint: func() (string, error) { return readHash(checkpoint) },
+		boundary: logBlockIdentity{dbFilter.BlockTo, pivot}, checkpoint: checkpoint,
+		readHash: func(number uint64) (string, error) {
+			block, err := ethLogBlock(eth, web3types.BlockNumber(number))
+			return block.hash, err
+		},
 	}, nil
 }
 
-func (h *CfxLogsApiHandler) newLogsFence(cfx cfxScanClient, dbFilter *store.LogFilter, fnFilter *cfxtypes.LogFilter) (*logsConsistencyFence, error) {
+func ethLogCheckpoint(eth ethLogsClient, filter *web3types.FilterQuery, options LogQueryOptions) (logBlockIdentity, error) {
+	if filter.ToBlock != nil && *filter.ToBlock >= 0 && options.matchesHead(uint64(*filter.ToBlock)) {
+		return ethLogBlock(eth, *filter.ToBlock)
+	}
+	latest, err := ethLogBlock(eth, web3types.LatestBlockNumber)
+	if err != nil {
+		return logBlockIdentity{}, err
+	}
+	if filter.ToBlock != nil && *filter.ToBlock >= 0 && uint64(*filter.ToBlock) < latest.number {
+		return ethLogBlock(eth, *filter.ToBlock)
+	}
+	return latest, nil
+}
+
+func ethLogBlock(eth ethLogsClient, number web3types.BlockNumber) (logBlockIdentity, error) {
+	block, err := eth.BlockByNumber(number, false)
+	if err != nil {
+		return logBlockIdentity{}, err
+	}
+	if block == nil || block.Number == nil || !block.Number.IsUint64() || block.Hash == (common.Hash{}) ||
+		number >= 0 && block.Number.Uint64() != uint64(number) {
+		return logBlockIdentity{}, logsConsistencyError("checkpoint")
+	}
+	return logBlockIdentity{block.Number.Uint64(), block.Hash.Hex()}, nil
+}
+
+func (h *CfxLogsApiHandler) newLogsFence(cfx cfxScanClient, dbFilter *store.LogFilter, fnFilter *cfxtypes.LogFilter, options LogQueryOptions) (*logsConsistencyFence, error) {
 	if !checkMixedSourceConsistency || dbFilter == nil || fnFilter == nil {
 		return nil, nil
 	}
-	mapping, ok, err := h.ms.LatestBlockMapping()
+	boundary, err := h.cfxLogBoundary(dbFilter.BlockTo)
 	if err != nil {
 		return nil, err
 	}
+	checkpoint, err := cfxLogCheckpoint(cfx, fnFilter, options)
+	if err != nil {
+		return nil, err
+	}
+	return &logsConsistencyFence{
+		boundary: boundary, checkpoint: checkpoint,
+		readHash: func(epoch uint64) (string, error) {
+			block, err := cfxLogBlock(cfx, cfxtypes.NewEpochNumberUint64(epoch))
+			if err != nil {
+				return "", err
+			}
+			return block.Hash.String(), nil
+		},
+	}, nil
+}
+
+func (h *CfxLogsApiHandler) cfxLogBoundary(blockTo uint64) (logBlockIdentity, error) {
+	mapping, ok, err := h.ms.LatestBlockMapping()
+	if err != nil {
+		return logBlockIdentity{}, err
+	}
 	if !ok {
-		return nil, ErrGetLogsConsistency
+		return logBlockIdentity{}, logsConsistencyError("boundary")
 	}
 	epoch, pivot := mapping.Epoch, mapping.PivotHash
-	if mapping.BnMax != dbFilter.BlockTo {
-		epoch, ok, err = h.ms.LatestEpochBeforeBlock(mapping.Epoch, dbFilter.BlockTo)
+	if mapping.BnMax != blockTo {
+		epoch, ok, err = h.ms.LatestEpochBeforeBlock(mapping.Epoch, blockTo)
 		if err != nil {
-			return nil, err
+			return logBlockIdentity{}, err
 		}
 		if !ok {
-			return nil, ErrGetLogsConsistency
+			return logBlockIdentity{}, logsConsistencyError("boundary")
 		}
 		pivot, ok, err = h.ms.PivotHash(epoch)
 		if err != nil {
-			return nil, err
+			return logBlockIdentity{}, err
 		}
 		if !ok {
-			return nil, ErrGetLogsConsistency
+			return logBlockIdentity{}, logsConsistencyError("boundary")
 		}
 	}
-
-	latest, err := cfx.GetBlockSummaryByEpoch(cfxtypes.EpochLatestState)
-	if err != nil {
-		return nil, err
+	if pivot == "" {
+		return logBlockIdentity{}, logsConsistencyError("boundary")
 	}
-	if latest == nil || latest.EpochNumber == nil || latest.BlockNumber == nil {
-		return nil, ErrGetLogsConsistency
+	return logBlockIdentity{epoch, pivot}, nil
+}
+
+func cfxLogCheckpoint(cfx cfxScanClient, filter *cfxtypes.LogFilter, options LogQueryOptions) (logBlockIdentity, error) {
+	if filter.ToEpoch != nil {
+		if upper, numeric := filter.ToEpoch.ToInt(); numeric && upper.IsUint64() && options.matchesHead(upper.Uint64()) {
+			block, err := cfxLogBlock(cfx, filter.ToEpoch)
+			if err != nil {
+				return logBlockIdentity{}, err
+			}
+			return logBlockIdentity{upper.Uint64(), block.Hash.String()}, nil
+		}
+	}
+	latest, err := cfxLogBlock(cfx, cfxtypes.EpochLatestState)
+	if err != nil {
+		return logBlockIdentity{}, err
 	}
 	checkpoint := latest.EpochNumber.ToInt().Uint64()
-	if fnFilter.ToEpoch != nil {
-		if upper, numeric := fnFilter.ToEpoch.ToInt(); numeric && upper.Uint64() < checkpoint {
-			checkpoint = upper.Uint64()
+	if filter.ToEpoch != nil {
+		if upper, numeric := filter.ToEpoch.ToInt(); numeric && upper.IsUint64() {
+			checkpoint = min(checkpoint, upper.Uint64())
 		}
-	} else if fnFilter.ToBlock != nil && fnFilter.ToBlock.ToInt().Uint64() < latest.BlockNumber.ToInt().Uint64() {
-		block, err := cfx.GetBlockSummaryByBlockNumber(hexutil.Uint64(fnFilter.ToBlock.ToInt().Uint64()))
+	} else if filter.ToBlock != nil && filter.ToBlock.ToInt().Uint64() < latest.BlockNumber.ToInt().Uint64() {
+		block, err := cfx.GetBlockSummaryByBlockNumber(hexutil.Uint64(filter.ToBlock.ToInt().Uint64()))
 		if err != nil {
-			return nil, err
+			return logBlockIdentity{}, err
 		}
-		if block == nil || block.EpochNumber == nil {
-			return nil, ErrGetLogsConsistency
+		if block == nil || block.EpochNumber == nil || !block.EpochNumber.ToInt().IsUint64() {
+			return logBlockIdentity{}, logsConsistencyError("checkpoint")
 		}
 		checkpoint = block.EpochNumber.ToInt().Uint64()
 	}
-	before := latest.Hash.String()
-	if checkpoint != latest.EpochNumber.ToInt().Uint64() {
-		block, err := cfx.GetBlockSummaryByEpoch(cfxtypes.NewEpochNumberUint64(checkpoint))
-		if err != nil {
-			return nil, err
-		}
-		if block == nil {
-			return nil, ErrGetLogsConsistency
-		}
-		before = block.Hash.String()
+	if checkpoint == latest.EpochNumber.ToInt().Uint64() {
+		return logBlockIdentity{checkpoint, latest.Hash.String()}, nil
 	}
-	readPivot := func(epoch uint64) (string, error) {
-		block, err := cfx.GetBlockSummaryByEpoch(cfxtypes.NewEpochNumberUint64(epoch))
-		if err != nil {
-			return "", err
-		}
-		if block == nil {
-			return "", nil
-		}
-		return block.Hash.String(), nil
+	block, err := cfxLogBlock(cfx, cfxtypes.NewEpochNumberUint64(checkpoint))
+	if err != nil {
+		return logBlockIdentity{}, err
 	}
-	return &logsConsistencyFence{
-		dbBoundary: pivot,
-		before:     before,
-		boundary:   func() (string, error) { return readPivot(epoch) },
-		checkpoint: func() (string, error) { return readPivot(checkpoint) },
-	}, nil
+	return logBlockIdentity{checkpoint, block.Hash.String()}, nil
+}
+
+func cfxLogBlock(cfx cfxScanClient, epoch *cfxtypes.Epoch) (*cfxtypes.BlockSummary, error) {
+	block, err := cfx.GetBlockSummaryByEpoch(epoch)
+	if err != nil {
+		return nil, err
+	}
+	if block == nil || block.EpochNumber == nil || !block.EpochNumber.ToInt().IsUint64() ||
+		block.BlockNumber == nil || !block.BlockNumber.ToInt().IsUint64() || block.Hash == "" {
+		return nil, logsConsistencyError("checkpoint")
+	}
+	if number, numeric := epoch.ToInt(); numeric && number.Cmp(block.EpochNumber.ToInt()) != 0 {
+		return nil, logsConsistencyError("checkpoint")
+	}
+	return block, nil
 }

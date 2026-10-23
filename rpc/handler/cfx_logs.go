@@ -86,6 +86,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 	delegatedRpcMethod string,
+	options LogQueryOptions,
 ) ([]types.Log, bool, error) {
 	retry := newLogsQueryRetry(ctx, RequireBoundChecks(filter), "cfx_getLogs")
 	defer retry.close()
@@ -94,7 +95,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	}
 
 	if len(filter.BlockHashes) > 0 {
-		logs, hitStore, err := handler.queryLogsOnce(retry.ctx, cfxLogsWithContext(retry.ctx, cfx), filter, delegatedRpcMethod, retry.bounded)
+		logs, hitStore, err := handler.queryLogsOnce(retry.ctx, cfxLogsWithContext(retry.ctx, cfx), filter, delegatedRpcMethod, retry.bounded, options)
 		if timeoutErr := retry.check(); timeoutErr != nil {
 			return nil, false, timeoutErr
 		}
@@ -116,7 +117,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 			return nil, false, err
 		}
 		ctx = retry.ctx
-		logs, hitStore, err := handler.queryLogsOnce(ctx, cfxLogsWithContext(ctx, cfx), filter, delegatedRpcMethod, retry.bounded)
+		logs, hitStore, err := handler.queryLogsOnce(ctx, cfxLogsWithContext(ctx, cfx), filter, delegatedRpcMethod, retry.bounded, options)
 		if timeoutErr := retry.check(); timeoutErr != nil {
 			return nil, false, timeoutErr
 		}
@@ -126,6 +127,10 @@ func (handler *CfxLogsApiHandler) GetLogs(
 				return nil, false, versionErr
 			}
 			reason := "stitch"
+			var conflict logsConsistencyError
+			if errors.As(err, &conflict) {
+				reason = string(conflict)
+			}
 			if version != lastReorgVersion {
 				reason = "database"
 			}
@@ -192,6 +197,7 @@ func (handler *CfxLogsApiHandler) queryLogsOnce(
 	filter *types.LogFilter,
 	delegatedRpcMethod string,
 	useBoundCheck bool,
+	options LogQueryOptions,
 ) ([]types.Log, bool, error) {
 	// Hash queries retain their block identities and bypass the database.
 	dbFilters, fnFilter, err := handler.splitLogFilter(cfx, filter)
@@ -315,7 +321,7 @@ func (handler *CfxLogsApiHandler) queryLogsOnce(
 			return nil, false, err
 		}
 
-		fence, err := handler.newLogsFence(cfx, dbBoundary, fnFilter)
+		fence, err := handler.newLogsFence(cfx, dbBoundary, fnFilter, options)
 		if err != nil {
 			return nil, false, err
 		}

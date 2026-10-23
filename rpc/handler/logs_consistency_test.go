@@ -124,7 +124,7 @@ func TestGetLogsMixedConsistency(t *testing.T) {
 						return &web3types.Block{Hash: h, Number: big.NewInt(n)}, nil
 					}
 					client.logsFn = func(f web3types.FilterQuery) ([]web3types.Log, error) { readLogs(); return nil, nil }
-					_, hit, err = newTestEthScanLogsHandler(db).GetLogs(ctx, client, &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(12)}, "")
+					_, hit, err = newTestEthScanLogsHandler(db).GetLogs(ctx, client, &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(12)}, "", LogQueryOptions{})
 				} else {
 					client := &mixedCfxLogsClient{}
 					client.block = func(e *cfxtypes.Epoch) (*cfxtypes.BlockSummary, error) {
@@ -143,7 +143,7 @@ func TestGetLogsMixedConsistency(t *testing.T) {
 						return cfxSummary(cfxtypes.Hash(h.Hex()), number, number+9), nil
 					}
 					client.logs = func(f cfxtypes.LogFilter) ([]cfxtypes.Log, error) { readLogs(); return nil, nil }
-					_, hit, err = newTestCfxScanLogsHandler(db).GetLogs(ctx, client, &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(2)}, "")
+					_, hit, err = newTestCfxScanLogsHandler(db).GetLogs(ctx, client, &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(2)}, "", LogQueryOptions{})
 				}
 				switch scenario {
 				case "mismatch", "missing_checkpoint":
@@ -178,7 +178,7 @@ func TestGetLogsMixedConsistency(t *testing.T) {
 
 func TestGetLogsFenceExcludesArchiveOnlyReads(t *testing.T) {
 	// No successful DB segment means archive+regular-FN results stay outside the fence.
-	fence, err := (&CfxLogsApiHandler{}).newLogsFence(nil, nil, &cfxtypes.LogFilter{})
+	fence, err := (&CfxLogsApiHandler{}).newLogsFence(nil, nil, &cfxtypes.LogFilter{}, LogQueryOptions{})
 	require.NoError(t, err)
 	require.Nil(t, fence)
 }
@@ -230,7 +230,7 @@ func TestGetLogsCheckpointDoesNotChangeRange(t *testing.T) {
 			require.EqualValues(t, upper, *f.ToBlock)
 			return nil, nil
 		}
-		_, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(web3types.BlockNumber(upper))}, "")
+		_, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(web3types.BlockNumber(upper))}, "", LogQueryOptions{})
 		require.NoError(t, err)
 		require.Equal(t, min(upper, uint64(20)), numbers[len(numbers)-1])
 	}
@@ -275,12 +275,170 @@ func TestGetLogsCheckpointDoesNotChangeRange(t *testing.T) {
 			}
 			return nil, nil
 		}
-		_, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, filter, "")
+		_, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
 		require.NoError(t, err)
 		checkpoint := uint64(2)
 		if mode == "future" {
 			checkpoint = 3
 		}
 		require.Equal(t, checkpoint, epochs[len(epochs)-1])
+	}
+}
+
+func TestGetLogsResolvedHeadCheckpoint(t *testing.T) {
+	oldCheck, oldBytes := checkMixedSourceConsistency, maxGetLogsResponseBytes
+	oldBlocks, oldEpochs := store.MaxLogBlockRange, store.MaxLogEpochRange
+	maxGetLogsResponseBytes = 1 << 20
+	store.MaxLogBlockRange, store.MaxLogEpochRange = 1000, 1000
+	t.Cleanup(func() {
+		checkMixedSourceConsistency, maxGetLogsResponseBytes = oldCheck, oldBytes
+		store.MaxLogBlockRange, store.MaxLogEpochRange = oldBlocks, oldEpochs
+	})
+	for _, space := range []string{"espace", "core"} {
+		for _, scenario := range []string{"resolved", "numeric", "suggested", "reorg", "missing", "disabled", "db_only", "fn_only"} {
+			t.Run(space+"/"+scenario, func(t *testing.T) {
+				checkMixedSourceConsistency = scenario != "disabled"
+				db := newScanLogsHandlerTestDB(t)
+				createGetLogsTables(t, db)
+				hash, other := common.HexToHash("0x1234"), common.HexToHash("0x5678")
+				boundary, upper, head := uint64(10), uint64(12), uint64(20)
+				if space == "core" {
+					boundary, upper, head = 1, 2, 3
+				}
+				insertScanLogsMapping(t, db, boundary, 10, 10, hash.Hex())
+				resolved := upper
+				if scenario == "suggested" {
+					resolved++
+				} // The effective upper bound has changed.
+				options := LogQueryOptions{ResolvedHead: &resolved}
+				if scenario == "numeric" {
+					options = LogQueryOptions{}
+				}
+				var reads []uint64
+				calls, targetReads := 0, 0
+				read := func(n uint64, latest bool) (uint64, common.Hash, bool) {
+					if latest {
+						n = head
+					}
+					reads = append(reads, n)
+					if n == upper {
+						targetReads++
+						if scenario == "missing" && targetReads == 1 {
+							return n, hash, true
+						}
+						if scenario == "reorg" && calls > 0 {
+							return n, other, false
+						}
+					}
+					return n, hash, false
+				}
+				if space == "espace" {
+					filter := &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(web3types.BlockNumber(upper))}
+					if scenario == "db_only" {
+						filter.ToBlock = blockNumber(10)
+					}
+					if scenario == "fn_only" {
+						filter.FromBlock = blockNumber(11)
+					}
+					client := &mixedEthLogsClient{fakeEthScanClient: &fakeEthScanClient{}}
+					client.blockFn = func(n int64) (*web3types.Block, error) {
+						number, h, missing := read(uint64(n), n == int64(web3types.LatestBlockNumber))
+						if missing {
+							return nil, nil
+						}
+						return &web3types.Block{Number: new(big.Int).SetUint64(number), Hash: h}, nil
+					}
+					client.logsFn = func(f web3types.FilterQuery) ([]web3types.Log, error) {
+						calls++
+						require.Equal(t, *filter.ToBlock, *f.ToBlock)
+						return nil, nil // Empty reads must still validate chain identities.
+					}
+					_, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", options)
+					require.NoError(t, err)
+				} else {
+					filter := &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(upper)}
+					if scenario == "db_only" {
+						filter.ToEpoch = epochNumber(1)
+					}
+					if scenario == "fn_only" {
+						filter.FromEpoch = epochNumber(2)
+					}
+					client := &mixedCfxLogsClient{}
+					client.block = func(e *cfxtypes.Epoch) (*cfxtypes.BlockSummary, error) {
+						n, numeric := e.ToInt()
+						number := uint64(0)
+						if numeric {
+							number = n.Uint64()
+						}
+						number, h, missing := read(number, !numeric)
+						if missing {
+							return nil, nil
+						}
+						return cfxSummary(cfxtypes.Hash(h.Hex()), number, number+9), nil
+					}
+					client.logs = func(f cfxtypes.LogFilter) ([]cfxtypes.Log, error) {
+						calls++
+						require.True(t, filter.ToEpoch.Equals(f.ToEpoch))
+						return nil, nil
+					}
+					_, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", options)
+					require.NoError(t, err)
+				}
+				switch scenario {
+				case "numeric", "suggested":
+					require.Equal(t, []uint64{head, upper, boundary, upper}, reads)
+				case "reorg":
+					require.Equal(t, []uint64{upper, boundary, upper, upper, boundary, upper}, reads)
+					require.Equal(t, 2, calls)
+				case "missing":
+					require.Equal(t, []uint64{upper, upper, boundary, upper}, reads)
+				case "disabled", "db_only", "fn_only":
+					require.Empty(t, reads)
+				default:
+					require.Equal(t, []uint64{upper, boundary, upper}, reads)
+				}
+			})
+		}
+	}
+}
+
+func TestLogsFenceShortCircuitsMetadataReads(t *testing.T) {
+	for _, scenario := range []string{"same_height", "bad_boundary", "bad_checkpoint", "rpc_error"} {
+		t.Run(scenario, func(t *testing.T) {
+			boundary := logBlockIdentity{10, "block-a"}
+			checkpoint := logBlockIdentity{12, "block-b"}
+			if scenario == "same_height" {
+				checkpoint = boundary
+			}
+			calls := 0
+			rpcErr := errors.New("metadata unavailable")
+			fence := &logsConsistencyFence{boundary: boundary, checkpoint: checkpoint, readHash: func(n uint64) (string, error) {
+				calls++
+				if scenario == "rpc_error" {
+					return "", rpcErr
+				}
+				if n == boundary.number {
+					if scenario == "bad_boundary" {
+						return "different", nil
+					}
+					return boundary.hash, nil
+				}
+				return "different", nil
+			}}
+			err := fence.check()
+			switch scenario {
+			case "same_height":
+				require.NoError(t, err)
+			case "rpc_error":
+				require.ErrorIs(t, err, rpcErr)
+			default:
+				require.ErrorIs(t, err, ErrGetLogsConsistency)
+			}
+			if scenario == "bad_checkpoint" {
+				require.Equal(t, 2, calls)
+			} else {
+				require.Equal(t, 1, calls)
+			}
+		})
 	}
 }

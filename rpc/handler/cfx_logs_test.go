@@ -33,27 +33,27 @@ func TestCoreHashLogsBypassDatabase(t *testing.T) {
 	client := &hashLogsClient{}
 	handler := NewCfxLogsApiHandler(nil, nil, 0)
 	filter := &types.LogFilter{BlockHashes: []types.Hash{"block-a", "block-b"}, Address: []types.Address{cfxaddress.MustNewFromHex("0x1000000000000000000000000000000000000001", 1029)}, Topics: [][]types.Hash{{"topic"}}}
-	_, hit, err := handler.GetLogs(context.Background(), client, filter, "")
+	_, hit, err := handler.GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
 	require.NoError(t, err)
 	require.False(t, hit)
 	require.Equal(t, *filter, client.filter)
 	nodeErr := errors.New("block not found")
 	client.err = nodeErr
-	_, _, err = handler.GetLogs(context.Background(), client, filter, "")
+	_, _, err = handler.GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
 	require.ErrorIs(t, err, nodeErr)
 	client.err = nil
 	client.logs = make([]types.Log, int(store.MaxLogLimit)+2)
-	_, _, err = handler.GetLogs(context.Background(), client, filter, "")
+	_, _, err = handler.GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
 	require.ErrorIs(t, err, store.ErrFilterResultSetTooLarge)
 	filter.BlockHashes = filter.BlockHashes[:1]
-	logs, hit, err := handler.GetLogs(context.Background(), client, filter, "")
+	logs, hit, err := handler.GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
 	require.NoError(t, err)
 	require.False(t, hit)
 	require.Len(t, logs, int(store.MaxLogLimit)+2)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	before := client.calls
-	_, _, err = handler.GetLogs(ctx, client, filter, "")
+	_, _, err = handler.GetLogs(ctx, client, filter, "", LogQueryOptions{})
 	require.ErrorIs(t, err, store.ErrGetLogsTimeout)
 	require.Equal(t, before, client.calls)
 }

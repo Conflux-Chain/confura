@@ -40,6 +40,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 	eth ethLogsClient,
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
+	options LogQueryOptions,
 ) ([]types.Log, bool, error) {
 	retry := newLogsQueryRetry(ctx, handler.RequiresBoundChecks(filter), "eth_getLogs")
 	defer retry.close()
@@ -63,7 +64,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 			return nil, false, err
 		}
 		ctx = retry.ctx
-		logs, hitStore, err := handler.queryLogsOnce(ctx, ethLogsWithContext(ctx, eth), filter, delegatedRpcMethod, retry.bounded)
+		logs, hitStore, err := handler.queryLogsOnce(ctx, ethLogsWithContext(ctx, eth), filter, delegatedRpcMethod, retry.bounded, options)
 		if timeoutErr := retry.check(); timeoutErr != nil {
 			return nil, false, timeoutErr
 		}
@@ -73,6 +74,10 @@ func (handler *EthLogsApiHandler) GetLogs(
 				return nil, false, versionErr
 			}
 			reason := "stitch"
+			var conflict logsConsistencyError
+			if errors.As(err, &conflict) {
+				reason = string(conflict)
+			}
 			if version != lastReorgVersion {
 				reason = "database"
 			}
@@ -128,6 +133,7 @@ func (handler *EthLogsApiHandler) queryLogsOnce(
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
 	useBoundCheck bool,
+	options LogQueryOptions,
 ) ([]types.Log, bool, error) {
 	// Try to query event logs from database and fullnode.
 	dbFilter, fnFilter, err := handler.splitLogFilter(eth, filter)
@@ -189,7 +195,7 @@ func (handler *EthLogsApiHandler) queryLogsOnce(
 			return nil, false, err
 		}
 
-		fence, err := handler.newLogsFence(eth, dbFilter, fnFilter)
+		fence, err := handler.newLogsFence(eth, dbFilter, fnFilter, options)
 		if err != nil {
 			return nil, false, err
 		}

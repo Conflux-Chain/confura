@@ -565,7 +565,8 @@ func (api *ethAPI) getLogs(
 		return ethEmptyLogs, ErrInvalidEthLogFilter
 	}
 
-	if err := NormalizeEthLogFilter(w3c, flag, fq, api.hardforkBlockNumber); err != nil {
+	queryOptions, err := NormalizeEthLogFilter(w3c, flag, fq, api.hardforkBlockNumber)
+	if err != nil {
 		return ethEmptyLogs, err
 	}
 
@@ -579,7 +580,7 @@ func (api *ethAPI) getLogs(
 	}
 
 	if api.LogApiHandler != nil {
-		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client.Eth, fq, rpcMethod)
+		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, w3c.Client.Eth, fq, rpcMethod, queryOptions)
 		metrics.Registry.RPC.StoreHit(rpcMethod, "store").Mark(hitStore)
 		return uniformEthLogs(logs), err
 	}
