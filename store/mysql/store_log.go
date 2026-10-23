@@ -264,7 +264,7 @@ func (ls *logStore[T]) GetBnPartitionedLogs(ctx context.Context, filter LogFilte
 	filter.TableName = ls.getPartitionedTableName(&log{}, partition.Index)
 
 	var res []*log
-	err := findLogRows(ctx, ls.db, &filter, &res)
+	err := queryLogsWithSizeValidation(ctx, ls.db, &filter, &res)
 
 	return res, err
 }

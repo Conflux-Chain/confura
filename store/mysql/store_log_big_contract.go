@@ -433,7 +433,7 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 		filter.TableName = bcls.getPartitionedTableName(contractTabler, partition.Index)
 
 		var clogs []*contractLog
-		err := findLogRows(ctx, bcls.db, &filter, &clogs)
+		err := queryLogsWithSizeValidation(ctx, bcls.db, &filter, &clogs)
 		if err != nil {
 			return nil, err
 		}

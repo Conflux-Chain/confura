@@ -406,7 +406,7 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 		var logs []*topicLog
 
 		filter.TableName = btls.getPartitionedTableName(btls.topicTabler(tid), partition.Index)
-		if err := findLogRows(ctx, btls.db, &filter, &logs); err != nil {
+		if err := queryLogsWithSizeValidation(ctx, btls.db, &filter, &logs); err != nil {
 			return nil, err
 		}
 
