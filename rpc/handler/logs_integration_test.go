@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"strings"
 	"testing"
@@ -138,6 +139,95 @@ func TestGetLogsSmallestUnitReturnsAllLogs(t *testing.T) {
 					}
 				}
 				require.Equal(t, mode == "reorg", changed)
+			})
+		}
+	}
+}
+
+func TestGetLogsResponseBytesAcrossSources(t *testing.T) {
+	oldCheck, oldBytes, oldErr := checkMixedSourceConsistency, maxGetLogsResponseBytes, errResponseBodySizeTooLarge
+	oldBlocks, oldEpochs := store.MaxLogBlockRange, store.MaxLogEpochRange
+	checkMixedSourceConsistency = false // Isolate byte accounting from metadata validation.
+	store.MaxLogBlockRange, store.MaxLogEpochRange = 1000, 1000
+	errResponseBodySizeTooLarge = errors.New("test byte limit")
+	t.Cleanup(func() {
+		checkMixedSourceConsistency, maxGetLogsResponseBytes, errResponseBodySizeTooLarge = oldCheck, oldBytes, oldErr
+		store.MaxLogBlockRange, store.MaxLogEpochRange = oldBlocks, oldEpochs
+	})
+	for _, space := range []string{"espace", "core"} {
+		for _, source := range []string{"fullnode", "empty_db_and_fullnode", "db_and_fullnode"} {
+			t.Run(space+"/"+source, func(t *testing.T) {
+				db := newScanLogsHandlerTestDB(t)
+				createGetLogsTables(t, db)
+				epoch := uint64(10)
+				address := common.HexToAddress("0x1000000000000000000000000000000000000001").Hex()
+				if space == "core" {
+					epoch = 1
+					address = cfxaddress.MustNewFromHex(address, 1029).String()
+				}
+				insertScanLogsMapping(t, db, epoch, 10, 10, common.HexToHash("0x1234").Hex())
+				extra, err := json.Marshal(map[string]string{"addr": address, "data": "0x01"})
+				require.NoError(t, err)
+				if source == "db_and_fullnode" {
+					require.NoError(t, db.Exec(`INSERT INTO logs_0 (id,bn,epoch,log_index,extra) VALUES (1,10,?,0,?)`, epoch, extra).Error)
+					require.NoError(t, db.Exec(`UPDATE bn_partitions SET count=1`).Error)
+				}
+				var expected []byte
+				var run func() error
+				stored := &store.Log{BlockNumber: 10, Epoch: epoch, Extra: extra}
+				if space == "espace" {
+					fn := []web3types.Log{{BlockNumber: 11, Data: []byte{2}}, {BlockNumber: 12, Data: []byte{3}}}
+					all := fn
+					if source == "db_and_fullnode" {
+						log, err := stored.ToEthLog()
+						require.NoError(t, err)
+						all = append([]web3types.Log{*log}, fn...)
+					}
+					expected, err = json.Marshal(all)
+					require.NoError(t, err)
+					client := &ethHashLogsClient{logs: fn}
+					filter := &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(12)}
+					if source == "fullnode" {
+						filter.FromBlock = blockNumber(11)
+					}
+					run = func() error {
+						logs, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
+						if err == nil {
+							require.Len(t, logs, len(all))
+						} else {
+							require.Empty(t, logs)
+						}
+						return err
+					}
+				} else {
+					fn := []cfxtypes.Log{{Address: cfxaddress.MustNewFromBase32(address), EpochNumber: cfxtypes.NewBigInt(2), Data: []byte{2}}, {Address: cfxaddress.MustNewFromBase32(address), EpochNumber: cfxtypes.NewBigInt(3), Data: []byte{3}}}
+					all := fn
+					if source == "db_and_fullnode" {
+						log, err := stored.ToCfxLog()
+						require.NoError(t, err)
+						all = append([]cfxtypes.Log{*log}, fn...)
+					}
+					expected, err = json.Marshal(all)
+					require.NoError(t, err)
+					client := &hashLogsClient{logs: fn}
+					filter := &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(3)}
+					if source == "fullnode" {
+						filter.FromEpoch = epochNumber(2)
+					}
+					run = func() error {
+						logs, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
+						if err == nil {
+							require.Len(t, logs, len(all))
+						} else {
+							require.Empty(t, logs)
+						}
+						return err
+					}
+				}
+				maxGetLogsResponseBytes = uint64(len(expected))
+				require.NoError(t, run())
+				maxGetLogsResponseBytes--
+				require.ErrorIs(t, run(), errResponseBodySizeTooLarge)
 			})
 		}
 	}

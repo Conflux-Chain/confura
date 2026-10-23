@@ -153,7 +153,7 @@ func (handler *EthLogsApiHandler) queryLogsOnce(
 	}
 
 	var logs []types.Log
-	accumulator := uint64(2) // JSON array brackets
+	var responseSize logArraySize
 
 	if dbFilter != nil {
 		if !useBoundCheck {
@@ -172,11 +172,8 @@ func (handler *EthLogsApiHandler) queryLogsOnce(
 			if err != nil {
 				return nil, false, errors.WithMessage(err, "failed to convert to eth log")
 			}
-			if len(logs) > 0 {
-				accumulator++
-			}
-			accumulator += ethLogJSONSize(log)
-			if useBoundCheck && accumulator > maxGetLogsResponseBytes {
+			responseSize.add(ethLogJSONSize(log))
+			if useBoundCheck && responseSize.size() > maxGetLogsResponseBytes {
 				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, v.BlockNumber)
 			}
 			logs = append(logs, *log)
@@ -209,11 +206,8 @@ func (handler *EthLogsApiHandler) queryLogsOnce(
 		}
 
 		for i := range fnLogs {
-			if len(logs)+i > 0 {
-				accumulator++
-			}
-			accumulator += ethLogJSONSize(&fnLogs[i])
-			if useBoundCheck && accumulator > maxGetLogsResponseBytes {
+			responseSize.add(ethLogJSONSize(&fnLogs[i]))
+			if useBoundCheck && responseSize.size() > maxGetLogsResponseBytes {
 				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, fnLogs[i].BlockNumber)
 			}
 		}
@@ -227,14 +221,14 @@ func (handler *EthLogsApiHandler) queryLogsOnce(
 	}
 
 	// Rare case: log context information for diagnostic purposes if the result exceeds limits.
-	if uint64(len(logs)) > store.MaxLogLimit || accumulator > maxGetLogsResponseBytes {
+	if uint64(len(logs)) > store.MaxLogLimit || responseSize.size() > maxGetLogsResponseBytes {
 		logrus.WithFields(logrus.Fields{
 			"logFilter":         filter,
 			"databaseFilter":    dbFilter,
 			"fullnodeFilter":    fnFilter,
 			"boundCheckEnabled": useBoundCheck,
 			"resultSetCount":    len(logs),
-			"responseSizeBytes": accumulator,
+			"responseSizeBytes": responseSize.size(),
 		}).Info("Exceeded limits for getLogs response")
 	}
 

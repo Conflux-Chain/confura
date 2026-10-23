@@ -106,3 +106,90 @@ func BenchmarkLogJSONSize(b *testing.B) {
 
 	}
 }
+
+func TestLogArraySizeAcrossSources(t *testing.T) {
+	for _, batches := range [][][]json.RawMessage{
+		nil,
+		{{}},
+		{{json.RawMessage(`{"source":"fullnode"}`), json.RawMessage(`{"source":"fullnode"}`)}},
+		{{json.RawMessage(`{"source":"db"}`)}, {}, {json.RawMessage(`{"source":"archive"}`)}, {json.RawMessage(`{"source":"fullnode"}`)}},
+	} {
+		var size logArraySize
+		all := make([]json.RawMessage, 0)
+		for _, batch := range batches {
+			for _, log := range batch {
+				size.add(uint64(len(log)))
+				all = append(all, log)
+			}
+			want, err := json.Marshal(all)
+			require.NoError(t, err)
+			require.EqualValues(t, len(want), size.size())
+		}
+		want, err := json.Marshal(all)
+		require.NoError(t, err)
+		require.EqualValues(t, len(want), size.size())
+	}
+}
+
+func FuzzLogJSONSizeMatchesEncoding(f *testing.F) {
+	f.Add(uint64(0), []byte{}, "", uint16(0))
+	f.Add(uint64(math.MaxUint64), []byte{0, 255}, "<trace>\n\"\\\x00\u2028\u2029世界\xff", uint16(0xffff))
+	f.Add(uint64(16), []byte{1}, "core", uint16(0x5555))
+	f.Fuzz(func(t *testing.T, value uint64, data []byte, text string, flags uint16) {
+		// Bound each input so fuzzing explores field combinations, not huge allocations.
+		if len(data) > 2048 || len(text) > 256 {
+			return
+		}
+		index := uint(value)
+		eth := web3types.Log{BlockNumber: value, BlockTimestamp: value, Index: index, TxIndex: index, Data: data, Removed: flags&1 != 0}
+		if flags&2 != 0 {
+			eth.LogType = &text
+		}
+		if flags&4 != 0 {
+			eth.TransactionLogIndex = &index
+		}
+		if flags&8 != 0 {
+			eth.Topics = make([]common.Hash, (flags>>4)%5)
+		}
+		want, err := json.Marshal(eth)
+		require.NoError(t, err)
+		require.EqualValues(t, len(want), ethLogJSONSize(&eth))
+
+		quantity := new(big.Int).SetUint64(value)
+		quantity.Lsh(quantity, uint(flags%193)) // Include quantities wider than 64 bits.
+		if flags&16 != 0 {
+			quantity.Neg(quantity)
+		}
+		q := (*hexutil.Big)(quantity)
+		hash := cfxtypes.Hash(common.BytesToHash(data).Hex())
+		space := cfxtypes.SpaceType(text)
+		core := cfxtypes.Log{Address: cfxaddress.MustNewFromHex("0x1000000000000000000000000000000000000001", uint32(flags)+1), Data: data}
+		if flags&1 != 0 {
+			core.BlockHash = &hash
+		}
+		if flags&2 != 0 {
+			core.TransactionHash = &hash
+		}
+		if flags&4 != 0 {
+			core.Space = &space
+		}
+		if flags&8 != 0 {
+			core.Topics = make([]cfxtypes.Hash, 0)
+			for i := uint16(0); i < (flags>>4)%5; i++ {
+				core.Topics = append(core.Topics, hash)
+			}
+		}
+		fields := []**hexutil.Big{&core.EpochNumber, &core.TransactionIndex, &core.LogIndex, &core.TransactionLogIndex, &core.BlockTimestamp}
+		for i, field := range fields {
+			if flags&(1<<uint(i+8)) != 0 {
+				*field = q
+			}
+		}
+		want, err = json.Marshal(core)
+		require.NoError(t, err)
+		require.EqualValues(t, len(want), cfxLogJSONSize(&core))
+		stringJSON, err := json.Marshal(text)
+		require.NoError(t, err)
+		require.Equal(t, len(stringJSON), jsonStringSize(text))
+	})
+}
