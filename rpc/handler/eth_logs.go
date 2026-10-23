@@ -8,6 +8,7 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	metricutil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -53,7 +54,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 	)
 
 	for {
-		logs, hitStore, err := handler.getLogsReorgGuard(ctx, eth, filter, delegatedRpcMethod)
+		logs, hitStore, err := handler.queryLogsOnce(ctx, eth, filter, delegatedRpcMethod)
 		if errors.Is(err, ErrGetLogsConsistency) {
 			version, versionErr := handler.es.GetReorgVersion()
 			if versionErr != nil {
@@ -115,7 +116,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 	}
 }
 
-func (handler *EthLogsApiHandler) getLogsReorgGuard(
+func (handler *EthLogsApiHandler) queryLogsOnce(
 	ctx context.Context,
 	eth ethLogsClient,
 	filter *types.FilterQuery,
@@ -271,12 +272,14 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, nil, err
 	}
 
+	// Block lookup and getLogs use different Fullnode paths. Let getLogs decide
+	// the result and preserve its RPC error, including changes between calls.
 	if block == nil {
-		markGetLogsMetric("eth_getLogs", "hash/fallback/unknown")
+		metricutil.GetOrRegisterMeter("infura/rpc/eth_getLogs/hash/fallback/unknown").Mark(1)
 		return nil, filter, nil
 	}
 	if block.Number == nil || block.Number.Sign() < 0 || !block.Number.IsUint64() {
-		return nil, nil, errors.New("invalid block number in fullnode response")
+		return nil, nil, errors.New("invalid block")
 	}
 
 	bn := block.Number.Uint64()
@@ -293,7 +296,7 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, nil, err
 	}
 	if !ok || !strings.EqualFold(pivot, filter.BlockHash.Hex()) {
-		markGetLogsMetric("eth_getLogs", "hash/fallback/identity")
+		metricutil.GetOrRegisterMeter("infura/rpc/eth_getLogs/hash/fallback/identity").Mark(1)
 		return nil, filter, nil
 	}
 	dbFilter := store.ParseEthLogFilter(bn, bn, filter)

@@ -17,10 +17,6 @@ var (
 	ErrGetLogsConsistency       = errors.New("inconsistent canonical views")
 )
 
-func markGetLogsMetric(method, name string) {
-	metricutil.GetOrRegisterMeter("infura/rpc/%v/getLogs/%v", method, name).Mark(1)
-}
-
 // A fence detects lasting canonical changes; separate RPCs cannot exclude ABA.
 // Empty log results consume a chain view too, so validation uses block metadata.
 type logsConsistencyFence struct {
@@ -49,16 +45,16 @@ func (f *logsConsistencyFence) check() error {
 }
 
 func retryLogsConsistency(ctx context.Context, method string, retries *int) error {
-	markGetLogsMetric(method, "consistency/mismatch")
+	metricutil.GetOrRegisterMeter("infura/rpc/%v/consistency/mismatch", method).Mark(1)
 	if *retries >= maxBoundaryInnerRetries {
-		markGetLogsMetric(method, "consistency/failure")
+		metricutil.GetOrRegisterMeter("infura/rpc/%v/consistency/failure", method).Mark(1)
 		return ErrGetLogsConsistency
 	}
 	if err := waitBoundaryRetry(ctx); err != nil {
 		return store.ErrGetLogsTimeout
 	}
 	(*retries)++
-	markGetLogsMetric(method, "consistency/retry")
+	metricutil.GetOrRegisterMeter("infura/rpc/%v/consistency/retry", method).Mark(1)
 	return nil
 }
 

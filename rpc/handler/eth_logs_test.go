@@ -38,7 +38,7 @@ func (c *ethHashLogsClient) Logs(f web3types.FilterQuery) ([]web3types.Log, erro
 
 func TestEthHashLogIdentity(t *testing.T) {
 	hash := common.HexToHash("0x1234")
-	for _, scenario := range []string{"match", "mismatch", "missing", "pruned", "ahead", "unknown", "invalid", "node_error", "db_error"} {
+	for _, scenario := range []string{"match", "mismatch", "missing", "pruned", "ahead", "unknown", "invalid", "negative", "overflow", "node_error", "db_error"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := newScanLogsHandlerTestDB(t)
 			handler := newTestEthScanLogsHandler(db)
@@ -58,6 +58,10 @@ func TestEthHashLogIdentity(t *testing.T) {
 				client.block = nil
 			case "invalid":
 				client.block.Number = nil
+			case "negative":
+				client.block.Number = big.NewInt(-1)
+			case "overflow":
+				client.block.Number = new(big.Int).Lsh(big.NewInt(1), 64)
 			case "node_error":
 				client.err = errors.New("rpc failed")
 			case "db_error":
@@ -71,7 +75,10 @@ func TestEthHashLogIdentity(t *testing.T) {
 				require.Nil(t, fnFilter)
 			case "pruned":
 				require.ErrorIs(t, err, store.ErrAlreadyPruned)
-			case "invalid", "node_error", "db_error":
+			case "invalid", "negative", "overflow":
+				require.EqualError(t, err, "invalid block")
+				require.Nil(t, fnFilter)
+			case "node_error", "db_error":
 				require.Error(t, err)
 				require.Nil(t, fnFilter)
 			default:
@@ -129,4 +136,17 @@ func TestEthHashLogsDatabaseEmptyOrFailure(t *testing.T) {
 			require.Zero(t, client.calls)
 		})
 	}
+}
+
+func TestEthUnknownHashLogsFallbackKeepsFilter(t *testing.T) {
+	db := newScanLogsHandlerTestDB(t)
+	insertScanLogsMapping(t, db, 10, 10, 10, common.HexToHash("0x5678").Hex())
+	hash := common.HexToHash("0x1234")
+	filter := &web3types.FilterQuery{BlockHash: &hash, Addresses: []common.Address{{1}}, Topics: [][]common.Hash{{hash}}}
+	client := &ethHashLogsClient{} // BlockByHash returns nil.
+	_, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "")
+	require.NoError(t, err)
+	require.False(t, hit)
+	require.Equal(t, 1, client.calls)
+	require.Equal(t, *filter, client.filter)
 }

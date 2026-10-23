@@ -88,7 +88,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
 	if len(filter.BlockHashes) > 0 {
-		return handler.getLogsReorgGuard(ctx, cfx, filter, delegatedRpcMethod)
+		return handler.queryLogsOnce(ctx, cfx, filter, delegatedRpcMethod)
 	}
 	// record the reorg version before query to ensure data consistence
 	lastReorgVersion, err := handler.ms.GetReorgVersion()
@@ -103,7 +103,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	)
 
 	for {
-		logs, hitStore, err := handler.getLogsReorgGuard(ctx, cfx, filter, delegatedRpcMethod)
+		logs, hitStore, err := handler.queryLogsOnce(ctx, cfx, filter, delegatedRpcMethod)
 		if errors.Is(err, ErrGetLogsConsistency) {
 			version, versionErr := handler.ms.GetReorgVersion()
 			if versionErr != nil {
@@ -176,7 +176,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	}
 }
 
-func (handler *CfxLogsApiHandler) getLogsReorgGuard(
+func (handler *CfxLogsApiHandler) queryLogsOnce(
 	ctx context.Context,
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
