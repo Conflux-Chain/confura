@@ -3,6 +3,7 @@ package rpc
 import (
 	"math/bits"
 
+	"github.com/Conflux-Chain/confura/rpc/handler"
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -83,10 +84,12 @@ func ParseEthLogFilterType(filter *web3Types.FilterQuery) (LogFilterType, bool) 
 func NormalizeEthLogFilter(
 	resolver util.EthBlockNumberResolver, flag LogFilterType,
 	filter *web3Types.FilterQuery, hardforkBlockNum web3Types.BlockNumber,
-) error {
+) (handler.LogQueryOptions, error) {
 	if flag&LogFilterTypeBlockRange == 0 { // not a blockrange log filter
-		return nil
+		return handler.LogQueryOptions{}, nil
 	}
+
+	upperIsHead := filter.ToBlock == nil || *filter.ToBlock == web3Types.LatestBlockNumber
 
 	// set default block range if not set and normalize block number if necessary
 	defaultBlockNo := web3Types.LatestBlockNumber
@@ -105,7 +108,7 @@ func NormalizeEthLogFilter(
 	for i, b := range []*web3Types.BlockNumber{filter.FromBlock, filter.ToBlock} {
 		block, err := util.NormalizeEthBlockNumber(resolver, b, hardforkBlockNum)
 		if err != nil {
-			return errors.WithMessage(err, "failed to normalize block number")
+			return handler.LogQueryOptions{}, errors.WithMessage(err, "failed to normalize block number")
 		}
 
 		blocks[i] = block
@@ -115,7 +118,12 @@ func NormalizeEthLogFilter(
 
 	// deduplicate log filter if necessary
 	dedupEthLogFilter(filter)
-	return nil
+	options := handler.LogQueryOptions{}
+	if upperIsHead {
+		upper := uint64(*filter.ToBlock)
+		options.ResolvedHead = &upper
+	}
+	return options, nil
 }
 
 func ValidateEthLogFilter(flag LogFilterType, filter *web3Types.FilterQuery) error {
@@ -148,7 +156,9 @@ func ValidateEthLogFilter(flag LogFilterType, filter *web3Types.FilterQuery) err
 	return nil
 }
 
-func NormalizeLogFilter(cfx sdk.ClientOperator, flag LogFilterType, filter *types.LogFilter) error {
+func NormalizeLogFilter(cfx sdk.ClientOperator, flag LogFilterType, filter *types.LogFilter) (handler.LogQueryOptions, error) {
+	options := handler.LogQueryOptions{}
+	upperIsHead := flag&LogFilterTypeEpochRange != 0 && (filter.ToEpoch == nil || filter.ToEpoch.Equals(types.EpochLatestState))
 	// set default epoch range if not set and convert to numbered epoch if necessary
 	if flag&LogFilterTypeEpochRange != 0 {
 		// if no from epoch provided, set latest state epoch as default
@@ -165,7 +175,7 @@ func NormalizeLogFilter(cfx sdk.ClientOperator, flag LogFilterType, filter *type
 		for i, e := range []*types.Epoch{filter.FromEpoch, filter.ToEpoch} {
 			epoch, err := util.ConvertToNumberedEpoch(cfx, e)
 			if err != nil {
-				return errors.WithMessagef(err, "failed to convert numbered epoch for %v", e)
+				return handler.LogQueryOptions{}, errors.WithMessagef(err, "failed to convert numbered epoch for %v", e)
 			}
 
 			epochs[i] = epoch
@@ -176,7 +186,12 @@ func NormalizeLogFilter(cfx sdk.ClientOperator, flag LogFilterType, filter *type
 
 	// deduplicate log filter if necessary
 	dedupLogFilter(filter)
-	return nil
+	if upperIsHead {
+		upper, _ := filter.ToEpoch.ToInt()
+		number := upper.Uint64()
+		options.ResolvedHead = &number
+	}
+	return options, nil
 }
 
 func ValidateLogFilter(flag LogFilterType, filter *types.LogFilter) error {

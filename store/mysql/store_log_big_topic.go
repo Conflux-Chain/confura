@@ -31,6 +31,10 @@ type topicLog struct {
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
+func (row *topicLog) logCursor() store.ScanCursor {
+	return store.ScanCursor{BlockNumber: row.BlockNumber, LogIndex: row.LogIndex}
+}
+
 func (l topicLog) TableName() string {
 	return fmt.Sprintf("tlogs_%d", l.Topic0ID)
 }
@@ -402,7 +406,7 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 		var logs []*topicLog
 
 		filter.TableName = btls.getPartitionedTableName(btls.topicTabler(tid), partition.Index)
-		if err := filter.find(ctx, btls.db, &logs); err != nil {
+		if err := queryLogsWithSizeValidation(ctx, btls.db, &filter, &logs); err != nil {
 			return nil, err
 		}
 

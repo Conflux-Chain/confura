@@ -339,7 +339,8 @@ func (api *cfxAPI) getLogs(
 		return emptyLogs, ErrInvalidLogFilter
 	}
 
-	if err := NormalizeLogFilter(cfx, flag, &fq); err != nil {
+	queryOptions, err := NormalizeLogFilter(cfx, flag, &fq)
+	if err != nil {
 		return emptyLogs, err
 	}
 
@@ -354,7 +355,7 @@ func (api *cfxAPI) getLogs(
 	}
 
 	if api.LogApiHandler != nil {
-		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, cfx, &fq, rpcMethod)
+		logs, hitStore, err := api.LogApiHandler.GetLogs(ctx, cfx, &fq, rpcMethod, queryOptions)
 		api.collectHitStats(rpcMethod, hitStore)
 		return uniformCfxLogs(logs), err
 	}

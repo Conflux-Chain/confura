@@ -35,6 +35,10 @@ type contractLog struct {
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
+func (row *contractLog) logCursor() store.ScanCursor {
+	return store.ScanCursor{BlockNumber: row.BlockNumber, LogIndex: row.LogIndex}
+}
+
 func (cl contractLog) TableName() string {
 	return fmt.Sprintf("clogs_%d", cl.ContractID)
 }
@@ -429,7 +433,7 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 		filter.TableName = bcls.getPartitionedTableName(contractTabler, partition.Index)
 
 		var clogs []*contractLog
-		err := filter.find(ctx, bcls.db, &clogs)
+		err := queryLogsWithSizeValidation(ctx, bcls.db, &filter, &clogs)
 		if err != nil {
 			return nil, err
 		}

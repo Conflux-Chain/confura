@@ -2,13 +2,14 @@ package handler
 
 import (
 	"context"
+	"strings"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	metricutil "github.com/Conflux-Chain/go-conflux-util/metrics"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/openweb3/web3go/client"
 	"github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -21,6 +22,11 @@ type EthLogsApiHandler struct {
 	maxSuggestAttempts int
 }
 
+type ethLogsClient interface {
+	ethScanClient
+	ethBlockByHashClient
+}
+
 type ethBlockByHashClient interface {
 	BlockByHash(blockHash common.Hash, isFull bool) (*types.Block, error)
 }
@@ -31,10 +37,17 @@ func NewEthLogsApiHandler(es *mysql.EthStore, maxAttempts int) *EthLogsApiHandle
 
 func (handler *EthLogsApiHandler) GetLogs(
 	ctx context.Context,
-	eth *client.RpcEthClient,
+	eth ethLogsClient,
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
+	options LogQueryOptions,
 ) ([]types.Log, bool, error) {
+	retry := newLogsQueryRetry(ctx, handler.RequiresBoundChecks(filter), "eth_getLogs")
+	defer retry.close()
+	if err := retry.check(); err != nil {
+		return nil, false, err
+	}
+
 	// record the reorg version before query to ensure data consistence
 	lastReorgVersion, err := handler.es.GetReorgVersion()
 	if err != nil {
@@ -47,7 +60,33 @@ func (handler *EthLogsApiHandler) GetLogs(
 	)
 
 	for {
-		logs, hitStore, err := handler.getLogsReorgGuard(ctx, eth, filter, delegatedRpcMethod)
+		if err := retry.check(); err != nil {
+			return nil, false, err
+		}
+		ctx = retry.ctx
+		logs, hitStore, err := handler.queryLogsOnce(ctx, ethLogsWithContext(ctx, eth), filter, delegatedRpcMethod, retry.bounded, options)
+		if timeoutErr := retry.check(); timeoutErr != nil {
+			return nil, false, timeoutErr
+		}
+		if errors.Is(err, ErrGetLogsConsistency) {
+			version, versionErr := handler.es.GetReorgVersion()
+			if versionErr != nil {
+				return nil, false, versionErr
+			}
+			reason := "stitch"
+			var conflict logsConsistencyError
+			if errors.As(err, &conflict) {
+				reason = string(conflict)
+			}
+			if version != lastReorgVersion {
+				reason = "database"
+			}
+			lastReorgVersion = version
+			if err := retry.retry(reason); err != nil {
+				return nil, false, err
+			}
+			continue
+		}
 		if err != nil {
 			if maxAttempts := handler.maxSuggestAttempts; maxAttempts > 0 && suggestCount < maxAttempts &&
 				filter.ToBlock != nil && errors.As(err, &suggestErr) {
@@ -62,9 +101,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 				continue
 			}
 
-			if suggestErr == nil {
-				return nil, false, err
-			}
+			return nil, false, err
 		}
 
 		// If for any reason a suggestion error was set, propagate it.
@@ -82,21 +119,21 @@ func (handler *EthLogsApiHandler) GetLogs(
 			return logs, hitStore, nil
 		}
 
-		// when reorg occurred, check timeout before retry.
-		if err := checkTimeout(ctx); err != nil {
+		// Discard the entire attempt, including empty results, on any DB reorg.
+		lastReorgVersion = reorgVersion
+		if err := retry.retry("database"); err != nil {
 			return nil, false, err
 		}
-
-		// reorg version changed during data query and try again.
-		lastReorgVersion = reorgVersion
 	}
 }
 
-func (handler *EthLogsApiHandler) getLogsReorgGuard(
+func (handler *EthLogsApiHandler) queryLogsOnce(
 	ctx context.Context,
-	eth *client.RpcEthClient,
+	eth ethLogsClient,
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
+	useBoundCheck bool,
+	options LogQueryOptions,
 ) ([]types.Log, bool, error) {
 	// Try to query event logs from database and fullnode.
 	dbFilter, fnFilter, err := handler.splitLogFilter(eth, filter)
@@ -116,16 +153,10 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	}
 
 	var logs []types.Log
-	var accumulator int
+	var responseSize logArraySize
 
-	useBoundCheck := handler.RequiresBoundChecks(filter)
 	if dbFilter != nil {
-		if useBoundCheck {
-			// add db query timeout
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
-			defer cancel()
-		} else {
+		if !useBoundCheck {
 			ctx = store.NewContextWithBoundChecksDisabled(ctx)
 		}
 
@@ -137,13 +168,13 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for _, v := range dbLogs {
-			if accumulator += len(v.Extra); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
-				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, v.BlockNumber)
-			}
-
 			log, err := v.ToEthLog()
 			if err != nil {
 				return nil, false, errors.WithMessage(err, "failed to convert to eth log")
+			}
+			responseSize.add(ethLogJSONSize(log))
+			if useBoundCheck && responseSize.size() > maxGetLogsResponseBytes {
+				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, v.BlockNumber)
 			}
 			logs = append(logs, *log)
 		}
@@ -161,13 +192,22 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		fence, err := handler.newLogsFence(eth, dbFilter, fnFilter, options)
+		if err != nil {
+			return nil, false, err
+		}
 		fnLogs, err := eth.Logs(*fnFilter)
 		if err != nil {
 			return nil, false, err
 		}
 
+		if err := fence.check(); err != nil {
+			return nil, false, err
+		}
+
 		for i := range fnLogs {
-			if accumulator += len(fnLogs[i].Data); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
+			responseSize.add(ethLogJSONSize(&fnLogs[i]))
+			if useBoundCheck && responseSize.size() > maxGetLogsResponseBytes {
 				return nil, false, handler.newSuggestedBodyBytesOversizedError(filter, fnLogs[i].BlockNumber)
 			}
 		}
@@ -181,14 +221,14 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 	}
 
 	// Rare case: log context information for diagnostic purposes if the result exceeds limits.
-	if uint64(len(logs)) > store.MaxLogLimit || uint64(accumulator) > maxGetLogsResponseBytes {
+	if uint64(len(logs)) > store.MaxLogLimit || responseSize.size() > maxGetLogsResponseBytes {
 		logrus.WithFields(logrus.Fields{
 			"logFilter":         filter,
 			"databaseFilter":    dbFilter,
 			"fullnodeFilter":    fnFilter,
 			"boundCheckEnabled": useBoundCheck,
 			"resultSetCount":    len(logs),
-			"responseSizeBytes": uint64(accumulator),
+			"responseSizeBytes": responseSize.size(),
 		}).Info("Exceeded limits for getLogs response")
 	}
 
@@ -196,7 +236,7 @@ func (handler *EthLogsApiHandler) getLogsReorgGuard(
 }
 
 func (handler *EthLogsApiHandler) splitLogFilter(
-	eth *client.RpcEthClient,
+	eth ethLogsClient,
 	filter *types.FilterQuery,
 ) (*store.LogFilter, *types.FilterQuery, error) {
 	earliestMapping, ok, err := handler.es.EarliestBlockMapping()
@@ -233,8 +273,14 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, nil, err
 	}
 
-	if block == nil || block.Number == nil {
-		return nil, nil, errors.New("unknown block")
+	// Block lookup and getLogs use different Fullnode paths. Let getLogs decide
+	// the result and preserve its RPC error, including changes between calls.
+	if block == nil {
+		metricutil.GetOrRegisterMeter("infura/rpc/eth_getLogs/hash/fallback/unknown").Mark(1)
+		return nil, filter, nil
+	}
+	if block.Number == nil || block.Number.Sign() < 0 || !block.Number.IsUint64() {
+		return nil, nil, errors.New("invalid block")
 	}
 
 	bn := block.Number.Uint64()
@@ -246,6 +292,14 @@ func (handler *EthLogsApiHandler) splitLogFilterByBlockHash(
 		return nil, filter, nil
 	}
 
+	pivot, ok, err := handler.es.PivotHash(bn)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ok || !strings.EqualFold(pivot, filter.BlockHash.Hex()) {
+		metricutil.GetOrRegisterMeter("infura/rpc/eth_getLogs/hash/fallback/identity").Mark(1)
+		return nil, filter, nil
+	}
 	dbFilter := store.ParseEthLogFilter(bn, bn, filter)
 	return &dbFilter, nil, err
 }

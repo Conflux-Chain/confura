@@ -741,9 +741,8 @@ func isWhitelistedFNOversizedError(err error) bool {
 }
 
 func waitBoundaryRetry(ctx context.Context) error {
-	// Stable boundary mismatch means both views are individually stable but not
-	// yet aligned. Back off before rebuilding only the FN attempt; a tight loop
-	// would overload the node while waiting for it to converge with the indexer.
+	// Avoid a tight loop while chain views converge. The caller decides which
+	// sources to rebuild; cancellation interrupts the delay.
 	timer := time.NewTimer(boundaryRetryBackoff)
 	defer timer.Stop()
 

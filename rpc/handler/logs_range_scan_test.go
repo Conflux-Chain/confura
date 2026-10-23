@@ -47,7 +47,13 @@ func TestGetLogsRangeScanFinalByteLimit(t *testing.T) {
 			require.NoError(t, db.Exec(`INSERT INTO logs_0 (id,bn,epoch,log_index,extra) VALUES (1,10,1,0,?),(2,11,1,0,?)`, selected, unselected).Error)
 			cfg := &mysql.Config{GetLogsRangeScan: mysql.GetLogsRangeScanConfig{Enabled: true, MinAddresses: 1}}
 			var run func() (int, bool, error)
+			var expectedJSON []byte
+			selectedLog := store.Log{BlockNumber: 10, Epoch: 1, Extra: selected}
 			if space == "core" {
+				typed, err := selectedLog.ToCfxLog()
+				require.NoError(t, err)
+				expectedJSON, err = json.Marshal([]cfxtypes.Log{*typed})
+				require.NoError(t, err)
 				handler := NewCfxLogsApiHandler(mysql.NewCfxStore(db, cfg, store.StoreConfig()), nil, 0)
 				filter := &cfxtypes.LogFilter{FromEpoch: cfxtypes.NewEpochNumberUint64(1), ToEpoch: cfxtypes.NewEpochNumberUint64(2), Address: []cfxtypes.Address{cfxAddress}}
 				dbFilters, fnFilter, err := handler.splitLogFilter(nil, filter)
@@ -57,25 +63,29 @@ func TestGetLogsRangeScanFinalByteLimit(t *testing.T) {
 				require.EqualValues(t, 10, dbFilters[0].BlockFrom)
 				require.EqualValues(t, 20, dbFilters[0].BlockTo)
 				run = func() (int, bool, error) {
-					logs, hit, err := handler.GetLogs(context.Background(), nil, filter, "")
+					logs, hit, err := handler.GetLogs(context.Background(), nil, filter, "", LogQueryOptions{})
 					return len(logs), hit, err
 				}
 			} else {
+				typed, err := selectedLog.ToEthLog()
+				require.NoError(t, err)
+				expectedJSON, err = json.Marshal([]web3types.Log{*typed})
+				require.NoError(t, err)
 				handler := NewEthLogsApiHandler(mysql.NewEthStore(db, cfg, store.EthStoreConfig()), 0)
 				from, to := web3types.BlockNumber(10), web3types.BlockNumber(20)
 				filter := &web3types.FilterQuery{FromBlock: &from, ToBlock: &to, Addresses: []common.Address{ethAddress}}
 				run = func() (int, bool, error) {
-					logs, hit, err := handler.GetLogs(context.Background(), nil, filter, "")
+					logs, hit, err := handler.GetLogs(context.Background(), nil, filter, "", LogQueryOptions{})
 					return len(logs), hit, err
 				}
 			}
 			// An oversized nonmatching candidate does not count toward response bytes.
-			maxGetLogsResponseBytes = uint64(len(selected))
+			maxGetLogsResponseBytes = uint64(len(expectedJSON))
 			count, hit, err := run()
 			require.NoError(t, err)
 			require.True(t, hit)
 			require.Equal(t, 1, count)
-			maxGetLogsResponseBytes = uint64(len(selected) - 1)
+			maxGetLogsResponseBytes = uint64(len(expectedJSON) - 1)
 			_, _, err = run()
 			require.ErrorIs(t, err, errResponseBodySizeTooLarge)
 		})

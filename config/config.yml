@@ -505,6 +505,12 @@ node:
 #     # Maximum block range to split log filters for full nodes
 #     maxSplitBlockRange: 1000
 
+#   # Optimistic fork protection for DB/regular-fullnode getLogs merges.
+#   # Disable only when the DB syncs finalized data on the same chain.
+#   # Archive-source merges are not checked.
+#   getLogs:
+#     checkMixedSourceConsistency: true
+
 #   # Cursor-paginated scanLogs limits
 #   scanLogs:
 #     # Maximum effective page size (must not exceed the Store log limit 10,000)
