@@ -21,36 +21,32 @@ func (api *ethTraceAPI) Call(
 	options types.TraceOptions,
 	blockNumOrHash *types.BlockNumberOrHash,
 ) (types.TraceResults, error) {
-	w3c := GetEthClientFromContext(ctx)
-	return api.stateHandler.TraceCall(ctx, w3c, request, options, blockNumOrHash)
+	logTraceRPCUnavailable("trace_call", map[string]any{"request": request, "options": options, "blockNumOrHash": blockNumOrHash})
+	var result types.TraceResults
+	return result, errTraceRPCUnavailable
 }
 
 func (api *ethTraceAPI) Block(ctx context.Context, blockNumOrHash types.BlockNumberOrHash) (cacheTypes.Lazy[[]types.LocalizedTrace], error) {
-	w3c := GetEthClientFromContext(ctx)
-	return api.stateHandler.LazyTraceBlock(ctx, w3c, blockNumOrHash)
+	logTraceRPCUnavailable("trace_block", map[string]any{"blockNumOrHash": blockNumOrHash})
+	return cacheTypes.Lazy[[]types.LocalizedTrace]{}, errTraceRPCUnavailable
 }
 
 func (api *ethTraceAPI) Filter(ctx context.Context, filter types.TraceFilter) ([]types.LocalizedTrace, error) {
-	w3c := GetEthClientFromContext(ctx)
-	return api.stateHandler.TraceFilter(ctx, w3c, filter)
+	logTraceRPCUnavailable("trace_filter", map[string]any{"filter": filter})
+	return nil, errTraceRPCUnavailable
 }
 
 func (api *ethTraceAPI) Transaction(ctx context.Context, txHash common.Hash) (cacheTypes.Lazy[[]types.LocalizedTrace], error) {
-	w3c := GetEthClientFromContext(ctx)
-	return api.stateHandler.LazyTraceTransaction(ctx, w3c, txHash)
+	logTraceRPCUnavailable("trace_transaction", map[string]any{"txHash": txHash})
+	return cacheTypes.Lazy[[]types.LocalizedTrace]{}, errTraceRPCUnavailable
 }
 
 func (api *ethTraceAPI) Get(ctx context.Context, txHash common.Hash, indexes []hexutil.Uint) (cacheTypes.Lazy[*types.LocalizedTrace], error) {
-	idxs := make([]uint, 0, len(indexes))
-	for _, v := range indexes {
-		idxs = append(idxs, uint(v))
-	}
-
-	w3c := GetEthClientFromContext(ctx)
-	return api.stateHandler.LazyTrace(ctx, w3c, txHash, idxs)
+	logTraceRPCUnavailable("trace_get", map[string]any{"txHash": txHash, "indexes": indexes})
+	return cacheTypes.Lazy[*types.LocalizedTrace]{}, errTraceRPCUnavailable
 }
 
 func (api *ethTraceAPI) BlockSetAuth(ctx context.Context, blockNumber types.BlockNumberOrHash) ([]types.LocalizedSetAuthTrace, error) {
-	w3c := GetEthClientFromContext(ctx)
-	return api.stateHandler.TraceBlockSetAuth(ctx, w3c, blockNumber)
+	logTraceRPCUnavailable("trace_blockSetAuth", map[string]any{"blockNumber": blockNumber})
+	return nil, errTraceRPCUnavailable
 }
