@@ -346,10 +346,14 @@ func (handler *CfxLogsApiHandler) getLogsWithReorgGuard(
 			return nil, false, err
 		}
 
-		fence, err := handler.newLogsFence(cfx, dbBoundary, fnFilter)
+		fence, err := handler.newLogsFence(cfx, dbBoundary)
 		if err != nil {
 			return nil, false, err
 		}
+		if err := fence.check(); err != nil {
+			return nil, false, err
+		}
+
 		fnLogs, err := cfx.GetLogs(*fnFilter)
 		if err != nil {
 			return nil, false, err

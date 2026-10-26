@@ -33,7 +33,7 @@ func TestLogsQueryRetryBudget(t *testing.T) {
 		}
 		// A different source conflict shares the same budget, beyond two retries.
 		for range 3 {
-			require.NoError(t, r.retry("checkpoint"))
+			require.NoError(t, r.retry("boundary"))
 			next, _ := r.ctx.Deadline()
 			require.Equal(t, first, next)
 		}

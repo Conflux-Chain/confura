@@ -192,10 +192,14 @@ func (handler *EthLogsApiHandler) getLogsWithReorgGuard(
 			return nil, false, err
 		}
 
-		fence, err := handler.newLogsFence(eth, dbFilter, fnFilter)
+		fence, err := handler.newLogsFence(eth, dbFilter)
 		if err != nil {
 			return nil, false, err
 		}
+		if err := fence.check(); err != nil {
+			return nil, false, err
+		}
+
 		fnLogs, err := eth.Logs(*fnFilter)
 		if err != nil {
 			return nil, false, err
