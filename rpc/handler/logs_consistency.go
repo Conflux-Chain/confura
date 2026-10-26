@@ -17,18 +17,6 @@ var (
 	ErrGetLogsConsistency       = errors.New("inconsistent canonical views")
 )
 
-// LogQueryOptions preserves normalization provenance; it never changes the FN
-// log range. ResolvedHead is a block number in eSpace and an epoch in Core.
-// Use it only for an upper bound originally specified as latest/latest_state
-// (including the default), and only while that numeric upper bound is unchanged.
-type LogQueryOptions struct {
-	ResolvedHead *uint64
-}
-
-func (o LogQueryOptions) matchesHead(upper uint64) bool {
-	return o.ResolvedHead != nil && *o.ResolvedHead == upper
-}
-
 // Keep the cause for metrics while allowing both causes to share retry policy.
 type logsConsistencyError string
 
@@ -87,7 +75,7 @@ func (f *logsConsistencyFence) checkIdentity(expected logBlockIdentity, reason s
 }
 
 // newLogsFence reads the DB seam, then fixes an FN checkpoint for this attempt.
-func (h *EthLogsApiHandler) newLogsFence(eth ethLogsClient, dbFilter *store.LogFilter, fnFilter *web3types.FilterQuery, options LogQueryOptions) (*logsConsistencyFence, error) {
+func (h *EthLogsApiHandler) newLogsFence(eth ethLogsClient, dbFilter *store.LogFilter, fnFilter *web3types.FilterQuery) (*logsConsistencyFence, error) {
 	if !checkMixedSourceConsistency || dbFilter == nil || fnFilter == nil {
 		return nil, nil
 	}
@@ -98,7 +86,7 @@ func (h *EthLogsApiHandler) newLogsFence(eth ethLogsClient, dbFilter *store.LogF
 	if !ok || pivot == "" {
 		return nil, logsConsistencyError("boundary")
 	}
-	checkpoint, err := ethLogCheckpoint(eth, fnFilter, options)
+	checkpoint, err := ethLogCheckpoint(eth, fnFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -111,10 +99,7 @@ func (h *EthLogsApiHandler) newLogsFence(eth ethLogsClient, dbFilter *store.LogF
 	}, nil
 }
 
-func ethLogCheckpoint(eth ethLogsClient, filter *web3types.FilterQuery, options LogQueryOptions) (logBlockIdentity, error) {
-	if filter.ToBlock != nil && *filter.ToBlock >= 0 && options.matchesHead(uint64(*filter.ToBlock)) {
-		return ethLogBlock(eth, *filter.ToBlock)
-	}
+func ethLogCheckpoint(eth ethLogsClient, filter *web3types.FilterQuery) (logBlockIdentity, error) {
 	latest, err := ethLogBlock(eth, web3types.LatestBlockNumber)
 	if err != nil {
 		return logBlockIdentity{}, err
@@ -137,7 +122,7 @@ func ethLogBlock(eth ethLogsClient, number web3types.BlockNumber) (logBlockIdent
 	return logBlockIdentity{block.Number.Uint64(), block.Hash.Hex()}, nil
 }
 
-func (h *CfxLogsApiHandler) newLogsFence(cfx cfxScanClient, dbFilter *store.LogFilter, fnFilter *cfxtypes.LogFilter, options LogQueryOptions) (*logsConsistencyFence, error) {
+func (h *CfxLogsApiHandler) newLogsFence(cfx cfxScanClient, dbFilter *store.LogFilter, fnFilter *cfxtypes.LogFilter) (*logsConsistencyFence, error) {
 	if !checkMixedSourceConsistency || dbFilter == nil || fnFilter == nil {
 		return nil, nil
 	}
@@ -145,7 +130,7 @@ func (h *CfxLogsApiHandler) newLogsFence(cfx cfxScanClient, dbFilter *store.LogF
 	if err != nil {
 		return nil, err
 	}
-	checkpoint, err := cfxLogCheckpoint(cfx, fnFilter, options)
+	checkpoint, err := cfxLogCheckpoint(cfx, fnFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -192,16 +177,7 @@ func (h *CfxLogsApiHandler) cfxLogBoundary(blockTo uint64) (logBlockIdentity, er
 	return logBlockIdentity{epoch, pivot}, nil
 }
 
-func cfxLogCheckpoint(cfx cfxScanClient, filter *cfxtypes.LogFilter, options LogQueryOptions) (logBlockIdentity, error) {
-	if filter.ToEpoch != nil {
-		if upper, numeric := filter.ToEpoch.ToInt(); numeric && upper.IsUint64() && options.matchesHead(upper.Uint64()) {
-			block, err := cfxLogBlock(cfx, filter.ToEpoch)
-			if err != nil {
-				return logBlockIdentity{}, err
-			}
-			return logBlockIdentity{upper.Uint64(), block.Hash.String()}, nil
-		}
-	}
+func cfxLogCheckpoint(cfx cfxScanClient, filter *cfxtypes.LogFilter) (logBlockIdentity, error) {
 	latest, err := cfxLogBlock(cfx, cfxtypes.EpochLatestState)
 	if err != nil {
 		return logBlockIdentity{}, err

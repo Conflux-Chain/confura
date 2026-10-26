@@ -47,13 +47,13 @@ func TestGetLogsSplitRangeKeepsBoundChecks(t *testing.T) {
 			// Only the DB segment is one unit; the original RPC range spans two.
 			if space == "core" {
 				client := &hashLogsClient{}
-				logs, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(2)}, "", LogQueryOptions{})
+				logs, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(2)}, "")
 				require.ErrorIs(t, err, store.ErrFilterResultSetTooLarge)
 				require.Empty(t, logs)
 				require.Zero(t, client.calls)
 			} else {
 				client := &ethHashLogsClient{}
-				logs, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(11)}, "", LogQueryOptions{})
+				logs, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, &web3types.FilterQuery{FromBlock: blockNumber(10), ToBlock: blockNumber(11)}, "")
 				require.ErrorIs(t, err, store.ErrFilterResultSetTooLarge)
 				require.Empty(t, logs)
 				require.Zero(t, client.calls)
@@ -113,7 +113,7 @@ func TestGetLogsSmallestUnitReturnsAllLogs(t *testing.T) {
 					expected = 2
 				}
 				if space == "core" {
-					logs, hit, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), nil, &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(1)}, "", LogQueryOptions{})
+					logs, hit, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), nil, &cfxtypes.LogFilter{FromEpoch: epochNumber(1), ToEpoch: epochNumber(1)}, "")
 					require.NoError(t, err)
 					require.True(t, hit)
 					require.Len(t, logs, int(store.MaxLogLimit)+2)
@@ -127,7 +127,7 @@ func TestGetLogsSmallestUnitReturnsAllLogs(t *testing.T) {
 					if mode == "hash" {
 						filter = &web3types.FilterQuery{BlockHash: &hash}
 					}
-					logs, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
+					logs, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "")
 					require.NoError(t, err)
 					require.True(t, hit)
 					require.Len(t, logs, int(store.MaxLogLimit)+2)
@@ -191,7 +191,7 @@ func TestGetLogsResponseBytesAcrossSources(t *testing.T) {
 						filter.FromBlock = blockNumber(11)
 					}
 					run = func() error {
-						logs, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
+						logs, _, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "")
 						if err == nil {
 							require.Len(t, logs, len(all))
 						} else {
@@ -215,7 +215,7 @@ func TestGetLogsResponseBytesAcrossSources(t *testing.T) {
 						filter.FromEpoch = epochNumber(2)
 					}
 					run = func() error {
-						logs, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
+						logs, _, err := newTestCfxScanLogsHandler(db).GetLogs(context.Background(), client, filter, "")
 						if err == nil {
 							require.Len(t, logs, len(all))
 						} else {

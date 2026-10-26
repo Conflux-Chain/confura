@@ -40,7 +40,6 @@ func (handler *EthLogsApiHandler) GetLogs(
 	eth ethLogsClient,
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
-	options LogQueryOptions,
 ) ([]types.Log, bool, error) {
 	retry := newLogsQueryRetry(ctx, handler.RequiresBoundChecks(filter), "eth_getLogs")
 	defer retry.close()
@@ -64,7 +63,7 @@ func (handler *EthLogsApiHandler) GetLogs(
 			return nil, false, err
 		}
 		ctx = retry.ctx
-		logs, hitStore, err := handler.queryLogsOnce(ctx, ethLogsWithContext(ctx, eth), filter, delegatedRpcMethod, retry.bounded, options)
+		logs, hitStore, err := handler.getLogsWithReorgGuard(ctx, ethLogsWithContext(ctx, eth), filter, delegatedRpcMethod, retry.bounded)
 		if timeoutErr := retry.check(); timeoutErr != nil {
 			return nil, false, timeoutErr
 		}
@@ -127,13 +126,14 @@ func (handler *EthLogsApiHandler) GetLogs(
 	}
 }
 
-func (handler *EthLogsApiHandler) queryLogsOnce(
+// getLogsWithReorgGuard queries logs under the DB reorg version checks in GetLogs.
+// The caller owns version validation and retries; each call builds fresh chain checks.
+func (handler *EthLogsApiHandler) getLogsWithReorgGuard(
 	ctx context.Context,
 	eth ethLogsClient,
 	filter *types.FilterQuery,
 	delegatedRpcMethod string,
 	useBoundCheck bool,
-	options LogQueryOptions,
 ) ([]types.Log, bool, error) {
 	// Try to query event logs from database and fullnode.
 	dbFilter, fnFilter, err := handler.splitLogFilter(eth, filter)
@@ -192,7 +192,7 @@ func (handler *EthLogsApiHandler) queryLogsOnce(
 			return nil, false, err
 		}
 
-		fence, err := handler.newLogsFence(eth, dbFilter, fnFilter, options)
+		fence, err := handler.newLogsFence(eth, dbFilter, fnFilter)
 		if err != nil {
 			return nil, false, err
 		}

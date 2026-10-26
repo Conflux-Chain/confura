@@ -96,7 +96,7 @@ func TestEthHashLogsKeepDatabaseErrors(t *testing.T) {
 	require.NoError(t, db.Exec("DROP TABLE configs").Error)
 	hash := common.HexToHash("0x1234")
 	client := &ethHashLogsClient{}
-	_, _, err := handler.GetLogs(context.Background(), client, &web3types.FilterQuery{BlockHash: &hash}, "", LogQueryOptions{})
+	_, _, err := handler.GetLogs(context.Background(), client, &web3types.FilterQuery{BlockHash: &hash}, "")
 	require.Error(t, err)
 	require.Zero(t, client.calls)
 }
@@ -107,7 +107,7 @@ func TestEthHashLogsFallbackKeepsFilter(t *testing.T) {
 	hash := common.HexToHash("0x1234")
 	client := &ethHashLogsClient{block: &web3types.Block{Number: big.NewInt(10)}}
 	filter := &web3types.FilterQuery{BlockHash: &hash, Addresses: []common.Address{common.HexToAddress("0x1111")}, Topics: [][]common.Hash{{hash}}}
-	logs, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
+	logs, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "")
 	require.NoError(t, err)
 	require.False(t, hit)
 	require.Empty(t, logs)
@@ -125,7 +125,7 @@ func TestEthHashLogsDatabaseEmptyOrFailure(t *testing.T) {
 				require.NoError(t, db.Exec("DROP TABLE logs_0").Error)
 			}
 			client := &ethHashLogsClient{block: &web3types.Block{Number: big.NewInt(10)}}
-			logs, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, &web3types.FilterQuery{BlockHash: &hash}, "", LogQueryOptions{})
+			logs, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, &web3types.FilterQuery{BlockHash: &hash}, "")
 			if failed {
 				require.Error(t, err)
 			} else {
@@ -144,7 +144,7 @@ func TestEthUnknownHashLogsFallbackKeepsFilter(t *testing.T) {
 	hash := common.HexToHash("0x1234")
 	filter := &web3types.FilterQuery{BlockHash: &hash, Addresses: []common.Address{{1}}, Topics: [][]common.Hash{{hash}}}
 	client := &ethHashLogsClient{} // BlockByHash returns nil.
-	_, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "", LogQueryOptions{})
+	_, hit, err := newTestEthScanLogsHandler(db).GetLogs(context.Background(), client, filter, "")
 	require.NoError(t, err)
 	require.False(t, hit)
 	require.Equal(t, 1, client.calls)

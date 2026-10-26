@@ -63,7 +63,7 @@ func TestGetLogsRangeScanFinalByteLimit(t *testing.T) {
 				require.EqualValues(t, 10, dbFilters[0].BlockFrom)
 				require.EqualValues(t, 20, dbFilters[0].BlockTo)
 				run = func() (int, bool, error) {
-					logs, hit, err := handler.GetLogs(context.Background(), nil, filter, "", LogQueryOptions{})
+					logs, hit, err := handler.GetLogs(context.Background(), nil, filter, "")
 					return len(logs), hit, err
 				}
 			} else {
@@ -75,7 +75,7 @@ func TestGetLogsRangeScanFinalByteLimit(t *testing.T) {
 				from, to := web3types.BlockNumber(10), web3types.BlockNumber(20)
 				filter := &web3types.FilterQuery{FromBlock: &from, ToBlock: &to, Addresses: []common.Address{ethAddress}}
 				run = func() (int, bool, error) {
-					logs, hit, err := handler.GetLogs(context.Background(), nil, filter, "", LogQueryOptions{})
+					logs, hit, err := handler.GetLogs(context.Background(), nil, filter, "")
 					return len(logs), hit, err
 				}
 			}

@@ -17,7 +17,7 @@ func (logHeadResolver) GetEpochNumber(...*cfxtypes.Epoch) (*hexutil.Big, error) 
 	return cfxtypes.NewBigInt(12), nil
 }
 
-func TestLogNormalizationPreservesHeadProvenance(t *testing.T) {
+func TestLogNormalizationResolvesRange(t *testing.T) {
 	for _, mode := range []string{"default", "head", "numeric", "other_tag", "hash"} {
 		t.Run(mode, func(t *testing.T) {
 			from, to := web3types.BlockNumber(10), web3types.LatestBlockNumber
@@ -37,18 +37,16 @@ func TestLogNormalizationPreservesHeadProvenance(t *testing.T) {
 			case "hash":
 				ethFlag, coreFlag = LogFilterTypeBlockHash, LogFilterTypeBlockHash
 			}
-			ethOptions, err := NormalizeEthLogFilter(logHeadResolver{}, ethFlag, eth, 0)
-			require.NoError(t, err)
-			coreOptions, err := NormalizeLogFilter(logHeadResolver{}, coreFlag, core)
-			require.NoError(t, err)
-			if mode == "default" || mode == "head" {
-				require.NotNil(t, ethOptions.ResolvedHead)
-				require.NotNil(t, coreOptions.ResolvedHead)
-				require.EqualValues(t, 12, *ethOptions.ResolvedHead)
-				require.EqualValues(t, 12, *coreOptions.ResolvedHead)
+			require.NoError(t, NormalizeEthLogFilter(logHeadResolver{}, ethFlag, eth, 0))
+			require.NoError(t, NormalizeLogFilter(logHeadResolver{}, coreFlag, core))
+			if mode != "hash" {
+				require.EqualValues(t, 12, *eth.ToBlock)
+				upper, numeric := core.ToEpoch.ToInt()
+				require.True(t, numeric)
+				require.EqualValues(t, 12, upper.Uint64())
 			} else {
-				require.Nil(t, ethOptions.ResolvedHead)
-				require.Nil(t, coreOptions.ResolvedHead)
+				require.Equal(t, web3types.LatestBlockNumber, *eth.ToBlock)
+				require.True(t, cfxtypes.EpochLatestState.Equals(core.ToEpoch))
 			}
 		})
 	}
