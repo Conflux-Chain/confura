@@ -193,7 +193,8 @@ queries are retried with smaller ranges; an irreducible query failure exits nonz
 The command stops at the first mismatch, synchronously saving the filters, database rows,
 normalized logs from both sides and their differences to the JSONL report. Query failures
 also exit nonzero and are not treated as empty logs. The report must be a new file.
-Comparison checks persisted fields strictly, including transaction indices and timestamps;
+Comparison checks persisted fields strictly, except for Core `transactionIndex`, which
+can differ between fullnode getLogs and receipts. eSpace transaction indices remain checked;
 Core fullnode logs excluded by the configured persistence blacklist are counted separately.
 The RPC-only Core `space` field is not persisted and is excluded from comparison.
 Successful batches remain in the report so a new run can start at the failed range.

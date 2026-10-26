@@ -395,14 +395,16 @@ func (src *logValidationSource) fullnodeLogs(ctx context.Context, result *logVal
 }
 
 func normalizeCoreValidationLog(log *cfx.Log, blockNumber uint64) interface{} {
-	// Space is not persisted; the selected DB already determines it. All
-	// persisted fields, including transactionIndex and timestamp, remain strict.
-	log.Space = nil
+	// Core getLogs can return a transactionIndex inconsistent with the receipt.
+	// Ignore it as the existing Core validator does. Space is not persisted.
+	normalized := *log
+	normalized.TransactionIndex = nil
+	normalized.Space = nil
 	return struct {
 		*cfx.Log
 		Address     string         `json:"address"`
 		BlockNumber hexutil.Uint64 `json:"blockNumber"`
-	}{log, log.Address.GetHexAddress(), hexutil.Uint64(blockNumber)}
+	}{&normalized, log.Address.GetHexAddress(), hexutil.Uint64(blockNumber)}
 }
 
 func canonicalValidationLog(value interface{}) (json.RawMessage, error) {

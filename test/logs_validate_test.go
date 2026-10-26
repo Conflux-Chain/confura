@@ -214,19 +214,35 @@ func TestLogsValidationComparesDuplicatesAndFields(t *testing.T) {
 	require.Equal(t, b, c)
 }
 
-func TestLogsValidationCoreKeepsTransactionIndex(t *testing.T) {
+func TestLogsValidationCoreIgnoresTransactionIndex(t *testing.T) {
 	log := cfx.Log{TransactionIndex: cfx.NewBigInt(1)}
 	// A real address is required by the SDK's JSON encoder.
 	require.NoError(t, log.Address.UnmarshalJSON([]byte(`"cfxtest:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6f0vrcsw"`)))
 	a, err := canonicalValidationLog(normalizeCoreValidationLog(&log, 100))
 	require.NoError(t, err)
+	require.EqualValues(t, 1, log.TransactionIndex.ToInt().Uint64())
 	log.TransactionIndex = cfx.NewBigInt(2)
 	b, err := canonicalValidationLog(normalizeCoreValidationLog(&log, 100))
 	require.NoError(t, err)
-	require.NotEqual(t, a, b)
+	require.Equal(t, a, b)
+	require.NotContains(t, string(b), "transactionIndex")
 	c, err := canonicalValidationLog(normalizeCoreValidationLog(&log, 101))
 	require.NoError(t, err)
 	require.NotEqual(t, b, c)
+	log.TransactionLogIndex = cfx.NewBigInt(1)
+	d, err := canonicalValidationLog(normalizeCoreValidationLog(&log, 100))
+	require.NoError(t, err)
+	require.NotEqual(t, b, d)
+}
+
+func TestLogsValidationEspaceKeepsTransactionIndex(t *testing.T) {
+	log := eth.Log{TxIndex: 0}
+	a, err := canonicalValidationLog(log)
+	require.NoError(t, err)
+	log.TxIndex = 1
+	b, err := canonicalValidationLog(log)
+	require.NoError(t, err)
+	require.NotEqual(t, a, b)
 }
 
 func TestLogsValidationCoreDetectsWrongBlockNumber(t *testing.T) {
