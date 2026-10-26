@@ -94,33 +94,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	}
 
 	if len(filter.BlockHashes) > 0 {
-		// Hash queries retain their block identities and bypass the database guard.
-		if delegatedRpcMethod != "" {
-			metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/alldatabase").Mark(false)
-			metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/allfullnode").Mark(true)
-			metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(false)
-		}
-		client := cfxLogsWithContext(retry.ctx, cfx)
-		logs, err := client.GetLogs(*filter)
-		if timeoutErr := retry.check(); timeoutErr != nil {
-			return nil, false, timeoutErr
-		}
-		if err != nil {
-			return nil, false, err
-		}
-		if retry.bounded {
-			var size logArraySize
-			for i := range logs {
-				size.add(cfxLogJSONSize(&logs[i]))
-				if size.size() > maxGetLogsResponseBytes {
-					return nil, false, newSuggestedBodyBytesOversizedError(client, filter, &logs[i])
-				}
-			}
-			if uint64(len(logs)) > store.MaxLogLimit {
-				return nil, false, newSuggestedResultSetOversizedError(client, filter, &logs[store.MaxLogLimit])
-			}
-		}
-		return logs, false, nil
+		return handler.getLogsByBlockHashes(retry, cfx, filter, delegatedRpcMethod)
 	}
 	// record the reorg version before query to ensure data consistence
 	lastReorgVersion, err := handler.ms.GetReorgVersion()
@@ -210,6 +184,42 @@ func (handler *CfxLogsApiHandler) GetLogs(
 			return nil, false, err
 		}
 	}
+}
+
+// getLogsByBlockHashes queries Fullnode directly using the existing request budget.
+func (handler *CfxLogsApiHandler) getLogsByBlockHashes(
+	retry *logsQueryRetry,
+	cfx sdk.ClientOperator,
+	filter *types.LogFilter,
+	delegatedRpcMethod string,
+) ([]types.Log, bool, error) {
+	// Hash queries retain their block identities and bypass the database guard.
+	if delegatedRpcMethod != "" {
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/alldatabase").Mark(false)
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/allfullnode").Mark(true)
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(false)
+	}
+	client := cfxLogsWithContext(retry.ctx, cfx)
+	logs, err := client.GetLogs(*filter)
+	if timeoutErr := retry.check(); timeoutErr != nil {
+		return nil, false, timeoutErr
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if retry.bounded {
+		var size logArraySize
+		for i := range logs {
+			size.add(cfxLogJSONSize(&logs[i]))
+			if size.size() > maxGetLogsResponseBytes {
+				return nil, false, newSuggestedBodyBytesOversizedError(client, filter, &logs[i])
+			}
+		}
+		if uint64(len(logs)) > store.MaxLogLimit {
+			return nil, false, newSuggestedResultSetOversizedError(client, filter, &logs[store.MaxLogLimit])
+		}
+	}
+	return logs, false, nil
 }
 
 // getLogsWithReorgGuard queries logs under the DB reorg version checks in GetLogs.
