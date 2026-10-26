@@ -159,6 +159,7 @@ You can use the `test` subcommand to start the data consistency testing:
 >
 >       cfx validate epoch data from Core Space JSON-RPC proxy against the fullnode
 >       eth validate block data from EVM Space JSON-RPC proxy against the fullnode
+>       logs compare persisted Core/eSpace event logs directly against a healthy fullnode
 >       ws  validate epoch/block data from Pub/Sub proxy against the fullnode
 >       vf  validate filter changes polled from Virtual-Filter proxy against the fullnode
 >
@@ -169,6 +170,34 @@ eg., run the following to validate data for the Core Space JSON-RPC proxy.
 ```shell
 $ ./confura test cfx --fn-endpoint http://test.confluxrpc.com --infura-endpoint http://127.0.0.1:22537
 ```
+
+To check only the event logs persisted in MySQL, without RPC fallback or block/receipt validation:
+
+```shell
+./confura test logs --space both --from-epoch 265746502 \
+  --core-fn-endpoint "$GOOD_CORE_RPC" \
+  --espace-fn-endpoint "$GOOD_ESPACE_RPC" \
+  --report ./logs-check.jsonl
+```
+
+Use `--space core` or `--space espace` to check one space. The command uses the existing
+`store.mysql` / `ethstore.mysql` configuration and only connects to existing databases.
+Core epochs map to eSpace block numbers; Core database block ranges are resolved through
+the healthy node. Each space refreshes its database synchronization height before every
+batch and stops when caught up, without waiting for future synchronization.
+
+Set `test.logs.batchSize` in the configuration (default `100` epochs), or override it with
+`INFURA_TEST_LOGS_BATCHSIZE=50`. This setting is loaded at command startup. Oversized
+queries are retried with smaller ranges; an irreducible query failure exits nonzero.
+
+The command stops at the first mismatch, synchronously saving the filters, database rows,
+normalized logs from both sides and their differences to the JSONL report. Query failures
+also exit nonzero and are not treated as empty logs. The report must be a new file.
+Comparison checks persisted fields strictly, including transaction indices and timestamps;
+Core fullnode logs excluded by the configured persistence blacklist are counted separately.
+The RPC-only Core `space` field is not persisted and is excluded from comparison.
+Successful batches remain in the report so a new run can start at the failed range.
+This checks universal log data, not address/topic index replicas, and does not repair data.
 
 ## Deployment
 

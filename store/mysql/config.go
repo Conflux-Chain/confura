@@ -101,6 +101,22 @@ func MustNewEthStoreConfigFromViper() *Config {
 	return mustNewConfigFromViper("ethstore.mysql")
 }
 
+// Open connects to an existing database without creating or migrating it.
+func (config *Config) Open() (*gorm.DB, error) {
+	db, err := config.newDB(config.Database)
+	if err != nil {
+		return nil, err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetConnMaxLifetime(config.ConnMaxLifetime)
+	sqlDB.SetMaxOpenConns(config.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(config.MaxIdleConns)
+	return db, nil
+}
+
 // MustOpenOrCreate creates an instance of gorm database or exits on any error.
 func (config *Config) MustOpenOrCreate() *gorm.DB {
 	newCreated := config.mustCreateDatabaseIfAbsent()
@@ -153,6 +169,14 @@ func (config *Config) MustOpenOrCreate() *gorm.DB {
 }
 
 func (config *Config) mustNewDB(database string) *gorm.DB {
+	db, err := config.newDB(database)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to open mysql")
+	}
+	return db
+}
+
+func (config *Config) newDB(database string) (*gorm.DB, error) {
 	logrusLogLevel := logrus.GetLevel()
 	gLogLevel := gormLogger.Warn
 
@@ -182,16 +206,10 @@ func (config *Config) mustNewDB(database string) *gorm.DB {
 		dsn = config.Dsn
 	}
 
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+	return gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger:          gLogger,
 		CreateBatchSize: config.CreateBatchSize,
 	})
-
-	if err != nil {
-		logrus.WithError(err).Fatal("Failed to open mysql")
-	}
-
-	return db
 }
 
 func (config *Config) mustCreateDatabaseIfAbsent() bool {

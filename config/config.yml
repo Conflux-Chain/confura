@@ -27,6 +27,12 @@ rpc:
   #   # Redis used for throttling based on reference counter
   #   redisUrl: redis://<user>:<pass>@localhost:6379/<db>
 
+# Event log validation (`confura test logs`). Also configurable through
+# INFURA_TEST_LOGS_BATCHSIZE. Loaded when the command starts.
+test:
+  logs:
+    batchSize: 100
+
 # EVM space RPC proxy server configurations
 ethrpc:
   # All available exposed modules are:
