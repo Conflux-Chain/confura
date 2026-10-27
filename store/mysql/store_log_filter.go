@@ -235,13 +235,15 @@ func (filter *LogFilter) hasTopicsFilter() bool {
 }
 
 // queryLogsWithSizeValidation preserves bounded-query checks but reads irreducible queries to exhaustion.
-func queryLogsWithSizeValidation[T interface{ logCursor() store.ScanCursor }](ctx context.Context, db *gorm.DB, filter *LogFilter, dest *[]T) error {
+func queryLogsWithSizeValidation[T interface{ logCursor() store.ScanCursor }](ctx context.Context, db *gorm.DB, filter *LogFilter, limit int, dest *[]T) error {
 	db = db.WithContext(ctx)
 	if store.IsBoundChecksEnabled(ctx) {
 		if err := filter.validateQuerySetSize(db); err != nil {
 			return err
 		}
+		return filter.read(ctx, db, limit, dest)
 	}
+	// Unbounded requests ignore limit and read every keyset page.
 	return queryLogRows(ctx, db, filter, dest)
 }
 

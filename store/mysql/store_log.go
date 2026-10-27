@@ -198,7 +198,12 @@ func (ls *logStore[T]) GetLogs(ctx context.Context, storeFilter store.LogFilter)
 		default:
 		}
 
-		logs, err := ls.GetBnPartitionedLogs(ctx, filter, *partition)
+		// Bounded reads use 10001 - len(result), keeping one row to detect overflow.
+		limit := int(store.MaxLogLimit) + 1
+		if store.IsBoundChecksEnabled(ctx) {
+			limit -= len(result)
+		}
+		logs, err := ls.getBnPartitionedLogs(ctx, filter, *partition, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -261,10 +266,14 @@ func (ls *logStore[T]) ScanLogs(
 
 // GetBnPartitionedLogs returns event logs for the specified block number partitioned log filter.
 func (ls *logStore[T]) GetBnPartitionedLogs(ctx context.Context, filter LogFilter, partition bnPartition) ([]*log, error) {
+	return ls.getBnPartitionedLogs(ctx, filter, partition, int(store.MaxLogLimit)+1)
+}
+
+func (ls *logStore[T]) getBnPartitionedLogs(ctx context.Context, filter LogFilter, partition bnPartition, limit int) ([]*log, error) {
 	filter.TableName = ls.getPartitionedTableName(&log{}, partition.Index)
 
 	var res []*log
-	err := queryLogsWithSizeValidation(ctx, ls.db, &filter, &res)
+	err := queryLogsWithSizeValidation(ctx, ls.db, &filter, limit, &res)
 
 	return res, err
 }

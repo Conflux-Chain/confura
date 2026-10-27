@@ -433,7 +433,12 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 		filter.TableName = bcls.getPartitionedTableName(contractTabler, partition.Index)
 
 		var clogs []*contractLog
-		err := queryLogsWithSizeValidation(ctx, bcls.db, &filter, &clogs)
+		// Bounded reads use 10001 - len(result), keeping one row to detect overflow.
+		limit := int(store.MaxLogLimit) + 1
+		if store.IsBoundChecksEnabled(ctx) {
+			limit -= len(result)
+		}
+		err := queryLogsWithSizeValidation(ctx, bcls.db, &filter, limit, &clogs)
 		if err != nil {
 			return nil, err
 		}
