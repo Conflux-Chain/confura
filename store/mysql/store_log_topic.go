@@ -24,6 +24,10 @@ type TopicIndexedLog struct {
 	Extra       []byte `gorm:"type:mediumText"` // extension json field
 }
 
+func (row *TopicIndexedLog) logCursor() store.ScanCursor {
+	return store.ScanCursor{BlockNumber: row.BlockNumber, LogIndex: row.LogIndex}
+}
+
 func (TopicIndexedLog) TableName() string {
 	return "topic_logs"
 }

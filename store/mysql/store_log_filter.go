@@ -7,6 +7,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
+	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -233,26 +234,69 @@ func (filter *LogFilter) hasTopicsFilter() bool {
 	return false
 }
 
-func (filter *LogFilter) find(ctx context.Context, db *gorm.DB, destSlicePtr interface{}) error {
+// queryLogsWithSizeValidation preserves bounded-query checks but reads irreducible queries to exhaustion.
+func queryLogsWithSizeValidation[T interface{ logCursor() store.ScanCursor }](ctx context.Context, db *gorm.DB, filter *LogFilter, dest *[]T) error {
 	db = db.WithContext(ctx)
 	if store.IsBoundChecksEnabled(ctx) {
 		if err := filter.validateQuerySetSize(db); err != nil {
 			return err
 		}
 	}
-
-	return filter.read(ctx, db, int(store.MaxLogLimit)+1, destSlicePtr)
+	return queryLogRows(ctx, db, filter, dest)
 }
 
-// read executes a range query without applying public result-set checks.
-func (filter *LogFilter) read(ctx context.Context, db *gorm.DB, limit int, destSlicePtr interface{}) error {
-	db = db.WithContext(ctx).Table(filter.TableName)
-	db = db.Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
-	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
-	db = db.Order("bn ASC")
-	db = db.Limit(limit)
+const getLogsPageSize = 1_000
 
-	return db.Find(destSlicePtr).Error
+// queryLogRows caps bounded requests, and reads original single-unit requests in full.
+// The caller's context, never the DB subrange, determines the public limit policy.
+func queryLogRows[T interface{ logCursor() store.ScanCursor }](ctx context.Context, db *gorm.DB, filter *LogFilter, dest *[]T) error {
+	if store.IsBoundChecksEnabled(ctx) {
+		return filter.read(ctx, db, int(store.MaxLogLimit)+1, dest)
+	}
+	return queryAllLogPages(ctx, filter.buildQuery(ctx, db), dest)
+}
+
+// queryAllLogPages publishes results only after every keyset page succeeds.
+func queryAllLogPages[T interface{ logCursor() store.ScanCursor }](ctx context.Context, query *gorm.DB, dest *[]T) error {
+	// Clone the base statement for each page so cursor predicates do not accumulate.
+	query = query.Session(&gorm.Session{})
+	var result []T
+	var cursor *store.ScanCursor
+	var pages int64
+	for {
+		if err := checkGetLogsContext(ctx); err != nil {
+			return err
+		}
+		pageQuery := query
+		if cursor != nil {
+			pageQuery = pageQuery.Where("(bn > ? OR (bn = ? AND log_index > ?))", cursor.BlockNumber, cursor.BlockNumber, cursor.LogIndex)
+		}
+		var page []T
+		if err := pageQuery.Limit(getLogsPageSize).Find(&page).Error; err != nil {
+			return err
+		}
+		pages++
+		result = append(result, page...)
+		if len(page) < getLogsPageSize {
+			metrics.Registry.RPC.LogFilterSplit("getLogs", "database/pages").Update(pages)
+			*dest = result
+			return nil
+		}
+		// Only a full, nonempty page needs another query and a new cursor.
+		last := page[len(page)-1].logCursor()
+		cursor = &last
+	}
+}
+
+func (filter *LogFilter) buildQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
+	query := db.WithContext(ctx).Table(filter.TableName).
+		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo)
+	return applyTopicsFilter(query, filter.Topics, filter.Schema).Order("bn ASC, log_index ASC")
+}
+
+// read executes one range query without applying public result-set checks.
+func (filter *LogFilter) read(ctx context.Context, db *gorm.DB, limit int, destSlicePtr interface{}) error {
+	return filter.buildQuery(ctx, db).Limit(limit).Find(destSlicePtr).Error
 }
 
 // AddressIndexedLogFilter is used to query event logs that indexed by contract id and block number.
@@ -268,24 +312,16 @@ func (filter *AddressIndexedLogFilter) validateCount(db *gorm.DB) error {
 }
 
 func (filter *AddressIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([]*AddressIndexedLog, error) {
+	db = db.WithContext(ctx)
 	if store.IsBoundChecksEnabled(ctx) {
 		if err := filter.validateCount(db); err != nil {
 			return nil, err
 		}
 	}
-
-	db = db.Table(filter.TableName).
-		Where("cid = ?", filter.ContractId).
-		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
-		Order("bn ASC").
-		Limit(int(store.MaxLogLimit) + 1)
-	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
-
 	var result []*AddressIndexedLog
-	if err := db.Find(&result).Error; err != nil {
+	if err := queryLogRows(ctx, db.Where("cid = ?", filter.ContractId), &filter.LogFilter, &result); err != nil {
 		return nil, err
 	}
-
 	return result, nil
 }
 
@@ -301,23 +337,15 @@ func (filter *TopicIndexedLogFilter) validateCount(db *gorm.DB) error {
 }
 
 func (filter *TopicIndexedLogFilter) Find(ctx context.Context, db *gorm.DB) ([]*TopicIndexedLog, error) {
+	db = db.WithContext(ctx)
 	if store.IsBoundChecksEnabled(ctx) {
 		if err := filter.validateCount(db); err != nil {
 			return nil, err
 		}
 	}
-
-	db = db.Table(filter.TableName).
-		Where("tid = ?", filter.TopicId).
-		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
-		Order("bn ASC").
-		Limit(int(store.MaxLogLimit) + 1)
-	db = applyTopicsFilter(db, filter.Topics, filter.Schema)
-
 	var result []*TopicIndexedLog
-	if err := db.Find(&result).Error; err != nil {
+	if err := queryLogRows(ctx, db.Where("tid = ?", filter.TopicId), &filter.LogFilter, &result); err != nil {
 		return nil, err
 	}
-
 	return result, nil
 }

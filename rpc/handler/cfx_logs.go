@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"sort"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
@@ -37,6 +36,12 @@ func MustInitFromViper() {
 		"result body size is too large with more than %d bytes, please narrow down your filter condition",
 		maxGetLogsResponseBytes,
 	)
+
+	var getLogs struct {
+		CheckMixedSourceConsistency bool `default:"true"`
+	}
+	viperutil.MustUnmarshalKey("requestControl.getLogs", &getLogs)
+	checkMixedSourceConsistency = getLogs.CheckMixedSourceConsistency
 
 	var scanLogs struct {
 		MaxLimit           uint64 `default:"1000"`
@@ -82,6 +87,15 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	filter *types.LogFilter,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
+	retry := newLogsQueryRetry(ctx, RequireBoundChecks(filter), "cfx_getLogs")
+	defer retry.close()
+	if err := retry.check(); err != nil {
+		return nil, false, err
+	}
+
+	if len(filter.BlockHashes) > 0 {
+		return handler.getLogsByBlockHashes(retry, cfx, filter, delegatedRpcMethod)
+	}
 	// record the reorg version before query to ensure data consistence
 	lastReorgVersion, err := handler.ms.GetReorgVersion()
 	if err != nil {
@@ -94,7 +108,33 @@ func (handler *CfxLogsApiHandler) GetLogs(
 	)
 
 	for {
-		logs, hitStore, err := handler.getLogsReorgGuard(ctx, cfx, filter, delegatedRpcMethod)
+		if err := retry.check(); err != nil {
+			return nil, false, err
+		}
+		ctx = retry.ctx
+		logs, hitStore, err := handler.getLogsWithReorgGuard(ctx, cfxLogsWithContext(ctx, cfx), filter, delegatedRpcMethod, retry.bounded)
+		if timeoutErr := retry.check(); timeoutErr != nil {
+			return nil, false, timeoutErr
+		}
+		if errors.Is(err, ErrGetLogsConsistency) {
+			version, versionErr := handler.ms.GetReorgVersion()
+			if versionErr != nil {
+				return nil, false, versionErr
+			}
+			reason := "stitch"
+			var conflict logsConsistencyError
+			if errors.As(err, &conflict) {
+				reason = string(conflict)
+			}
+			if version != lastReorgVersion {
+				reason = "database"
+			}
+			lastReorgVersion = version
+			if err := retry.retry(reason); err != nil {
+				return nil, false, err
+			}
+			continue
+		}
 		if err != nil {
 			if maxAttempts := handler.maxSuggestAttempts; maxAttempts > 0 && suggestCount < maxAttempts {
 				var (
@@ -120,9 +160,7 @@ func (handler *CfxLogsApiHandler) GetLogs(
 				}
 			}
 
-			if suggestErr == nil {
-				return nil, false, err
-			}
+			return nil, false, err
 		}
 
 		// If for any reason a suggestion error was set, propagate it.
@@ -140,25 +178,59 @@ func (handler *CfxLogsApiHandler) GetLogs(
 			return logs, hitStore, nil
 		}
 
-		// when reorg occurred, check timeout before retry.
-		if err := checkTimeout(ctx); err != nil {
+		// Discard the entire attempt, including empty results, on any DB reorg.
+		lastReorgVersion = reorgVersion
+		if err := retry.retry("database"); err != nil {
 			return nil, false, err
 		}
-
-		// reorg version changed during data query and try again.
-		lastReorgVersion = reorgVersion
 	}
 }
 
-func (handler *CfxLogsApiHandler) getLogsReorgGuard(
-	ctx context.Context,
+// getLogsByBlockHashes queries Fullnode directly using the existing request budget.
+func (handler *CfxLogsApiHandler) getLogsByBlockHashes(
+	retry *logsQueryRetry,
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 	delegatedRpcMethod string,
 ) ([]types.Log, bool, error) {
-	// Try to query event logs from database and fullnode.
-	// Note, if multiple block hashes specified in log filter, then split the block hashes
-	// into multiple block number ranges.
+	// Hash queries retain their block identities and bypass the database guard.
+	if delegatedRpcMethod != "" {
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/alldatabase").Mark(false)
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/allfullnode").Mark(true)
+		metrics.Registry.RPC.Percentage(delegatedRpcMethod, "filter/split/partial").Mark(false)
+	}
+	client := cfxLogsWithContext(retry.ctx, cfx)
+	logs, err := client.GetLogs(*filter)
+	if timeoutErr := retry.check(); timeoutErr != nil {
+		return nil, false, timeoutErr
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if retry.bounded {
+		var size logArraySize
+		for i := range logs {
+			size.add(cfxLogJSONSize(&logs[i]))
+			if size.size() > maxGetLogsResponseBytes {
+				return nil, false, newSuggestedBodyBytesOversizedError(client, filter, &logs[i])
+			}
+		}
+		if uint64(len(logs)) > store.MaxLogLimit {
+			return nil, false, newSuggestedResultSetOversizedError(client, filter, &logs[store.MaxLogLimit])
+		}
+	}
+	return logs, false, nil
+}
+
+// getLogsWithReorgGuard queries logs under the DB reorg version checks in GetLogs.
+// The caller owns version validation and retries; each call builds fresh chain checks.
+func (handler *CfxLogsApiHandler) getLogsWithReorgGuard(
+	ctx context.Context,
+	cfx sdk.ClientOperator,
+	filter *types.LogFilter,
+	delegatedRpcMethod string,
+	useBoundCheck bool,
+) ([]types.Log, bool, error) {
 	dbFilters, fnFilter, err := handler.splitLogFilter(cfx, filter)
 	if err != nil {
 		return nil, false, err
@@ -179,18 +251,11 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	}
 
 	var logs []types.Log
-	var accumulator int
+	var dbBoundary *store.LogFilter
+	var responseSize logArraySize
 
-	useBoundCheck := RequireBoundChecks(filter)
-	if len(dbFilters) > 0 {
-		if useBoundCheck {
-			// add db query timeout
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, store.TimeoutGetLogs)
-			defer cancel()
-		} else {
-			ctx = store.NewContextWithBoundChecksDisabled(ctx)
-		}
+	if !useBoundCheck {
+		ctx = store.NewContextWithBoundChecksDisabled(ctx)
 	}
 
 	// query data from database
@@ -203,14 +268,15 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 
 		// succeeded to get logs from database
 		if err == nil {
+			dbBoundary = &dbFilters[i]
 			for _, v := range dbLogs {
-				if accumulator += len(v.Extra); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
-					return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, v)
-				}
-
 				log, err := v.ToCfxLog()
 				if err != nil {
 					return nil, false, errors.WithMessage(err, "failed to convert to cfx log")
+				}
+				responseSize.add(cfxLogJSONSize(log))
+				if useBoundCheck && responseSize.size() > maxGetLogsResponseBytes {
+					return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, v)
 				}
 				logs = append(logs, *log)
 			}
@@ -260,7 +326,8 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 		}
 
 		for i := range fnLogs {
-			if accumulator += len(fnLogs[i].Data); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
+			responseSize.add(cfxLogJSONSize(&fnLogs[i]))
+			if useBoundCheck && responseSize.size() > maxGetLogsResponseBytes {
 				return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, &fnLogs[i])
 			}
 		}
@@ -279,13 +346,26 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 			return nil, false, err
 		}
 
+		fence, err := handler.newLogsFence(cfx, dbBoundary)
+		if err != nil {
+			return nil, false, err
+		}
+		if err := fence.check(); err != nil {
+			return nil, false, err
+		}
+
 		fnLogs, err := cfx.GetLogs(*fnFilter)
 		if err != nil {
 			return nil, false, err
 		}
 
+		if err := fence.check(); err != nil {
+			return nil, false, err
+		}
+
 		for i := range fnLogs {
-			if accumulator += len(fnLogs[i].Data); useBoundCheck && uint64(accumulator) > maxGetLogsResponseBytes {
+			responseSize.add(cfxLogJSONSize(&fnLogs[i]))
+			if useBoundCheck && responseSize.size() > maxGetLogsResponseBytes {
 				return nil, false, newSuggestedBodyBytesOversizedError(cfx, filter, &fnLogs[i])
 			}
 		}
@@ -298,14 +378,14 @@ func (handler *CfxLogsApiHandler) getLogsReorgGuard(
 	}
 
 	// Rare case: log context information for diagnostic purposes if the result exceeds limits.
-	if uint64(len(logs)) > store.MaxLogLimit || uint64(accumulator) > maxGetLogsResponseBytes {
+	if uint64(len(logs)) > store.MaxLogLimit || responseSize.size() > maxGetLogsResponseBytes {
 		logrus.WithFields(logrus.Fields{
 			"logFilter":         filter,
 			"databaseFilters":   dbFilters,
 			"fullnodeFilter":    fnFilter,
 			"boundCheckEnabled": useBoundCheck,
 			"resultSetCount":    len(logs),
-			"responseSizeBytes": uint64(accumulator),
+			"responseSizeBytes": responseSize.size(),
 		}).Info("Exceeded limits for getLogs response")
 	}
 
@@ -316,6 +396,9 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 ) ([]store.LogFilter, *types.LogFilter, error) {
+	if len(filter.BlockHashes) > 0 {
+		return nil, filter, nil
+	}
 	earliestMapping, ok, err := handler.ms.EarliestBlockMapping()
 	if err != nil {
 		return nil, nil, err
@@ -332,12 +415,6 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 		return nil, filter, nil
 	}
 
-	if len(filter.BlockHashes) > 0 {
-		return handler.splitLogFilterByBlockHashes(
-			cfx, filter, earliestMapping.Epoch, latestMapping.Epoch, earliestMapping.BnMin,
-		)
-	}
-
 	if filter.FromBlock != nil && filter.ToBlock != nil {
 		return handler.splitLogFilterByBlockRange(
 			cfx, filter, earliestMapping.BnMin, latestMapping.BnMax,
@@ -347,77 +424,6 @@ func (handler *CfxLogsApiHandler) splitLogFilter(
 	return handler.splitLogFilterByEpochRange(
 		cfx, filter, earliestMapping.Epoch, latestMapping.Epoch, latestMapping.BnMax,
 	)
-}
-
-func (handler *CfxLogsApiHandler) splitLogFilterByBlockHashes(
-	cfx sdk.ClientOperator,
-	filter *types.LogFilter,
-	minEpoch, maxEpoch, minBlock uint64,
-) ([]store.LogFilter, *types.LogFilter, error) {
-	var dbBlockNumbers []int
-	var fnBlockHashes []types.Hash
-
-	blockNumToHash := make(map[int]types.Hash)
-
-	// convert block hash to number to query from database
-	for _, hash := range filter.BlockHashes {
-		block, err := cfx.GetBlockSummaryByHash(hash)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Fullnode will return error if any block hash not found.
-		// Error processing request: Filter error: Unable to identify block 0xaaaa...
-		if block == nil {
-			return nil, nil, fmt.Errorf("unable to identify block %v", hash)
-		}
-
-		if block.BlockNumber == nil { // block already mined but not ordered yet?
-			return nil, nil, fmt.Errorf("block with hash %v is not executed yet", hash)
-		}
-
-		blockNumber := block.BlockNumber.ToInt().Uint64()
-		epoch := block.EpochNumber.ToInt().Uint64()
-		if epoch <= maxEpoch && (epoch < minEpoch || blockNumber < minBlock) {
-			return nil, nil, store.ErrAlreadyPruned
-		}
-
-		bn := int(blockNumber)
-
-		// dedupe
-		if _, ok := blockNumToHash[bn]; ok {
-			continue
-		}
-
-		blockNumToHash[bn] = hash
-
-		if epoch <= maxEpoch {
-			dbBlockNumbers = append(dbBlockNumbers, bn)
-		} else {
-			fnBlockHashes = append(fnBlockHashes, hash)
-		}
-	}
-
-	sort.Ints(dbBlockNumbers) // sort block numbers ascendingly
-
-	var dbFilters []store.LogFilter
-	for _, bn := range dbBlockNumbers {
-		partialFilter := *filter
-		partialFilter.BlockHashes = []types.Hash{blockNumToHash[bn]}
-
-		logfilter := store.ParseCfxLogFilter(uint64(bn), uint64(bn), &partialFilter)
-		dbFilters = append(dbFilters, logfilter)
-	}
-
-	if len(fnBlockHashes) == 0 {
-		return dbFilters, nil, nil
-	}
-
-	return dbFilters, &types.LogFilter{
-		BlockHashes: fnBlockHashes,
-		Address:     filter.Address,
-		Topics:      filter.Topics,
-	}, nil
 }
 
 func (handler *CfxLogsApiHandler) splitLogFilterByBlockRange(

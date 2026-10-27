@@ -59,7 +59,7 @@ func (h *CfxPrunedLogsHandler) GetLogs(ctx context.Context, filter types.LogFilt
 		return nil, err
 	}
 
-	return h.getLogsThrottled(client, filter)
+	return h.getLogsThrottled(cfxLogsWithContext(ctx, client), filter)
 }
 
 func (h *CfxPrunedLogsHandler) getLogsByUser(ctx context.Context, filter types.LogFilter) ([]types.Log, bool, error) {
@@ -99,7 +99,7 @@ func (h *CfxPrunedLogsHandler) getLogsByUser(ctx context.Context, filter types.L
 	}
 	defer client.Close()
 
-	logs, err := h.getLogsThrottled(client, filter)
+	logs, err := h.getLogsThrottled(cfxLogsWithContext(ctx, client), filter)
 	if err != nil {
 		return nil, false, err
 	}
