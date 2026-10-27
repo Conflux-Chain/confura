@@ -27,7 +27,7 @@ func TestGetLogsReadsAllPages(t *testing.T) {
 				switch path {
 				case "universal":
 					var rows []*log
-					err = queryLogsWithSizeValidation(ctx, db.Where("cid = ?", 7), &filter, &rows)
+					err = queryLogsWithSizeValidation(ctx, db.Where("cid = ?", 7), &filter, int(store.MaxLogLimit)+1, &rows)
 					keys = logRowKeys(rows)
 				case "address":
 					f := AddressIndexedLogFilter{LogFilter: filter, ContractId: 7}
@@ -44,11 +44,11 @@ func TestGetLogsReadsAllPages(t *testing.T) {
 					keys = logRowKeys(rows)
 				case "contract":
 					var rows []*contractLog
-					err = queryLogsWithSizeValidation(ctx, db.Where("cid = ?", 7), &filter, &rows)
+					err = queryLogsWithSizeValidation(ctx, db.Where("cid = ?", 7), &filter, int(store.MaxLogLimit)+1, &rows)
 					keys = logRowKeys(rows)
 				case "dedicated_topic":
 					var rows []*topicLog
-					err = queryLogsWithSizeValidation(ctx, db.Where("cid = ?", 7), &filter, &rows)
+					err = queryLogsWithSizeValidation(ctx, db.Where("cid = ?", 7), &filter, int(store.MaxLogLimit)+1, &rows)
 					keys = logRowKeys(rows)
 				}
 				require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestGetLogsReadsAllPages(t *testing.T) {
 		cancelled, cancel := context.WithCancel(ctx)
 		cancel()
 		var rows []*log
-		require.ErrorIs(t, queryLogsWithSizeValidation(cancelled, db, &filter, &rows), store.ErrGetLogsTimeout)
+		require.ErrorIs(t, queryLogsWithSizeValidation(cancelled, db, &filter, int(store.MaxLogLimit)+1, &rows), store.ErrGetLogsTimeout)
 		require.Empty(t, rows)
 	}
 }

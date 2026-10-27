@@ -406,7 +406,12 @@ func (btls *bigTopicLogStore[T]) GetTopicLogs(
 		var logs []*topicLog
 
 		filter.TableName = btls.getPartitionedTableName(btls.topicTabler(tid), partition.Index)
-		if err := queryLogsWithSizeValidation(ctx, btls.db, &filter, &logs); err != nil {
+		// Bounded reads use 10001 - len(result), keeping one row to detect overflow.
+		limit := int(store.MaxLogLimit) + 1
+		if store.IsBoundChecksEnabled(ctx) {
+			limit -= len(result)
+		}
+		if err := queryLogsWithSizeValidation(ctx, btls.db, &filter, limit, &logs); err != nil {
 			return nil, err
 		}
 

@@ -46,6 +46,6 @@ func Init() {
 		log.LevelTrace: logrus.TraceLevel,
 		log.LevelWarn:  logrus.InfoLevel,
 	})
-	handler := slogrus.Option{}.NewLogrusHandler()
+	handler := newGethLogHandler(logrus.StandardLogger())
 	log.SetDefault(log.NewLogger(handler.WithGroup("geth")))
 }
