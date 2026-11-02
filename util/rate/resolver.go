@@ -112,7 +112,7 @@ func (r *ProvisionedResolver) Resolve(ctx context.Context, reg *Registry) (*Stra
 
 	stg, _ := reg.id2Strategies[ki.SID]
 	if stg == nil {
-		logrus.WithField("keyInfo", ki).Debug("Custom rate limit strategy not configured")
+		logrus.WithField("strategyID", ki.SID).Debug("Custom rate limit strategy not configured")
 	}
 
 	var limitKey string
