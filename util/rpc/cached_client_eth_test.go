@@ -36,11 +36,11 @@ func (fixtureResolver) Resolve(n wt.BlockNumber) (uint64, error) {
 	return 100, nil
 }
 func fixtureNearhead() *EthNearHeadCache {
-	return &EthNearHeadCache{EthCache: nearhead.NewEthCache(nearhead.Config{MaxMemory: 1 << 20, MaxLogs: 100})}
+	return &EthNearHeadCache{maxLogs: 100, EthCache: nearhead.NewEthCache(nearhead.Config{MaxMemory: 1 << 20, MaxLogs: 100})}
 }
 func fixtureBlock(n int64, h common.Hash, topics []common.Hash) evm.BlockData {
 	tx := common.HexToHash("0x1")
-	return evm.BlockData{Block: &wt.Block{Number: big.NewInt(n), Hash: h, Transactions: *wt.NewTxOrHashListByTxs([]wt.TransactionDetail{{Hash: tx}})}, Receipts: []*wt.Receipt{{TransactionHash: tx, BlockHash: h, Logs: []*wt.Log{{BlockNumber: uint64(n), BlockHash: h, TxHash: tx, Topics: topics}}}}}
+	return evm.BlockData{Block: &wt.Block{Number: big.NewInt(n), Difficulty: big.NewInt(0), Hash: h, Transactions: *wt.NewTxOrHashListByTxs([]wt.TransactionDetail{{Hash: tx}})}, Receipts: []*wt.Receipt{{TransactionHash: tx, BlockHash: h, Logs: []*wt.Log{{BlockNumber: uint64(n), BlockHash: h, TxHash: tx, Topics: topics}}}}}
 }
 
 type fixtureIndexCache struct {

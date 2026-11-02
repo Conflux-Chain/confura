@@ -9,11 +9,13 @@ import (
 
 	"github.com/Conflux-Chain/confura-data-cache/nearhead"
 	cacheRpc "github.com/Conflux-Chain/confura-data-cache/rpc"
-	cacheSync "github.com/Conflux-Chain/confura-data-cache/sync"
 	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	lruCache "github.com/Conflux-Chain/confura/util/rpc/cache"
+	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/evm"
+	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
+	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -55,7 +57,10 @@ const (
 
 type EthNearHeadCache struct {
 	*nearhead.EthCache
-	stopSync context.CancelFunc
+	stopSync   context.CancelFunc
+	syncDone   sync.WaitGroup
+	snapshotMu sync.RWMutex
+	maxLogs    int
 }
 
 func newDummyEthNearHeadCache() *EthNearHeadCache {
@@ -67,13 +72,17 @@ func newDummyEthNearHeadCache() *EthNearHeadCache {
 func (c *EthNearHeadCache) Close() {
 	if c.stopSync != nil {
 		c.stopSync()
+		c.syncDone.Wait()
 	}
 }
 
 func NewEthNearHeadCacheFromViper(url string) (*EthNearHeadCache, error) {
 	var conf struct {
-		Enabled                  bool
-		cacheSync.NearHeadConfig `mapstructure:",squash"`
+		Enabled bool
+		Adapter evm.AdapterConfig
+		Poller  poll.Option
+		Writer  nearhead.WriteOption
+		Cache   nearhead.Config
 	}
 	if err := viperutil.UnmarshalKey("nearhead", &conf); err != nil {
 		return nil, errors.WithMessage(err, "failed to unmarshal near head config")
@@ -86,17 +95,26 @@ func NewEthNearHeadCacheFromViper(url string) (*EthNearHeadCache, error) {
 
 	conf.Adapter.URL = url
 
-	// Start near head sync.
+	adapter, err := evm.NewAdapterWithConfig(conf.Adapter)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to create near head adapter")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-
-	cache, err := cacheSync.StartNearHead(ctx, &wg, conf.NearHeadConfig)
+	finalized, err := adapter.GetFinalizedBlockNumber(ctx)
 	if err != nil {
 		cancel()
-		return nil, errors.WithMessage(err, "Failed to sync near head data")
+		adapter.Close()
+		return nil, err
 	}
-
-	return &EthNearHeadCache{EthCache: cache, stopSync: cancel}, nil
+	poller := poll.NewLatestPoller(adapter, finalized, poll.ReorgWindowParams{}, conf.Poller)
+	cache := &EthNearHeadCache{EthCache: nearhead.NewEthCache(conf.Cache), stopSync: cancel, maxLogs: conf.Cache.MaxLogs}
+	writer := &nearHeadWriter{cache: cache, writer: nearhead.NewWriter(cache.EthCache, conf.Writer)}
+	cache.syncDone.Add(2)
+	go poller.Poll(ctx, &cache.syncDone)
+	go process.Process(ctx, &cache.syncDone, poller.DataCh(), writer)
+	var once sync.Once
+	cache.stopSync = func() { once.Do(func() { cancel(); cache.syncDone.Wait(); adapter.Close() }) }
+	return cache, nil
 }
 
 func MustNewEthDataCacheClientFromViper() cacheRpc.Interface {
@@ -674,7 +692,7 @@ func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) (res []we
 		return nil, tracker.withError(err)
 	}
 
-	ethLogs, err := c.nearhead.GetLogsByBlockRange(
+	ethLogs, cachedHash, err := c.nearhead.logsSnapshot(
 		fromBlock, toBlock,
 		nearhead.FilterOpt{
 			Addresses: filter.Addresses,
@@ -699,6 +717,26 @@ func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) (res []we
 	if ethLogs.FromBlock < fromBlock || ethLogs.ToBlock > toBlock {
 		err = errors.New("bad event logs from near head cache: unexpected block range")
 		return nil, tracker.withError(err)
+	}
+
+	// A canonical hash at the upper bound commits to the entire requested
+	// ancestry. Check the cache boundary and fence all full-node range reads.
+	anchor, err := c.RpcEthClient.BlockByNumber(web3Types.BlockNumber(toBlock), false)
+	if err != nil {
+		return nil, tracker.withError(err)
+	}
+	if anchor == nil {
+		return nil, tracker.withError(errors.New("log range anchor unavailable"))
+	}
+	cacheAnchor := anchor
+	if ethLogs.ToBlock != toBlock {
+		cacheAnchor, err = c.RpcEthClient.BlockByNumber(web3Types.BlockNumber(ethLogs.ToBlock), false)
+		if err != nil {
+			return nil, tracker.withError(err)
+		}
+	}
+	if cacheAnchor == nil || cacheAnchor.Hash != cachedHash {
+		return nil, tracker.withError(errors.New("near head logs differ from canonical chain; retry request"))
 	}
 
 	tracker.withNearHeadHit(true)
@@ -727,6 +765,14 @@ func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) (res []we
 
 		res = append(res, logs...)
 		tracker.withFullNodeHit(true)
+	}
+
+	after, err := c.RpcEthClient.BlockByNumber(web3Types.BlockNumber(toBlock), false)
+	if err != nil {
+		return nil, tracker.withError(err)
+	}
+	if after == nil || after.Hash != anchor.Hash {
+		return nil, tracker.withError(errors.New("chain changed while reading logs; retry request"))
 	}
 
 	return res, nil
