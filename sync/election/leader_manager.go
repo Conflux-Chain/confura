@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
+	"github.com/Conflux-Chain/confura/util/viper"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"github.com/Conflux-Chain/go-conflux-util/health"
-	"github.com/Conflux-Chain/confura/util/viper"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

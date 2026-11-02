@@ -1,9 +1,10 @@
 package util
 
 import (
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	web3Types "github.com/openweb3/web3go/types"
-	"testing"
 )
 
 func TestTopicArity(t *testing.T) {

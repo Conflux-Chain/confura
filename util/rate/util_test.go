@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"testing"
+
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 type failingRandomReader struct{}

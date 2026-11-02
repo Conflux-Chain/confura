@@ -2,8 +2,6 @@ package middlewares
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
@@ -59,11 +57,6 @@ func getTrafficSourceFromContext(ctx context.Context) (source string) {
 	}
 
 	return source
-}
-
-func isMethodNotFoundByError(method string, err error) bool {
-	subPattern := fmt.Sprintf("the method %s does not exist/is not available", method)
-	return strings.Contains(err.Error(), subPattern)
 }
 
 func unwrapJsonError(jsErr *rpc.JsonError) error {

@@ -3,12 +3,13 @@ package rate
 import (
 	"context"
 	"encoding/json"
-	xrate "golang.org/x/time/rate"
 	"math"
 	"testing"
 	"time"
 
 	limiter "github.com/Conflux-Chain/go-conflux-util/rate"
+	httprate "github.com/Conflux-Chain/go-conflux-util/rate/http"
+	xrate "golang.org/x/time/rate"
 )
 
 func TestCreateDoesNotAcquireStrategyLock(t *testing.T) {
@@ -61,5 +62,47 @@ func TestInvalidLimiterOptionsReturnErrors(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(`{"rpc":{"algo":"token_bucket","option":{"rate":0.5,"burst":1}}}`), &s); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type gatedLimiterFactory struct {
+	registry *Registry
+	entered  chan struct{}
+	release  chan struct{}
+}
+
+func (f *gatedLimiterFactory) GetGroupAndKey(context.Context, string) (string, string, error) {
+	return "default", "fixture", nil
+}
+func (f *gatedLimiterFactory) Create(ctx context.Context, resource, group string) (limiter.Limiter, error) {
+	close(f.entered)
+	<-f.release
+	return f.registry.Create(ctx, resource, group)
+}
+func TestReloadAndDependencyCreateMakeProgress(t *testing.T) {
+	strategy := &Strategy{ID: 1, Name: "default", LimitOptions: map[string]interface{}{"rpc": TokenBucketOption{Rate: 1, Burst: 1}}}
+	r := &Registry{strategies: map[string]*Strategy{"default": strategy}, id2Strategies: map[uint32]*Strategy{1: strategy}}
+	r.publishLimiterStrategies()
+	factory := &gatedLimiterFactory{registry: r, entered: make(chan struct{}), release: make(chan struct{})}
+	r.Registry = httprate.NewRegistry(factory)
+	requestDone := make(chan error, 1)
+	go func() { requestDone <- r.Limit(context.Background(), "rpc") }()
+	<-factory.entered // dependency now owns its limiter registry lock
+	r.mu.Lock()       // reload owns the strategy lock
+	defer r.mu.Unlock()
+	reloadDone := make(chan struct{})
+	go func() { r.removeStrategy(strategy); close(reloadDone) }()
+	close(factory.release)
+	for _, done := range []<-chan struct{}{reloadDone} {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("reload deadlocked")
+		}
+	}
+	select {
+	case <-requestDone:
+	case <-time.After(time.Second):
+		t.Fatal("request deadlocked")
 	}
 }

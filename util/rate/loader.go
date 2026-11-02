@@ -2,12 +2,12 @@ package rate
 
 import (
 	"errors"
-	"golang.org/x/sync/singleflight"
 	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 )
 
 const (

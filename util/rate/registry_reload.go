@@ -109,7 +109,6 @@ func (m *Registry) removeStrategy(s *Strategy) {
 		m.Remove(resource, s.Name)
 		logrus.WithField("resource", resource).Info("RateLimit rule deleted")
 	}
-
 }
 
 func (m *Registry) addStrategy(s *Strategy) {

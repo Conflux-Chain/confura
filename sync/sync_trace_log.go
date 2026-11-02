@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/tracelog"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync"
@@ -14,7 +15,6 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process/db"
 	"github.com/Conflux-Chain/go-conflux-util/ctxutil"
-	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	"github.com/sirupsen/logrus"
 )
 
