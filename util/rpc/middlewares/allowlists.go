@@ -20,6 +20,7 @@ func Allowlists(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		aclCtx := acl.Context{
 			Context:   ctx,
 			RpcMethod: msg.Method,
+			RawParams: msg.Params,
 		}
 
 		if connH, ok := ctx.Value("handler").(*rpc.ConnHandler); ok {

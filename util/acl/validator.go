@@ -2,6 +2,7 @@ package acl
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"strings"
@@ -28,6 +29,7 @@ type Context struct {
 	context.Context
 
 	RpcMethod        string
+	RawParams        json.RawMessage
 	ExtractRpcParams func() ([]interface{}, error)
 }
 
@@ -194,8 +196,40 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 		return nil
 	}
 
-	if ctx.ExtractRpcParams == nil {
-		return nil
+	// A filter ID carries no verifiable contract constraint. Until filter
+	// ownership is tracked, do not accept IDs created by another identity.
+	switch ctx.RpcMethod {
+	case "eth_getFilterLogs", "eth_getFilterChanges", "cfx_getFilterLogs", "cfx_getFilterChanges":
+		return errInvalidContractAddr
+	}
+	if ctx.RpcMethod == "eth_subscribe" || ctx.RpcMethod == "cfx_subscribe" {
+		var args []json.RawMessage
+		var kind string
+		if json.Unmarshal(ctx.RawParams, &args) != nil || len(args) == 0 || json.Unmarshal(args[0], &kind) != nil {
+			return errBadRpcParams
+		}
+		if kind != "logs" {
+			return nil
+		}
+		if len(args) != 2 {
+			return errBadRpcParams
+		}
+		raw := args[1]
+		if ctx.RpcMethod == "eth_subscribe" {
+			ctx.RpcMethod = "eth_getLogs"
+			ctx.ExtractRpcParams = func() ([]interface{}, error) {
+				var f web3Types.FilterQuery
+				err := json.Unmarshal(raw, &f)
+				return []interface{}{f}, err
+			}
+		} else {
+			ctx.RpcMethod = "cfx_getLogs"
+			ctx.ExtractRpcParams = func() ([]interface{}, error) {
+				var f cfxTypes.LogFilter
+				err := json.Unmarshal(raw, &f)
+				return []interface{}{f}, err
+			}
+		}
 	}
 
 	parseContractAddresses, ok := v.contractAddressParsers[ctx.RpcMethod]
@@ -203,6 +237,9 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 		return nil
 	}
 
+	if ctx.ExtractRpcParams == nil {
+		return errBadRpcParams
+	}
 	inputParams, err := ctx.ExtractRpcParams()
 	if err != nil {
 		return errBadRpcParams
@@ -242,6 +279,7 @@ func NewEthValidator(al *AllowList) Validator {
 		"eth_call":                        v.parseCallRequest,
 		"eth_estimateGas":                 v.parseCallRequest,
 		"eth_getLogs":                     v.parseFilterQuery,
+		"eth_newFilter":                   v.parseFilterQuery,
 		"eth_scanLogs":                    parseContractAddressProvider,
 		"eth_scanLogsWithPivotAssumption": parseContractAddressProvider,
 		"eth_getBalance":                  v.parseAddr,
@@ -266,7 +304,7 @@ func (v *EthValidator) parseCallRequest(params []interface{}) (res []string, ok 
 	}
 
 	cr, ok := params[0].(web3Types.CallRequest)
-	if ok {
+	if ok && cr.To != nil {
 		res = append(res, cr.To.String())
 	}
 
@@ -329,6 +367,7 @@ func NewCfxValidator(al *AllowList) Validator {
 		"cfx_call":                        v.parseCallRequest,
 		"cfx_estimateGasAndCollateral":    v.parseCallRequest,
 		"cfx_getLogs":                     v.parseLogFilter,
+		"cfx_newFilter":                   v.parseLogFilter,
 		"cfx_scanLogs":                    parseContractAddressProvider,
 		"cfx_scanLogsWithPivotAssumption": parseContractAddressProvider,
 		"cfx_getBalance":                  v.parseAddr,
@@ -361,7 +400,7 @@ func (v *CfxValidator) parseCallRequest(params []interface{}) (res []string, ok 
 	}
 
 	cr, ok := params[0].(cfxTypes.CallRequest)
-	if ok { // only non-verbose base32 address format is accepted
+	if ok && cr.To != nil { // only non-verbose base32 address format is accepted
 		res = append(res, cr.To.MustGetBase32Address())
 	}
 
@@ -390,7 +429,7 @@ func (v *CfxValidator) parseAddr(params []interface{}) (res []string, ok bool) {
 
 	ca, ok := params[0].(cfxTypes.Address)
 	if ok {
-		res = append(res, ca.MustGetVerboseBase32Address())
+		res = append(res, ca.MustGetBase32Address())
 	}
 
 	return
