@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/viper"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/go-rpc-provider/utils"

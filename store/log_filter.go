@@ -6,8 +6,8 @@ import (
 	"time"
 
 	citypes "github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util/viper"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	web3Types "github.com/openweb3/web3go/types"
 
 	"github.com/pkg/errors"

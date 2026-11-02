@@ -3,7 +3,7 @@ package virtualfilter
 import (
 	"time"
 
-	"github.com/Conflux-Chain/confura/util/viper"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 )
 
 // ethConfig represents the configuration of the EVM space virtual filter system.

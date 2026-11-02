@@ -7,7 +7,7 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/relay"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
-	"github.com/Conflux-Chain/confura/util/viper"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"

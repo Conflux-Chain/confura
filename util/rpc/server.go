@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
-	viperutil "github.com/Conflux-Chain/confura/util/viper"
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"

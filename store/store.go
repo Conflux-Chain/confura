@@ -1,7 +1,7 @@
 package store
 
 import (
-	"github.com/Conflux-Chain/confura/util/viper"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/sirupsen/logrus"
 )
 

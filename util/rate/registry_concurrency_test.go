@@ -51,7 +51,7 @@ func TestFractionalTokenBucket(t *testing.T) {
 
 func TestInvalidLimiterOptionsReturnErrors(t *testing.T) {
 	r := &Registry{}
-	for _, opt := range []interface{}{TokenBucketOption{Rate: 0, Burst: 1}, TokenBucketOption{Rate: -1, Burst: 1}, TokenBucketOption{Rate: 1, Burst: 0}, TokenBucketOption{Rate: xrate.Limit(math.NaN()), Burst: 1}, TokenBucketOption{Rate: 1e-20, Burst: 1}, FixedWindowOption{}, FixedWindowOption{Interval: -1, Quota: 1}} {
+	for _, opt := range []interface{}{TokenBucketOption{Rate: 0, Burst: 1}, TokenBucketOption{Rate: -1, Burst: 1}, TokenBucketOption{Rate: 1, Burst: 0}, TokenBucketOption{Rate: xrate.Limit(math.NaN()), Burst: 1}, TokenBucketOption{Rate: xrate.Limit(math.Inf(1)), Burst: 1}, TokenBucketOption{Rate: 1e-20, Burst: 1}, FixedWindowOption{}, FixedWindowOption{Interval: -1, Quota: 1}} {
 		if _, err := r.createWithOption(opt); err == nil {
 			t.Errorf("accepted invalid option %+v", opt)
 		}

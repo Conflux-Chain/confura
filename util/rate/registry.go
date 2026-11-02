@@ -138,8 +138,11 @@ func (r *Registry) createWithOption(option interface{}) (l rate.Limiter, err err
 		}
 		l = rate.NewFixedWindow(opt.Interval, opt.Quota)
 	case TokenBucketOption:
-		if err := rate.ValidateTokenBucketConfig(float64(opt.Rate), opt.Burst, 1); err != nil {
-			return nil, err
+		if opt.Rate <= 0 || math.IsNaN(float64(opt.Rate)) || math.IsInf(float64(opt.Rate), 0) {
+			return nil, errors.New("token bucket rate must be positive and finite")
+		}
+		if opt.Burst <= 0 {
+			return nil, errors.New("token bucket burst must be positive")
 		}
 		if float64(opt.Burst)/float64(opt.Rate) >= float64(math.MaxInt64/int64(time.Second)) {
 			return nil, errors.New("token bucket refill interval is too large")

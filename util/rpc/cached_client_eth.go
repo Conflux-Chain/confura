@@ -13,10 +13,10 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	lruCache "github.com/Conflux-Chain/confura/util/rpc/cache"
-	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/evm"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process"
+	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
@@ -106,12 +106,7 @@ func NewEthNearHeadCacheFromViper(url string) (*EthNearHeadCache, error) {
 		adapter.Close()
 		return nil, err
 	}
-	poller, err := poll.NewLatestPoller(adapter, finalized, poll.ReorgWindowParams{}, conf.Poller)
-	if err != nil {
-		cancel()
-		adapter.Close()
-		return nil, errors.WithMessage(err, "failed to create near head poller")
-	}
+	poller := poll.NewLatestPoller(adapter, finalized, poll.ReorgWindowParams{}, conf.Poller)
 	cache := &EthNearHeadCache{EthCache: nearhead.NewEthCache(conf.Cache), stopSync: cancel, maxLogs: conf.Cache.MaxLogs}
 	writer := &nearHeadWriter{cache: cache, writer: nearhead.NewWriter(cache.EthCache, conf.Writer)}
 	cache.syncDone.Add(2)

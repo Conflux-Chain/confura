@@ -7,7 +7,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/types"
-	"github.com/Conflux-Chain/confura/util/viper"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/go-rpc-provider/utils"
 	ethtypes "github.com/openweb3/web3go/types"
