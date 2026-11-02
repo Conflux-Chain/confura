@@ -171,7 +171,7 @@ func IsEip155Tx(tx *web3goTypes.TransactionDetail) bool {
 
 // IsLegacyEthTx check if the EVM transaction is legacy (pre EIP155)
 func IsLegacyEthTx(tx *web3goTypes.TransactionDetail) bool {
-	if tx.V != nil && tx.V.Uint64() == 27 || tx.V.Uint64() == 28 {
+	if tx != nil && tx.V != nil && (tx.V.Uint64() == 27 || tx.V.Uint64() == 28) {
 		return true
 	}
 
@@ -194,6 +194,9 @@ func GetEthHardforkBlockNumber(chainId uint64) web3goTypes.BlockNumber {
 
 // MatchEthLogTopics checks if the eSpace event log matches with the given topics condition
 func MatchEthLogTopics(log *web3goTypes.Log, topics [][]common.Hash) bool {
+	if len(topics) > len(log.Topics) {
+		return false
+	}
 	find := func(t common.Hash, topics []common.Hash) bool {
 		return slices.Contains(topics, t)
 	}
