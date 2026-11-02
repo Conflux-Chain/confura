@@ -28,9 +28,9 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		start := time.Now()
 		resp := next(ctx, msg)
 
-		metricMethod := msg.Method
-		if resp.Error != nil && isMethodNotFoundByError(msg.Method, resp.Error) {
-			metricMethod = "method_not_found"
+		metricMethod := registeredMetricMethod(ctx, msg)
+		if resp == nil {
+			return nil
 		}
 
 		// collect rpc QPS/latency, response size etc.
@@ -76,4 +76,23 @@ func unwrapJsonError(jsErr *rpc.JsonError) error {
 	}
 
 	return jsErr
+}
+
+// Classify against registered callbacks, independently of early routing/auth
+// errors. Never use arbitrary client-supplied method names as metric labels.
+func registeredMetricMethod(ctx context.Context, msg *rpc.JsonRpcMessage) string {
+	switch msg.Method {
+	case "eth_subscribe", "eth_unsubscribe", "cfx_subscribe", "cfx_unsubscribe":
+		return msg.Method
+	}
+	if h, ok := ctx.Value("handler").(*rpc.ConnHandler); ok {
+		_, err := h.ParseCallArguments(msg)
+		if err == nil {
+			return msg.Method
+		}
+		if e, ok := err.(rpc.Error); ok && e.ErrorCode() != -32601 {
+			return msg.Method
+		}
+	}
+	return "method_not_found"
 }
