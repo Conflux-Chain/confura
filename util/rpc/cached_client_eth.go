@@ -16,7 +16,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/evm"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"

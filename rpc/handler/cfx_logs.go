@@ -11,7 +11,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

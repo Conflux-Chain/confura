@@ -17,7 +17,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"github.com/Conflux-Chain/go-conflux-util/health"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"

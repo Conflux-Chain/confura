@@ -8,7 +8,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/confura/util/viper"
 	gosql "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/mysql"

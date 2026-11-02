@@ -10,7 +10,7 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/confura/util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/sirupsen/logrus"

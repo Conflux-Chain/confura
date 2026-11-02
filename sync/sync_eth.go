@@ -14,7 +14,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"github.com/Conflux-Chain/go-conflux-util/health"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	"github.com/openweb3/web3go"
 	ethtypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"

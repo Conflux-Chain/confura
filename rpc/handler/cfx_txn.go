@@ -9,7 +9,7 @@ import (
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/confura/util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/openweb3/go-rpc-provider/utils"

@@ -6,7 +6,7 @@ import (
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/confura/util/viper"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/openweb3/web3go"
 	"github.com/sirupsen/logrus"

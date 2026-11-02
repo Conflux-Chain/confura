@@ -14,7 +14,7 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process/db"
 	"github.com/Conflux-Chain/go-conflux-util/ctxutil"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	"github.com/sirupsen/logrus"
 )
 

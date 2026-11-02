@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/confura/util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/go-rpc-provider/utils"
 	"github.com/openweb3/web3go"

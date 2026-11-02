@@ -11,7 +11,7 @@ import (
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

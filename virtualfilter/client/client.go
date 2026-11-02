@@ -5,7 +5,7 @@ import (
 	"time"
 
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/confura/util/viper"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/go-rpc-provider/interfaces"
 	providers "github.com/openweb3/go-rpc-provider/provider_wrapper"
