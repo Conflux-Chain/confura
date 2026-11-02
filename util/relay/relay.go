@@ -61,12 +61,14 @@ func newTxnRelayer(relayConf *TxnRelayerConfig) *txnRelayer {
 
 // Relay relays raw transaction broadcasting asynchronously.
 func (relayer *txnRelayer) Relay(signedTx hexutil.Bytes) bool {
-	if len(relayer.txnQueue) == relayer.BufferSize { // queue is full?
+	// Own queued bytes; callers may reuse their request buffer after return.
+	raw := append(hexutil.Bytes(nil), signedTx...)
+	select {
+	case relayer.txnQueue <- raw:
+		return true
+	default:
 		return false
 	}
-
-	relayer.txnQueue <- signedTx
-	return true
 }
 
 // run starts concurrency worker(s) asynchronously
