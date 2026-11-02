@@ -1,33 +1,33 @@
 package rate
 
 import (
+	"bytes"
+	"crypto/rand"
+	"errors"
+	"github.com/btcsuite/btcutil/base58"
+	"github.com/stretchr/testify/require"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
+type failingRandomReader struct{}
+
+func (failingRandomReader) Read([]byte) (int, error) { return 0, errors.New("entropy unavailable") }
 func TestGenerateRandomLimitKey(t *testing.T) {
-	// limit type by IP
-	limitKey, err := GenerateRandomLimitKey(LimitTypeByIp)
-	assert.Nil(t, err)
-
-	assert.Greater(t, len(limitKey), LimitKeyLength)
-	assert.Less(t, len(limitKey), LimitKeyLength*2)
-
-	t.Logf("New random limit key of type `byIP`: %v", limitKey)
-	assert.Equal(t, limitKey[0], uint8('0'+LimitTypeByIp))
-
-	// limit type by Key
-	limitKey, err = GenerateRandomLimitKey(LimitTypeByKey)
-	assert.Nil(t, err)
-
-	assert.Greater(t, len(limitKey), LimitKeyLength)
-	assert.Less(t, len(limitKey), LimitKeyLength*2)
-
-	t.Logf("New random limit key of type `byKey`: %v", limitKey)
-	assert.Equal(t, limitKey[0], uint8('0'+LimitTypeByKey))
-
-	// invalid limit type
-	_, err = GenerateRandomLimitKey(-1)
-	assert.NotNil(t, err)
+	original := rand.Reader
+	t.Cleanup(func() { rand.Reader = original })
+	for _, kind := range []LimitType{LimitTypeByKey, LimitTypeByIp} {
+		entropy := bytes.Repeat([]byte{42}, LimitKeyLength)
+		rand.Reader = bytes.NewReader(entropy)
+		key, err := GenerateRandomLimitKey(kind)
+		require.NoError(t, err)
+		expected := []byte(base58.Encode(entropy))
+		expected[0] = '0' + byte(kind)
+		require.Equal(t, string(expected), key)
+	}
+	rand.Reader = failingRandomReader{}
+	key, err := GenerateRandomLimitKey(LimitTypeByKey)
+	require.ErrorContains(t, err, "entropy unavailable")
+	require.Empty(t, key)
+	_, err = GenerateRandomLimitKey(LimitType(255))
+	require.Error(t, err)
 }
