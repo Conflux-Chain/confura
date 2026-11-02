@@ -7,7 +7,7 @@ toolchain go1.23.10
 require (
 	github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20260414083601-cfb736638339
 	github.com/Conflux-Chain/go-conflux-sdk v1.6.2-0.20260723071534-0585f1e2e56b
-	github.com/Conflux-Chain/go-conflux-util v0.7.4
+	github.com/Conflux-Chain/go-conflux-util v0.7.12-0.20261016064239-f3074203c485
 	github.com/Conflux-Chain/web3pay-service v1.0.2
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
@@ -18,6 +18,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/mcuadros/go-defaults v1.2.0
+	github.com/mitchellh/mapstructure v1.4.3
 	github.com/montanaflynn/stats v0.6.6
 	github.com/openweb3/go-rpc-provider v0.3.7
 	github.com/openweb3/web3go v0.3.5
@@ -38,6 +39,7 @@ require (
 	google.golang.org/grpc v1.75.0
 	google.golang.org/protobuf v1.36.6
 	gorm.io/driver/mysql v1.6.0
+	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.30.0
 	gorm.io/hints v1.1.0
 )
@@ -111,6 +113,7 @@ require (
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kilic/bls12-381 v0.1.0 // indirect
 	github.com/klauspost/compress v1.16.0 // indirect
@@ -123,7 +126,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
-	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/mitchellh/pointerstructure v1.2.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -176,7 +178,6 @@ require (
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/driver/sqlite v1.6.0 // indirect
 	gotest.tools v2.2.0+incompatible // indirect
 )
 

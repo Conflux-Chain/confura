@@ -2,6 +2,9 @@ package rate
 
 import (
 	"context"
+	"encoding/json"
+	xrate "golang.org/x/time/rate"
+	"math"
 	"testing"
 	"time"
 
@@ -42,5 +45,21 @@ func TestFractionalTokenBucket(t *testing.T) {
 	}
 	if err := bucket.LimitAt(now.Add(2*time.Second), 1); err != nil {
 		t.Fatalf("fractional rate did not refill: %v", err)
+	}
+}
+
+func TestInvalidLimiterOptionsReturnErrors(t *testing.T) {
+	r := &Registry{}
+	for _, opt := range []interface{}{TokenBucketOption{Rate: 0, Burst: 1}, TokenBucketOption{Rate: -1, Burst: 1}, TokenBucketOption{Rate: 1, Burst: 0}, TokenBucketOption{Rate: xrate.Limit(math.NaN()), Burst: 1}, TokenBucketOption{Rate: 1e-20, Burst: 1}, FixedWindowOption{}, FixedWindowOption{Interval: -1, Quota: 1}} {
+		if _, err := r.createWithOption(opt); err == nil {
+			t.Errorf("accepted invalid option %+v", opt)
+		}
+	}
+	var s Strategy
+	if err := json.Unmarshal([]byte(`{"rpc":null}`), &s); err == nil {
+		t.Fatal("accepted null rule")
+	}
+	if err := json.Unmarshal([]byte(`{"rpc":{"algo":"token_bucket","option":{"rate":0.5,"burst":1}}}`), &s); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -2,6 +2,7 @@ package rate
 
 import (
 	"context"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -132,8 +133,17 @@ func (r *Registry) Create(ctx context.Context, resource, group string) (rate.Lim
 func (r *Registry) createWithOption(option interface{}) (l rate.Limiter, err error) {
 	switch opt := option.(type) {
 	case FixedWindowOption:
+		if opt.Interval <= 0 || opt.Quota <= 0 {
+			return nil, errors.New("fixed window interval and quota must be positive")
+		}
 		l = rate.NewFixedWindow(opt.Interval, opt.Quota)
 	case TokenBucketOption:
+		if err := rate.ValidateTokenBucketConfig(float64(opt.Rate), opt.Burst, 1); err != nil {
+			return nil, err
+		}
+		if float64(opt.Burst)/float64(opt.Rate) >= float64(math.MaxInt64/int64(time.Second)) {
+			return nil, errors.New("token bucket refill interval is too large")
+		}
 		l = rate.NewTokenBucketRate(opt.Rate, opt.Burst)
 	default:
 		err = errors.New("invalid limit option")
