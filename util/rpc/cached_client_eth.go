@@ -2,7 +2,9 @@ package rpc
 
 import (
 	"context"
+	"math"
 	"math/big"
+	"slices"
 	"sync"
 
 	"github.com/Conflux-Chain/confura-data-cache/nearhead"
@@ -805,6 +807,9 @@ func (c ethCacheClient) LazyTransactionByBlockHashAndIndex(
 			return res, err
 		},
 		func() (cacheTypes.Lazy[*web3Types.TransactionDetail], error) {
+			if uint64(index) > math.MaxUint32 {
+				return cacheTypes.Lazy[*web3Types.TransactionDetail]{}, nil
+			}
 			return c.dataCache.GetTransactionByIndex(cacheBlockRef, uint32(index))
 		},
 		func() (cacheTypes.Lazy[*web3Types.TransactionDetail], error) {
@@ -852,7 +857,7 @@ func (c ethCacheClient) LazyTransactionByBlockNumberAndIndex(
 			return res, err
 		},
 		func() (res cacheTypes.Lazy[*web3Types.TransactionDetail], err error) {
-			if blockRef.shouldReadFromDataCache(nearheadCoverage) {
+			if uint64(index) <= math.MaxUint32 && blockRef.shouldReadFromDataCache(nearheadCoverage) {
 				res, err = c.dataCache.GetTransactionByIndex(blockRef.cacheRef, uint32(index))
 			}
 			return res, err
@@ -886,23 +891,27 @@ func (c traceCacheClient) LazyTrace(
 	transactionHash common.Hash,
 	indexes []uint,
 ) (res cacheTypes.Lazy[*web3Types.LocalizedTrace], _ error) {
-	if len(indexes) == 0 {
-		return res, nil
-	}
-
 	tracker := newRPCCacheTracker(rpcMethodTraceGet)
 	defer tracker.report()
 
 	return readThroughLazyCacheChain(
 		tracker,
 		func() (res cacheTypes.Lazy[*web3Types.LocalizedTrace], err error) {
-			if trace := c.nearhead.GetTrace(transactionHash, indexes[0]); trace != nil {
+			if trace := traceAtAddress(c.nearhead.GetTransactionTraces(transactionHash), indexes); trace != nil {
 				res, err = cacheTypes.NewLazy(trace)
 			}
 			return res, err
 		},
 		func() (cacheTypes.Lazy[*web3Types.LocalizedTrace], error) {
-			return c.dataCache.GetTrace(transactionHash, indexes[0])
+			traces, err := c.dataCache.GetTransactionTraces(transactionHash)
+			if err != nil {
+				return cacheTypes.Lazy[*web3Types.LocalizedTrace]{}, err
+			}
+			loaded, err := traces.Load()
+			if err != nil {
+				return cacheTypes.Lazy[*web3Types.LocalizedTrace]{}, err
+			}
+			return cacheTypes.NewLazy(traceAtAddress(loaded, indexes))
 		},
 		func() (cacheTypes.Lazy[*web3Types.LocalizedTrace], error) {
 			hexIndexes := make([]hexutil.Uint, len(indexes))
@@ -1299,4 +1308,15 @@ func readThroughLazyCacheChain[T any](
 			return fromFullNode()
 		},
 	)
+}
+
+// trace_get indexes are a path through the call tree, not an offset in the
+// flattened trace_transaction response. An empty path selects the root.
+func traceAtAddress(traces []web3Types.LocalizedTrace, path []uint) *web3Types.LocalizedTrace {
+	for i := range traces {
+		if slices.Equal(traces[i].TraceAddress, path) {
+			return &traces[i]
+		}
+	}
+	return nil
 }
