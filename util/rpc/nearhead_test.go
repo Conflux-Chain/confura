@@ -65,10 +65,21 @@ func TestNearHeadLogTopicsAndOwnership(t *testing.T) {
 	n := fixtureNearhead()
 	hash := common.HexToHash("0xa")
 	require.NoError(t, n.Put(fixtureBlock(100, hash, []common.Hash{hash})))
-	for _, topics := range [][][]common.Hash{{{hash}, {}}, {{hash}, {hash}}} {
-		logs, err := n.GetLogsByBlockHash(hash, nearhead.FilterOpt{Topics: topics})
-		require.NoError(t, err)
-		require.Empty(t, logs.Logs)
+	for _, tc := range []struct {
+		name   string
+		topics [][]common.Hash
+		count  int
+	}{
+		{"missing null position", [][]common.Hash{{hash}, nil}, 1},
+		{"missing empty position", [][]common.Hash{{hash}, {}}, 1},
+		{"missing required topic", [][]common.Hash{{hash}, {hash}}, 0},
+		{"wildcard then missing required topic", [][]common.Hash{nil, {hash}}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs, err := n.GetLogsByBlockHash(hash, nearhead.FilterOpt{Topics: tc.topics})
+			require.NoError(t, err)
+			require.Len(t, logs.Logs, tc.count)
+		})
 	}
 	logs, err := n.GetLogsByBlockHash(hash, nearhead.FilterOpt{})
 	require.NoError(t, err)

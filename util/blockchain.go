@@ -194,15 +194,13 @@ func GetEthHardforkBlockNumber(chainId uint64) web3goTypes.BlockNumber {
 
 // MatchEthLogTopics checks if the eSpace event log matches with the given topics condition
 func MatchEthLogTopics(log *web3goTypes.Log, topics [][]common.Hash) bool {
-	if len(topics) > len(log.Topics) {
-		return false
-	}
 	find := func(t common.Hash, topics []common.Hash) bool {
 		return slices.Contains(topics, t)
 	}
 
 	for i := range topics {
 		if len(topics[i]) == 0 {
+			// Conflux eSpace wildcards also match missing topic positions.
 			continue
 		}
 
