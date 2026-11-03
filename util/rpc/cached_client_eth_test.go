@@ -74,23 +74,95 @@ func TestLargeTransactionIndexBypassesNarrowCache(t *testing.T) {
 type fixtureTraceCache struct{ cacheRpc.Interface }
 
 func (c *fixtureTraceCache) GetTransactionTraces(common.Hash) (ct.Lazy[[]wt.LocalizedTrace], error) {
+	return ct.NewLazy(fixtureTransactionTraces())
+}
+
+func fixtureTransactionTraces() []wt.LocalizedTrace {
 	var traces []wt.LocalizedTrace
+	txHash := common.HexToHash("0x1")
 	for _, path := range [][]uint{{}, {0}, {0, 1}, {0, 2}} {
 		var trace wt.LocalizedTrace
 		_ = json.Unmarshal([]byte(`{"type":"call","action":{"from":"0x0000000000000000000000000000000000000000","to":"0x0000000000000000000000000000000000000000","gas":"0x0","input":"0x","value":"0x0","callType":"call"},"traceAddress":[],"subtraces":0,"blockNumber":100,"blockHash":"0x0000000000000000000000000000000000000000000000000000000000000001"}`), &trace)
 		trace.TraceAddress = path
+		trace.TransactionHash = &txHash
 		traces = append(traces, trace)
 	}
-	return ct.NewLazy(traces)
+	return traces
 }
-func TestTraceGetUsesEntirePathIncludingRoot(t *testing.T) {
-	c := traceCacheClient{cacheClientContext: cacheClientContext{nearhead: fixtureNearhead(), dataCache: &fixtureTraceCache{cacheRpc.NotFoundImpl}}}
-	for _, path := range [][]uint{{}, {0, 1}, {0, 2}} {
-		lazy, err := c.LazyTrace(common.Hash{}, path)
-		require.NoError(t, err)
-		got, err := lazy.Load()
-		require.NoError(t, err)
-		require.NotNil(t, got)
-		require.Equal(t, path, got.TraceAddress)
+
+// Conflux eSpace selects the first flat index and returns null for empty input:
+// https://github.com/Conflux-Chain/conflux-rust/blob/2cb16583060d7a569271adb59cc1a9cd92dfd447/crates/rpc/rpc-eth-impl/src/trace.rs#L305-L319
+func TestTraceGetMatchesConfluxSemantics(t *testing.T) {
+	traces, txHash := fixtureTransactionTraces(), common.HexToHash("0x1")
+	for _, source := range []string{"nearhead", "data-cache", "fullnode"} {
+		t.Run(source, func(t *testing.T) {
+			for _, tc := range []struct {
+				name    string
+				indexes []uint
+				want    int // -1 means null
+			}{
+				{"empty", []uint{}, -1},
+				{"nil", nil, -1},
+				{"first", []uint{0}, 0},
+				{"second", []uint{1}, 1},
+				{"third", []uint{2}, 2},
+				{"ignore suffix one", []uint{0, 1}, 0},
+				{"ignore suffix two", []uint{0, 2}, 0},
+				{"ignore suffix after second", []uint{1, 0}, 1},
+				{"out of range", []uint{99}, -1},
+				{"large index", []uint{uint(uint64(1) << 32)}, -1},
+				{"maximum index", []uint{^uint(0)}, -1},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					n := fixtureNearhead()
+					var dataCache cacheRpc.Interface = cacheRpc.NotFoundImpl
+					switch source {
+					case "nearhead":
+						block := fixtureBlock(100, common.HexToHash("0x1"), nil)
+						block.Traces = traces
+						require.NoError(t, n.Put(block))
+					case "data-cache":
+						dataCache = &fixtureTraceCache{cacheRpc.NotFoundImpl}
+					}
+					calls := 0
+					p := &fixtureProvider{call: func(_ context.Context, out interface{}, method string, args ...interface{}) error {
+						calls++
+						require.Equal(t, "trace_get", method)
+						require.Equal(t, txHash, args[0])
+						indices := args[1].([]hexutil.Uint)
+						require.Len(t, indices, len(tc.indexes))
+						for i := range indices {
+							require.Equal(t, hexutil.Uint(tc.indexes[i]), indices[i])
+						}
+						// Model the pinned node implementation, independently of TraceAddress.
+						var trace *wt.LocalizedTrace
+						if len(indices) > 0 && uint(indices[0]) < uint(len(traces)) {
+							trace = &traces[uint(indices[0])]
+						}
+						raw, err := json.Marshal(trace)
+						if err != nil {
+							return err
+						}
+						return json.Unmarshal(raw, out)
+					}}
+					c := traceCacheClient{RpcTraceClient: client.NewRpcTraceClient(p), cacheClientContext: cacheClientContext{nearhead: n, dataCache: dataCache, resolver: fixtureResolver{}}}
+					lazy, err := c.LazyTrace(txHash, tc.indexes)
+					require.NoError(t, err)
+					got, err := lazy.Load()
+					require.NoError(t, err)
+					if tc.want < 0 {
+						require.Nil(t, got)
+					} else {
+						require.NotNil(t, got)
+						require.Equal(t, traces[tc.want].TraceAddress, got.TraceAddress)
+					}
+					wantCalls := 0
+					if len(tc.indexes) > 0 && (source == "fullnode" || tc.want < 0) {
+						wantCalls = 1
+					}
+					require.Equal(t, wantCalls, calls)
+				})
+			}
+		})
 	}
 }

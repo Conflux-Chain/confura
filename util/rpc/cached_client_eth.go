@@ -4,7 +4,6 @@ import (
 	"context"
 	"math"
 	"math/big"
-	"slices"
 	"sync"
 
 	"github.com/Conflux-Chain/confura-data-cache/nearhead"
@@ -937,13 +936,18 @@ func (c traceCacheClient) LazyTrace(
 	transactionHash common.Hash,
 	indexes []uint,
 ) (res cacheTypes.Lazy[*web3Types.LocalizedTrace], _ error) {
+	if len(indexes) == 0 {
+		return res, nil
+	}
+	// Conflux eSpace uses the first index as an offset in transaction traces.
+	index := indexes[0]
 	tracker := newRPCCacheTracker(rpcMethodTraceGet)
 	defer tracker.report()
 
 	return readThroughLazyCacheChain(
 		tracker,
 		func() (res cacheTypes.Lazy[*web3Types.LocalizedTrace], err error) {
-			if trace := traceAtAddress(c.nearhead.GetTransactionTraces(transactionHash), indexes); trace != nil {
+			if trace := traceAtIndex(c.nearhead.GetTransactionTraces(transactionHash), index); trace != nil {
 				res, err = cacheTypes.NewLazy(trace)
 			}
 			return res, err
@@ -957,7 +961,7 @@ func (c traceCacheClient) LazyTrace(
 			if err != nil {
 				return cacheTypes.Lazy[*web3Types.LocalizedTrace]{}, err
 			}
-			return cacheTypes.NewLazy(traceAtAddress(loaded, indexes))
+			return cacheTypes.NewLazy(traceAtIndex(loaded, index))
 		},
 		func() (cacheTypes.Lazy[*web3Types.LocalizedTrace], error) {
 			hexIndexes := make([]hexutil.Uint, len(indexes))
@@ -1356,13 +1360,10 @@ func readThroughLazyCacheChain[T any](
 	)
 }
 
-// trace_get indexes are a path through the call tree, not an offset in the
-// flattened trace_transaction response. An empty path selects the root.
-func traceAtAddress(traces []web3Types.LocalizedTrace, path []uint) *web3Types.LocalizedTrace {
-	for i := range traces {
-		if slices.Equal(traces[i].TraceAddress, path) {
-			return &traces[i]
-		}
+// Keep the index unsigned so large inputs cannot wrap into a valid offset.
+func traceAtIndex(traces []web3Types.LocalizedTrace, index uint) *web3Types.LocalizedTrace {
+	if index < uint(len(traces)) {
+		return &traces[index]
 	}
 	return nil
 }
