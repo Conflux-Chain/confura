@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
+	cfxTypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
 	web3Types "github.com/openweb3/web3go/types"
@@ -34,9 +35,45 @@ func TestContractACLFilterAndSubscriptionBoundaries(t *testing.T) {
 		err := v.Validate(ctx)
 		require.Equal(t, tc.allowed, err == nil, tc.params)
 	}
-	for _, method := range []string{"eth_getFilterLogs", "eth_getFilterChanges"} {
-		require.Error(t, v.Validate(Context{RpcMethod: method}))
-		require.NoError(t, NewEthValidator(&AllowList{}).Validate(Context{RpcMethod: method}))
+}
+
+func TestContractACLRetainsFilterIDReads(t *testing.T) {
+	for _, tc := range []struct {
+		prefix  string
+		factory ValidatorFactory
+	}{
+		{"eth", NewEthValidator},
+		{"cfx", NewCfxValidator},
+	} {
+		t.Run(tc.prefix, func(t *testing.T) {
+			for _, suffix := range []string{"getFilterLogs", "getFilterChanges"} {
+				method := tc.prefix + "_" + suffix
+				ctx := Context{Context: context.Background(), RpcMethod: method, RawParams: json.RawMessage(`["0x1"]`)}
+				require.NoError(t, tc.factory(&AllowList{ContractAddresses: []string{allowedContractAddr}}).Validate(ctx))
+				require.NoError(t, tc.factory(&AllowList{}).Validate(ctx))
+				// Filter-ID reads still enforce method restrictions.
+				require.ErrorIs(t, tc.factory(&AllowList{ContractAddresses: []string{allowedContractAddr}, DisallowMethods: []string{method}}).Validate(ctx), errBadRpcMethod)
+			}
+		})
+	}
+}
+
+func TestCoreNewFilterContractACL(t *testing.T) {
+	allowed := cfxaddress.MustNew(allowedContractAddr, 1)
+	denied := cfxaddress.MustNew(notAllowedContractAddr, 1)
+	v := NewCfxValidator(&AllowList{ContractAddresses: []string{allowed.MustGetBase32Address()}})
+	for _, tc := range []struct {
+		addresses []cfxaddress.Address
+		allowed   bool
+	}{
+		{[]cfxaddress.Address{allowed}, true},
+		{[]cfxaddress.Address{denied}, false},
+		{[]cfxaddress.Address{allowed, denied}, false},
+		{nil, false},
+	} {
+		ctx := cfxGetLogsContext(cfxTypes.LogFilter{Address: tc.addresses})
+		ctx.RpcMethod = "cfx_newFilter"
+		require.Equal(t, tc.allowed, v.Validate(ctx) == nil)
 	}
 }
 

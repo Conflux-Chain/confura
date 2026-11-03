@@ -24,6 +24,12 @@ func (*ACLBoundaryAPI) GetLogs(context.Context, wt.FilterQuery) ([]wt.Log, error
 	return []wt.Log{{Address: common.HexToAddress("0x2222222222222222222222222222222222222222")}}, nil
 }
 func (*ACLBoundaryAPI) NewFilter(context.Context, wt.FilterQuery) (string, error) { return "0x1", nil }
+func (*ACLBoundaryAPI) GetFilterLogs(context.Context, rpc.ID) ([]wt.Log, error) {
+	return []wt.Log{{Address: common.HexToAddress("0x1111111111111111111111111111111111111111")}}, nil
+}
+func (api *ACLBoundaryAPI) GetFilterChanges(ctx context.Context, id rpc.ID) ([]wt.Log, error) {
+	return api.GetFilterLogs(ctx, id)
+}
 func (*ACLBoundaryAPI) Echo(ctx context.Context) (string, error) {
 	id, _ := handlers.GetAuthIdFromContext(ctx)
 	return id, nil
@@ -93,6 +99,21 @@ func TestContractACLHTTPBatchAndWebSocket(t *testing.T) {
 			}
 		})
 	}
+	t.Run("allowed filter remains readable", func(t *testing.T) {
+		created := request("/", key, `{"jsonrpc":"2.0","id":1,"method":"eth_newFilter","params":[{"address":"0x1111111111111111111111111111111111111111"}]}`)
+		var response struct {
+			Result string          `json:"result"`
+			Error  json.RawMessage `json:"error"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(created), &response))
+		require.Empty(t, response.Error, created)
+		require.Equal(t, "0x1", response.Result)
+		for _, method := range []string{"eth_getFilterLogs", "eth_getFilterChanges"} {
+			out := request("/", key, `{"jsonrpc":"2.0","id":2,"method":"`+method+`","params":["`+response.Result+`"]}`)
+			require.Contains(t, out, `"result":[{"address":"0x1111111111111111111111111111111111111111"`, out)
+			require.NotContains(t, out, `"error"`, out)
+		}
+	})
 	// Real WebSocket upgrade and provider subscription dispatch, with identical HTTP context injector.
 	ws := httptest.NewServer(httpMiddleware("eth", r, nil)(h.WebsocketHandler([]string{"*"})))
 	defer ws.Close()

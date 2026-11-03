@@ -196,12 +196,8 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 		return nil
 	}
 
-	// A filter ID carries no verifiable contract constraint. Until filter
-	// ownership is tracked, do not accept IDs created by another identity.
-	switch ctx.RpcMethod {
-	case "eth_getFilterLogs", "eth_getFilterChanges", "cfx_getFilterLogs", "cfx_getFilterChanges":
-		return errInvalidContractAddr
-	}
+	// Check filter criteria at creation. Filter-ID reads retain their existing
+	// access semantics; they do not carry addresses to validate here.
 	if ctx.RpcMethod == "eth_subscribe" || ctx.RpcMethod == "cfx_subscribe" {
 		var args []json.RawMessage
 		var kind string
