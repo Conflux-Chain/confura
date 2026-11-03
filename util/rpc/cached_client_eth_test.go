@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"math/big"
 	"testing"
 
@@ -71,9 +72,26 @@ func TestLargeTransactionIndexBypassesNarrowCache(t *testing.T) {
 	require.Zero(t, d.calls)
 }
 
-type fixtureTraceCache struct{ cacheRpc.Interface }
+type fixtureTraceCache struct {
+	cacheRpc.Interface
+	indexes   []uint
+	bulkCalls int
+}
+
+func (c *fixtureTraceCache) GetTrace(_ common.Hash, index uint) (ct.Lazy[*wt.LocalizedTrace], error) {
+	c.indexes = append(c.indexes, index)
+	// Model the pinned gRPC client's uint32 wire conversion. The caller must
+	// skip this API when the original index does not fit.
+	index = uint(uint32(index))
+	traces := fixtureTransactionTraces()
+	if index >= uint(len(traces)) {
+		return ct.NewLazy((*wt.LocalizedTrace)(nil))
+	}
+	return ct.NewLazy(&traces[index])
+}
 
 func (c *fixtureTraceCache) GetTransactionTraces(common.Hash) (ct.Lazy[[]wt.LocalizedTrace], error) {
+	c.bulkCalls++
 	return ct.NewLazy(fixtureTransactionTraces())
 }
 
@@ -110,19 +128,24 @@ func TestTraceGetMatchesConfluxSemantics(t *testing.T) {
 				{"ignore suffix two", []uint{0, 2}, 0},
 				{"ignore suffix after second", []uint{1, 0}, 1},
 				{"out of range", []uint{99}, -1},
+				{"maximum protocol index", []uint{math.MaxUint32}, -1},
 				{"large index", []uint{uint(uint64(1) << 32)}, -1},
+				{"maximum signed index", []uint{uint(math.MaxInt)}, -1},
+				{"signed overflow", []uint{uint(math.MaxInt) + 1}, -1},
 				{"maximum index", []uint{^uint(0)}, -1},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					n := fixtureNearhead()
 					var dataCache cacheRpc.Interface = cacheRpc.NotFoundImpl
+					var traceCache *fixtureTraceCache
 					switch source {
 					case "nearhead":
 						block := fixtureBlock(100, common.HexToHash("0x1"), nil)
 						block.Traces = traces
 						require.NoError(t, n.Put(block))
 					case "data-cache":
-						dataCache = &fixtureTraceCache{cacheRpc.NotFoundImpl}
+						traceCache = &fixtureTraceCache{Interface: cacheRpc.NotFoundImpl}
+						dataCache = traceCache
 					}
 					calls := 0
 					p := &fixtureProvider{call: func(_ context.Context, out interface{}, method string, args ...interface{}) error {
@@ -161,6 +184,14 @@ func TestTraceGetMatchesConfluxSemantics(t *testing.T) {
 						wantCalls = 1
 					}
 					require.Equal(t, wantCalls, calls)
+					if traceCache != nil {
+						require.Zero(t, traceCache.bulkCalls, "trace_get must not fetch all transaction traces")
+						if len(tc.indexes) > 0 && uint64(tc.indexes[0]) <= math.MaxUint32 {
+							require.Equal(t, []uint{tc.indexes[0]}, traceCache.indexes)
+						} else {
+							require.Empty(t, traceCache.indexes, "unsafe index must bypass data-cache")
+						}
+					}
 				})
 			}
 		})

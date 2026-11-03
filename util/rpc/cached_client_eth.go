@@ -947,21 +947,21 @@ func (c traceCacheClient) LazyTrace(
 	return readThroughLazyCacheChain(
 		tracker,
 		func() (res cacheTypes.Lazy[*web3Types.LocalizedTrace], err error) {
-			if trace := traceAtIndex(c.nearhead.GetTransactionTraces(transactionHash), index); trace != nil {
+			// The pinned cache converts index to int for its bounds check.
+			if index > uint(math.MaxInt) {
+				return res, nil
+			}
+			if trace := c.nearhead.GetTrace(transactionHash, index); trace != nil {
 				res, err = cacheTypes.NewLazy(trace)
 			}
 			return res, err
 		},
 		func() (cacheTypes.Lazy[*web3Types.LocalizedTrace], error) {
-			traces, err := c.dataCache.GetTransactionTraces(transactionHash)
-			if err != nil {
-				return cacheTypes.Lazy[*web3Types.LocalizedTrace]{}, err
+			// The pinned gRPC client narrows index to uint32 on the wire.
+			if uint64(index) > math.MaxUint32 {
+				return cacheTypes.Lazy[*web3Types.LocalizedTrace]{}, nil
 			}
-			loaded, err := traces.Load()
-			if err != nil {
-				return cacheTypes.Lazy[*web3Types.LocalizedTrace]{}, err
-			}
-			return cacheTypes.NewLazy(traceAtIndex(loaded, index))
+			return c.dataCache.GetTrace(transactionHash, index)
 		},
 		func() (cacheTypes.Lazy[*web3Types.LocalizedTrace], error) {
 			hexIndexes := make([]hexutil.Uint, len(indexes))
@@ -1358,12 +1358,4 @@ func readThroughLazyCacheChain[T any](
 			return fromFullNode()
 		},
 	)
-}
-
-// Keep the index unsigned so large inputs cannot wrap into a valid offset.
-func traceAtIndex(traces []web3Types.LocalizedTrace, index uint) *web3Types.LocalizedTrace {
-	if index < uint(len(traces)) {
-		return &traces[index]
-	}
-	return nil
 }
