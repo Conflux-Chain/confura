@@ -8,13 +8,11 @@ import (
 
 	"github.com/Conflux-Chain/confura-data-cache/nearhead"
 	cacheRpc "github.com/Conflux-Chain/confura-data-cache/rpc"
+	cacheSync "github.com/Conflux-Chain/confura-data-cache/sync"
 	cacheTypes "github.com/Conflux-Chain/confura-data-cache/types"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
 	lruCache "github.com/Conflux-Chain/confura/util/rpc/cache"
-	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/evm"
-	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
-	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -54,12 +52,12 @@ const (
 	rpcMethodTraceBlock                     = "trace_block"
 )
 
+// EthNearHeadCache uses data-cache's readers unchanged. Cache-internal locking,
+// topic filtering and returned-buffer ownership require fixes in that package.
 type EthNearHeadCache struct {
 	*nearhead.EthCache
-	stopSync   context.CancelFunc
-	syncDone   sync.WaitGroup
-	snapshotMu sync.RWMutex
-	maxLogs    int
+	stopSync context.CancelFunc
+	syncDone sync.WaitGroup
 }
 
 func newDummyEthNearHeadCache() *EthNearHeadCache {
@@ -77,11 +75,8 @@ func (c *EthNearHeadCache) Close() {
 
 func NewEthNearHeadCacheFromViper(url string) (*EthNearHeadCache, error) {
 	var conf struct {
-		Enabled bool
-		Adapter evm.AdapterConfig
-		Poller  poll.Option
-		Writer  nearhead.WriteOption
-		Cache   nearhead.Config
+		Enabled                  bool
+		cacheSync.NearHeadConfig `mapstructure:",squash"`
 	}
 	if err := viperutil.UnmarshalKey("nearhead", &conf); err != nil {
 		return nil, errors.WithMessage(err, "failed to unmarshal near head config")
@@ -94,25 +89,16 @@ func NewEthNearHeadCacheFromViper(url string) (*EthNearHeadCache, error) {
 
 	conf.Adapter.URL = url
 
-	adapter, err := evm.NewAdapterWithConfig(conf.Adapter)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to create near head adapter")
-	}
+	// Keep polling, reorg writes and adapter ownership in data-cache. Internal
+	// cache fixes belong there; Confura only coordinates its full-node reads.
 	ctx, cancel := context.WithCancel(context.Background())
-	finalized, err := adapter.GetFinalizedBlockNumber(ctx)
+	cache := &EthNearHeadCache{stopSync: cancel}
+	ethCache, err := cacheSync.StartNearHead(ctx, &cache.syncDone, conf.NearHeadConfig)
 	if err != nil {
 		cancel()
-		adapter.Close()
-		return nil, err
+		return nil, errors.WithMessage(err, "failed to sync near head data")
 	}
-	poller := poll.NewLatestPoller(adapter, finalized, poll.ReorgWindowParams{}, conf.Poller)
-	cache := &EthNearHeadCache{EthCache: nearhead.NewEthCache(conf.Cache), stopSync: cancel, maxLogs: conf.Cache.MaxLogs}
-	writer := &nearHeadWriter{cache: cache, writer: nearhead.NewWriter(cache.EthCache, conf.Writer)}
-	cache.syncDone.Add(2)
-	go poller.Poll(ctx, &cache.syncDone)
-	go process.Process(ctx, &cache.syncDone, poller.DataCh(), writer)
-	var once sync.Once
-	cache.stopSync = func() { once.Do(func() { cancel(); cache.syncDone.Wait(); adapter.Close() }) }
+	cache.EthCache = ethCache
 	return cache, nil
 }
 
@@ -691,7 +677,17 @@ func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) (res []we
 		return nil, tracker.withError(err)
 	}
 
-	ethLogs, cachedHash, err := c.nearhead.logsSnapshot(
+	// Bracket the dependency's log read with cached-boundary checks. Its public
+	// API cannot return logs and a hash atomically. These checks detect observed
+	// changes, not ABA reorgs; an atomic snapshot requires a data-cache change.
+	boundary := c.nearhead.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(toBlock), false)
+	cacheEnd := toBlock
+	if boundary.Coverage[0] < boundary.Coverage[1] && toBlock >= boundary.Coverage[1] {
+		cacheEnd = boundary.Coverage[1] - 1
+		boundary = c.nearhead.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(cacheEnd), false)
+	}
+	cachedBoundary := boundary.Result
+	ethLogs, err := c.nearhead.GetLogsByBlockRange(
 		fromBlock, toBlock,
 		nearhead.FilterOpt{
 			Addresses: filter.Addresses,
@@ -718,8 +714,14 @@ func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) (res []we
 		return nil, tracker.withError(err)
 	}
 
-	// A canonical hash at the upper bound commits to the entire requested
-	// ancestry. Check the cache boundary and fence all full-node range reads.
+	boundaryAfter := c.nearhead.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(ethLogs.ToBlock), false).Result
+	if cachedBoundary == nil || ethLogs.ToBlock != cacheEnd || boundaryAfter == nil || boundaryAfter.Hash != cachedBoundary.Hash {
+		return nil, tracker.withError(errors.New("near head cache changed while reading logs; retry request"))
+	}
+
+	// Confura stitches cache and full-node results, so it checks their boundary
+	// hashes and the node's upper-bound hash before and after stitching. This is
+	// not an atomic node snapshot and cannot detect ABA or inconsistent backends.
 	anchor, err := c.RpcEthClient.BlockByNumber(web3Types.BlockNumber(toBlock), false)
 	if err != nil {
 		return nil, tracker.withError(err)
@@ -734,7 +736,7 @@ func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) (res []we
 			return nil, tracker.withError(err)
 		}
 	}
-	if cacheAnchor == nil || cacheAnchor.Hash != cachedHash {
+	if cacheAnchor == nil || cacheAnchor.Hash != cachedBoundary.Hash {
 		return nil, tracker.withError(errors.New("near head logs differ from canonical chain; retry request"))
 	}
 

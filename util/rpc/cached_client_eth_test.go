@@ -37,7 +37,7 @@ func (fixtureResolver) Resolve(n wt.BlockNumber) (uint64, error) {
 	return 100, nil
 }
 func fixtureNearhead() *EthNearHeadCache {
-	return &EthNearHeadCache{maxLogs: 100, EthCache: nearhead.NewEthCache(nearhead.Config{MaxMemory: 1 << 20, MaxLogs: 100})}
+	return &EthNearHeadCache{EthCache: nearhead.NewEthCache(nearhead.Config{MaxMemory: 1 << 20, MaxLogs: 100})}
 }
 func fixtureBlock(n int64, h common.Hash, topics []common.Hash) evm.BlockData {
 	tx := common.HexToHash("0x1")

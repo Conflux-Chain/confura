@@ -4,11 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"testing"
-	"time"
 
-	"github.com/Conflux-Chain/confura-data-cache/nearhead"
 	cacheRpc "github.com/Conflux-Chain/confura-data-cache/rpc"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go/client"
@@ -61,70 +58,85 @@ func TestLogsRejectReorgDuringStitch(t *testing.T) {
 	}
 }
 
-func TestNearHeadLogTopicsAndOwnership(t *testing.T) {
-	n := fixtureNearhead()
-	hash := common.HexToHash("0xa")
-	require.NoError(t, n.Put(fixtureBlock(100, hash, []common.Hash{hash})))
+// These tests cover Confura's cache/full-node boundary checks. They do not
+// establish snapshot atomicity or repair data-cache's filtering and locking.
+func TestLogsRangeBoundaryChecks(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		topics [][]common.Hash
-		count  int
+		name        string
+		from, to    wt.BlockNumber
+		stale       bool
+		empty       bool
+		nilHeader   int
+		failedRPC   int
+		wantHeaders int
+		wantReads   int
+		wantLogs    int
+		wantError   string
 	}{
-		{"missing null position", [][]common.Hash{{hash}, nil}, 1},
-		{"missing empty position", [][]common.Hash{{hash}, {}}, 1},
-		{"missing required topic", [][]common.Hash{{hash}, {hash}}, 0},
-		{"wildcard then missing required topic", [][]common.Hash{nil, {hash}}, 0},
+		{name: "fully cached", from: 100, to: 100, wantHeaders: 2, wantLogs: 1},
+		{name: "node suffix", from: 100, to: 101, wantHeaders: 3, wantReads: 1, wantLogs: 2},
+		{name: "cache miss", from: 101, to: 101, wantReads: 1, wantLogs: 1},
+		{name: "stale cache", from: 100, to: 100, stale: true, wantHeaders: 1, wantError: "differ from canonical"},
+		{name: "stale empty logs", from: 100, to: 100, stale: true, empty: true, wantHeaders: 1, wantError: "differ from canonical"},
+		{name: "missing anchor", from: 100, to: 100, nilHeader: 1, wantHeaders: 1, wantError: "anchor unavailable"},
+		{name: "missing cache boundary", from: 100, to: 101, nilHeader: 2, wantHeaders: 2, wantError: "differ from canonical"},
+		{name: "anchor RPC error", from: 100, to: 100, failedRPC: 1, wantHeaders: 1, wantError: "header RPC failed"},
+		{name: "final RPC error", from: 100, to: 100, failedRPC: 2, wantHeaders: 2, wantError: "header RPC failed"},
+		{name: "missing final header", from: 100, to: 100, nilHeader: 2, wantHeaders: 2, wantError: "chain changed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			logs, err := n.GetLogsByBlockHash(hash, nearhead.FilterOpt{Topics: tc.topics})
-			require.NoError(t, err)
-			require.Len(t, logs.Logs, tc.count)
-		})
-	}
-	logs, err := n.GetLogsByBlockHash(hash, nearhead.FilterOpt{})
-	require.NoError(t, err)
-	require.Len(t, logs.Logs, 1)
-	logs.Logs[0].Topics[0] = common.Hash{}
-	again, err := n.GetLogsByBlockHash(hash, nearhead.FilterOpt{})
-	require.NoError(t, err)
-	require.Equal(t, hash, again.Logs[0].Topics[0])
-	n.maxLogs = 0
-	_, err = n.GetLogsByBlockHash(hash, nearhead.FilterOpt{})
-	require.Error(t, err)
-}
-
-func TestNearHeadHashReadsAndWriterProgress(t *testing.T) {
-	n := fixtureNearhead()
-	hash := common.HexToHash("0xa")
-	require.NoError(t, n.Put(fixtureBlock(100, hash, nil)))
-	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 100; j++ {
-				_, err := n.GetLogsByBlockHash(hash, nearhead.FilterOpt{})
-				if err != nil {
-					t.Error(err)
+			n := fixtureNearhead()
+			cachedHash := common.HexToHash("0xa100")
+			block := fixtureBlock(100, cachedHash, nil)
+			if tc.empty {
+				block.Receipts[0].Logs = nil
+			}
+			require.NoError(t, n.Put(block))
+			headers, reads := 0, 0
+			p := &fixtureProvider{call: func(_ context.Context, out interface{}, method string, args ...interface{}) error {
+				var data interface{}
+				switch method {
+				case "eth_getBlockByNumber":
+					headers++
+					if headers == tc.failedRPC {
+						return fmt.Errorf("header RPC failed")
+					}
+					if headers != tc.nilHeader {
+						number := args[0].(wt.BlockNumber)
+						hash := common.HexToHash("0xa101")
+						if number == 100 {
+							hash = cachedHash
+							if tc.stale {
+								hash = common.HexToHash("0xb100")
+							}
+						}
+						header := fixtureBlock(int64(number), hash, nil).Block
+						header.Transactions = *wt.NewTxOrHashListByHashes(nil)
+						data = header
+					}
+				case "eth_getLogs":
+					reads++
+					data = []wt.Log{{BlockNumber: 101, BlockHash: common.HexToHash("0xa101")}}
+				default:
+					t.Fatalf("unexpected method %s", method)
 				}
+				raw, err := json.Marshal(data)
+				if err != nil {
+					return err
+				}
+				return json.Unmarshal(raw, out)
+			}}
+			c := ethCacheClient{RpcEthClient: client.NewRpcEthClient(p), cacheClientContext: cacheClientContext{nearhead: n, dataCache: cacheRpc.NotFoundImpl, resolver: fixtureResolver{}}}
+			logs, err := c.Logs(wt.FilterQuery{FromBlock: &tc.from, ToBlock: &tc.to})
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				require.Nil(t, logs, "discard results when the boundary check fails")
+			} else {
+				require.NoError(t, err)
+				require.Len(t, logs, tc.wantLogs)
 			}
-		}()
-	}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for j := 0; j < 100; j++ {
-			n.Pop(100)
-			if err := n.Put(fixtureBlock(100, hash, nil)); err != nil {
-				t.Error(err)
-			}
-		}
-	}()
-	done := make(chan struct{})
-	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("cache read/write deadlock")
+			require.Equal(t, tc.wantHeaders, headers)
+			require.Equal(t, tc.wantReads, reads)
+		})
 	}
 }
