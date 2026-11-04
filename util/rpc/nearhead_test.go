@@ -648,3 +648,45 @@ func TestReadNearHeadLogsErrorsAndFilter(t *testing.T) {
 	require.EqualError(t, err, "failed to get logs from near head cache: invalid block range params")
 	require.Equal(t, scans, r.scans)
 }
+
+func TestNearHeadLogRetryDiagnosticLevels(t *testing.T) {
+	for _, level := range []logrus.Level{logrus.DebugLevel, logrus.InfoLevel, logrus.WarnLevel} {
+		t.Run(level.String(), func(t *testing.T) {
+			logger := logrus.StandardLogger()
+			output, originalLevel := logger.Out, logger.GetLevel()
+			var diagnostics bytes.Buffer
+			logger.SetOutput(&diagnostics)
+			logger.SetLevel(level)
+			t.Cleanup(func() { logger.SetOutput(output); logger.SetLevel(originalLevel) })
+
+			n := fixtureNearhead()
+			hash := common.HexToHash("0xa100")
+			require.NoError(t, n.Put(fixtureBlock(100, hash, nil)))
+			headers := 0
+			p := &fixtureProvider{call: func(_ context.Context, out interface{}, method string, args ...interface{}) error {
+				if method == "eth_getLogs" {
+					return nearHeadTestReply(out, []wt.Log{})
+				}
+				require.Equal(t, "eth_getBlockByNumber", method)
+				headers++
+				if headers == 1 {
+					return nearHeadTestReply(out, nil)
+				}
+				return nearHeadTestReply(out, nearHeadTestHeader(100, hash))
+			}}
+			from, to := wt.BlockNumber(99), wt.BlockNumber(100)
+			_, err := nearHeadTestClient(n, p).Logs(wt.FilterQuery{FromBlock: &from, ToBlock: &to})
+			require.NoError(t, err)
+			require.Equal(t, 3, headers)
+			if level == logrus.DebugLevel {
+				require.Equal(t, 2, bytes.Count(diagnostics.Bytes(), []byte("level=debug")))
+				require.Contains(t, diagnostics.String(), "Retrying near-head logs after canonical view conflict")
+				require.Contains(t, diagnostics.String(), "Near-head log consistency recovered")
+				require.Contains(t, diagnostics.String(), "boundary=100")
+				require.NotContains(t, diagnostics.String(), "level=info")
+			} else {
+				require.Empty(t, diagnostics.String())
+			}
+		})
+	}
+}

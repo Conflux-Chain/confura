@@ -699,7 +699,7 @@ func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) ([]web3Ty
 		logs, err := c.logsByBlockRangeOnce(filter, fromBlock, toBlock, tracker)
 		conflict, ok := err.(*nearHeadLogConflict)
 		if !ok {
-			if err == nil && attempts > 1 {
+			if err == nil && attempts > 1 && logrus.IsLevelEnabled(logrus.DebugLevel) {
 				logrus.WithField("attempts", attempts).Debug("Near-head log consistency recovered")
 			}
 			return logs, tracker.withError(err)
@@ -707,20 +707,25 @@ func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) ([]web3Ty
 		if deadline.IsZero() {
 			deadline = time.Now().Add(nearHeadLogRetryTimeout)
 		}
-		logger := logrus.WithFields(logrus.Fields{
-			"fromBlock": fromBlock,
-			"toBlock":   toBlock,
-			"boundary":  conflict.boundary,
-			"reason":    conflict.reason,
-			"attempts":  attempts,
-			"elapsed":   time.Since(started),
-		})
+		logConflict := func(level logrus.Level, message string) {
+			if !logrus.IsLevelEnabled(level) {
+				return
+			}
+			logrus.WithFields(logrus.Fields{
+				"fromBlock": fromBlock,
+				"toBlock":   toBlock,
+				"boundary":  conflict.boundary,
+				"reason":    conflict.reason,
+				"attempts":  attempts,
+				"elapsed":   time.Since(started),
+			}).Log(level, message)
+		}
 		if remaining := time.Until(deadline); remaining > 0 {
-			logger.Debug("Retrying near-head logs after canonical view conflict")
+			logConflict(logrus.DebugLevel, "Retrying near-head logs after canonical view conflict")
 			time.Sleep(min(nearHeadLogRetryBackoff, remaining))
 		}
 		if !time.Now().Before(deadline) {
-			logger.WithField("elapsed", time.Since(started)).Info("Near-head log consistency retry window exhausted")
+			logConflict(logrus.InfoLevel, "Near-head log consistency retry window exhausted")
 			return nil, tracker.withError(ErrInconsistentCanonicalView)
 		}
 	}
