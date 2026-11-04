@@ -690,92 +690,133 @@ func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) ([]web3Ty
 	from, to := web3Types.BlockNumber(fromBlock), web3Types.BlockNumber(toBlock)
 	filter.FromBlock, filter.ToBlock = &from, &to
 
-	ctx := context.Background()
-	var cancel context.CancelFunc
-	defer func() {
-		if cancel != nil {
-			cancel()
-		}
-	}()
-	for {
-		logs, err := c.logsByBlockRangeOnce(ctx, filter, fromBlock, toBlock, tracker)
-		if ctx.Err() != nil {
-			return nil, tracker.withError(errors.WithMessage(ErrInconsistentCanonicalView, "near-head log retry budget exhausted"))
-		}
-		if !errors.Is(err, ErrInconsistentCanonicalView) {
+	// The local window controls admission to another attempt, not RPC duration.
+	// Keep the configured client context/timeouts. An admitted attempt may finish
+	// after this window and still return a coherent result or its original error.
+	var deadline time.Time
+	started := time.Now()
+	for attempts := 1; ; attempts++ {
+		logs, err := c.logsByBlockRangeOnce(filter, fromBlock, toBlock, tracker)
+		conflict, ok := err.(*nearHeadLogConflict)
+		if !ok {
+			if err == nil && attempts > 1 {
+				logrus.WithField("attempts", attempts).Debug("Near-head log consistency recovered")
+			}
 			return logs, tracker.withError(err)
 		}
-		if cancel == nil {
-			// RPC request context is not available here. Start one local budget
-			// on the first conflict and bind only this call's client copy. The
-			// pinned provider's sleeps/cache locks are not cancellable, so this
-			// bounds retries, not the entire function's wall-clock duration.
-			ctx, cancel = context.WithTimeout(ctx, nearHeadLogRetryTimeout)
-			eth := *c.RpcEthClient
-			eth.SetContext(ctx)
-			c.RpcEthClient = &eth
+		if deadline.IsZero() {
+			deadline = time.Now().Add(nearHeadLogRetryTimeout)
 		}
-		timer := time.NewTimer(nearHeadLogRetryBackoff)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, tracker.withError(errors.WithMessage(ErrInconsistentCanonicalView, "near-head log retry budget exhausted"))
-		case <-timer.C:
+		logger := logrus.WithFields(logrus.Fields{
+			"fromBlock": fromBlock,
+			"toBlock":   toBlock,
+			"boundary":  conflict.boundary,
+			"reason":    conflict.reason,
+			"attempts":  attempts,
+			"elapsed":   time.Since(started),
+		})
+		if remaining := time.Until(deadline); remaining > 0 {
+			logger.Debug("Retrying near-head logs after canonical view conflict")
+			time.Sleep(min(nearHeadLogRetryBackoff, remaining))
 		}
-		if ctx.Err() != nil {
-			return nil, tracker.withError(errors.WithMessage(ErrInconsistentCanonicalView, "near-head log retry budget exhausted"))
+		if !time.Now().Before(deadline) {
+			logger.WithField("elapsed", time.Since(started)).Info("Near-head log consistency retry window exhausted")
+			return nil, tracker.withError(ErrInconsistentCanonicalView)
 		}
 	}
+}
+
+// nearHeadLogConflict carries fixed diagnostic reasons only. It is consumed by
+// the retry loop; clients receive only ErrInconsistentCanonicalView on exhaustion.
+type nearHeadLogConflict struct {
+	reason   string
+	boundary uint64
+}
+
+func (e *nearHeadLogConflict) Error() string { return e.reason }
+
+// nearHeadLogReader keeps the metadata/log read sequence explicit and testable.
+// Cache-internal snapshot and ownership guarantees remain data-cache's concern.
+type nearHeadLogReader interface {
+	GetBlock(cacheTypes.BlockHashOrNumber, bool) nearhead.EthCacheResultWithCoverage[*web3Types.Block]
+	GetLogsByBlockRange(uint64, uint64, nearhead.FilterOpt) (*nearhead.EthLogs, error)
+}
+
+// readNearHeadLogs scans logs at most once. A lightweight metadata lookup
+// captures the cached end first, so a partial hit needs no second log scan.
+func readNearHeadLogs(
+	cache nearHeadLogReader,
+	fromBlock, toBlock uint64,
+	opt nearhead.FilterOpt,
+) (*nearhead.EthLogs, common.Hash, error) {
+	if fromBlock > toBlock {
+		return nil, common.Hash{}, errors.New("failed to get logs from near head cache: invalid block range params")
+	}
+	// In the pinned cache, true returns the cached block directly; false copies
+	// it and builds a transaction-hash list. We only read metadata, never mutate.
+	probe := cache.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(toBlock), true)
+	start, end := probe.Coverage[0], probe.Coverage[1] // end is exclusive
+	if start >= end || toBlock < start || fromBlock >= end {
+		return nil, common.Hash{}, nil
+	}
+	end = min(toBlock, end-1)
+	ref := cacheTypes.BlockHashOrNumberWithNumber(end)
+	before := probe.Result
+	if end != toBlock {
+		before = cache.GetBlock(ref, true).Result
+	}
+	// Copy the hash before the scan; the cache returns a shared block pointer.
+	var hash common.Hash
+	if before != nil {
+		hash = before.Hash
+	}
+	snapshot, err := cache.GetLogsByBlockRange(fromBlock, toBlock, opt)
+	if err != nil {
+		return nil, common.Hash{}, errors.WithMessage(err, "failed to get logs from near head cache")
+	}
+	if snapshot == nil {
+		return nil, common.Hash{}, &nearHeadLogConflict{"near-head coverage disappeared", end}
+	}
+	if snapshot.FromBlock < fromBlock || snapshot.ToBlock > toBlock || snapshot.FromBlock > snapshot.ToBlock {
+		return nil, common.Hash{}, errors.New("bad event logs from near head cache: unexpected block range")
+	}
+	if snapshot.FromBlock == fromBlock && snapshot.ToBlock == toBlock {
+		// A complete result has one source and needs no boundary validation.
+		return snapshot, common.Hash{}, nil
+	}
+	if before == nil || hash == (common.Hash{}) {
+		return nil, common.Hash{}, &nearHeadLogConflict{"near-head boundary unavailable", end}
+	}
+	after := cache.GetBlock(ref, true).Result
+	if snapshot.ToBlock != end || after == nil || after.Hash != hash {
+		return nil, common.Hash{}, &nearHeadLogConflict{"near-head cache changed while reading logs", end}
+	}
+	// Start eviction can extend the node prefix. The actual returned range is
+	// authoritative as long as its end still matches the captured boundary.
+	return snapshot, hash, nil
 }
 
 // logsByBlockRangeOnce owns all data for one attempt. A conflict discards both
 // node segments and the cache result; no logs carry over to the next attempt.
 func (c ethCacheClient) logsByBlockRangeOnce(
-	ctx context.Context,
 	filter web3Types.FilterQuery,
 	fromBlock, toBlock uint64,
 	tracker *rpcCacheTracker,
 ) ([]web3Types.Log, error) {
-	if err := ctx.Err(); err != nil {
+	opt := nearhead.FilterOpt{Addresses: filter.Addresses, Topics: filter.Topics}
+	snapshot, hash, err := readNearHeadLogs(c.nearhead, fromBlock, toBlock, opt)
+	if err != nil {
 		return nil, err
 	}
-	opt := nearhead.FilterOpt{Addresses: filter.Addresses, Topics: filter.Topics}
-	ethLogs, err := c.nearhead.GetLogsByBlockRange(fromBlock, toBlock, opt)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to get logs from near head cache")
-	}
-	if ethLogs == nil {
+	if snapshot == nil {
 		tracker.withFullNodeHit(true)
-		return c.fetchLogsFromFullNode(ctx, filter, fromBlock, toBlock)
-	}
-	if ethLogs.FromBlock < fromBlock || ethLogs.ToBlock > toBlock || ethLogs.FromBlock > ethLogs.ToBlock {
-		return nil, errors.New("bad event logs from near head cache: unexpected block range")
+		return c.fetchLogsFromFullNode(filter, fromBlock, toBlock)
 	}
 	tracker.withNearHeadHit(true)
-	if ethLogs.FromBlock == fromBlock && ethLogs.ToBlock == toBlock {
-		// One cache read supplies the entire result. No node canonical lookup
-		// is needed; this returns the cache's current view, even if it lags.
-		return ethLogs.Logs, nil
+	if snapshot.FromBlock == fromBlock && snapshot.ToBlock == toBlock {
+		return snapshot.Logs, nil
 	}
-
-	// Only mixed reads need a boundary. Re-read logs between two cache header
-	// reads because data-cache cannot return logs and their end hash atomically.
-	// This detects observed changes, not ABA; an atomic snapshot belongs upstream.
-	end := ethLogs.ToBlock
-	ref := cacheTypes.BlockHashOrNumberWithNumber(end)
-	before := c.nearhead.GetBlock(ref, false).Result
-	if before == nil || before.Hash == (common.Hash{}) {
-		return nil, errors.WithMessage(ErrInconsistentCanonicalView, "near-head boundary unavailable")
-	}
-	snapshot, err := c.nearhead.GetLogsByBlockRange(fromBlock, toBlock, opt)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to get logs from near head cache")
-	}
-	after := c.nearhead.GetBlock(ref, false).Result
-	if snapshot == nil || snapshot.FromBlock != ethLogs.FromBlock || snapshot.ToBlock != end ||
-		after == nil || after.Hash != before.Hash {
-		return nil, errors.WithMessage(ErrInconsistentCanonicalView, "near-head cache changed while reading logs")
-	}
+	end := snapshot.ToBlock
 
 	// A block hash commits to its ancestry. For an internally coherent cache
 	// and node view, matching the cached end aligns both the older node prefix
@@ -783,13 +824,13 @@ func (c ethCacheClient) logsByBlockRangeOnce(
 	// no start/parent-hash or query-upper-bound lookup is needed here. This is
 	// optimistic alignment, not a node snapshot or protection against ABA or
 	// independently inconsistent responses within the node's Logs RPC.
-	if err := c.checkNearHeadLogBoundary(ctx, end, before.Hash); err != nil {
+	if err := c.checkNearHeadLogBoundary(end, hash); err != nil {
 		return nil, err
 	}
 	logs := make([]web3Types.Log, 0, len(snapshot.Logs))
 	if fromBlock < snapshot.FromBlock {
 		tracker.withFullNodeHit(true)
-		prefix, err := c.fetchLogsFromFullNode(ctx, filter, fromBlock, snapshot.FromBlock-1)
+		prefix, err := c.fetchLogsFromFullNode(filter, fromBlock, snapshot.FromBlock-1)
 		if err != nil {
 			return nil, err
 		}
@@ -798,44 +839,34 @@ func (c ethCacheClient) logsByBlockRangeOnce(
 	logs = append(logs, snapshot.Logs...)
 	if toBlock > end {
 		tracker.withFullNodeHit(true)
-		suffix, err := c.fetchLogsFromFullNode(ctx, filter, end+1, toBlock)
+		suffix, err := c.fetchLogsFromFullNode(filter, end+1, toBlock)
 		if err != nil {
 			return nil, err
 		}
 		logs = append(logs, suffix...)
 	}
-	if err := c.checkNearHeadLogBoundary(ctx, end, before.Hash); err != nil {
+	if err := c.checkNearHeadLogBoundary(end, hash); err != nil {
 		return nil, err
 	}
 	return logs, nil
 }
 
-func (c ethCacheClient) checkNearHeadLogBoundary(ctx context.Context, number uint64, hash common.Hash) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+func (c ethCacheClient) checkNearHeadLogBoundary(number uint64, hash common.Hash) error {
 	block, err := c.RpcEthClient.BlockByNumber(web3Types.BlockNumber(number), false)
 	if err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	if block == nil || block.Number == nil || !block.Number.IsUint64() ||
 		block.Number.Uint64() != number || block.Hash != hash {
-		return errors.WithMessage(ErrInconsistentCanonicalView, "node boundary differs from near-head cache")
+		return &nearHeadLogConflict{"node boundary differs from near-head cache", number}
 	}
 	return nil
 }
 
 func (c ethCacheClient) fetchLogsFromFullNode(
-	ctx context.Context,
 	filter web3Types.FilterQuery,
 	from, to uint64,
 ) ([]web3Types.Log, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	fromBlock := web3Types.BlockNumber(from)
 	toBlock := web3Types.BlockNumber(to)
 	filter.FromBlock = &fromBlock
