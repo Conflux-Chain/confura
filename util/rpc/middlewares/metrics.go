@@ -26,10 +26,10 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		start := time.Now()
 		resp := next(ctx, msg)
 
-		metricMethod := registeredMetricMethod(ctx, msg)
 		if resp == nil {
 			return nil
 		}
+		metricMethod := registeredMetricMethod(ctx, msg)
 
 		// collect rpc QPS/latency, response size etc.
 		space, _ := handlers.GetNamespaceFromContext(ctx)
@@ -79,7 +79,11 @@ func registeredMetricMethod(ctx context.Context, msg *rpc.JsonRpcMessage) string
 		return msg.Method
 	}
 	if h, ok := ctx.Value("handler").(*rpc.ConnHandler); ok {
-		_, err := h.ParseCallArguments(msg)
+		// The provider checks registration before parsing arguments. Probe with
+		// no params so classification never decodes the request payload again.
+		probe := *msg
+		probe.Params = nil
+		_, err := h.ParseCallArguments(&probe)
 		if err == nil {
 			return msg.Method
 		}
