@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/big"
 	"sync"
+	"time"
 
 	"github.com/Conflux-Chain/confura-data-cache/nearhead"
 	cacheRpc "github.com/Conflux-Chain/confura-data-cache/rpc"
@@ -27,6 +28,15 @@ import (
 
 var (
 	_ util.EthBlockNumberResolver = (*ethBlockTagResolver)(nil)
+
+	// ErrInconsistentCanonicalView means near-head and node log reads could not
+	// be aligned within the local retry budget. No partial result is returned.
+	ErrInconsistentCanonicalView = errors.New("inconsistent canonical view")
+)
+
+const (
+	nearHeadLogRetryTimeout = time.Second
+	nearHeadLogRetryBackoff = 10 * time.Millisecond
 )
 
 const (
@@ -667,122 +677,165 @@ func (c ethCacheClient) logsByBlockHash(filter web3Types.FilterQuery) ([]web3Typ
 	return logs, nil
 }
 
-func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) (res []web3Types.Log, err error) {
+func (c ethCacheClient) logsByBlockRange(filter web3Types.FilterQuery) ([]web3Types.Log, error) {
 	tracker := newRPCCacheTracker(rpcMethodEthLogsByBlockRange).withNearHeadHit(false).withFullNodeHit(false)
 	defer tracker.report()
 
 	fromBlock, toBlock, err := c.resolveBlockRange(filter)
 	if err != nil {
-		err = errors.WithMessage(err, "failed to resolve block range")
-		return nil, tracker.withError(err)
+		return nil, tracker.withError(errors.WithMessage(err, "failed to resolve block range"))
 	}
+	// Resolve moving tags once. Every attempt, including a cache miss after a
+	// conflict, must query the same heights without changing the caller's filter.
+	from, to := web3Types.BlockNumber(fromBlock), web3Types.BlockNumber(toBlock)
+	filter.FromBlock, filter.ToBlock = &from, &to
 
-	// Bracket the dependency's log read with cached-boundary checks. Its public
-	// API cannot return logs and a hash atomically. These checks detect observed
-	// changes, not ABA reorgs; an atomic snapshot requires a data-cache change.
-	boundary := c.nearhead.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(toBlock), false)
-	cacheEnd := toBlock
-	if boundary.Coverage[0] < boundary.Coverage[1] && toBlock >= boundary.Coverage[1] {
-		cacheEnd = boundary.Coverage[1] - 1
-		boundary = c.nearhead.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(cacheEnd), false)
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	defer func() {
+		if cancel != nil {
+			cancel()
+		}
+	}()
+	for {
+		logs, err := c.logsByBlockRangeOnce(ctx, filter, fromBlock, toBlock, tracker)
+		if ctx.Err() != nil {
+			return nil, tracker.withError(errors.WithMessage(ErrInconsistentCanonicalView, "near-head log retry budget exhausted"))
+		}
+		if !errors.Is(err, ErrInconsistentCanonicalView) {
+			return logs, tracker.withError(err)
+		}
+		if cancel == nil {
+			// RPC request context is not available here. Start one local budget
+			// on the first conflict and bind only this call's client copy. The
+			// pinned provider's sleeps/cache locks are not cancellable, so this
+			// bounds retries, not the entire function's wall-clock duration.
+			ctx, cancel = context.WithTimeout(ctx, nearHeadLogRetryTimeout)
+			eth := *c.RpcEthClient
+			eth.SetContext(ctx)
+			c.RpcEthClient = &eth
+		}
+		timer := time.NewTimer(nearHeadLogRetryBackoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, tracker.withError(errors.WithMessage(ErrInconsistentCanonicalView, "near-head log retry budget exhausted"))
+		case <-timer.C:
+		}
+		if ctx.Err() != nil {
+			return nil, tracker.withError(errors.WithMessage(ErrInconsistentCanonicalView, "near-head log retry budget exhausted"))
+		}
 	}
-	cachedBoundary := boundary.Result
-	ethLogs, err := c.nearhead.GetLogsByBlockRange(
-		fromBlock, toBlock,
-		nearhead.FilterOpt{
-			Addresses: filter.Addresses,
-			Topics:    filter.Topics,
-		},
-	)
+}
+
+// logsByBlockRangeOnce owns all data for one attempt. A conflict discards both
+// node segments and the cache result; no logs carry over to the next attempt.
+func (c ethCacheClient) logsByBlockRangeOnce(
+	ctx context.Context,
+	filter web3Types.FilterQuery,
+	fromBlock, toBlock uint64,
+	tracker *rpcCacheTracker,
+) ([]web3Types.Log, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	opt := nearhead.FilterOpt{Addresses: filter.Addresses, Topics: filter.Topics}
+	ethLogs, err := c.nearhead.GetLogsByBlockRange(fromBlock, toBlock, opt)
 	if err != nil {
-		err = errors.WithMessage(err, "failed to get logs from near head cache")
-		return nil, tracker.withError(err)
+		return nil, errors.WithMessage(err, "failed to get logs from near head cache")
 	}
-
 	if ethLogs == nil {
-		logs, err := c.RpcEthClient.Logs(filter)
-		if err != nil {
-			return nil, tracker.withError(err)
-		}
-
 		tracker.withFullNodeHit(true)
-		return logs, nil
+		return c.fetchLogsFromFullNode(ctx, filter, fromBlock, toBlock)
 	}
-
-	if ethLogs.FromBlock < fromBlock || ethLogs.ToBlock > toBlock {
-		err = errors.New("bad event logs from near head cache: unexpected block range")
-		return nil, tracker.withError(err)
+	if ethLogs.FromBlock < fromBlock || ethLogs.ToBlock > toBlock || ethLogs.FromBlock > ethLogs.ToBlock {
+		return nil, errors.New("bad event logs from near head cache: unexpected block range")
 	}
-
-	boundaryAfter := c.nearhead.GetBlock(cacheTypes.BlockHashOrNumberWithNumber(ethLogs.ToBlock), false).Result
-	if cachedBoundary == nil || ethLogs.ToBlock != cacheEnd || boundaryAfter == nil || boundaryAfter.Hash != cachedBoundary.Hash {
-		return nil, tracker.withError(errors.New("near head cache changed while reading logs; retry request"))
-	}
-
-	// Confura stitches cache and full-node results, so it checks their boundary
-	// hashes and the node's upper-bound hash before and after stitching. This is
-	// not an atomic node snapshot and cannot detect ABA or inconsistent backends.
-	anchor, err := c.RpcEthClient.BlockByNumber(web3Types.BlockNumber(toBlock), false)
-	if err != nil {
-		return nil, tracker.withError(err)
-	}
-	if anchor == nil {
-		return nil, tracker.withError(errors.New("log range anchor unavailable"))
-	}
-	cacheAnchor := anchor
-	if ethLogs.ToBlock != toBlock {
-		cacheAnchor, err = c.RpcEthClient.BlockByNumber(web3Types.BlockNumber(ethLogs.ToBlock), false)
-		if err != nil {
-			return nil, tracker.withError(err)
-		}
-	}
-	if cacheAnchor == nil || cacheAnchor.Hash != cachedBoundary.Hash {
-		return nil, tracker.withError(errors.New("near head logs differ from canonical chain; retry request"))
-	}
-
 	tracker.withNearHeadHit(true)
-
-	// Stitches together logs from the near head cache and full node.
-	// Handle the block range before the near head cached range.
-	if fromBlock < ethLogs.FromBlock {
-		logs, err := c.fetchLogsFromFullNode(filter, fromBlock, ethLogs.FromBlock-1)
-		if err != nil {
-			return nil, tracker.withError(err)
-		}
-
-		res = append(logs, res...)
-		tracker.withFullNodeHit(true)
+	if ethLogs.FromBlock == fromBlock && ethLogs.ToBlock == toBlock {
+		// One cache read supplies the entire result. No node canonical lookup
+		// is needed; this returns the cache's current view, even if it lags.
+		return ethLogs.Logs, nil
 	}
 
-	// Append logs from the near head cache.
-	res = append(res, ethLogs.Logs...)
-
-	// Handle the block range after the near head cached range.
-	if toBlock > ethLogs.ToBlock {
-		logs, err := c.fetchLogsFromFullNode(filter, ethLogs.ToBlock+1, toBlock)
-		if err != nil {
-			return nil, tracker.withError(err)
-		}
-
-		res = append(res, logs...)
-		tracker.withFullNodeHit(true)
+	// Only mixed reads need a boundary. Re-read logs between two cache header
+	// reads because data-cache cannot return logs and their end hash atomically.
+	// This detects observed changes, not ABA; an atomic snapshot belongs upstream.
+	end := ethLogs.ToBlock
+	ref := cacheTypes.BlockHashOrNumberWithNumber(end)
+	before := c.nearhead.GetBlock(ref, false).Result
+	if before == nil || before.Hash == (common.Hash{}) {
+		return nil, errors.WithMessage(ErrInconsistentCanonicalView, "near-head boundary unavailable")
 	}
-
-	after, err := c.RpcEthClient.BlockByNumber(web3Types.BlockNumber(toBlock), false)
+	snapshot, err := c.nearhead.GetLogsByBlockRange(fromBlock, toBlock, opt)
 	if err != nil {
-		return nil, tracker.withError(err)
+		return nil, errors.WithMessage(err, "failed to get logs from near head cache")
 	}
-	if after == nil || after.Hash != anchor.Hash {
-		return nil, tracker.withError(errors.New("chain changed while reading logs; retry request"))
+	after := c.nearhead.GetBlock(ref, false).Result
+	if snapshot == nil || snapshot.FromBlock != ethLogs.FromBlock || snapshot.ToBlock != end ||
+		after == nil || after.Hash != before.Hash {
+		return nil, errors.WithMessage(ErrInconsistentCanonicalView, "near-head cache changed while reading logs")
 	}
 
-	return res, nil
+	// A block hash commits to its ancestry. For an internally coherent cache
+	// and node view, matching the cached end aligns both the older node prefix
+	// and the newer node suffix. Check that same height around BOTH node reads;
+	// no start/parent-hash or query-upper-bound lookup is needed here. This is
+	// optimistic alignment, not a node snapshot or protection against ABA or
+	// independently inconsistent responses within the node's Logs RPC.
+	if err := c.checkNearHeadLogBoundary(ctx, end, before.Hash); err != nil {
+		return nil, err
+	}
+	logs := make([]web3Types.Log, 0, len(snapshot.Logs))
+	if fromBlock < snapshot.FromBlock {
+		tracker.withFullNodeHit(true)
+		prefix, err := c.fetchLogsFromFullNode(ctx, filter, fromBlock, snapshot.FromBlock-1)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, prefix...)
+	}
+	logs = append(logs, snapshot.Logs...)
+	if toBlock > end {
+		tracker.withFullNodeHit(true)
+		suffix, err := c.fetchLogsFromFullNode(ctx, filter, end+1, toBlock)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, suffix...)
+	}
+	if err := c.checkNearHeadLogBoundary(ctx, end, before.Hash); err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+func (c ethCacheClient) checkNearHeadLogBoundary(ctx context.Context, number uint64, hash common.Hash) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	block, err := c.RpcEthClient.BlockByNumber(web3Types.BlockNumber(number), false)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if block == nil || block.Number == nil || !block.Number.IsUint64() ||
+		block.Number.Uint64() != number || block.Hash != hash {
+		return errors.WithMessage(ErrInconsistentCanonicalView, "node boundary differs from near-head cache")
+	}
+	return nil
 }
 
 func (c ethCacheClient) fetchLogsFromFullNode(
+	ctx context.Context,
 	filter web3Types.FilterQuery,
 	from, to uint64,
 ) ([]web3Types.Log, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	fromBlock := web3Types.BlockNumber(from)
 	toBlock := web3Types.BlockNumber(to)
 	filter.FromBlock = &fromBlock
