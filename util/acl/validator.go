@@ -52,9 +52,9 @@ type validatorBase struct {
 	*AllowList
 
 	// wildchar pattern matching
-	allowMethodRules    []string // allow methods
-	disallowMethodRules []string // disallow methods
-	originRules         []string // request origins
+	allowMethodRules    []*regexp.Regexp // allow methods
+	disallowMethodRules []*regexp.Regexp // disallow methods
+	originRules         []*regexp.Regexp // request origins
 
 	// contract addresses mapset
 	contractAddressRules map[string]bool
@@ -64,25 +64,22 @@ type validatorBase struct {
 	contractAddressParsers map[string]contractAddressParser
 }
 
+func compileWildcardRules(patterns []string, lowercase bool) []*regexp.Regexp {
+	rules := make([]*regexp.Regexp, 0, len(patterns))
+	for _, pattern := range patterns {
+		if lowercase {
+			pattern = strings.ToLower(pattern)
+		}
+		// Invalid patterns never matched in the per-request regexp path. Skip
+		// them, but retain the original lists for the empty-policy checks below.
+		if rule, err := regexp.Compile(util.WildCardToRegexp(pattern)); err == nil {
+			rules = append(rules, rule)
+		}
+	}
+	return rules
+}
+
 func newValidatorBase(al *AllowList) *validatorBase {
-	var originRules []string
-	for _, r := range al.Origins {
-		regp := util.WildCardToRegexp(strings.ToLower(r))
-		originRules = append(originRules, regp)
-	}
-
-	var allowMethodRules []string
-	for _, r := range al.AllowMethods {
-		regp := util.WildCardToRegexp(r)
-		allowMethodRules = append(allowMethodRules, regp)
-	}
-
-	var disallowMethodRules []string
-	for _, r := range al.DisallowMethods {
-		regp := util.WildCardToRegexp(r)
-		disallowMethodRules = append(disallowMethodRules, regp)
-	}
-
 	contractAddrRules := make(map[string]bool)
 	for _, r := range al.ContractAddresses {
 		contractAddrRules[strings.ToLower(r)] = true
@@ -90,9 +87,9 @@ func newValidatorBase(al *AllowList) *validatorBase {
 
 	return &validatorBase{
 		AllowList:            al,
-		originRules:          originRules,
-		allowMethodRules:     allowMethodRules,
-		disallowMethodRules:  disallowMethodRules,
+		originRules:          compileWildcardRules(al.Origins, true),
+		allowMethodRules:     compileWildcardRules(al.AllowMethods, false),
+		disallowMethodRules:  compileWildcardRules(al.DisallowMethods, false),
 		contractAddressRules: contractAddrRules,
 	}
 }
@@ -131,8 +128,7 @@ func (v *validatorBase) validateOrigin(ctx Context) error {
 
 	reqOrigin = strings.ToLower(reqOrigin)
 	for _, r := range v.originRules {
-		matched, err := regexp.MatchString(r, reqOrigin)
-		if err == nil && matched {
+		if r.MatchString(reqOrigin) {
 			return nil
 		}
 	}
@@ -169,8 +165,7 @@ func (v *validatorBase) validateAllowMethods(ctx Context) error {
 	}
 
 	for _, r := range v.allowMethodRules {
-		matched, err := regexp.MatchString(r, ctx.RpcMethod)
-		if err == nil && matched {
+		if r.MatchString(ctx.RpcMethod) {
 			return nil
 		}
 	}
@@ -180,8 +175,7 @@ func (v *validatorBase) validateAllowMethods(ctx Context) error {
 	}
 
 	for _, r := range v.disallowMethodRules {
-		matched, err := regexp.MatchString(r, ctx.RpcMethod)
-		if err == nil && matched {
+		if r.MatchString(ctx.RpcMethod) {
 			return errBadRpcMethod
 		}
 	}
