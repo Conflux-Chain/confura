@@ -2,8 +2,6 @@ package middlewares
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/metrics"
@@ -28,10 +26,10 @@ func Metrics(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
 		start := time.Now()
 		resp := next(ctx, msg)
 
-		metricMethod := msg.Method
-		if resp.Error != nil && isMethodNotFoundByError(msg.Method, resp.Error) {
-			metricMethod = "method_not_found"
+		if resp == nil {
+			return nil
 		}
+		metricMethod := registeredMetricMethod(ctx, msg)
 
 		// collect rpc QPS/latency, response size etc.
 		space, _ := handlers.GetNamespaceFromContext(ctx)
@@ -61,11 +59,6 @@ func getTrafficSourceFromContext(ctx context.Context) (source string) {
 	return source
 }
 
-func isMethodNotFoundByError(method string, err error) bool {
-	subPattern := fmt.Sprintf("the method %s does not exist/is not available", method)
-	return strings.Contains(err.Error(), subPattern)
-}
-
 func unwrapJsonError(jsErr *rpc.JsonError) error {
 	if jsErr == nil {
 		return nil
@@ -76,4 +69,27 @@ func unwrapJsonError(jsErr *rpc.JsonError) error {
 	}
 
 	return jsErr
+}
+
+// Classify against registered callbacks, independently of early routing/auth
+// errors. Never use arbitrary client-supplied method names as metric labels.
+func registeredMetricMethod(ctx context.Context, msg *rpc.JsonRpcMessage) string {
+	switch msg.Method {
+	case "eth_subscribe", "eth_unsubscribe", "cfx_subscribe", "cfx_unsubscribe":
+		return msg.Method
+	}
+	if h, ok := ctx.Value("handler").(*rpc.ConnHandler); ok {
+		// The provider checks registration before parsing arguments. Probe with
+		// no params so classification never decodes the request payload again.
+		probe := *msg
+		probe.Params = nil
+		_, err := h.ParseCallArguments(&probe)
+		if err == nil {
+			return msg.Method
+		}
+		if e, ok := err.(rpc.Error); ok && e.ErrorCode() != -32601 {
+			return msg.Method
+		}
+	}
+	return "method_not_found"
 }

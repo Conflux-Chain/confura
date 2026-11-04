@@ -22,7 +22,7 @@ type ipRange struct {
 // inRange - check to see if a given ip address is within a range given
 func inRange(r ipRange, ipAddress net.IP) bool {
 	// strcmp type byte comparison
-	if bytes.Compare(ipAddress, r.start) >= 0 && bytes.Compare(ipAddress, r.end) < 0 {
+	if bytes.Compare(ipAddress, r.start) >= 0 && bytes.Compare(ipAddress, r.end) <= 0 {
 		return true
 	}
 	return false
@@ -84,12 +84,19 @@ func GetIPAddress(r *http.Request) string {
 				// bad address, go to next
 				continue
 			}
-			return ip
+			return realIP.String()
 		}
 	}
 
-	if idx := strings.Index(r.RemoteAddr, ":"); idx != -1 {
-		return r.RemoteAddr[:idx]
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+	if host != r.RemoteAddr {
+		return host
 	}
 
 	return r.RemoteAddr

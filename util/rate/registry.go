@@ -2,7 +2,9 @@ package rate
 
 import (
 	"context"
+	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/acl"
@@ -38,8 +40,9 @@ type Registry struct {
 	*http.Registry
 	*aclRegistry
 
-	mu      sync.Mutex
-	kloader *KeyLoader
+	mu                sync.Mutex
+	limiterStrategies atomic.Value // immutable map[string]*Strategy; Create never takes mu
+	kloader           *KeyLoader
 
 	// all available strategies
 	strategies    map[string]*Strategy // strategy name => *Strategy
@@ -62,6 +65,7 @@ func NewRegistry(kloader *KeyLoader, valFactory acl.ValidatorFactory) *Registry 
 		),
 	}
 
+	m.publishLimiterStrategies()
 	m.Registry = http.NewRegistry(m)
 	go m.ScheduleGC(GCScheduleInterval)
 
@@ -112,10 +116,8 @@ func (r *Registry) GetGroupAndKey(
 }
 
 func (r *Registry) Create(ctx context.Context, resource, group string) (rate.Limiter, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	stg, ok := r.strategies[group]
+	strategies := r.limiterStrategies.Load().(map[string]*Strategy)
+	stg, ok := strategies[group]
 	if !ok {
 		return nil, errors.New("strategy not found")
 	}
@@ -131,12 +133,35 @@ func (r *Registry) Create(ctx context.Context, resource, group string) (rate.Lim
 func (r *Registry) createWithOption(option interface{}) (l rate.Limiter, err error) {
 	switch opt := option.(type) {
 	case FixedWindowOption:
+		if opt.Interval <= 0 || opt.Quota <= 0 {
+			return nil, errors.New("fixed window interval and quota must be positive")
+		}
 		l = rate.NewFixedWindow(opt.Interval, opt.Quota)
 	case TokenBucketOption:
-		l = rate.NewTokenBucket(int(opt.Rate), opt.Burst)
+		if opt.Rate <= 0 || math.IsNaN(float64(opt.Rate)) || math.IsInf(float64(opt.Rate), 0) {
+			return nil, errors.New("token bucket rate must be positive and finite")
+		}
+		if opt.Burst <= 0 {
+			return nil, errors.New("token bucket burst must be positive")
+		}
+		if float64(opt.Burst)/float64(opt.Rate) >= float64(math.MaxInt64/int64(time.Second)) {
+			return nil, errors.New("token bucket refill interval is too large")
+		}
+		l = rate.NewTokenBucketRate(opt.Rate, opt.Burst)
 	default:
 		err = errors.New("invalid limit option")
 	}
 
 	return l, err
+}
+
+// publishLimiterStrategies is called with mu held (or before publication at construction).
+// The dependency invokes Create with its own lock held. Publish an immutable
+// snapshot so Create does not reverse reload's mu -> registry lock order.
+func (r *Registry) publishLimiterStrategies() {
+	snapshot := make(map[string]*Strategy, len(r.strategies))
+	for name, strategy := range r.strategies {
+		snapshot[name] = strategy
+	}
+	r.limiterStrategies.Store(snapshot)
 }

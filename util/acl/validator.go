@@ -2,6 +2,7 @@ package acl
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"strings"
@@ -28,6 +29,7 @@ type Context struct {
 	context.Context
 
 	RpcMethod        string
+	RawParams        json.RawMessage
 	ExtractRpcParams func() ([]interface{}, error)
 }
 
@@ -50,9 +52,9 @@ type validatorBase struct {
 	*AllowList
 
 	// wildchar pattern matching
-	allowMethodRules    []string // allow methods
-	disallowMethodRules []string // disallow methods
-	originRules         []string // request origins
+	allowMethodRules    []*regexp.Regexp // allow methods
+	disallowMethodRules []*regexp.Regexp // disallow methods
+	originRules         []*regexp.Regexp // request origins
 
 	// contract addresses mapset
 	contractAddressRules map[string]bool
@@ -62,25 +64,22 @@ type validatorBase struct {
 	contractAddressParsers map[string]contractAddressParser
 }
 
+func compileWildcardRules(patterns []string, lowercase bool) []*regexp.Regexp {
+	rules := make([]*regexp.Regexp, 0, len(patterns))
+	for _, pattern := range patterns {
+		if lowercase {
+			pattern = strings.ToLower(pattern)
+		}
+		// Invalid patterns never matched in the per-request regexp path. Skip
+		// them, but retain the original lists for the empty-policy checks below.
+		if rule, err := regexp.Compile(util.WildCardToRegexp(pattern)); err == nil {
+			rules = append(rules, rule)
+		}
+	}
+	return rules
+}
+
 func newValidatorBase(al *AllowList) *validatorBase {
-	var originRules []string
-	for _, r := range al.Origins {
-		regp := util.WildCardToRegexp(strings.ToLower(r))
-		originRules = append(originRules, regp)
-	}
-
-	var allowMethodRules []string
-	for _, r := range al.AllowMethods {
-		regp := util.WildCardToRegexp(r)
-		allowMethodRules = append(allowMethodRules, regp)
-	}
-
-	var disallowMethodRules []string
-	for _, r := range al.DisallowMethods {
-		regp := util.WildCardToRegexp(r)
-		disallowMethodRules = append(disallowMethodRules, regp)
-	}
-
 	contractAddrRules := make(map[string]bool)
 	for _, r := range al.ContractAddresses {
 		contractAddrRules[strings.ToLower(r)] = true
@@ -88,9 +87,9 @@ func newValidatorBase(al *AllowList) *validatorBase {
 
 	return &validatorBase{
 		AllowList:            al,
-		originRules:          originRules,
-		allowMethodRules:     allowMethodRules,
-		disallowMethodRules:  disallowMethodRules,
+		originRules:          compileWildcardRules(al.Origins, true),
+		allowMethodRules:     compileWildcardRules(al.AllowMethods, false),
+		disallowMethodRules:  compileWildcardRules(al.DisallowMethods, false),
 		contractAddressRules: contractAddrRules,
 	}
 }
@@ -129,8 +128,7 @@ func (v *validatorBase) validateOrigin(ctx Context) error {
 
 	reqOrigin = strings.ToLower(reqOrigin)
 	for _, r := range v.originRules {
-		matched, err := regexp.MatchString(r, reqOrigin)
-		if err == nil && matched {
+		if r.MatchString(reqOrigin) {
 			return nil
 		}
 	}
@@ -167,8 +165,7 @@ func (v *validatorBase) validateAllowMethods(ctx Context) error {
 	}
 
 	for _, r := range v.allowMethodRules {
-		matched, err := regexp.MatchString(r, ctx.RpcMethod)
-		if err == nil && matched {
+		if r.MatchString(ctx.RpcMethod) {
 			return nil
 		}
 	}
@@ -178,8 +175,7 @@ func (v *validatorBase) validateAllowMethods(ctx Context) error {
 	}
 
 	for _, r := range v.disallowMethodRules {
-		matched, err := regexp.MatchString(r, ctx.RpcMethod)
-		if err == nil && matched {
+		if r.MatchString(ctx.RpcMethod) {
 			return errBadRpcMethod
 		}
 	}
@@ -194,8 +190,36 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 		return nil
 	}
 
-	if ctx.ExtractRpcParams == nil {
-		return nil
+	// Check filter criteria at creation. Filter-ID reads retain their existing
+	// access semantics; they do not carry addresses to validate here.
+	if ctx.RpcMethod == "eth_subscribe" || ctx.RpcMethod == "cfx_subscribe" {
+		var args []json.RawMessage
+		var kind string
+		if json.Unmarshal(ctx.RawParams, &args) != nil || len(args) == 0 || json.Unmarshal(args[0], &kind) != nil {
+			return errBadRpcParams
+		}
+		if kind != "logs" {
+			return nil
+		}
+		if len(args) != 2 {
+			return errBadRpcParams
+		}
+		raw := args[1]
+		if ctx.RpcMethod == "eth_subscribe" {
+			ctx.RpcMethod = "eth_getLogs"
+			ctx.ExtractRpcParams = func() ([]interface{}, error) {
+				var f web3Types.FilterQuery
+				err := json.Unmarshal(raw, &f)
+				return []interface{}{f}, err
+			}
+		} else {
+			ctx.RpcMethod = "cfx_getLogs"
+			ctx.ExtractRpcParams = func() ([]interface{}, error) {
+				var f cfxTypes.LogFilter
+				err := json.Unmarshal(raw, &f)
+				return []interface{}{f}, err
+			}
+		}
 	}
 
 	parseContractAddresses, ok := v.contractAddressParsers[ctx.RpcMethod]
@@ -203,6 +227,9 @@ func (v *validatorBase) validateContractAddresses(ctx Context) error {
 		return nil
 	}
 
+	if ctx.ExtractRpcParams == nil {
+		return errBadRpcParams
+	}
 	inputParams, err := ctx.ExtractRpcParams()
 	if err != nil {
 		return errBadRpcParams
@@ -242,6 +269,7 @@ func NewEthValidator(al *AllowList) Validator {
 		"eth_call":                        v.parseCallRequest,
 		"eth_estimateGas":                 v.parseCallRequest,
 		"eth_getLogs":                     v.parseFilterQuery,
+		"eth_newFilter":                   v.parseFilterQuery,
 		"eth_scanLogs":                    parseContractAddressProvider,
 		"eth_scanLogsWithPivotAssumption": parseContractAddressProvider,
 		"eth_getBalance":                  v.parseAddr,
@@ -266,7 +294,7 @@ func (v *EthValidator) parseCallRequest(params []interface{}) (res []string, ok 
 	}
 
 	cr, ok := params[0].(web3Types.CallRequest)
-	if ok {
+	if ok && cr.To != nil {
 		res = append(res, cr.To.String())
 	}
 
@@ -329,6 +357,7 @@ func NewCfxValidator(al *AllowList) Validator {
 		"cfx_call":                        v.parseCallRequest,
 		"cfx_estimateGasAndCollateral":    v.parseCallRequest,
 		"cfx_getLogs":                     v.parseLogFilter,
+		"cfx_newFilter":                   v.parseLogFilter,
 		"cfx_scanLogs":                    parseContractAddressProvider,
 		"cfx_scanLogsWithPivotAssumption": parseContractAddressProvider,
 		"cfx_getBalance":                  v.parseAddr,
@@ -361,7 +390,7 @@ func (v *CfxValidator) parseCallRequest(params []interface{}) (res []string, ok 
 	}
 
 	cr, ok := params[0].(cfxTypes.CallRequest)
-	if ok { // only non-verbose base32 address format is accepted
+	if ok && cr.To != nil { // only non-verbose base32 address format is accepted
 		res = append(res, cr.To.MustGetBase32Address())
 	}
 
@@ -390,7 +419,7 @@ func (v *CfxValidator) parseAddr(params []interface{}) (res []string, ok bool) {
 
 	ca, ok := params[0].(cfxTypes.Address)
 	if ok {
-		res = append(res, ca.MustGetVerboseBase32Address())
+		res = append(res, ca.MustGetBase32Address())
 	}
 
 	return

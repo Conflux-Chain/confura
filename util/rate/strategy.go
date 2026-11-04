@@ -63,9 +63,14 @@ func (s *Strategy) UnmarshalJSON(data []byte) error {
 		return errors.WithMessage(err, "malformed json format")
 	}
 
+	options := make(map[string]interface{}, len(tmpRules))
 	for resource, rule := range tmpRules {
-		s.LimitOptions[resource] = rule.Option
+		if rule == nil {
+			return errors.New("null rate limit rule")
+		}
+		options[resource] = rule.Option
 	}
+	s.LimitOptions = options
 
 	return nil
 }

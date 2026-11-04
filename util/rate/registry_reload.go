@@ -101,24 +101,29 @@ func (m *Registry) getVipStrategy(tier handlers.VipTier) (*Strategy, bool) {
 }
 
 func (m *Registry) removeStrategy(s *Strategy) {
+	delete(m.strategies, s.Name)
+	delete(m.id2Strategies, s.ID)
+	m.publishLimiterStrategies()
 	// remove all limiters under this strategy
 	for resource := range s.LimitOptions {
 		m.Remove(resource, s.Name)
 		logrus.WithField("resource", resource).Info("RateLimit rule deleted")
 	}
-
-	delete(m.strategies, s.Name)
-	delete(m.id2Strategies, s.ID)
 }
 
 func (m *Registry) addStrategy(s *Strategy) {
 	m.strategies[s.Name] = s
 	m.id2Strategies[s.ID] = s
+	m.publishLimiterStrategies()
 }
 
 func (m *Registry) updateStrategy(old, new *Strategy) {
 	m.strategies[new.Name] = new
 	m.id2Strategies[new.ID] = new
+	if old.Name != new.Name {
+		delete(m.strategies, old.Name)
+	}
+	m.publishLimiterStrategies()
 
 	if old.Name != new.Name {
 		// strategy name changed? this shall be rare, but we also need to

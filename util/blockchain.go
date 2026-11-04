@@ -171,7 +171,7 @@ func IsEip155Tx(tx *web3goTypes.TransactionDetail) bool {
 
 // IsLegacyEthTx check if the EVM transaction is legacy (pre EIP155)
 func IsLegacyEthTx(tx *web3goTypes.TransactionDetail) bool {
-	if tx.V != nil && tx.V.Uint64() == 27 || tx.V.Uint64() == 28 {
+	if tx != nil && tx.V != nil && (tx.V.Uint64() == 27 || tx.V.Uint64() == 28) {
 		return true
 	}
 
@@ -200,6 +200,7 @@ func MatchEthLogTopics(log *web3goTypes.Log, topics [][]common.Hash) bool {
 
 	for i := range topics {
 		if len(topics[i]) == 0 {
+			// Conflux eSpace wildcards also match missing topic positions.
 			continue
 		}
 

@@ -1,17 +1,21 @@
 package rate
 
 import (
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
 	LimitKeyCacheSize     = 5000
 	LimitKeyExpirationTTL = 60 * time.Second
 )
+
+var errKeyLoad = errors.New("key lookup failed")
 
 type KeyInfo struct {
 	SID   uint32    // bound strategy ID
@@ -30,7 +34,8 @@ type KeysetFilter struct {
 type ksLoadFunc func(filter *KeysetFilter) ([]*KeyInfo, error)
 
 type KeyLoader struct {
-	mu sync.Mutex
+	mu    sync.Mutex
+	loads singleflight.Group
 	// raw keyset load function
 	ksload ksLoadFunc
 	// limit key cache: limit key => *KeyInfo (nil if missing)
@@ -54,13 +59,23 @@ func NewKeyLoader(ksload ksLoadFunc) *KeyLoader {
 // Load loads key info from cache or raw loading from somewhere else
 // if cache missed.
 func (l *KeyLoader) Load(key string) (*KeyInfo, bool) {
-	// load from cache at first
-	if ki, ok := l.cacheLoad(key); ok { // cache hit
-		return ki, ok
+	if cv, expired, found := l.keyCache.GetWithoutExp(key); found && !expired {
+		return cv.(*KeyInfo), true
 	}
-
-	// otherwise, populate the cache
-	return l.populateCache(key)
+	result, err, _ := l.loads.Do(key, func() (interface{}, error) {
+		if ki, ok := l.cacheLoad(key); ok {
+			return ki, nil
+		}
+		ki, ok := l.populateCache(key)
+		if !ok {
+			return (*KeyInfo)(nil), errKeyLoad
+		}
+		return ki, nil
+	})
+	if err != nil {
+		return nil, false
+	}
+	return result.(*KeyInfo), true
 }
 
 func (l *KeyLoader) cacheLoad(key string) (*KeyInfo, bool) {
@@ -98,9 +113,7 @@ func (l *KeyLoader) populateCache(key string) (*KeyInfo, bool) {
 			l.keyCache.Add(key, (*KeyInfo)(nil))
 		}
 
-		logrus.WithField("key", key).
-			WithError(err).
-			Error("Key loader failed to load limit key info")
+		logrus.Error("Key loader failed to load limit key info")
 		return nil, false
 	}
 
@@ -124,7 +137,7 @@ func (kl *KeyLoader) rawLoad(key string) (*KeyInfo, error) {
 func (kl *KeyLoader) warmUpKeyCache() {
 	kis, err := kl.ksload(&KeysetFilter{Limit: (LimitKeyCacheSize * 3 / 4)})
 	if err != nil {
-		logrus.WithError(err).Warn("Failed to load limit keyset to warm up cache")
+		logrus.Warn("Failed to load limit keyset to warm up cache")
 		return
 	}
 
