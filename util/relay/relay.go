@@ -61,6 +61,11 @@ func newTxnRelayer(relayConf *TxnRelayerConfig) *txnRelayer {
 
 // Relay relays raw transaction broadcasting asynchronously.
 func (relayer *txnRelayer) Relay(signedTx hexutil.Bytes) bool {
+	// Avoid copying a transaction while a buffered queue is already full.
+	// This is only an early rejection: select still decides admission atomically.
+	if capacity := cap(relayer.txnQueue); capacity > 0 && len(relayer.txnQueue) == capacity {
+		return false
+	}
 	// Own queued bytes; callers may reuse their request buffer after return.
 	raw := append(hexutil.Bytes(nil), signedTx...)
 	select {
