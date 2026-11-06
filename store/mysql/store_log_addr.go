@@ -244,7 +244,7 @@ func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 
 	// Normalize topic0 hashes to ids
 	if len(sfilter.Topics) > 0 && !sfilter.Topics[0].IsNull() {
-		normalized, err := normalizeTopicsToIDs(ls.ts, sfilter.Topics[0])
+		normalized, err := normalizeTopicsToIDs(ls.ts.withContext(ctx), sfilter.Topics[0])
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to normalize topic to ids")
 		}
@@ -264,7 +264,7 @@ func (ls *AddressIndexedLogStore[T]) GetAddressIndexedLogs(
 
 	var result []*store.Log
 	for _, v := range addrLogs {
-		topic0, err := resolveTopic0Hash(ls.ts, v.Topic0ID)
+		topic0, err := resolveTopic0Hash(ls.ts.withContext(ctx), v.Topic0ID)
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
 		}
@@ -311,7 +311,7 @@ func (ls *AddressIndexedLogStore[T]) ScanAddressIndexedLogs(
 
 	result := make([]*store.Log, 0, len(rows))
 	for _, row := range rows {
-		topic0, err := resolveTopic0Hash(ls.ts, row.Topic0ID)
+		topic0, err := resolveTopic0Hash(ls.ts.withContext(ctx), row.Topic0ID)
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
 		}

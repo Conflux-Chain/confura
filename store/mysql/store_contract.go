@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -204,4 +205,11 @@ func (cs *ContractStore) enforceCache(whereQuery string, args ...interface{}) (*
 	}
 
 	return &contract, exists, err
+}
+
+// withContext keeps shared identity caches while binding only this DB handle.
+func (cs *ContractStore) withContext(ctx context.Context) *ContractStore {
+	copy := *cs
+	copy.baseStore = newBaseStore(cs.db.WithContext(ctx))
+	return &copy
 }

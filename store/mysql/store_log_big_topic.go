@@ -386,7 +386,11 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 // IsMigrationCompleted reports whether the topic logs have been moved from
 // the topic hash partition to dedicated block-number partitions.
 func (btls *bigTopicLogStore[T]) IsMigrationCompleted(tid uint64) (bool, error) {
-	return logMigrationCompleted(btls.db, &Topic{}, tid, btls.topicEntity(tid))
+	return btls.isMigrationCompleted(context.Background(), tid)
+}
+
+func (btls *bigTopicLogStore[T]) isMigrationCompleted(ctx context.Context, tid uint64) (bool, error) {
+	return logMigrationCompleted(btls.db.WithContext(ctx), &Topic{}, tid, btls.topicEntity(tid))
 }
 
 // GetTopicLogs queries logs for a specific big topic with specified filter.
