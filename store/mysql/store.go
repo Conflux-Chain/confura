@@ -181,6 +181,11 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 	}
 
 	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
+		if !ms.filter.IsLogDisabled() {
+			if err := ms.lockLogWriteRoutes(dbTx, dataSlice, contract2BnPartitions, topic2BnPartitions); err != nil {
+				return err
+			}
+		}
 		if !ms.filter.IsBlockDisabled() {
 			// save blocks
 			if err := ms.blockStore.Add(dbTx, dataSlice); err != nil {
@@ -267,6 +272,11 @@ func (ms *MysqlStore[T]) PopnWithFinalizer(epochUntil uint64, finalizer func(*go
 	defer metrics.Registry.Store.Pop("mysql").UpdateSince(startTime)
 
 	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
+		if !ms.filter.IsLogDisabled() {
+			if err := lockLogRollback(dbTx, epochUntil); err != nil {
+				return err
+			}
+		}
 		if !ms.filter.IsBlockDisabled() {
 			// remove blocks
 			if err := ms.blockStore.Remove(dbTx, epochUntil, maxEpoch); err != nil {

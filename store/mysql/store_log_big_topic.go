@@ -116,6 +116,9 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 	tlTableName := btls.getPartitionedTableName(tlTabler, partition.Index)
 
 	return btls.db.Transaction(func(dbTx *gorm.DB) error {
+		if err := lockLogMigration(dbTx, &Topic{}, topic.ID); err != nil {
+			return err
+		}
 		completed, err := logMigrationCompleted(dbTx, &Topic{}, topic.ID, tlEntity)
 		if err != nil {
 			return err

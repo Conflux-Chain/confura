@@ -125,6 +125,9 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 	clTableName := bcls.getPartitionedTableName(clTabler, partition.Index)
 
 	return bcls.db.Transaction(func(dbTx *gorm.DB) error {
+		if err := lockLogMigration(dbTx, &Contract{}, contract.ID); err != nil {
+			return err
+		}
 		completed, err := logMigrationCompleted(dbTx, &Contract{}, contract.ID, clEntity)
 		if err != nil {
 			return err
