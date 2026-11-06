@@ -153,7 +153,7 @@ func (ms *MysqlStore[T]) scanContractLogs(
 	ctx context.Context, params store.ScanLogParams,
 ) ([]*store.Log, error) {
 	contract := params.Filter.Contract
-	cid, exists, err := ms.resolveContractLogID(contract)
+	cid, exists, err := ms.resolveContractLogID(ctx, contract)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (ms *MysqlStore[T]) scanContractLogs(
 		return nil, nil
 	}
 
-	topic0ID, matched, err := ms.resolveOptionalScanTopicID(params.Filter.Topic0)
+	topic0ID, matched, err := ms.resolveOptionalScanTopicID(ctx, params.Filter.Topic0)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func (ms *MysqlStore[T]) scanTopicLogs(
 	ctx context.Context, params store.ScanLogParams,
 ) ([]*store.Log, error) {
 	topic0 := params.Filter.Topic0
-	tid, exists, err := ms.resolveTopicLogID(topic0)
+	tid, exists, err := ms.resolveTopicLogID(ctx, topic0)
 	if err != nil {
 		return nil, err
 	}
@@ -205,13 +205,13 @@ func (ms *MysqlStore[T]) scanTopicLogs(
 // nil ID, meaning no topic predicate) or when a non-empty topic resolves to a
 // TID, and false only when a non-empty topic has no mapped TID.
 func (ms *MysqlStore[T]) resolveOptionalScanTopicID(
-	topic0 string,
+	ctx context.Context, topic0 string,
 ) (*uint64, bool, error) {
 	if topic0 == "" {
 		return nil, true, nil
 	}
 
-	tid, exists, err := ms.resolveTopicLogID(topic0)
+	tid, exists, err := ms.resolveTopicLogID(ctx, topic0)
 	if err != nil || !exists {
 		return nil, exists, err
 	}

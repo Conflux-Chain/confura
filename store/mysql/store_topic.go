@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -173,4 +174,11 @@ func (s *TopicStore) load(query string, args ...interface{}) (*Topic, bool, erro
 
 	s.cache(&t)
 	return &t, true, nil
+}
+
+// withContext keeps shared identity caches while binding only this DB handle.
+func (s *TopicStore) withContext(ctx context.Context) *TopicStore {
+	copy := *s
+	copy.baseStore = newBaseStore(s.db.WithContext(ctx))
+	return &copy
 }

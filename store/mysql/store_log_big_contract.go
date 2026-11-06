@@ -385,7 +385,11 @@ func (bcls *bigContractLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error
 // IsMigrationCompleted reports whether the contract logs have been moved from
 // the address hash partition to dedicated block-number partitions.
 func (bcls *bigContractLogStore[T]) IsMigrationCompleted(cid uint64) (bool, error) {
-	return newBnPartitionedStore(bcls.db).hasPartition(bcls.contractEntity(cid))
+	return bcls.isMigrationCompleted(context.Background(), cid)
+}
+
+func (bcls *bigContractLogStore[T]) isMigrationCompleted(ctx context.Context, cid uint64) (bool, error) {
+	return newBnPartitionedStore(bcls.db.WithContext(ctx)).hasPartition(bcls.contractEntity(cid))
 }
 
 // GetContractLogs get contract logs for the specified filter.
@@ -415,7 +419,7 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 
 	// Normalize topic0 hashes to ids
 	if len(storeFilter.Topics) > 0 && !storeFilter.Topics[0].IsNull() {
-		normalized, err := normalizeTopicsToIDs(bcls.ts, storeFilter.Topics[0])
+		normalized, err := normalizeTopicsToIDs(bcls.ts.withContext(ctx), storeFilter.Topics[0])
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to normalize topic to ids")
 		}
@@ -451,7 +455,7 @@ func (bcls *bigContractLogStore[T]) GetContractLogs(
 
 		// convert to common store log
 		for _, v := range clogs {
-			topic0, err := resolveTopic0Hash(bcls.ts, v.Topic0ID)
+			topic0, err := resolveTopic0Hash(bcls.ts.withContext(ctx), v.Topic0ID)
 			if err != nil {
 				return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
 			}
@@ -521,7 +525,7 @@ func (bcls *bigContractLogStore[T]) ScanContractLogs(
 
 			result := make([]*store.Log, 0, len(rows))
 			for _, row := range rows {
-				topic0, err := resolveTopic0Hash(bcls.ts, row.Topic0ID)
+				topic0, err := resolveTopic0Hash(bcls.ts.withContext(ctx), row.Topic0ID)
 				if err != nil {
 					return nil, errors.WithMessage(err, "failed to resolve topic0 hash")
 				}

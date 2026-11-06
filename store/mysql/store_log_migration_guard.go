@@ -10,7 +10,7 @@ import (
 // optimistic migration read protocol. Each operation owns all query inputs so
 // the guard remains independent of getLogs and scanLogs request semantics.
 type migrationLogReadOperation interface {
-	isMigrationCompleted() (bool, error)
+	isMigrationCompleted(ctx context.Context) (bool, error)
 	queryShared(ctx context.Context) ([]*store.Log, error)
 	queryDedicated(ctx context.Context) ([]*store.Log, error)
 }
@@ -26,7 +26,7 @@ func readMigrationAwareLogs(
 			return nil, err
 		}
 
-		migrationCompleted, err := operation.isMigrationCompleted()
+		migrationCompleted, err := operation.isMigrationCompleted(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -41,7 +41,7 @@ func readMigrationAwareLogs(
 
 		// Migration completion invalidates the shared result, including a
 		// shared-query error, so validate the state before returning either.
-		migrationCompleted, validationErr := operation.isMigrationCompleted()
+		migrationCompleted, validationErr := operation.isMigrationCompleted(ctx)
 		if validationErr != nil {
 			return nil, validationErr
 		}
@@ -69,8 +69,8 @@ type contractGetLogsMigrationReadOperation[T store.ChainData] struct {
 	filter     store.LogFilter
 }
 
-func (operation *contractGetLogsMigrationReadOperation[T]) isMigrationCompleted() (bool, error) {
-	return operation.store.bcls.IsMigrationCompleted(operation.contractID)
+func (operation *contractGetLogsMigrationReadOperation[T]) isMigrationCompleted(ctx context.Context) (bool, error) {
+	return operation.store.bcls.isMigrationCompleted(ctx, operation.contractID)
 }
 
 func (operation *contractGetLogsMigrationReadOperation[T]) queryShared(
@@ -94,8 +94,8 @@ type topicGetLogsMigrationReadOperation[T store.ChainData] struct {
 	filter  store.LogFilter
 }
 
-func (operation *topicGetLogsMigrationReadOperation[T]) isMigrationCompleted() (bool, error) {
-	return operation.store.btls.IsMigrationCompleted(operation.topicID)
+func (operation *topicGetLogsMigrationReadOperation[T]) isMigrationCompleted(ctx context.Context) (bool, error) {
+	return operation.store.btls.isMigrationCompleted(ctx, operation.topicID)
 }
 
 func (operation *topicGetLogsMigrationReadOperation[T]) queryShared(
@@ -122,8 +122,8 @@ type contractScanLogsMigrationReadOperation[T store.ChainData] struct {
 	params     store.ScanLogParams
 }
 
-func (operation *contractScanLogsMigrationReadOperation[T]) isMigrationCompleted() (bool, error) {
-	return operation.store.bcls.IsMigrationCompleted(operation.contractID)
+func (operation *contractScanLogsMigrationReadOperation[T]) isMigrationCompleted(ctx context.Context) (bool, error) {
+	return operation.store.bcls.isMigrationCompleted(ctx, operation.contractID)
 }
 
 func (operation *contractScanLogsMigrationReadOperation[T]) queryShared(
@@ -156,8 +156,8 @@ type topicScanLogsMigrationReadOperation[T store.ChainData] struct {
 	params  store.ScanLogParams
 }
 
-func (operation *topicScanLogsMigrationReadOperation[T]) isMigrationCompleted() (bool, error) {
-	return operation.store.btls.IsMigrationCompleted(operation.topicID)
+func (operation *topicScanLogsMigrationReadOperation[T]) isMigrationCompleted(ctx context.Context) (bool, error) {
+	return operation.store.btls.isMigrationCompleted(ctx, operation.topicID)
 }
 
 func (operation *topicScanLogsMigrationReadOperation[T]) queryShared(

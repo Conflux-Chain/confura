@@ -186,7 +186,7 @@ type testMigrationLogReadOperation struct {
 	dedicatedLogs        []*store.Log
 }
 
-func (operation *testMigrationLogReadOperation) isMigrationCompleted() (bool, error) {
+func (operation *testMigrationLogReadOperation) isMigrationCompleted(context.Context) (bool, error) {
 	operation.stateChecks++
 	if operation.migrateOnSecondCheck && operation.stateChecks == 2 {
 		operation.completed = true
