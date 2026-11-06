@@ -74,15 +74,9 @@ func (s *InternalContractLogStore) GetReorgVersion() (int, error) {
 	return strconv.Atoi(val)
 }
 
-// thread unsafe
+// IncrementReorgVersion publishes the new view in the rollback transaction.
 func (s *InternalContractLogStore) IncrementReorgVersion(dbTx *gorm.DB) error {
-	version, err := s.GetReorgVersion()
-	if err != nil {
-		return errors.WithMessage(err, "failed to get reorg version")
-	}
-
-	newVersion := strconv.Itoa(version + 1)
-	return s.cs.StoreConfig(MysqlConfKeyInternalContractReorgVersion, newVersion)
+	return incrementReorgVersion(dbTx, MysqlConfKeyInternalContractReorgVersion)
 }
 
 // Pop removes all logs at or after the given epoch (for reorg handling).
