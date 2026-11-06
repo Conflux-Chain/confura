@@ -196,8 +196,13 @@ func (bnps *bnPartitionedStore) searchPartitions(
 ) (
 	partitions []*bnPartition, uncoverings *types.RangeUint64, err error,
 ) {
+	return bnps.searchPartitionsWithOverlap(ctx, entity, searchRange, false)
+}
+
+// Only virtual-filter replay may overlap block ranges across partitions.
+func (bnps *bnPartitionedStore) searchPartitionsWithOverlap(ctx context.Context, entity string, searchRange types.RangeUint64, allowOverlap bool) ([]*bnPartition, *types.RangeUint64, error) {
 	metadata := make([]*bnPartition, 0)
-	err = bnps.db.WithContext(ctx).
+	err := bnps.db.WithContext(ctx).
 		Where("entity = ?", entity).
 		Where("bn_min IS NOT NULL AND bn_max IS NOT NULL").
 		Order("pi ASC").
@@ -206,7 +211,7 @@ func (bnps *bnPartitionedStore) searchPartitions(
 		return nil, nil, err
 	}
 
-	return searchPartitionsFromMetadata(entity, searchRange, metadata)
+	return routePartitionsFromMetadata(entity, searchRange, metadata, allowOverlap)
 }
 
 // searchPartitionsFromMetadata validates one consistent metadata snapshot and routes the search
@@ -216,6 +221,13 @@ func (bnps *bnPartitionedStore) searchPartitions(
 func searchPartitionsFromMetadata(
 	entity string, searchRange types.RangeUint64, metadata []*bnPartition,
 ) ([]*bnPartition, *types.RangeUint64, error) {
+	return routePartitionsFromMetadata(entity, searchRange, metadata, false)
+}
+
+func routePartitionsFromMetadata(entity string, searchRange types.RangeUint64, metadata []*bnPartition, allowOverlap bool) ([]*bnPartition, *types.RangeUint64, error) {
+	if searchRange.From > searchRange.To {
+		return nil, nil, errors.New("invalid block range")
+	}
 	if len(metadata) == 0 {
 		return nil, &searchRange, nil
 	}
@@ -254,7 +266,7 @@ func searchPartitionsFromMetadata(
 		}
 
 		previousEnd := uint64(previous.BnMax.Int64)
-		if bnMin <= previousEnd {
+		if !allowOverlap && bnMin <= previousEnd {
 			return nil, nil, errors.Errorf(
 				"overlapping bn partition metadata for entity %q between partitions %v and %v",
 				entity, previous.Index, partition.Index,
@@ -264,6 +276,10 @@ func searchPartitionsFromMetadata(
 
 	bnStart := uint64(metadata[0].BnMin.Int64)
 	bnEnd := uint64(metadata[len(metadata)-1].BnMax.Int64)
+	for _, partition := range metadata {
+		bnStart = min(bnStart, uint64(partition.BnMin.Int64))
+		bnEnd = max(bnEnd, uint64(partition.BnMax.Int64))
+	}
 	bnPartRange := types.RangeUint64{From: bnStart, To: bnEnd}
 	if searchRange.From < bnStart {
 		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
