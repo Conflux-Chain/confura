@@ -140,6 +140,10 @@ func (config *Config) MustOpenOrCreate() *gorm.DB {
 		}
 	}
 
+	if err := validateLogMigrationSchema(db); err != nil {
+		logrus.WithError(err).Fatal("Incompatible MySQL schema")
+	}
+
 	if sqlDb, err := db.DB(); err != nil {
 		logrus.WithError(err).Fatal("Failed to init mysql db")
 	} else {

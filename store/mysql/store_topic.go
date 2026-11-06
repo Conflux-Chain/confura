@@ -15,6 +15,9 @@ type Topic struct {
 	ID   uint64 `gorm:"primaryKey;autoIncrement"`
 	Hash string `gorm:"size:66;not null;unique"`
 
+	// MigrationStatus is read from the database, never from the identity cache.
+	MigrationStatus migrationStatus `gorm:"not null;default:0"`
+
 	// num of persisted event logs
 	LogCount int `gorm:"not null;default:0"`
 	// latest updated epoch height
@@ -96,7 +99,7 @@ func (s *TopicStore) GetOrCreate(hash string) (uint64, bool, error) {
 		return id, false, errors.WithMessagef(err, "failed to get topic id for hash %s", hash)
 	}
 
-	t := &Topic{Hash: hash}
+	t := &Topic{Hash: hash, MigrationStatus: migrationShared}
 	if err := s.db.Create(t).Error; err != nil {
 		return 0, false, errors.WithMessagef(err, "failed to create topic for hash %s", hash)
 	}
@@ -117,7 +120,7 @@ func (s *TopicStore) BatchAdd(hashes map[string]bool) (int, error) {
 		}
 
 		if !ok {
-			newTopics = append(newTopics, Topic{Hash: h})
+			newTopics = append(newTopics, Topic{Hash: h, MigrationStatus: migrationShared})
 		}
 	}
 

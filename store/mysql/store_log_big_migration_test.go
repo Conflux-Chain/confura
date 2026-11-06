@@ -48,9 +48,8 @@ func TestBigLogMigrationRangeValidation(t *testing.T) {
 			wantSource:   1,
 		},
 		{
-			name:    "empty source fails closed",
+			name:    "empty source completes routing",
 			mapping: testEpochBlockMapping(10, 100, 109),
-			wantErr: "indexed logs found for migration",
 		},
 		{
 			name:         "inverted range rolls back",
@@ -109,6 +108,7 @@ func newBigContractMigrationTestHarness(
 	}
 
 	contract := &Contract{ID: 1, Address: "0x1"}
+	require.NoError(t, db.Create(contract).Error)
 	partition := createBigLogMigrationTables(
 		t, db, contractStore.contractEntity(contract.ID),
 		&AddressIndexedLog{}, contractStore.contractTabler(contract.ID),
@@ -149,6 +149,7 @@ func newBigTopicMigrationTestHarness(
 	}
 
 	topic := &Topic{ID: 1, Hash: "0x1"}
+	require.NoError(t, db.Create(topic).Error)
 	partition := createBigLogMigrationTables(
 		t, db, topicStore.topicEntity(topic.ID),
 		&TopicIndexedLog{}, topicStore.topicTabler(topic.ID),
@@ -178,7 +179,9 @@ func newBigLogMigrationTestDB(t *testing.T) *gorm.DB {
 	dsn := filepath.Join(t.TempDir(), "migration.db") + "?_journal_mode=WAL&_busy_timeout=5000"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&epochBlockMap{}, &bnPartition{}))
+	require.NoError(t, db.AutoMigrate(&epochBlockMap{}, &bnPartition{}, &Contract{}))
+	require.NoError(t, db.Exec("DROP INDEX index_lue").Error)
+	require.NoError(t, db.AutoMigrate(&Topic{}))
 	return db
 }
 
