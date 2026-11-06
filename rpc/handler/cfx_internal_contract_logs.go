@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/store"
@@ -16,10 +17,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type internalContractLogReader interface {
+	GetReorgVersionWithContext(context.Context) (int, error)
+	GetLogs(context.Context, mysql.CfxInternalContractLogFilter) ([]mysql.InternalContractLog, error)
+	BlockMapping(context.Context, uint64) (mysql.CfxTraceSyncEpochBlockMap, error)
+}
+
 // CfxInternalContractLogsApiHandler handles log queries for registered internal contracts.
 type CfxInternalContractLogsApiHandler struct {
 	registry *tracelog.Registry
-	logStore *mysql.InternalContractLogStore
+	logStore internalContractLogReader
 }
 
 func NewCfxInternalContractLogsApiHandler(
@@ -66,21 +73,23 @@ func (h *CfxInternalContractLogsApiHandler) GetLogs(
 	cfx sdk.ClientOperator,
 	filter *types.LogFilter,
 ) ([]types.Log, error) {
+	retry := newLogsQueryRetry(ctx, RequireBoundChecks(filter), "cfx_getInternalContractLogs")
+	defer retry.close()
 	// record the reorg version before query to ensure data consistence
-	lastReorgVersion, err := h.logStore.GetReorgVersion()
+	lastReorgVersion, err := h.logStore.GetReorgVersionWithContext(retry.ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	for {
 		// query data with reorg guard
-		logs, err := h.getLogsReorgGuard(ctx, cfx, filter)
+		logs, err := h.getLogsReorgGuard(retry.ctx, cfxLogsWithContext(retry.ctx, cfx), filter)
 		if err != nil {
 			return nil, err
 		}
 
 		// check the reorg version after query
-		reorgVersion, err := h.logStore.GetReorgVersion()
+		reorgVersion, err := h.logStore.GetReorgVersionWithContext(retry.ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -90,7 +99,7 @@ func (h *CfxInternalContractLogsApiHandler) GetLogs(
 		}
 
 		// when reorg occurred, check timeout before retry.
-		if err := checkTimeout(ctx); err != nil {
+		if err := retry.retry("database"); err != nil {
 			return nil, err
 		}
 
@@ -110,6 +119,11 @@ func (h *CfxInternalContractLogsApiHandler) getLogsReorgGuard(
 		return nil, errors.WithMessage(err, "failed to resolve contract indices")
 	}
 
+	blockHash2Number, err := h.resolveBlockHashes(ctx, cfx, filter.BlockHashes)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to resolve block hashes")
+	}
+
 	eventIndices, unregisteredEventHashes := h.resolveEventIndices(filter.Topics)
 	if len(eventIndices) == 0 && len(unregisteredEventHashes) > 0 {
 		// No registered events matched: all topics are unrecognized, so nothing to process.
@@ -118,11 +132,6 @@ func (h *CfxInternalContractLogsApiHandler) getLogsReorgGuard(
 			"filter":             filter,
 		}).Debug("Skipping logs: no registered internal contract events matched (all topics unrecognized)")
 		return nil, nil
-	}
-
-	blockHash2Number, err := resolveBlockHashes(cfx, filter.BlockHashes)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to resolve block hashes")
 	}
 
 	// Configure context based on bound-check requirements.
@@ -141,6 +150,20 @@ func (h *CfxInternalContractLogsApiHandler) getLogsReorgGuard(
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	validated := make(map[string]uint64, len(blockHash2Number))
+	for hash, bn := range blockHash2Number {
+		validated[strings.ToLower(hash.String())] = bn
+	}
+	for _, log := range internalLogs {
+		if len(validated) == 0 {
+			break
+		}
+		bn, ok := validated[strings.ToLower(log.BlockHash)]
+		if !ok || bn != log.BlockNumber {
+			return nil, errors.New("trace log identity differs from validated block")
+		}
 	}
 
 	// Convert and validate results.
@@ -197,7 +220,7 @@ func (h *CfxInternalContractLogsApiHandler) resolveEventIndices(
 }
 
 // resolveBlockHashes resolves block hashes to block numbers via the Conflux client.
-func resolveBlockHashes(cfx sdk.ClientOperator, hashes []types.Hash) (map[types.Hash]uint64, error) {
+func (h *CfxInternalContractLogsApiHandler) resolveBlockHashes(ctx context.Context, cfx sdk.ClientOperator, hashes []types.Hash) (map[types.Hash]uint64, error) {
 	if len(hashes) == 0 {
 		return nil, nil
 	}
@@ -220,7 +243,32 @@ func resolveBlockHashes(cfx sdk.ClientOperator, hashes []types.Hash) (map[types.
 			return nil, fmt.Errorf("block with hash %v is not executed yet", hash)
 		}
 
-		result[hash] = block.BlockNumber.ToInt().Uint64()
+		if !strings.EqualFold(block.Hash.String(), hash.String()) || block.EpochNumber == nil || !block.EpochNumber.ToInt().IsUint64() {
+			return nil, fmt.Errorf("invalid block identity for %v", hash)
+		}
+		epoch := block.EpochNumber.ToInt().Uint64()
+		mapping, err := h.logStore.BlockMapping(ctx, epoch)
+		if err != nil {
+			return nil, errors.WithMessagef(err, "trace mapping unavailable for epoch %d", epoch)
+		}
+		if mapping.Epoch != epoch || mapping.PivotHash == "" || mapping.BnMin > mapping.BnMax {
+			return nil, fmt.Errorf("invalid trace mapping for epoch %d", epoch)
+		}
+		// Validate against the pivot saved with the traces, not the independently
+		// synchronized event-log mapping. Never fetch traces on the query path.
+		checked, err := cfx.GetBlockByHashWithPivotAssumption(hash, types.Hash(mapping.PivotHash), hexutil.Uint64(epoch))
+		if err != nil {
+			return nil, errors.WithMessage(err, "trace pivot assumption failed")
+		}
+		if !strings.EqualFold(checked.Hash.String(), hash.String()) || checked.EpochNumber == nil || checked.EpochNumber.ToInt().Cmp(block.EpochNumber.ToInt()) != 0 ||
+			checked.BlockNumber == nil || !checked.BlockNumber.ToInt().IsUint64() {
+			return nil, fmt.Errorf("block %v does not match trace epoch %d", hash, epoch)
+		}
+		bn := checked.BlockNumber.ToInt().Uint64()
+		if bn < mapping.BnMin || bn > mapping.BnMax {
+			return nil, fmt.Errorf("block %v is outside trace epoch %d", hash, epoch)
+		}
+		result[hash] = bn
 	}
 	return result, nil
 }
