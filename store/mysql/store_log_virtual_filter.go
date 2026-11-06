@@ -2,9 +2,11 @@ package mysql
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"math"
 	"slices"
+	"sort"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -52,22 +54,9 @@ type vfLogFilter struct {
 	Contracts   store.VariadicValue[string]
 }
 
-func (filter *vfLogFilter) validateCount(db *gorm.DB) error {
-	db = db.Where("is_del <> ?", true)
-	db = applyVariadicFilter(db, "contract_address", filter.Contracts)
-
-	if len(filter.BlockHashes) > 0 {
-		db = db.Where("bh IN (?)", filter.BlockHashes)
-	}
-
-	return filter.LogFilter.validateCount(db)
-}
-
 func (filter *vfLogFilter) Find(db *gorm.DB) ([]VirtualFilterLog, error) {
-	if err := filter.validateCount(db); err != nil {
-		return nil, err
-	}
-
+	// Virtual-filter rows have no epoch column. Bound the actual result here
+	// instead of using the canonical-log epoch-based range suggestion probe.
 	db = db.Table(filter.TableName).
 		Where("is_del <> ?", true).
 		Where("bn BETWEEN ? AND ?", filter.BlockFrom, filter.BlockTo).
@@ -191,10 +180,26 @@ func (vfls *VirtualFilterLogStore) Append(fid string, logs []VirtualFilterLog, p
 func (vfls *VirtualFilterLogStore) GetLogs(
 	ctx context.Context, fid string, sfilter store.LogFilter, blockHashes ...string,
 ) ([]VirtualFilterLog, error) {
+	var logs []VirtualFilterLog
+	// A replay moves active rows between tables. Read metadata and all tables
+	// in one snapshot so the old and replacement rows cannot both be returned.
+	err := vfls.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		reader := NewVirtualFilterLogStore(tx)
+		var err error
+		logs, err = reader.getLogs(ctx, fid, sfilter, blockHashes...)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+func (vfls *VirtualFilterLogStore) getLogs(ctx context.Context, fid string, sfilter store.LogFilter, blockHashes ...string) ([]VirtualFilterLog, error) {
 	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)
 
 	srange := types.RangeUint64{From: sfilter.BlockFrom, To: sfilter.BlockTo}
-	partitions, _, err := vfls.searchPartitions(ctx, fentity, srange)
+	partitions, _, err := vfls.searchPartitionsWithOverlap(ctx, fentity, srange, true)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to search partitions")
 	}
@@ -231,6 +236,17 @@ func (vfls *VirtualFilterLogStore) GetLogs(
 			return nil, store.ErrFilterResultSetTooLarge
 		}
 	}
+
+	sort.Slice(result, func(i, j int) bool {
+		a, b := result[i], result[j]
+		if a.BlockNumber != b.BlockNumber {
+			return a.BlockNumber < b.BlockNumber
+		}
+		if a.LogIndex != b.LogIndex {
+			return a.LogIndex < b.LogIndex
+		}
+		return a.BlockHash < b.BlockHash
+	})
 
 	return result, nil
 }
