@@ -47,12 +47,11 @@ type CfxInternalContractLogFilter struct {
 // InternalContractLogStore provides database operations for internal contract logs.
 type InternalContractLogStore struct {
 	*baseStore
-	cs *confStore
 }
 
 func NewInternalContractLogStore(db *gorm.DB) *InternalContractLogStore {
 	return &InternalContractLogStore{
-		baseStore: newBaseStore(db), cs: newConfStore(db),
+		baseStore: newBaseStore(db),
 	}
 }
 
@@ -61,7 +60,11 @@ const (
 )
 
 func (s *InternalContractLogStore) GetReorgVersion() (int, error) {
-	conf, err := s.cs.LoadConfig(MysqlConfKeyInternalContractReorgVersion)
+	return s.GetReorgVersionWithContext(context.Background())
+}
+
+func (s *InternalContractLogStore) GetReorgVersionWithContext(ctx context.Context) (int, error) {
+	conf, err := newConfStore(s.db.WithContext(ctx)).LoadConfig(MysqlConfKeyInternalContractReorgVersion)
 	if err != nil {
 		return 0, err
 	}
@@ -86,7 +89,7 @@ func (s *InternalContractLogStore) Pop(dbTx *gorm.DB, epochFrom uint64) error {
 
 // GetLogs retrieves internal contract logs matching the given filter criteria.
 func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxInternalContractLogFilter) ([]InternalContractLog, error) {
-	syncInfo, err := s.getLatestSyncInfo()
+	syncInfo, err := s.getLatestSyncInfo(ctx)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to get latest sync info")
 	}
@@ -159,9 +162,9 @@ func sortInternalContractLogs(logs []InternalContractLog) {
 }
 
 // getLatestSyncInfo retrieves the most recent epoch-to-block mapping record.
-func (s *InternalContractLogStore) getLatestSyncInfo() (CfxTraceSyncEpochBlockMap, error) {
+func (s *InternalContractLogStore) getLatestSyncInfo(ctx context.Context) (CfxTraceSyncEpochBlockMap, error) {
 	var info CfxTraceSyncEpochBlockMap
-	if err := s.db.Last(&info).Error; err != nil && !s.IsRecordNotFound(err) {
+	if err := s.db.WithContext(ctx).Last(&info).Error; err != nil && !s.IsRecordNotFound(err) {
 		return info, err
 	}
 	return info, nil
@@ -313,4 +316,11 @@ func (s *InternalContractLogStore) suggestNarrowedRange(
 	}
 
 	return store.ErrFilterResultSetTooLarge
+}
+
+// BlockMapping requires an exact trace-sync mapping, including epochs with no logs.
+func (s *InternalContractLogStore) BlockMapping(ctx context.Context, epoch uint64) (CfxTraceSyncEpochBlockMap, error) {
+	var mapping CfxTraceSyncEpochBlockMap
+	err := s.db.WithContext(ctx).Where("epoch = ?", epoch).Take(&mapping).Error
+	return mapping, err
 }
