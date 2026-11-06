@@ -77,6 +77,8 @@ func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T) (map[uint64
 	contractAddrs := extractUniqueContractAddresses(dataSlice...)
 	contract2BnPartitions := make(map[uint64]bnPartition)
 
+	var contracts []*Contract
+	var entities []string
 	for caddr := range contractAddrs {
 		contract, ok, err := bcls.cs.GetContractByAddr(caddr)
 		if err != nil {
@@ -87,60 +89,64 @@ func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T) (map[uint64
 			return nil, errors.New("contract not found")
 		}
 
-		if contract.LogCount < thresholdBigContractLogCount {
-			// not qualified for big contract
+		contracts = append(contracts, contract)
+		entities = append(entities, bcls.contractEntity(contract.ID))
+	}
+	dedicated, err := bcls.partitionedEntities(entities)
+	if err != nil {
+		return nil, err
+	}
+	for _, contract := range contracts {
+		migrated := dedicated[bcls.contractEntity(contract.ID)]
+		if contract.LogCount < thresholdBigContractLogCount && !migrated {
 			continue
 		}
 
 		clEntity, clTabler := bcls.contractEntity(contract.ID), bcls.contractTabler(contract.ID)
+		if !migrated {
+			if err := bcls.migrate(contract); err != nil {
+				return nil, errors.WithMessage(err, "failed to migrate contract logs")
+			}
+		}
+
 		partition, newCreated, err := bcls.autoPartition(clEntity, clTabler, bnPartitionedLogVolumeSize)
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to auto contract log partition")
 		}
 
-		if newCreated {
+		if newCreated || !migrated {
 			partition.tabler = clTabler
 			bcls.bnPartitionNotifyChan <- &partition
 		}
 
 		contract2BnPartitions[contract.ID] = partition
-
-		// contract is considered as migrated already for the following cases:
-		// 1. write partition is not the initial one;
-		// 2. write partition is the initial one but has data already.
-		if !partition.IsInitial() || partition.Count > 0 {
-			continue
-		}
-
-		// Migrate event logs of new big contract to separate log table partition.
-		// We assume the possibility of migration for more than one big contracts
-		// at the same time is very small, otherwise the migration process might
-		// collapse the sync progress.
-		if err := bcls.migrate(contract, partition); err != nil {
-			return nil, errors.WithMessage(err, "failed to migrate contract logs")
-		}
 	}
 
 	return contract2BnPartitions, nil
 }
 
 // migrate migrates address indexed event logs for the big contract to separate log table partition.
-func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPartition) error {
+func (bcls *bigContractLogStore[T]) migrate(contract *Contract) error {
 	aiTableName := bcls.ails.GetPartitionedTableName(contract.Address)
 
 	clEntity, clTabler := bcls.contractEntity(contract.ID), bcls.contractTabler(contract.ID)
-	clTableName := bcls.getPartitionedTableName(clTabler, partition.Index)
+	clTableName := bcls.getPartitionedTableName(clTabler, 0)
+
+	// MySQL DDL must finish before the migration transaction starts.
+	if _, err := bcls.createPartitionedTable(bcls.db, clTabler, 0); err != nil {
+		return err
+	}
 
 	return bcls.db.Transaction(func(dbTx *gorm.DB) error {
-		eBlockMap, ok, err := bcls.ebms.earliestBlockMapping(dbTx)
+		migrated, err := newBnPartitionedStore(dbTx).hasPartition(clEntity)
 		if err != nil {
-			return errors.WithMessage(err, "failed to get earliest block mapping")
+			return err
 		}
-		if !ok {
-			return errors.New("earliest block mapping not found")
+		if migrated {
+			return nil
 		}
 
-		bnMin, bnMax := eBlockMap.BnMin, uint64(0)
+		var bnMax uint64
 		var aiLogs []*AddressIndexedLog
 
 		aidb := dbTx.Table(aiTableName).Where("cid = ?", contract.ID)
@@ -177,9 +183,24 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 		if err := res.Error; err != nil {
 			return errors.WithMessage(err, "failed to batch get address indexed logs for migration")
 		}
-		if res.RowsAffected == 0 {
-			return errors.New("no address indexed logs found for migration")
+		// Publish the initial partition only with the copied logs. An empty
+		// partition remains the dedicated route after rollback or pruning.
+		partition := bnPartition{Entity: clEntity}
+		if err := dbTx.Create(&partition).Error; err != nil {
+			return err
 		}
+		if res.RowsAffected == 0 {
+			return nil
+		}
+
+		eBlockMap, ok, err := bcls.ebms.earliestBlockMapping(dbTx)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get earliest block mapping")
+		}
+		if !ok {
+			return errors.New("earliest block mapping not found")
+		}
+		bnMin := eBlockMap.BnMin
 
 		// validate migration block range
 		if bnMin > bnMax {
@@ -188,16 +209,10 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract, partition bnPart
 			)
 		}
 
-		// expand partition block number range
-		if err := bcls.expandBnRange(dbTx, clEntity, int(partition.Index), bnMin, bnMax); err != nil {
-			return errors.WithMessage(err, "failed to expand partition bn range")
-		}
-
-		// update separate contract log partition count
-		if err := bcls.deltaUpdateCount(
-			dbTx, clEntity, int(partition.Index), int(res.RowsAffected),
-		); err != nil {
-			return errors.WithMessage(err, "failed to update contract log partition count")
+		if err := dbTx.Model(&partition).Updates(map[string]interface{}{
+			"bn_min": bnMin, "bn_max": bnMax, "count": res.RowsAffected,
+		}).Error; err != nil {
+			return errors.WithMessage(err, "failed to update migrated partition")
 		}
 
 		logrus.WithFields(logrus.Fields{
@@ -370,16 +385,7 @@ func (bcls *bigContractLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error
 // IsMigrationCompleted reports whether the contract logs have been moved from
 // the address hash partition to dedicated block-number partitions.
 func (bcls *bigContractLogStore[T]) IsMigrationCompleted(cid uint64) (bool, error) {
-	contractEntity := bcls.contractEntity(cid)
-	partition, existed, err := bcls.oldestPartition(contractEntity)
-	if err != nil || !existed {
-		return false, errors.WithMessage(err, "failed to get oldest partition")
-	}
-
-	// The contract is regarded as migrated in the following two cases:
-	// 1. oldest partition is not the initial one;
-	// 2. oldest partition is the initial one and has data on it.
-	return !partition.IsInitial() || partition.Count > 0, nil
+	return newBnPartitionedStore(bcls.db).hasPartition(bcls.contractEntity(cid))
 }
 
 // GetContractLogs get contract logs for the specified filter.

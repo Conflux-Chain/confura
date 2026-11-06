@@ -68,6 +68,8 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 	topic0Sigs := extractUniqueTopic0Signatures(dataSlice...)
 	topic2Partitions := make(map[uint64]bnPartition)
 
+	var topics []*Topic
+	var entities []string
 	for sig := range topic0Sigs {
 		topic0, ok, err := btls.ts.GetTopicByHash(sig)
 		if err != nil {
@@ -78,60 +80,64 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 			return nil, errors.New("topic not found")
 		}
 
-		if topic0.LogCount < thresholdBigTopicLogCount {
-			// not qualified for big topic
+		topics = append(topics, topic0)
+		entities = append(entities, btls.topicEntity(topic0.ID))
+	}
+	dedicated, err := btls.partitionedEntities(entities)
+	if err != nil {
+		return nil, err
+	}
+	for _, topic0 := range topics {
+		migrated := dedicated[btls.topicEntity(topic0.ID)]
+		if topic0.LogCount < thresholdBigTopicLogCount && !migrated {
 			continue
 		}
 
 		tlEntity, tlTabler := btls.topicEntity(topic0.ID), btls.topicTabler(topic0.ID)
+		if !migrated {
+			if err := btls.migrate(topic0); err != nil {
+				return nil, errors.WithMessage(err, "failed to migrate topic logs")
+			}
+		}
+
 		partition, newCreated, err := btls.autoPartition(tlEntity, tlTabler, bnPartitionedLogVolumeSize)
 		if err != nil {
 			return nil, errors.WithMessage(err, "auto partition failed")
 		}
 
-		if newCreated {
+		if newCreated || !migrated {
 			partition.tabler = tlTabler
 			btls.bnPartitionNotifyChan <- &partition
 		}
 
 		topic2Partitions[topic0.ID] = partition
-
-		// Topic is considered as migrated already for the following cases:
-		// 1. write partition is not the initial one;
-		// 2. write partition is the initial one but has data already.
-		if !partition.IsInitial() || partition.Count > 0 {
-			continue
-		}
-
-		// Migrate event logs of new big topic to a dedicated log table partition.
-		// We assume the possibility of migration for more than one big topics
-		// at the same time is very small, otherwise the migration process might
-		// collapse the sync progress.
-		if err := btls.migrate(topic0, partition); err != nil {
-			return nil, errors.WithMessage(err, "failed to migrate logs")
-		}
 	}
 
 	return topic2Partitions, nil
 }
 
 // migrate moves logs from shared shard table to dedicated big topic table.
-func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) error {
+func (btls *bigTopicLogStore[T]) migrate(topic *Topic) error {
 	tiTableName := btls.tils.GetPartitionedTableName(topic.Hash)
 
 	tlEntity, tlTabler := btls.topicEntity(topic.ID), btls.topicTabler(topic.ID)
-	tlTableName := btls.getPartitionedTableName(tlTabler, partition.Index)
+	tlTableName := btls.getPartitionedTableName(tlTabler, 0)
+
+	// MySQL DDL must finish before the migration transaction starts.
+	if _, err := btls.createPartitionedTable(btls.db, tlTabler, 0); err != nil {
+		return err
+	}
 
 	return btls.db.Transaction(func(dbTx *gorm.DB) error {
-		eBlockMap, ok, err := btls.ebms.earliestBlockMapping(dbTx)
+		migrated, err := newBnPartitionedStore(dbTx).hasPartition(tlEntity)
 		if err != nil {
-			return errors.WithMessage(err, "failed to get earliest block mapping")
+			return err
 		}
-		if !ok {
-			return errors.New("earliest block mapping not found")
+		if migrated {
+			return nil
 		}
 
-		bnMin, bnMax := eBlockMap.BnMin, uint64(0)
+		var bnMax uint64
 		var tiLogs []*TopicIndexedLog
 
 		tidb := dbTx.Table(tiTableName).Where("tid = ?", topic.ID)
@@ -166,9 +172,24 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 		if err := res.Error; err != nil {
 			return errors.WithMessage(err, "failed to batch migrate topic indexed logs")
 		}
-		if res.RowsAffected == 0 {
-			return errors.New("no topic indexed logs found for migration")
+		// Publish the initial partition only with the copied logs. An empty
+		// partition remains the dedicated route after rollback or pruning.
+		partition := bnPartition{Entity: tlEntity}
+		if err := dbTx.Create(&partition).Error; err != nil {
+			return err
 		}
+		if res.RowsAffected == 0 {
+			return nil
+		}
+
+		eBlockMap, ok, err := btls.ebms.earliestBlockMapping(dbTx)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get earliest block mapping")
+		}
+		if !ok {
+			return errors.New("earliest block mapping not found")
+		}
+		bnMin := eBlockMap.BnMin
 
 		// validate migration block range
 		if bnMin > bnMax {
@@ -177,16 +198,10 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 			)
 		}
 
-		// expand partition block number range
-		if err := btls.expandBnRange(dbTx, tlEntity, int(partition.Index), bnMin, bnMax); err != nil {
-			return errors.WithMessage(err, "failed to expand partition bn range")
-		}
-
-		// update dedicated topic log partition count
-		if err := btls.deltaUpdateCount(
-			dbTx, tlEntity, int(partition.Index), int(res.RowsAffected),
-		); err != nil {
-			return errors.WithMessage(err, "failed to update topic log partition count")
+		if err := dbTx.Model(&partition).Updates(map[string]interface{}{
+			"bn_min": bnMin, "bn_max": bnMax, "count": res.RowsAffected,
+		}).Error; err != nil {
+			return errors.WithMessage(err, "failed to update migrated partition")
 		}
 
 		logrus.WithFields(logrus.Fields{
@@ -359,15 +374,7 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 // IsMigrationCompleted reports whether the topic logs have been moved from
 // the topic hash partition to dedicated block-number partitions.
 func (btls *bigTopicLogStore[T]) IsMigrationCompleted(tid uint64) (bool, error) {
-	partition, existed, err := btls.oldestPartition(btls.topicEntity(tid))
-	if err != nil || !existed {
-		return false, errors.WithMessage(err, "failed to get oldest partition")
-	}
-
-	// The topic is regarded as migrated in the following two cases:
-	// 1. oldest partition is not the initial one;
-	// 2. oldest partition is the initial one and has data on it.
-	return !partition.IsInitial() || partition.Count > 0, nil
+	return newBnPartitionedStore(btls.db).hasPartition(btls.topicEntity(tid))
 }
 
 // GetTopicLogs queries logs for a specific big topic with specified filter.

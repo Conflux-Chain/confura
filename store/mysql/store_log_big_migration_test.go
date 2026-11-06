@@ -14,7 +14,6 @@ import (
 
 type bigLogMigrationTestHarness struct {
 	db          *gorm.DB
-	partitionID uint64
 	entity      string
 	sourceTable string
 	targetTable string
@@ -48,9 +47,8 @@ func TestBigLogMigrationRangeValidation(t *testing.T) {
 			wantSource:   1,
 		},
 		{
-			name:    "empty source fails closed",
+			name:    "empty source completes routing",
 			mapping: testEpochBlockMapping(10, 100, 109),
-			wantErr: "indexed logs found for migration",
 		},
 		{
 			name:         "inverted range rolls back",
@@ -87,7 +85,7 @@ func TestBigLogMigrationRangeValidation(t *testing.T) {
 					}
 
 					assertMigrationState(t, harness, test.wantSource, test.wantTarget,
-						test.wantBnMin, test.wantBnMax, test.wantPartCount)
+						test.wantBnMin, test.wantBnMax, test.wantPartCount, test.wantErr == "")
 				})
 			}
 		})
@@ -104,11 +102,13 @@ func newBigContractMigrationTestHarness(
 	addressStore := NewAddressIndexedLogStore[store.EpochData](db, nil, nil, 1)
 	contractStore := &bigContractLogStore[store.EpochData]{
 		bnPartitionedStore: newBnPartitionedStore(db),
+		cs:                 NewContractStore(db),
 		ebms:               mapStore,
 		ails:               addressStore,
 	}
 
 	contract := &Contract{ID: 1, Address: "0x1"}
+	require.NoError(t, db.Create(contract).Error)
 	partition := createBigLogMigrationTables(
 		t, db, contractStore.contractEntity(contract.ID),
 		&AddressIndexedLog{}, contractStore.contractTabler(contract.ID),
@@ -128,9 +128,9 @@ func newBigContractMigrationTestHarness(
 		contractStore.contractTabler(contract.ID), partition.Index,
 	)
 	return &bigLogMigrationTestHarness{
-		db: db, partitionID: partition.ID, entity: partition.Entity,
+		db: db, entity: partition.Entity,
 		sourceTable: sourceTable, targetTable: targetTable,
-		migrate: func() error { return contractStore.migrate(contract, partition) },
+		migrate: func() error { return contractStore.migrate(contract) },
 	}
 }
 
@@ -144,11 +144,13 @@ func newBigTopicMigrationTestHarness(
 	topicIndexStore := NewTopicIndexedLogStore[store.EpochData](db, nil, 1)
 	topicStore := &bigTopicLogStore[store.EpochData]{
 		bnPartitionedStore: newBnPartitionedStore(db),
+		ts:                 NewTopicStore(db),
 		ebms:               mapStore,
 		tils:               topicIndexStore,
 	}
 
 	topic := &Topic{ID: 1, Hash: "0x1"}
+	require.NoError(t, db.Create(topic).Error)
 	partition := createBigLogMigrationTables(
 		t, db, topicStore.topicEntity(topic.ID),
 		&TopicIndexedLog{}, topicStore.topicTabler(topic.ID),
@@ -166,9 +168,9 @@ func newBigTopicMigrationTestHarness(
 
 	targetTable := topicStore.getPartitionedTableName(topicStore.topicTabler(topic.ID), partition.Index)
 	return &bigLogMigrationTestHarness{
-		db: db, partitionID: partition.ID, entity: partition.Entity,
+		db: db, entity: partition.Entity,
 		sourceTable: sourceTable, targetTable: targetTable,
-		migrate: func() error { return topicStore.migrate(topic, partition) },
+		migrate: func() error { return topicStore.migrate(topic) },
 	}
 }
 
@@ -178,7 +180,9 @@ func newBigLogMigrationTestDB(t *testing.T) *gorm.DB {
 	dsn := filepath.Join(t.TempDir(), "migration.db") + "?_journal_mode=WAL&_busy_timeout=5000"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&epochBlockMap{}, &bnPartition{}))
+	require.NoError(t, db.AutoMigrate(&epochBlockMap{}, &bnPartition{}, &Contract{}))
+	require.NoError(t, db.Exec("DROP INDEX index_lue").Error)
+	require.NoError(t, db.AutoMigrate(&Topic{}))
 	return db
 }
 
@@ -197,7 +201,6 @@ func createBigLogMigrationTables(
 	require.NoError(t, err)
 
 	partition := bnPartition{Entity: entity, Index: 0}
-	require.NoError(t, db.Create(&partition).Error)
 	return partition
 }
 
@@ -206,7 +209,7 @@ func assertMigrationState(
 	harness *bigLogMigrationTestHarness,
 	wantSource, wantTarget int64,
 	wantBnMin, wantBnMax sql.NullInt64,
-	wantPartCount uint32,
+	wantPartCount uint32, wantPartition bool,
 ) {
 	t.Helper()
 
@@ -217,7 +220,12 @@ func assertMigrationState(
 	assert.Equal(t, wantTarget, targetCount)
 
 	var partition bnPartition
-	require.NoError(t, harness.db.First(&partition, harness.partitionID).Error)
+	err := harness.db.Where("entity = ?", harness.entity).Take(&partition).Error
+	if !wantPartition {
+		require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+		return
+	}
+	require.NoError(t, err)
 	assert.Equal(t, harness.entity, partition.Entity)
 	assert.Equal(t, wantBnMin, partition.BnMin)
 	assert.Equal(t, wantBnMax, partition.BnMax)

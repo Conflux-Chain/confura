@@ -59,6 +59,32 @@ func newBnPartitionedStore(db *gorm.DB) *bnPartitionedStore {
 	}
 }
 
+func (bnps *bnPartitionedStore) hasPartition(entity string) (bool, error) {
+	var partition bnPartition
+	err := bnps.db.Select("id").Where("entity = ?", entity).Take(&partition).Error
+	if bnps.IsRecordNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// partitionedEntities returns entities with partition metadata. For
+// dedicated logs, the first record commits together with the initial migration.
+func (bnps *bnPartitionedStore) partitionedEntities(entities []string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if len(entities) == 0 {
+		return result, nil
+	}
+	var found []string
+	if err := bnps.db.Model(&bnPartition{}).Where("entity IN ?", entities).Distinct().Pluck("entity", &found).Error; err != nil {
+		return nil, err
+	}
+	for _, entity := range found {
+		result[entity] = true
+	}
+	return result, nil
+}
+
 // autoPartition automatically prepare some suitable entity partition to write on.
 // It will create a new partition if no partition found or latest partition volume oversized,
 // otherwise return the latest partition found.
