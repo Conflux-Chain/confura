@@ -389,6 +389,7 @@ func TestMysqlStoreScanLogsRoutesSupportedFilters(t *testing.T) {
 
 		tableName := ms.bcls.getPartitionedTableName(ms.bcls.contractTabler(cid), 0)
 		createDedicatedContractScanTable(t, db, tableName)
+		require.NoError(t, completeLogMigration(db, &Contract{}, cid))
 		require.NoError(t, db.Create(&bnPartition{
 			Entity: ms.bcls.contractEntity(cid), Index: 0, Count: 1,
 			BnMin: sql.NullInt64{Int64: 10, Valid: true},
@@ -430,6 +431,7 @@ func TestMysqlStoreScanLogsRoutesSupportedFilters(t *testing.T) {
 
 		tableName := ms.btls.getPartitionedTableName(ms.btls.topicTabler(tid), 0)
 		createDedicatedTopicScanTable(t, db, tableName)
+		require.NoError(t, completeLogMigration(db, &Topic{}, tid))
 		require.NoError(t, db.Create(&bnPartition{
 			Entity: ms.btls.topicEntity(tid), Index: 0, Count: 1,
 			BnMin: sql.NullInt64{Int64: 10, Valid: true},
@@ -500,12 +502,14 @@ func newScanMysqlStoreTestHarness(t *testing.T) (*MysqlStore[*store.EpochData], 
 	require.NoError(t, db.Exec(`CREATE TABLE contracts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		address TEXT NOT NULL UNIQUE,
+		migration_status INTEGER NOT NULL DEFAULT 0,
 		log_count INTEGER NOT NULL DEFAULT 0,
 		latest_updated_epoch INTEGER NOT NULL DEFAULT 0
 	)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE topics (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		hash TEXT NOT NULL UNIQUE,
+		migration_status INTEGER NOT NULL DEFAULT 0,
 		log_count INTEGER NOT NULL DEFAULT 0,
 		latest_updated_epoch INTEGER NOT NULL DEFAULT 0
 	)`).Error)

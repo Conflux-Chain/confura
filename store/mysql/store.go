@@ -181,6 +181,11 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 	}
 
 	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
+		if !ms.filter.IsLogDisabled() {
+			if err := ms.lockLogWriteRoutes(dbTx, dataSlice, contract2BnPartitions, topic2BnPartitions); err != nil {
+				return err
+			}
+		}
 		if !ms.filter.IsBlockDisabled() {
 			// save blocks
 			if err := ms.blockStore.Add(dbTx, dataSlice); err != nil {
@@ -267,6 +272,11 @@ func (ms *MysqlStore[T]) PopnWithFinalizer(epochUntil uint64, finalizer func(*go
 	defer metrics.Registry.Store.Pop("mysql").UpdateSince(startTime)
 
 	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
+		if !ms.filter.IsLogDisabled() {
+			if err := lockLogRollback(dbTx, epochUntil); err != nil {
+				return err
+			}
+		}
 		if !ms.filter.IsBlockDisabled() {
 			// remove blocks
 			if err := ms.blockStore.Remove(dbTx, epochUntil, maxEpoch); err != nil {
@@ -362,7 +372,7 @@ func (ms *MysqlStore[T]) getTopicLogs(ctx context.Context, topics []string, stor
 			return nil, err
 		}
 
-		topicID, exists, err := ms.resolveTopicLogID(topic)
+		topicID, exists, err := ms.resolveTopicLogID(ctx, topic)
 		if err != nil {
 			return nil, err
 		}
@@ -399,7 +409,7 @@ func (ms *MysqlStore[T]) getContractLogs(ctx context.Context, contracts []string
 			return nil, err
 		}
 
-		contractID, exists, err := ms.resolveContractLogID(contract)
+		contractID, exists, err := ms.resolveContractLogID(ctx, contract)
 		if err != nil {
 			return nil, err
 		}
@@ -428,13 +438,13 @@ func (ms *MysqlStore[T]) getContractLogs(ctx context.Context, contracts []string
 	return logs, nil
 }
 
-func (ms *MysqlStore[T]) resolveContractLogID(address string) (uint64, bool, error) {
-	id, exists, err := ms.cs.GetContractIdByAddress(address)
+func (ms *MysqlStore[T]) resolveContractLogID(ctx context.Context, address string) (uint64, bool, error) {
+	id, exists, err := ms.cs.withContext(ctx).GetContractIdByAddress(address)
 	return id, exists, errors.WithMessage(err, "failed to get contract id")
 }
 
-func (ms *MysqlStore[T]) resolveTopicLogID(topic string) (uint64, bool, error) {
-	id, exists, err := ms.ts.GetID(topic)
+func (ms *MysqlStore[T]) resolveTopicLogID(ctx context.Context, topic string) (uint64, bool, error) {
+	id, exists, err := ms.ts.withContext(ctx).GetID(topic)
 	return id, exists, errors.WithMessage(err, "failed to get topic id")
 }
 

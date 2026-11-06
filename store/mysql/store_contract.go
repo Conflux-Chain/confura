@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -12,6 +13,9 @@ type Contract struct {
 	// id and address are immutable once created.
 	ID      uint64 // contract id
 	Address string `gorm:"size:64;not null;unique"`
+
+	// MigrationStatus is read from the database, never from the identity cache.
+	MigrationStatus migrationStatus `gorm:"not null;default:0"`
 
 	// num of persisted event logs
 	LogCount int `gorm:"not null;default:0"`
@@ -110,7 +114,7 @@ func (cs *ContractStore) AddContractIfAbsent(address string) (uint64, bool, erro
 
 	// Thread unsafe
 	contract := Contract{
-		Address: address,
+		Address: address, MigrationStatus: migrationShared,
 	}
 
 	if err := cs.db.Create(&contract).Error; err != nil {
@@ -135,7 +139,7 @@ func (cs *ContractStore) AddContract(contracts map[string]bool) (int, error) {
 
 		if !ok {
 			newContracts = append(newContracts, Contract{
-				Address: addr,
+				Address: addr, MigrationStatus: migrationShared,
 			})
 		}
 	}
@@ -201,4 +205,11 @@ func (cs *ContractStore) enforceCache(whereQuery string, args ...interface{}) (*
 	}
 
 	return &contract, exists, err
+}
+
+// withContext keeps shared identity caches while binding only this DB handle.
+func (cs *ContractStore) withContext(ctx context.Context) *ContractStore {
+	copy := *cs
+	copy.baseStore = newBaseStore(cs.db.WithContext(ctx))
+	return &copy
 }

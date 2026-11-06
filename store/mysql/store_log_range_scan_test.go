@@ -214,7 +214,7 @@ func TestRangeScanMatchesAddressPath(t *testing.T) {
 func TestRangeScanCompletedMigrationAndPublicDispatch(t *testing.T) {
 	ms, f := rangeScanFixture(t, 2)
 	db := ms.ls.db
-	// A completed migration is represented by a nonempty initial dedicated partition.
+	// Set up the persistent route and its dedicated partition.
 	require.NoError(t, db.AutoMigrate(&Contract{}))
 	require.NoError(t, db.Exec("DROP INDEX index_lue").Error)
 	require.NoError(t, db.AutoMigrate(&Topic{}))
@@ -232,6 +232,7 @@ func TestRangeScanCompletedMigrationAndPublicDispatch(t *testing.T) {
 	require.NoError(t, db.Table("logs_0").First(&row).Error)
 	require.NoError(t, db.Exec("INSERT INTO clogs_1_0 (id,bn,epoch,tid,log_index,extra) VALUES (1,10,10,?,0,?)", tid, row.Extra).Error)
 	require.NoError(t, db.Create(&bnPartition{Entity: fmt.Sprintf("clogs_%d", cid), Count: 1, BnMin: sql.NullInt64{Int64: 10, Valid: true}, BnMax: sql.NullInt64{Int64: 20, Valid: true}}).Error)
+	require.NoError(t, completeLogMigration(db, &Contract{}, cid))
 	// The other address is unknown to the index: select only the migrated contract.
 	f.Contracts = store.NewVariadicValue(fmt.Sprintf("0x%040x", 1))
 	ms.config.GetLogsRangeScan.MinAddresses = 1
@@ -338,6 +339,7 @@ func TestRangeScanCoreMatchesSharedAndDedicated(t *testing.T) {
 	require.NoError(t, db.Exec("CREATE TABLE clogs_1_0 AS SELECT * FROM addr_logs_0 WHERE cid = ?", cids[0]).Error)
 	require.NoError(t, db.Table("addr_logs_0").Where("cid = ?", cids[0]).Delete(&AddressIndexedLog{}).Error)
 	require.NoError(t, db.Create(&bnPartition{Entity: "clogs_1", Count: 2, BnMin: sql.NullInt64{Int64: 10, Valid: true}, BnMax: sql.NullInt64{Int64: 20, Valid: true}}).Error)
+	require.NoError(t, completeLogMigration(db, &Contract{}, cids[0]))
 	t.Run("mixed dedicated and shared", compare)
 	// Canonical matching also accepts uppercase base32.
 	f := store.LogFilter{BlockFrom: 10, BlockTo: 13, Contracts: store.NewVariadicValue(strings.ToUpper(addresses[0].String()), addresses[1].String())}

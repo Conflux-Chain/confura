@@ -130,6 +130,7 @@ func TestGetLogsOperationsUseDedicatedPartitionsAfterMigration(t *testing.T) {
 
 		tableName := ms.bcls.getPartitionedTableName(ms.bcls.contractTabler(contractID), 0)
 		createDedicatedContractScanTable(t, db, tableName)
+		require.NoError(t, completeLogMigration(db, &Contract{}, contractID))
 		require.NoError(t, db.Create(&bnPartition{
 			Entity: ms.bcls.contractEntity(contractID), Index: 0, Count: 1,
 			BnMin: sql.NullInt64{Int64: 10, Valid: true},
@@ -156,6 +157,7 @@ func TestGetLogsOperationsUseDedicatedPartitionsAfterMigration(t *testing.T) {
 
 		tableName := ms.btls.getPartitionedTableName(ms.btls.topicTabler(topicID), 0)
 		createDedicatedTopicScanTable(t, db, tableName)
+		require.NoError(t, completeLogMigration(db, &Topic{}, topicID))
 		require.NoError(t, db.Create(&bnPartition{
 			Entity: ms.btls.topicEntity(topicID), Index: 0, Count: 1,
 			BnMin: sql.NullInt64{Int64: 10, Valid: true},
@@ -186,7 +188,7 @@ type testMigrationLogReadOperation struct {
 	dedicatedLogs        []*store.Log
 }
 
-func (operation *testMigrationLogReadOperation) isMigrationCompleted() (bool, error) {
+func (operation *testMigrationLogReadOperation) isMigrationCompleted(context.Context) (bool, error) {
 	operation.stateChecks++
 	if operation.migrateOnSecondCheck && operation.stateChecks == 2 {
 		operation.completed = true

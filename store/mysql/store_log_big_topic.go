@@ -78,7 +78,7 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 			return nil, errors.New("topic not found")
 		}
 
-		if topic0.LogCount < thresholdBigTopicLogCount {
+		if topic0.LogCount < thresholdBigTopicLogCount && topic0.MigrationStatus != migrationCompleted {
 			// not qualified for big topic
 			continue
 		}
@@ -96,17 +96,10 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 
 		topic2Partitions[topic0.ID] = partition
 
-		// Topic is considered as migrated already for the following cases:
-		// 1. write partition is not the initial one;
-		// 2. write partition is the initial one but has data already.
-		if !partition.IsInitial() || partition.Count > 0 {
+		if topic0.MigrationStatus == migrationCompleted {
 			continue
 		}
 
-		// Migrate event logs of new big topic to a dedicated log table partition.
-		// We assume the possibility of migration for more than one big topics
-		// at the same time is very small, otherwise the migration process might
-		// collapse the sync progress.
 		if err := btls.migrate(topic0, partition); err != nil {
 			return nil, errors.WithMessage(err, "failed to migrate logs")
 		}
@@ -123,6 +116,26 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 	tlTableName := btls.getPartitionedTableName(tlTabler, partition.Index)
 
 	return btls.db.Transaction(func(dbTx *gorm.DB) error {
+		if err := lockLogMigration(dbTx, &Topic{}, topic.ID); err != nil {
+			return err
+		}
+		completed, err := logMigrationCompleted(dbTx, &Topic{}, topic.ID, tlEntity)
+		if err != nil {
+			return err
+		}
+		var sourceCount int64
+		if err := dbTx.Table(tiTableName).Where("tid = ?", topic.ID).Count(&sourceCount).Error; err != nil {
+			return err
+		}
+		if completed || sourceCount == 0 {
+			if completed && sourceCount != 0 {
+				return errors.New("both shared and dedicated logs exist for migrated entity")
+			}
+			// Empty legacy partitions may be a fully reverted migration. With
+			// no source rows, completing the route is safe and permits replay.
+			return completeLogMigration(dbTx, &Topic{}, topic.ID)
+		}
+
 		eBlockMap, ok, err := btls.ebms.earliestBlockMapping(dbTx)
 		if err != nil {
 			return errors.WithMessage(err, "failed to get earliest block mapping")
@@ -198,7 +211,7 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic, partition bnPartition) er
 			"totalMigratedLogs": res.RowsAffected,
 		}).Info("Topic indexed event logs migrated to big topic event logs table")
 
-		return nil
+		return completeLogMigration(dbTx, &Topic{}, topic.ID)
 	})
 }
 
@@ -328,6 +341,20 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 		tlEntity := btls.topicEntity(topic.ID)
 		tlTabler := btls.topicTabler(topic.ID)
 
+		// Preserve an old deployment's completed route before rollback can
+		// erase the partition counts used by the legacy fallback.
+		if topic.MigrationStatus == migrationLegacy {
+			completed, err := logMigrationCompleted(dbTx, &Topic{}, topic.ID, tlEntity)
+			if err != nil {
+				return err
+			}
+			if completed {
+				if err := completeLogMigration(dbTx, &Topic{}, topic.ID); err != nil {
+					return err
+				}
+			}
+		}
+
 		partitions, existed, err := btls.shrinkBnRange(dbTx, tlEntity, e2bmap.BnMin)
 		if err != nil {
 			return errors.WithMessage(err, "failed to shrink partition bn range")
@@ -346,7 +373,7 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 			}
 
 			// update partition data count
-			err = btls.deltaUpdateCount(dbTx, tlEntity, int(partition.Index), -int(res.RowsAffected))
+			err = btls.decrementPartitionCount(dbTx, tlEntity, partition.Index, res.RowsAffected)
 			if err != nil {
 				return errors.WithMessage(err, "failed to delta update partition size")
 			}
@@ -359,15 +386,11 @@ func (btls *bigTopicLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 // IsMigrationCompleted reports whether the topic logs have been moved from
 // the topic hash partition to dedicated block-number partitions.
 func (btls *bigTopicLogStore[T]) IsMigrationCompleted(tid uint64) (bool, error) {
-	partition, existed, err := btls.oldestPartition(btls.topicEntity(tid))
-	if err != nil || !existed {
-		return false, errors.WithMessage(err, "failed to get oldest partition")
-	}
+	return btls.isMigrationCompleted(context.Background(), tid)
+}
 
-	// The topic is regarded as migrated in the following two cases:
-	// 1. oldest partition is not the initial one;
-	// 2. oldest partition is the initial one and has data on it.
-	return !partition.IsInitial() || partition.Count > 0, nil
+func (btls *bigTopicLogStore[T]) isMigrationCompleted(ctx context.Context, tid uint64) (bool, error) {
+	return logMigrationCompleted(btls.db.WithContext(ctx), &Topic{}, tid, btls.topicEntity(tid))
 }
 
 // GetTopicLogs queries logs for a specific big topic with specified filter.
