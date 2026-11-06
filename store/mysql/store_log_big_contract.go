@@ -357,7 +357,7 @@ func (bcls *bigContractLogStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error
 			}
 
 			// update partition data count
-			err = bcls.deltaUpdateCount(dbTx, contractEntity, int(partition.Index), -int(res.RowsAffected))
+			err = bcls.decrementPartitionCount(dbTx, contractEntity, partition.Index, res.RowsAffected)
 			if err != nil {
 				return errors.WithMessage(err, "failed to delta update partition size")
 			}

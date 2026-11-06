@@ -318,6 +318,16 @@ func (bnps *bnPartitionedStore) deltaUpdateCount(dbTx *gorm.DB, entity string, p
 	return dbTx.UpdateColumn("count", gorm.Expr("GREATEST(0, CAST(count AS SIGNED) - ?)", -delta)).Error
 }
 
+// decrementPartitionCount updates the partition being rolled back, which need
+// not be the latest write partition. Keep the writer's index check separate.
+func (bnps *bnPartitionedStore) decrementPartitionCount(dbTx *gorm.DB, entity string, index uint32, count int64) error {
+	if count == 0 {
+		return nil
+	}
+	return dbTx.Model(&bnPartition{}).Where("entity = ? AND pi = ?", entity, index).
+		UpdateColumn("count", gorm.Expr("GREATEST(0, CAST(count AS SIGNED) - ?)", count)).Error
+}
+
 // expandBnRange expands block number range of the latest entity partition.
 // If the passed in `partitionIndex` parameter is non-negative, it will do sanity check to ensure the latest partition index
 // is equal to the passed in `partitionIndex`.
