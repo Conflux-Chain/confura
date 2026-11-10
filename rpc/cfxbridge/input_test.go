@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	ct "github.com/Conflux-Chain/go-conflux-sdk/types"
+	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	rp "github.com/openweb3/go-rpc-provider"
@@ -90,5 +91,61 @@ func TestBridgeNumericBlocksDoNotBecomeTags(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, hash, *value.ToArg().BlockHash)
 		require.Equal(t, canonical, value.ToArg().RequireCanonical)
+	}
+}
+
+func TestBridgeRejectsLossyHexIdentities(t *testing.T) {
+	for _, address := range []string{"0x", "0x1", "0xzz", "0x" + strings.Repeat("1", 39), "0x" + strings.Repeat("1", 41), "0x" + strings.Repeat("g", 40)} {
+		t.Run("address/"+address, func(t *testing.T) {
+			p := &bridgeTestProvider{result: `"0x2a"`}
+			api := NewCfxAPI(web3go.NewClientWithProvider(p), 1030, nil)
+			response := bridgeRequest(t, api, "cfx_getBalance", fmt.Sprintf(`[%q,"0x1"]`, address))
+			require.NotNil(t, response["error"])
+			require.Zero(t, p.calls)
+		})
+	}
+	for _, topic := range []string{"", "0x", "0x1", "0xzz", "0x" + strings.Repeat("1", 63), "0x" + strings.Repeat("1", 65), "0x" + strings.Repeat("g", 64)} {
+		for _, topics := range []string{fmt.Sprintf(`[%q]`, topic), fmt.Sprintf(`[[%q]]`, topic)} {
+			t.Run("topic/"+topics, func(t *testing.T) {
+				p := &bridgeTestProvider{result: `[]`}
+				api := NewCfxAPI(web3go.NewClientWithProvider(p), 1030, nil)
+				response := bridgeRequest(t, api, "cfx_getLogs", `[{"topics":`+topics+`}]`)
+				require.NotNil(t, response["error"])
+				require.Zero(t, p.calls)
+			})
+		}
+	}
+}
+
+func TestBridgePreservesExactHexAndBase32(t *testing.T) {
+	address := "0x1111111111111111111111111111111111111111"
+	topic := "0x" + strings.Repeat("ab", 32)
+	base32 := cfxaddress.MustNewFromHex(address, 1030).String()
+	for _, input := range []string{address, base32, "0x" + strings.Repeat("0", 40)} {
+		p := &bridgeTestProvider{result: `"0x2a"`}
+		api := NewCfxAPI(web3go.NewClientWithProvider(p), 1030, nil)
+		response := bridgeRequest(t, api, "cfx_getBalance", fmt.Sprintf(`[%q,"0x1"]`, input))
+		require.Nil(t, response["error"])
+		require.Equal(t, 1, p.calls)
+		expected := address
+		if strings.Contains(input, strings.Repeat("0", 40)) {
+			expected = input
+		}
+		args, err := json.Marshal(p.args)
+		require.NoError(t, err)
+		require.Contains(t, string(args), expected)
+	}
+	for _, topics := range []string{fmt.Sprintf(`[%q]`, topic), fmt.Sprintf(`[[%q]]`, topic), `[null]`, `[[]]`} {
+		p := &bridgeTestProvider{result: `[]`}
+		api := NewCfxAPI(web3go.NewClientWithProvider(p), 1030, nil)
+		response := bridgeRequest(t, api, "cfx_getLogs", fmt.Sprintf(`[{"address":[%q],"topics":%s}]`, address, topics))
+		require.Nil(t, response["error"])
+		require.Equal(t, 1, p.calls)
+		args, err := json.Marshal(p.args)
+		require.NoError(t, err)
+		require.Contains(t, string(args), address)
+		if strings.Contains(topics, "ab") {
+			require.Contains(t, string(args), topic)
+		}
 	}
 }

@@ -144,7 +144,10 @@ func (ebnh *EthBlockNumberOrHash) UnmarshalJSON(data []byte) error {
 	case types.EpochLatestState.Equals(&epoch):
 		ebnh.number = ethTypes.LatestBlockNumber
 	case len(epoch.String()) == 66:
-		blockHash := common.HexToHash(epoch.String())
+		var blockHash common.Hash
+		if err := blockHash.UnmarshalText([]byte(epoch.String())); err != nil {
+			return err
+		}
 		ebnh.hash = &blockHash
 	default:
 		return ErrEpochUnsupported
@@ -183,8 +186,7 @@ func (ea *EthAddress) UnmarshalJSON(data []byte) error {
 
 	// If prefixed with 0x, decode in hex format.
 	if strings.HasPrefix(addr, "0x") {
-		ea.value = common.HexToAddress(addr)
-		return nil
+		return ea.value.UnmarshalText([]byte(addr))
 	}
 
 	// Otherwise, decode in base32 format.
@@ -380,7 +382,11 @@ func resolveToHashes(val interface{}) ([]common.Hash, error) {
 
 	// if val is string, return
 	if hashStr, ok := val.(string); ok {
-		return []common.Hash{common.HexToHash(hashStr)}, nil
+		var hash common.Hash
+		if err := hash.UnmarshalText([]byte(hashStr)); err != nil {
+			return nil, err
+		}
+		return []common.Hash{hash}, nil
 	}
 
 	// if val is string slice, append every item
@@ -392,7 +398,11 @@ func resolveToHashes(val interface{}) ([]common.Hash, error) {
 				return nil, errors.Errorf("could not convert type %v to hash", reflect.TypeOf(v))
 			}
 
-			addrList = append(addrList, common.HexToHash(vStr))
+			var hash common.Hash
+			if err := hash.UnmarshalText([]byte(vStr)); err != nil {
+				return nil, err
+			}
+			addrList = append(addrList, hash)
 		}
 		return addrList, nil
 	}
