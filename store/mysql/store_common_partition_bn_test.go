@@ -99,8 +99,8 @@ func TestSearchPartitionsFromMetadata(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			partitions, uncoverings, err := searchPartitionsFromMetadata(
-				"logs", test.searchRange, metadata,
+			partitions, uncoverings, err := routePartitionsFromMetadata(
+				"logs", test.searchRange, metadata, false,
 			)
 			if test.wantAlreadyPruned {
 				require.Error(t, err)
@@ -117,7 +117,7 @@ func TestSearchPartitionsFromMetadata(t *testing.T) {
 
 func TestSearchPartitionsFromEmptyMetadata(t *testing.T) {
 	searchRange := types.RangeUint64{From: 100, To: 200}
-	partitions, uncoverings, err := searchPartitionsFromMetadata("logs", searchRange, nil)
+	partitions, uncoverings, err := routePartitionsFromMetadata("logs", searchRange, nil, false)
 
 	require.NoError(t, err)
 	assert.Empty(t, partitions)
@@ -159,8 +159,8 @@ func TestSearchPartitionsFromMetadataRejectsDiscontinuity(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, _, err := searchPartitionsFromMetadata(
-				"logs", types.RangeUint64{From: 100, To: 199}, test.metadata,
+			_, _, err := routePartitionsFromMetadata(
+				"logs", types.RangeUint64{From: 100, To: 199}, test.metadata, false,
 			)
 			require.Error(t, err)
 			assert.NotErrorIs(t, err, store.ErrAlreadyPruned)
@@ -169,26 +169,67 @@ func TestSearchPartitionsFromMetadataRejectsDiscontinuity(t *testing.T) {
 }
 
 func TestSearchPartitionsWithEmptyMetadata(t *testing.T) {
+	tests := []struct {
+		name            string
+		metadata        []*bnPartition
+		wantIndexes     []uint32
+		wantUncoverings *types.RangeUint64
+		wantError       bool
+	}{
+		{
+			name:        "empty middle",
+			metadata:    []*bnPartition{newTestBnPartition(3, 100, 149), {Index: 4}, newTestBnPartition(5, 150, 199)},
+			wantIndexes: []uint32{3, 5},
+		},
+		{
+			name:        "empty edges",
+			metadata:    []*bnPartition{{Index: 3}, newTestBnPartition(4, 100, 199), {Index: 5}},
+			wantIndexes: []uint32{4},
+		},
+		{
+			name:        "multiple empty",
+			metadata:    []*bnPartition{newTestBnPartition(3, 100, 149), {Index: 4}, {Index: 5}, newTestBnPartition(6, 150, 199)},
+			wantIndexes: []uint32{3, 6},
+		},
+		{
+			name:            "all empty",
+			metadata:        []*bnPartition{{Index: 3}, {Index: 4}},
+			wantUncoverings: &types.RangeUint64{From: 100, To: 199},
+		},
+		{
+			name:      "missing empty record",
+			metadata:  []*bnPartition{newTestBnPartition(3, 100, 149), {Index: 5}},
+			wantError: true,
+		},
+		{
+			name:      "gap between empty records",
+			metadata:  []*bnPartition{{Index: 3}, {Index: 5}},
+			wantError: true,
+		},
+		{
+			name:      "duplicate empty index",
+			metadata:  []*bnPartition{{Index: 3}, {Index: 3}},
+			wantError: true,
+		},
+		{
+			name:      "nil metadata",
+			metadata:  []*bnPartition{nil},
+			wantError: true,
+		},
+		{
+			name:      "negative range",
+			metadata:  []*bnPartition{newTestBnPartition(3, -1, 100)},
+			wantError: true,
+		},
+		{
+			name:      "only upper bound",
+			metadata:  []*bnPartition{{Index: 3, BnMax: sql.NullInt64{Int64: 199, Valid: true}}},
+			wantError: true,
+		},
+	}
+
 	for _, allowOverlap := range []bool{false, true} {
-		for _, test := range []struct {
-			name            string
-			metadata        []*bnPartition
-			wantIndexes     []uint32
-			wantUncoverings *types.RangeUint64
-			wantError       bool
-		}{
-			{"empty middle", []*bnPartition{newTestBnPartition(3, 100, 149), {Index: 4}, newTestBnPartition(5, 150, 199)}, []uint32{3, 5}, nil, false},
-			{"empty edges", []*bnPartition{{Index: 3}, newTestBnPartition(4, 100, 199), {Index: 5}}, []uint32{4}, nil, false},
-			{"multiple empty", []*bnPartition{newTestBnPartition(3, 100, 149), {Index: 4}, {Index: 5}, newTestBnPartition(6, 150, 199)}, []uint32{3, 6}, nil, false},
-			{"all empty", []*bnPartition{{Index: 3}, {Index: 4}}, nil, &types.RangeUint64{From: 100, To: 199}, false},
-			{"missing empty record", []*bnPartition{newTestBnPartition(3, 100, 149), {Index: 5}}, nil, nil, true},
-			{"gap between empty records", []*bnPartition{{Index: 3}, {Index: 5}}, nil, nil, true},
-			{"duplicate empty index", []*bnPartition{{Index: 3}, {Index: 3}}, nil, nil, true},
-			{"nil metadata", []*bnPartition{nil}, nil, nil, true},
-			{"negative range", []*bnPartition{newTestBnPartition(3, -1, 100)}, nil, nil, true},
-			{"only upper bound", []*bnPartition{{Index: 3, BnMax: sql.NullInt64{Int64: 199, Valid: true}}}, nil, nil, true},
-			{"overlap across empty", []*bnPartition{newTestBnPartition(3, 100, 160), {Index: 4}, newTestBnPartition(5, 150, 199)}, []uint32{3, 5}, nil, !allowOverlap},
-		} {
+		for _, test := range tests {
 			t.Run(fmt.Sprintf("%s/overlap=%t", test.name, allowOverlap), func(t *testing.T) {
 				partitions, uncoverings, err := routePartitionsFromMetadata("logs", types.RangeUint64{From: 100, To: 199}, test.metadata, allowOverlap)
 				if test.wantError {
@@ -203,6 +244,21 @@ func TestSearchPartitionsWithEmptyMetadata(t *testing.T) {
 	}
 }
 
+func TestSearchPartitionsOverlapAcrossEmptyPartition(t *testing.T) {
+	metadata := []*bnPartition{newTestBnPartition(3, 100, 160), {Index: 4}, newTestBnPartition(5, 150, 199)}
+	searchRange := types.RangeUint64{From: 100, To: 199}
+	t.Run("ordinary logs reject overlap", func(t *testing.T) {
+		_, _, err := routePartitionsFromMetadata("logs", searchRange, metadata, false)
+		require.Error(t, err)
+	})
+	t.Run("virtualfilter allows overlap", func(t *testing.T) {
+		partitions, uncoverings, err := routePartitionsFromMetadata("logs", searchRange, metadata, true)
+		require.NoError(t, err)
+		require.Equal(t, []uint32{3, 5}, partitionIndexes(partitions))
+		require.Nil(t, uncoverings)
+	})
+}
+
 func TestSearchPartitionsFromMetadataAllowsBlockGaps(t *testing.T) {
 	metadata := []*bnPartition{
 		newTestBnPartition(3, 100, 149),
@@ -210,8 +266,8 @@ func TestSearchPartitionsFromMetadataAllowsBlockGaps(t *testing.T) {
 	}
 
 	t.Run("range inside a no-data gap has no overlapping partition", func(t *testing.T) {
-		partitions, uncoverings, err := searchPartitionsFromMetadata(
-			"logs", types.RangeUint64{From: 160, To: 170}, metadata,
+		partitions, uncoverings, err := routePartitionsFromMetadata(
+			"logs", types.RangeUint64{From: 160, To: 170}, metadata, false,
 		)
 		require.NoError(t, err)
 		assert.Empty(t, partitions)
@@ -219,8 +275,8 @@ func TestSearchPartitionsFromMetadataAllowsBlockGaps(t *testing.T) {
 	})
 
 	t.Run("range spanning a no-data gap routes both partitions", func(t *testing.T) {
-		partitions, uncoverings, err := searchPartitionsFromMetadata(
-			"logs", types.RangeUint64{From: 140, To: 210}, metadata,
+		partitions, uncoverings, err := routePartitionsFromMetadata(
+			"logs", types.RangeUint64{From: 140, To: 210}, metadata, false,
 		)
 		require.NoError(t, err)
 		assert.Equal(t, []uint32{3, 4}, partitionIndexes(partitions))
@@ -237,7 +293,7 @@ func TestSearchPartitionsPruningSnapshotOutcomes(t *testing.T) {
 			newTestBnPartition(1, 100, 199),
 		}
 
-		partitions, uncoverings, err := searchPartitionsFromMetadata("logs", searchRange, metadata)
+		partitions, uncoverings, err := routePartitionsFromMetadata("logs", searchRange, metadata, false)
 		require.NoError(t, err)
 		assert.Equal(t, []uint32{0}, partitionIndexes(partitions))
 		assert.Nil(t, uncoverings)
@@ -248,7 +304,7 @@ func TestSearchPartitionsPruningSnapshotOutcomes(t *testing.T) {
 			newTestBnPartition(1, 100, 199),
 		}
 
-		_, _, err := searchPartitionsFromMetadata("logs", searchRange, metadata)
+		_, _, err := routePartitionsFromMetadata("logs", searchRange, metadata, false)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, store.ErrAlreadyPruned)
 	})

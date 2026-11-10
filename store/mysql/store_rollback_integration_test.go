@@ -15,76 +15,74 @@ import (
 )
 
 func TestMySQLRollbackReplayEmptyMiddlePartition(t *testing.T) {
-	for _, kind := range []string{"universal", "contract", "topic"} {
-		t.Run(kind, func(t *testing.T) {
-			ms, db := newIntegrationStore(t, false)
-			require.NoError(t, ms.Push(integrationData(1, 2)))
-			entity := bnPartitionedLogEntity
-			var model interface{ TableName() string } = &log{}
-			filter := store.LogFilter{BlockFrom: 1, BlockTo: 4}
-			scanFilter := store.ScanLogFilter{BlockFrom: 1, BlockTo: 4}
-			replayBlock := uint64(2)
-			if kind != "universal" {
-				if kind == "contract" {
-					require.NoError(t, db.Model(&Contract{}).Where("id > 0").Update("log_count", thresholdBigContractLogCount).Error)
-					entity, model = ms.bcls.contractEntity(1), ms.bcls.contractTabler(1)
-					address := common.BigToAddress(common.Big1).Hex()
-					filter.Contracts = store.NewVariadicValue(address)
-					scanFilter.Contract = address
-				} else {
-					require.NoError(t, db.Model(&Topic{}).Where("id > 0").Update("log_count", thresholdBigTopicLogCount).Error)
-					entity, model = ms.btls.topicEntity(1), ms.btls.topicTabler(1)
-					topic := common.BigToHash(common.Big1).Hex()
-					filter.Topics = []store.VariadicValue[string]{store.NewVariadicValue(topic)}
-					scanFilter.Topic0 = topic
-				}
-				require.NoError(t, ms.Push(integrationData(2, 2)))
-				replayBlock = 3
-			}
-			for n := replayBlock; n <= replayBlock+1; n++ {
-				_, err := ms.ls.growPartition(entity, model)
-				require.NoError(t, err)
-				require.NoError(t, ms.Push(integrationData(n, 2)))
-			}
-			require.NoError(t, ms.Popn(replayBlock))
-			// Replay more logs so the replacement can be distinguished from old rows.
-			require.NoError(t, ms.Push(integrationData(replayBlock, 4)))
-			var metadata []bnPartition
-			require.NoError(t, db.Where("entity = ?", entity).Order("pi").Find(&metadata).Error)
-			require.Len(t, metadata, 3)
-			require.False(t, metadata[1].BnMin.Valid)
-			require.False(t, metadata[1].BnMax.Valid)
-			require.True(t, metadata[2].BnMin.Valid)
-			require.Equal(t, int64(replayBlock), metadata[2].BnMin.Int64)
-
-			var want [][2]uint64
-			for n := uint64(1); n <= replayBlock; n++ {
-				count, step := uint64(2), uint64(1)
-				if n == replayBlock {
-					count = 4
-				}
-				if kind != "universal" {
-					step = 2
-				}
-				for li := uint64(0); li < count; li += step {
-					want = append(want, [2]uint64{n, li})
-				}
-			}
+	for _, test := range []struct {
+		kind          string
+		want          [][2]uint64
+		retainedCount int
+	}{
+		{kind: "universal", want: [][2]uint64{{1, 0}, {1, 1}, {2, 0}, {2, 1}, {2, 2}, {2, 3}}, retainedCount: 2},
+		{kind: "contract", want: [][2]uint64{{1, 0}, {2, 0}, {3, 0}, {3, 2}}, retainedCount: 1},
+		{kind: "topic", want: [][2]uint64{{1, 0}, {2, 0}, {3, 0}, {3, 2}}, retainedCount: 1},
+	} {
+		t.Run(test.kind, func(t *testing.T) {
+			ms, filter, scanFilter := newRollbackReplayFixture(t, test.kind)
 			logs, err := ms.GetLogs(context.Background(), filter)
 			require.NoError(t, err)
-			require.Equal(t, want, storeLogKeys(logs))
+			require.Equal(t, test.want, storeLogKeys(logs))
+
 			filter.BlockTo = 1
 			logs, err = ms.GetLogs(context.Background(), filter)
 			require.NoError(t, err)
-			retainedCount := 2
-			if kind != "universal" {
-				retainedCount = 1
-			}
-			require.Equal(t, want[:retainedCount], storeLogKeys(logs))
-
-			assertReplayScanLogs(t, ms, scanFilter, want)
+			require.Equal(t, test.want[:test.retainedCount], storeLogKeys(logs))
+			assertReplayScanLogs(t, ms, scanFilter, test.want)
 		})
 	}
+}
+
+// Keep three partitions, empty the last two, then replay into the newest one.
+func newRollbackReplayFixture(t *testing.T, kind string) (*MysqlStore[*store.EthData], store.LogFilter, store.ScanLogFilter) {
+	t.Helper()
+	ms, db := newIntegrationStore(t, false)
+	require.NoError(t, ms.Push(integrationData(1, 2)))
+	entity := bnPartitionedLogEntity
+	var model interface{ TableName() string } = &log{}
+	filter := store.LogFilter{BlockFrom: 1, BlockTo: 4}
+	scanFilter := store.ScanLogFilter{BlockFrom: 1, BlockTo: 4}
+	replayBlock := uint64(2)
+	switch kind {
+	case "contract":
+		require.NoError(t, db.Model(&Contract{}).Where("id > 0").Update("log_count", thresholdBigContractLogCount).Error)
+		entity, model = ms.bcls.contractEntity(1), ms.bcls.contractTabler(1)
+		address := common.BigToAddress(common.Big1).Hex()
+		filter.Contracts = store.NewVariadicValue(address)
+		scanFilter.Contract = address
+	case "topic":
+		require.NoError(t, db.Model(&Topic{}).Where("id > 0").Update("log_count", thresholdBigTopicLogCount).Error)
+		entity, model = ms.btls.topicEntity(1), ms.btls.topicTabler(1)
+		topic := common.BigToHash(common.Big1).Hex()
+		filter.Topics = []store.VariadicValue[string]{store.NewVariadicValue(topic)}
+		scanFilter.Topic0 = topic
+	}
+	if kind != "universal" {
+		require.NoError(t, ms.Push(integrationData(2, 2)))
+		replayBlock = 3
+	}
+	for n := replayBlock; n <= replayBlock+1; n++ {
+		_, err := ms.ls.growPartition(entity, model)
+		require.NoError(t, err)
+		require.NoError(t, ms.Push(integrationData(n, 2)))
+	}
+	require.NoError(t, ms.Popn(replayBlock))
+	// Replay more logs so the replacement can be distinguished from old rows.
+	require.NoError(t, ms.Push(integrationData(replayBlock, 4)))
+	var metadata []bnPartition
+	require.NoError(t, db.Where("entity = ?", entity).Order("pi").Find(&metadata).Error)
+	require.Len(t, metadata, 3)
+	require.False(t, metadata[1].BnMin.Valid)
+	require.False(t, metadata[1].BnMax.Valid)
+	require.True(t, metadata[2].BnMin.Valid)
+	require.Equal(t, int64(replayBlock), metadata[2].BnMin.Int64)
+	return ms, filter, scanFilter
 }
 
 func assertReplayScanLogs(t *testing.T, ms *MysqlStore[*store.EthData], filter store.ScanLogFilter, want [][2]uint64) {
