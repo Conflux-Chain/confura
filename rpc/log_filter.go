@@ -36,7 +36,7 @@ func ParseLogFilterType(filter *types.LogFilter) (LogFilterType, bool) {
 	}
 
 	// check if block hashes provided
-	if len(filter.BlockHashes) != 0 {
+	if filter.BlockHashes != nil {
 		flag |= LogFilterTypeBlockHash
 	}
 
@@ -191,6 +191,9 @@ func ValidateLogFilter(flag LogFilterType, filter *types.LogFilter) error {
 			return ErrInvalidLogFilter
 		}
 
+		if !filter.FromBlock.ToInt().IsUint64() || !filter.ToBlock.ToInt().IsUint64() {
+			return errors.New("block number is outside uint64 range")
+		}
 		fromBlock := filter.FromBlock.ToInt().Uint64()
 		toBlock := filter.ToBlock.ToInt().Uint64()
 
@@ -199,8 +202,14 @@ func ValidateLogFilter(flag LogFilterType, filter *types.LogFilter) error {
 		}
 
 	case flag&LogFilterTypeEpochRange != 0: // validate epoch range log filter
-		epochFrom, _ := filter.FromEpoch.ToInt()
-		epochTo, _ := filter.ToEpoch.ToInt()
+		if filter.FromEpoch == nil || filter.ToEpoch == nil {
+			return ErrInvalidLogFilter
+		}
+		epochFrom, fromOK := filter.FromEpoch.ToInt()
+		epochTo, toOK := filter.ToEpoch.ToInt()
+		if !fromOK || !toOK || !epochFrom.IsUint64() || !epochTo.IsUint64() {
+			return errors.New("epoch number is outside uint64 range")
+		}
 
 		ef := epochFrom.Uint64()
 		et := epochTo.Uint64()

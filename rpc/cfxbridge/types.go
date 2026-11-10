@@ -3,6 +3,7 @@ package cfxbridge
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"reflect"
 	"strings"
 
@@ -55,7 +56,11 @@ func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 
 	// Supports hex, latest_state and earliest
 	if num, ok := epoch.ToInt(); ok {
-		ebn.value = ethTypes.BlockNumber(num.Int64())
+		number, err := numericBlockNumber(num)
+		if err != nil {
+			return err
+		}
+		ebn.value = number
 	} else if types.EpochLatestState.Equals(&epoch) {
 		ebn.value = ethTypes.LatestBlockNumber
 	} else if types.EpochEarliest.Equals(&epoch) {
@@ -80,8 +85,8 @@ func NewEthBlockNumberOrHash(epochOrBh types.EpochOrBlockHash) (ebnh EthBlockNum
 	if epoch, ok := epochOrBh.IsEpoch(); ok {
 		// Supports hex number
 		if num, ok := epoch.ToInt(); ok {
-			ebnh.number = ethTypes.BlockNumber(num.Int64())
-			return ebnh, nil
+			ebnh.number, err = numericBlockNumber(num)
+			return ebnh, err
 		}
 
 		// Supports particular tags (latest_state and earliest) and hash
@@ -93,6 +98,7 @@ func NewEthBlockNumberOrHash(epochOrBh types.EpochOrBlockHash) (ebnh EthBlockNum
 		default:
 			return ebnh, ErrEpochUnsupported
 		}
+		return ebnh, nil
 	}
 
 	if blockHash, requirePivot, ok := epochOrBh.IsBlockHash(); ok {
@@ -124,7 +130,11 @@ func (ebnh *EthBlockNumberOrHash) UnmarshalJSON(data []byte) error {
 
 	// Supports hex number
 	if num, ok := epoch.ToInt(); ok {
-		ebnh.number = ethTypes.BlockNumber(num.Int64())
+		number, err := numericBlockNumber(num)
+		if err != nil {
+			return err
+		}
+		ebnh.number = number
 		return nil
 	}
 
@@ -135,7 +145,10 @@ func (ebnh *EthBlockNumberOrHash) UnmarshalJSON(data []byte) error {
 	case types.EpochLatestState.Equals(&epoch):
 		ebnh.number = ethTypes.LatestBlockNumber
 	case len(epoch.String()) == 66:
-		blockHash := common.HexToHash(epoch.String())
+		var blockHash common.Hash
+		if err := blockHash.UnmarshalText([]byte(epoch.String())); err != nil {
+			return err
+		}
 		ebnh.hash = &blockHash
 	default:
 		return ErrEpochUnsupported
@@ -174,8 +187,7 @@ func (ea *EthAddress) UnmarshalJSON(data []byte) error {
 
 	// If prefixed with 0x, decode in hex format.
 	if strings.HasPrefix(addr, "0x") {
-		ea.value = common.HexToAddress(addr)
-		return nil
+		return ea.value.UnmarshalText([]byte(addr))
 	}
 
 	// Otherwise, decode in base32 format.
@@ -371,7 +383,11 @@ func resolveToHashes(val interface{}) ([]common.Hash, error) {
 
 	// if val is string, return
 	if hashStr, ok := val.(string); ok {
-		return []common.Hash{common.HexToHash(hashStr)}, nil
+		var hash common.Hash
+		if err := hash.UnmarshalText([]byte(hashStr)); err != nil {
+			return nil, err
+		}
+		return []common.Hash{hash}, nil
 	}
 
 	// if val is string slice, append every item
@@ -383,10 +399,23 @@ func resolveToHashes(val interface{}) ([]common.Hash, error) {
 				return nil, errors.Errorf("could not convert type %v to hash", reflect.TypeOf(v))
 			}
 
-			addrList = append(addrList, common.HexToHash(vStr))
+			var hash common.Hash
+			if err := hash.UnmarshalText([]byte(vStr)); err != nil {
+				return nil, err
+			}
+			addrList = append(addrList, hash)
 		}
 		return addrList, nil
 	}
 
 	return nil, errors.Errorf("failed to convert %v to hash or hashes", val)
+}
+
+// web3go represents tags as negative int64 values. Reject numbers that cannot
+// fit without changing identity instead of allowing them to become tags.
+func numericBlockNumber(number *big.Int) (ethTypes.BlockNumber, error) {
+	if number == nil || number.Sign() < 0 || !number.IsInt64() {
+		return 0, errors.New("block number is outside bridge int64 range")
+	}
+	return ethTypes.BlockNumber(number.Int64()), nil
 }

@@ -5,7 +5,6 @@ import (
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/pkg/errors"
@@ -39,7 +38,7 @@ func (api *cfxAPI) NewFilter(ctx context.Context, filterCrit types.LogFilter) (*
 		return fid, errVirtualFilterProxyErrorOrNil(err)
 	}
 
-	return cfx.(*sdk.Client).Filter().NewFilter(filterCrit)
+	return cfx.Filter().NewFilter(filterCrit)
 }
 
 // NewBlockFilter creates a filter that fetches blocks that are imported into the chain.
@@ -52,7 +51,7 @@ func (api *cfxAPI) NewBlockFilter(ctx context.Context) (*rpc.ID, error) {
 		return fid, errVirtualFilterProxyErrorOrNil(err)
 	}
 
-	return cfx.(*sdk.Client).Filter().NewBlockFilter()
+	return cfx.Filter().NewBlockFilter()
 }
 
 // NewPendingTransactionFilter creates a filter that fetches pending transaction hashes
@@ -68,7 +67,7 @@ func (api *cfxAPI) NewPendingTransactionFilter(ctx context.Context) (*rpc.ID, er
 		return fid, errVirtualFilterProxyErrorOrNil(err)
 	}
 
-	return cfx.(*sdk.Client).Filter().NewPendingTransactionFilter()
+	return cfx.Filter().NewPendingTransactionFilter()
 }
 
 // UninstallFilter removes the filter with the given filter id.
@@ -79,7 +78,7 @@ func (api *cfxAPI) UninstallFilter(ctx context.Context, fid rpc.ID) (bool, error
 	}
 
 	cfx := GetCfxClientFromContext(ctx)
-	return cfx.(*sdk.Client).Filter().UninstallFilter(fid)
+	return cfx.Filter().UninstallFilter(fid)
 }
 
 // GetFilterChanges returns the logs for the filter with the given id since
@@ -94,7 +93,7 @@ func (api *cfxAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{
 	}
 
 	cfx := GetCfxClientFromContext(ctx)
-	return cfx.(*sdk.Client).Filter().GetFilterChanges(fid)
+	return cfx.Filter().GetFilterChanges(fid)
 }
 
 // GetFilterLogs returns the logs for the filter with the given id.
@@ -102,7 +101,7 @@ func (api *cfxAPI) GetFilterChanges(ctx context.Context, fid rpc.ID) (interface{
 func (api *cfxAPI) GetFilterLogs(ctx context.Context, fid rpc.ID) ([]types.Log, error) {
 	if api.VirtualFilterClient == nil {
 		cfx := GetCfxClientFromContext(ctx)
-		return cfx.(*sdk.Client).Filter().GetFilterLogs(fid)
+		return cfx.Filter().GetFilterLogs(fid)
 	}
 
 	fq, err := api.VirtualFilterClient.GetLogFilter(fid)

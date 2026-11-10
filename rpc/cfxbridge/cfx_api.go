@@ -2,6 +2,7 @@ package cfxbridge
 
 import (
 	"context"
+	"math/big"
 
 	"github.com/Conflux-Chain/confura/store"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -165,9 +166,11 @@ func (api *CfxAPI) GetBlockByEpochNumber(ctx context.Context, bn EthBlockNumber,
 }
 
 func (api *CfxAPI) GetBlockByBlockNumber(ctx context.Context, blockNumer hexutil.Uint64, includeTxs bool) (interface{}, error) {
-	bn := EthBlockNumber{
-		value: ethTypes.BlockNumber(blockNumer),
+	number, err := numericBlockNumber(new(big.Int).SetUint64(uint64(blockNumer)))
+	if err != nil {
+		return nil, err
 	}
+	bn := EthBlockNumber{value: number}
 
 	return api.GetBlockByEpochNumber(ctx, bn, includeTxs)
 }

@@ -1,11 +1,15 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"math/big"
+	"sync"
 	"testing"
 
 	"github.com/Conflux-Chain/confura/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBlockPriorityFee(t *testing.T) {
@@ -191,4 +195,62 @@ func TestPriorityFeeWindow(t *testing.T) {
 	assert.Equal(
 		t, big.NewInt(12500000000), estPriorityFees[2], "99th percentile priority fee should be 12500000000",
 	)
+}
+
+func snapshotBlockFee(n int64) *BlockPriorityFee {
+	b := &BlockPriorityFee{number: uint64(n), hash: fmt.Sprint(n), baseFee: big.NewInt(n)}
+	b.Append(&TxnPriorityFee{tip: big.NewInt(n)})
+	return b
+}
+
+func TestGasFeeResponseOwnsSnapshot(t *testing.T) {
+	window := NewPriorityFeeWindow(2)
+	window.Push(snapshotBlockFee(10))
+	stats := window.Calculate([]float64{1, 50, 99})
+	response := assembleSuggestedGasFees(big.NewInt(10), &stats)
+	before, err := json.Marshal(response)
+	require.NoError(t, err)
+	window.Push(snapshotBlockFee(20))
+	window.Remove("10")
+	after, err := json.Marshal(response)
+	require.NoError(t, err)
+	require.JSONEq(t, string(before), string(after))
+	stats.HistoricalBaseFeeRange[0].SetInt64(999)
+	stats.HistoricalPriorityFeeRange[0].SetInt64(999)
+	stats.LatestPriorityFeeRange[0].SetInt64(999)
+	fresh := window.Calculate([]float64{1, 50, 99})
+	require.EqualValues(t, 10, fresh.HistoricalBaseFeeRange[0].Int64())
+	require.EqualValues(t, 10, fresh.HistoricalPriorityFeeRange[0].Int64())
+	require.EqualValues(t, 20, fresh.LatestPriorityFeeRange[0].Int64())
+}
+
+func TestGasFeeSnapshotConcurrentEncoding(t *testing.T) {
+	window := NewPriorityFeeWindow(2)
+	window.Push(snapshotBlockFee(1))
+	stats := window.Calculate([]float64{1, 50, 99})
+	response := assembleSuggestedGasFees(big.NewInt(1), &stats)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := int64(2); i < 500; i++ {
+			window.Push(snapshotBlockFee(i))
+			window.Remove(fmt.Sprint(i - 1))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < 500; i++ {
+			_, err := json.Marshal(response)
+			assert.NoError(t, err)
+			current := window.Calculate([]float64{1, 50, 99})
+			_, err = json.Marshal(assembleSuggestedGasFees(big.NewInt(1), &current))
+			assert.NoError(t, err)
+		}
+	}()
+	close(start)
+	wg.Wait()
 }

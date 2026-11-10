@@ -61,17 +61,7 @@ func (r *logsQueryRetry) retry(reason string) error {
 
 // SDK clients are shared by the pool. Bind a copy, never mutate their context.
 func cfxLogsWithContext(ctx context.Context, cfx sdk.ClientOperator) sdk.ClientOperator {
-	if c, ok := cfx.(*rpcutil.CfxCoreClient); ok {
-		copy := *c
-		copy.ClientOperator = cfxLogsWithContext(ctx, c.ClientOperator)
-		return &copy
-	}
-	if c, ok := cfx.(interface {
-		WithContext(context.Context) *sdk.Client
-	}); ok {
-		return c.WithContext(ctx)
-	}
-	return cfx
+	return rpcutil.CfxWithContext(ctx, cfx)
 }
 
 func ethLogsWithContext(ctx context.Context, eth ethLogsClient) ethLogsClient {

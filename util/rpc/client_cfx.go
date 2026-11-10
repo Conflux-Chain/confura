@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"context"
 	"time"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -83,4 +84,19 @@ func NewCfxClient(url string, options ...ClientOption) (*sdk.Client, error) {
 	HookMiddlewares(cfx.Provider(), url, "cfx", hookFlag)
 
 	return cfx, nil
+}
+
+// CfxWithContext binds a request to a copy of a pooled client, preserving wrappers.
+func CfxWithContext(ctx context.Context, cfx sdk.ClientOperator) sdk.ClientOperator {
+	if c, ok := cfx.(*CfxCoreClient); ok {
+		copy := *c
+		copy.ClientOperator = CfxWithContext(ctx, c.ClientOperator)
+		return &copy
+	}
+	if c, ok := cfx.(interface {
+		WithContext(context.Context) *sdk.Client
+	}); ok {
+		return c.WithContext(ctx)
+	}
+	return cfx
 }

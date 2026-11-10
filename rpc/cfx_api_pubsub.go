@@ -32,15 +32,18 @@ func (api *cfxAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 		return &rpc.Subscription{}, err
 	}
 
-	rpcSub := psCtx.notifier.CreateSubscription()
-
 	headersCh := make(chan *types.BlockHeader, pubsubChannelBufferSize)
 	dClient := getOrNewDelegateClient(psCtx.cfx)
 
-	dSub, err := dClient.delegateSubscribeNewHeads(rpcSub.ID, headersCh)
+	dSub, err := dClient.delegateSubscribeNewHeads(rpc.NewID(), headersCh)
 	if err != nil {
 		releasePubSubSubscriptionPermit(permit)
 		logrus.WithError(err).Info("Failed to delegate pubsub newheads subscription")
+		return &rpc.Subscription{}, errSubscriptionProxyError
+	}
+
+	rpcSub, err := newDelegateRPCSubscription(ctx, psCtx.notifier, dSub, permit)
+	if err != nil {
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
@@ -108,17 +111,20 @@ func (api *cfxAPI) Epochs(ctx context.Context, subEpoch *types.Epoch) (*rpc.Subs
 		return &rpc.Subscription{}, err
 	}
 
-	rpcSub := psCtx.notifier.CreateSubscription()
-
 	epochsCh := make(chan *types.WebsocketEpochResponse, pubsubChannelBufferSize)
 	dClient := getOrNewDelegateClient(psCtx.cfx)
 
-	dSub, err := dClient.delegateSubscribeEpochs(rpcSub.ID, epochsCh, *subEpoch)
+	dSub, err := dClient.delegateSubscribeEpochs(rpc.NewID(), epochsCh, *subEpoch)
 	if err != nil {
 		releasePubSubSubscriptionPermit(permit)
 		logrus.WithField("subEpoch", subEpoch).
 			WithError(err).
 			Info("Failed to delegate pubsub epochs subscription")
+		return &rpc.Subscription{}, errSubscriptionProxyError
+	}
+
+	rpcSub, err := newDelegateRPCSubscription(ctx, psCtx.notifier, dSub, permit)
+	if err != nil {
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
@@ -180,17 +186,20 @@ func (api *cfxAPI) Logs(ctx context.Context, filter types.LogFilter) (*rpc.Subsc
 		return &rpc.Subscription{}, err
 	}
 
-	rpcSub := psCtx.notifier.CreateSubscription()
-
 	logsCh := make(chan *types.SubscriptionLog, pubsubChannelBufferSize)
 	dClient := getOrNewDelegateClient(psCtx.cfx)
 
-	dSub, err := dClient.delegateSubscribeLogs(rpcSub.ID, logsCh, filter)
+	dSub, err := dClient.delegateSubscribeLogs(rpc.NewID(), logsCh, filter)
 	if err != nil {
 		releasePubSubSubscriptionPermit(permit)
 		logrus.WithField("filter", filter).
 			WithError(err).
 			Info("Failed to delegate pubsub logs subscription")
+		return &rpc.Subscription{}, errSubscriptionProxyError
+	}
+
+	rpcSub, err := newDelegateRPCSubscription(ctx, psCtx.notifier, dSub, permit)
+	if err != nil {
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 

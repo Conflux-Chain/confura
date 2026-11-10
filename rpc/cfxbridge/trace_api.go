@@ -2,6 +2,7 @@ package cfxbridge
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/openweb3/web3go"
@@ -45,7 +46,10 @@ func (api *TraceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 
 	var builder BlockTraceBuilder
 	for i := range traces {
-		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
+		cfxTrace, cfxTraceResult, err := ConvertTrace(&traces[i], api.ethNetworkId)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert trace %d: %w", i, err)
+		}
 		if err := builder.Append(cfxTrace, cfxTraceResult, traces[i].TraceAddress); err != nil {
 			return nil, err
 		}
@@ -81,7 +85,10 @@ func (api *TraceAPI) Transaction(ctx context.Context, txHash types.Hash) ([]type
 
 	var builder TraceBuilder
 	for i := range traces {
-		cfxTrace, cfxTraceResult := ConvertTrace(&traces[i], api.ethNetworkId)
+		cfxTrace, cfxTraceResult, err := ConvertTrace(&traces[i], api.ethNetworkId)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert trace %d: %w", i, err)
+		}
 		if err := builder.Append(cfxTrace, cfxTraceResult, traces[i].TraceAddress); err != nil {
 			return nil, err
 		}

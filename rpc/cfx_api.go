@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -215,6 +216,9 @@ func (api *cfxAPI) GetBlockByHashWithPivotAssumption(
 }
 
 func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (any, error) {
+	if number, ok := epoch.ToInt(); ok && !number.IsUint64() {
+		return nil, errors.New("epoch number is outside uint64 range")
+	}
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(&epoch, "cfx_getBlockByEpochNumber", cfx)
 
@@ -310,7 +314,7 @@ func (api *cfxAPI) scanLogs(
 		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, err
 	}
 
-	cfx := GetCfxClientFromContext(ctx)
+	cfx := rpcutil.CfxWithContext(ctx, GetCfxClientFromContext(ctx))
 	params, err := handler.NormalizeCfxScanLogRequest(cfx, req, withPivotAssumption)
 	if err != nil {
 		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, err
@@ -332,11 +336,14 @@ func (api *cfxAPI) getLogs(
 	fq types.LogFilter,
 	rpcMethod string,
 ) ([]types.Log, error) {
-	metrics.UpdateCfxRpcLogFilter(rpcMethod, cfx, &fq)
-
 	flag, ok := ParseLogFilterType(&fq)
 	if !ok {
 		return emptyLogs, ErrInvalidLogFilter
+	}
+
+	// Preserve an explicit empty selector; SDK serialization omits it.
+	if fq.BlockHashes == nil || len(fq.BlockHashes) != 0 {
+		metrics.UpdateCfxRpcLogFilter(rpcMethod, cfx, &fq)
 	}
 
 	if err := NormalizeLogFilter(cfx, flag, &fq); err != nil {
@@ -345,6 +352,10 @@ func (api *cfxAPI) getLogs(
 
 	if err := ValidateLogFilter(flag, &fq); err != nil {
 		return emptyLogs, err
+	}
+
+	if flag == LogFilterTypeBlockHash && len(fq.BlockHashes) == 0 {
+		return emptyLogs, nil
 	}
 
 	if logs, handled, err := api.tryGetInternalContractLogs(ctx, cfx, &fq); err != nil {
@@ -438,6 +449,9 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(
 }
 
 func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {
+	if number, ok := epoch.ToInt(); ok && !number.IsUint64() {
+		return nil, errors.New("epoch number is outside uint64 range")
+	}
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(&epoch, "cfx_getBlocksByEpoch", cfx)
 
