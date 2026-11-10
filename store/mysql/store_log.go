@@ -162,7 +162,7 @@ func (ls *logStore[T]) Popn(dbTx *gorm.DB, epochUntil uint64) error {
 		}
 
 		// update partition data size
-		err = ls.deltaUpdateCount(dbTx, bnPartitionedLogEntity, int(partition.Index), -int(res.RowsAffected))
+		err = ls.decrementPartitionCount(dbTx, bnPartitionedLogEntity, partition.Index, res.RowsAffected)
 		if err != nil {
 			return errors.WithMessage(err, "failed to delta update partition size")
 		}

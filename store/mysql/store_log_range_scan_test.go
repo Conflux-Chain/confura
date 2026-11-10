@@ -214,7 +214,7 @@ func TestRangeScanMatchesAddressPath(t *testing.T) {
 func TestRangeScanCompletedMigrationAndPublicDispatch(t *testing.T) {
 	ms, f := rangeScanFixture(t, 2)
 	db := ms.ls.db
-	// A completed migration is represented by a nonempty initial dedicated partition.
+	// Set up the persistent route and its dedicated partition.
 	require.NoError(t, db.AutoMigrate(&Contract{}))
 	require.NoError(t, db.Exec("DROP INDEX index_lue").Error)
 	require.NoError(t, db.AutoMigrate(&Topic{}))

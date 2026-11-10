@@ -274,7 +274,7 @@ func queryEthData(
 	opt QueryOption,
 ) (*EthData, error) {
 	// Retrieve the block by number
-	block, err := w3c.Eth.BlockByNumber(types.BlockNumber(blockNumber), true)
+	block, err := w3c.WithContext(ctx).Eth.BlockByNumber(types.BlockNumber(blockNumber), true)
 
 	if err == nil && block == nil {
 		err = errors.New("invalid block data (must not be nil)")
@@ -309,7 +309,7 @@ func queryEthData(
 		// If only ChainLog is enabled, use `eth_getLogs` for better performance
 		if opt.EnableLogsOptimization {
 			// Retrieve logs for the block
-			logs, err := w3c.Eth.Logs(types.FilterQuery{BlockHash: &block.Hash})
+			logs, err := w3c.WithContext(ctx).Eth.Logs(types.FilterQuery{BlockHash: &block.Hash})
 			if err != nil {
 				return nil, errors.WithMessage(err, "failed to get block event logs")
 			}
@@ -465,7 +465,7 @@ func queryEthReceiptByEthTxnReceipt(
 
 	if rcptOpt.Concurrency <= 1 { // No parallelism
 		for i := 0; i < len(txnHashes); i++ {
-			receipt, err := w3c.Eth.TransactionReceipt(txnHashes[i])
+			receipt, err := w3c.WithContext(ctx).Eth.TransactionReceipt(txnHashes[i])
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
 					"blockHash":   block.Hash,

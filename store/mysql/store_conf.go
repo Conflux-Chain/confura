@@ -103,6 +103,10 @@ func (cs *confStore) GetReorgVersion() (int, error) {
 }
 
 func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
+	return incrementReorgVersion(dbTx, MysqlConfKeyReorgVersion)
+}
+
+func incrementReorgVersion(dbTx *gorm.DB, name string) error {
 	return dbTx.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "name"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
@@ -110,7 +114,7 @@ func (cs *confStore) createOrUpdateReorgVersion(dbTx *gorm.DB) error {
 			"updated_at": gorm.Expr("CURRENT_TIMESTAMP"),
 		}),
 	}).Create(&conf{
-		Name:  MysqlConfKeyReorgVersion,
+		Name:  name,
 		Value: "1",
 	}).Error
 }

@@ -59,6 +59,32 @@ func newBnPartitionedStore(db *gorm.DB) *bnPartitionedStore {
 	}
 }
 
+func (bnps *bnPartitionedStore) hasPartition(entity string) (bool, error) {
+	var partition bnPartition
+	err := bnps.db.Select("id").Where("entity = ?", entity).Take(&partition).Error
+	if bnps.IsRecordNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// partitionedEntities returns entities with partition metadata. For
+// dedicated logs, the first record commits together with the initial migration.
+func (bnps *bnPartitionedStore) partitionedEntities(entities []string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if len(entities) == 0 {
+		return result, nil
+	}
+	var found []string
+	if err := bnps.db.Model(&bnPartition{}).Where("entity IN ?", entities).Distinct().Pluck("entity", &found).Error; err != nil {
+		return nil, err
+	}
+	for _, entity := range found {
+		result[entity] = true
+	}
+	return result, nil
+}
+
 // autoPartition automatically prepare some suitable entity partition to write on.
 // It will create a new partition if no partition found or latest partition volume oversized,
 // otherwise return the latest partition found.
@@ -170,38 +196,91 @@ func (bnps *bnPartitionedStore) searchPartitions(
 ) (
 	partitions []*bnPartition, uncoverings *types.RangeUint64, err error,
 ) {
+	return bnps.searchPartitionsWithOverlap(ctx, entity, searchRange, false)
+}
+
+// Only virtual-filter replay may overlap block ranges across partitions.
+func (bnps *bnPartitionedStore) searchPartitionsWithOverlap(ctx context.Context, entity string, searchRange types.RangeUint64, allowOverlap bool) ([]*bnPartition, *types.RangeUint64, error) {
 	metadata := make([]*bnPartition, 0)
-	err = bnps.db.WithContext(ctx).
+	err := bnps.db.WithContext(ctx).
 		Where("entity = ?", entity).
-		Where("bn_min IS NOT NULL AND bn_max IS NOT NULL").
 		Order("pi ASC").
 		Find(&metadata).Error
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return searchPartitionsFromMetadata(entity, searchRange, metadata)
+	return routePartitionsFromMetadata(entity, searchRange, metadata, allowOverlap)
 }
 
-// searchPartitionsFromMetadata validates one consistent metadata snapshot and routes the search
-// range entirely in memory. Valid partition metadata must be index-contiguous and its block ranges
-// must be ordered without overlaps. Gaps between block ranges are allowed because an indexed
-// contract/topic may have no logs for a span of blocks.
-func searchPartitionsFromMetadata(
-	entity string, searchRange types.RangeUint64, metadata []*bnPartition,
-) ([]*bnPartition, *types.RangeUint64, error) {
-	if len(metadata) == 0 {
-		return nil, &searchRange, nil
+// routePartitionsFromMetadata validates one metadata snapshot and routes the
+// range in memory. Only virtual filters may have overlapping block ranges.
+func routePartitionsFromMetadata(entity string, searchRange types.RangeUint64, metadata []*bnPartition, allowOverlap bool) ([]*bnPartition, *types.RangeUint64, error) {
+	if searchRange.From > searchRange.To {
+		return nil, nil, errors.New("invalid block range")
+	}
+	if err := validatePartitionMetadata(entity, metadata, allowOverlap); err != nil {
+		return nil, nil, err
 	}
 
+	var covered *types.RangeUint64
+	partitions := make([]*bnPartition, 0, 2)
+	for _, partition := range metadata {
+		if !partition.BnMin.Valid {
+			continue
+		}
+		bnMin, bnMax := uint64(partition.BnMin.Int64), uint64(partition.BnMax.Int64)
+		if covered == nil {
+			covered = &types.RangeUint64{From: bnMin, To: bnMax}
+		} else {
+			covered.From, covered.To = min(covered.From, bnMin), max(covered.To, bnMax)
+		}
+		if bnMin <= searchRange.To && bnMax >= searchRange.From {
+			partitions = append(partitions, partition)
+		}
+	}
+	if covered == nil || searchRange.From > covered.To {
+		return nil, &searchRange, nil
+	}
+	if searchRange.From < covered.From {
+		return nil, nil, errBnPartitionsPruned(searchRange, *covered)
+	}
+
+	var uncoverings *types.RangeUint64
+	if searchRange.To > covered.To {
+		uncoverings = &types.RangeUint64{From: covered.To + 1, To: searchRange.To}
+	}
+
+	return partitions, uncoverings, nil
+}
+
+// Validate index continuity before skipping partitions emptied by rollback.
+// A zero count alone does not imply an empty range: blocks may have no logs.
+func validatePartitionMetadata(entity string, metadata []*bnPartition, allowOverlap bool) error {
+	var previousRange *bnPartition
 	for i, partition := range metadata {
-		if partition == nil || !partition.BnMin.Valid || !partition.BnMax.Valid {
-			return nil, nil, errors.Errorf(
+		if partition == nil {
+			return errors.Errorf("invalid bn partition metadata for entity %q at position %v", entity, i)
+		}
+		if i > 0 {
+			previous := metadata[i-1]
+			if partition.Index <= previous.Index || partition.Index-previous.Index != 1 {
+				return errors.Errorf(
+					"bn partition metadata index gap for entity %q between partitions %v and %v",
+					entity, previous.Index, partition.Index,
+				)
+			}
+		}
+		if !partition.BnMin.Valid && !partition.BnMax.Valid {
+			continue
+		}
+		if !partition.BnMin.Valid || !partition.BnMax.Valid {
+			return errors.Errorf(
 				"invalid bn partition metadata for entity %q at position %v", entity, i,
 			)
 		}
 		if partition.BnMin.Int64 < 0 || partition.BnMax.Int64 < 0 {
-			return nil, nil, errors.Errorf(
+			return errors.Errorf(
 				"negative bn partition metadata for entity %q partition %v",
 				entity, partition.Index,
 			)
@@ -209,57 +288,21 @@ func searchPartitionsFromMetadata(
 
 		bnMin, bnMax := uint64(partition.BnMin.Int64), uint64(partition.BnMax.Int64)
 		if bnMin > bnMax {
-			return nil, nil, errors.Errorf(
+			return errors.Errorf(
 				"invalid bn range [%v, %v] for entity %q partition %v",
 				bnMin, bnMax, entity, partition.Index,
 			)
 		}
 
-		if i == 0 {
-			continue
-		}
-
-		previous := metadata[i-1]
-		if partition.Index <= previous.Index || partition.Index-previous.Index != 1 {
-			return nil, nil, errors.Errorf(
-				"bn partition metadata index gap for entity %q between partitions %v and %v",
-				entity, previous.Index, partition.Index,
-			)
-		}
-
-		previousEnd := uint64(previous.BnMax.Int64)
-		if bnMin <= previousEnd {
-			return nil, nil, errors.Errorf(
+		if !allowOverlap && previousRange != nil && bnMin <= uint64(previousRange.BnMax.Int64) {
+			return errors.Errorf(
 				"overlapping bn partition metadata for entity %q between partitions %v and %v",
-				entity, previous.Index, partition.Index,
+				entity, previousRange.Index, partition.Index,
 			)
 		}
+		previousRange = partition
 	}
-
-	bnStart := uint64(metadata[0].BnMin.Int64)
-	bnEnd := uint64(metadata[len(metadata)-1].BnMax.Int64)
-	bnPartRange := types.RangeUint64{From: bnStart, To: bnEnd}
-	if searchRange.From < bnStart {
-		return nil, nil, errBnPartitionsPruned(searchRange, bnPartRange)
-	}
-	if searchRange.From > bnEnd {
-		return nil, &searchRange, nil
-	}
-
-	partitions := make([]*bnPartition, 0, 2)
-	for _, partition := range metadata {
-		bnMin, bnMax := uint64(partition.BnMin.Int64), uint64(partition.BnMax.Int64)
-		if bnMin <= searchRange.To && bnMax >= searchRange.From {
-			partitions = append(partitions, partition)
-		}
-	}
-
-	var uncoverings *types.RangeUint64
-	if searchRange.To > bnEnd {
-		uncoverings = &types.RangeUint64{From: bnEnd + 1, To: searchRange.To}
-	}
-
-	return partitions, uncoverings, nil
+	return nil
 }
 
 // searchOverlapPartitions search entity partitions that overlap the search range regardless of the boundary.
@@ -316,6 +359,16 @@ func (bnps *bnPartitionedStore) deltaUpdateCount(dbTx *gorm.DB, entity string, p
 	}
 
 	return dbTx.UpdateColumn("count", gorm.Expr("GREATEST(0, CAST(count AS SIGNED) - ?)", -delta)).Error
+}
+
+// decrementPartitionCount updates the partition being rolled back, which need
+// not be the latest write partition. Keep the writer's index check separate.
+func (bnps *bnPartitionedStore) decrementPartitionCount(dbTx *gorm.DB, entity string, index uint32, count int64) error {
+	if count == 0 {
+		return nil
+	}
+	return dbTx.Model(&bnPartition{}).Where("entity = ? AND pi = ?", entity, index).
+		UpdateColumn("count", gorm.Expr("GREATEST(0, CAST(count AS SIGNED) - ?)", count)).Error
 }
 
 // expandBnRange expands block number range of the latest entity partition.

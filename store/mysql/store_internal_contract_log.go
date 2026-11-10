@@ -47,12 +47,11 @@ type CfxInternalContractLogFilter struct {
 // InternalContractLogStore provides database operations for internal contract logs.
 type InternalContractLogStore struct {
 	*baseStore
-	cs *confStore
 }
 
 func NewInternalContractLogStore(db *gorm.DB) *InternalContractLogStore {
 	return &InternalContractLogStore{
-		baseStore: newBaseStore(db), cs: newConfStore(db),
+		baseStore: newBaseStore(db),
 	}
 }
 
@@ -61,7 +60,11 @@ const (
 )
 
 func (s *InternalContractLogStore) GetReorgVersion() (int, error) {
-	conf, err := s.cs.LoadConfig(MysqlConfKeyInternalContractReorgVersion)
+	return s.GetReorgVersionWithContext(context.Background())
+}
+
+func (s *InternalContractLogStore) GetReorgVersionWithContext(ctx context.Context) (int, error) {
+	conf, err := newConfStore(s.db.WithContext(ctx)).LoadConfig(MysqlConfKeyInternalContractReorgVersion)
 	if err != nil {
 		return 0, err
 	}
@@ -74,15 +77,9 @@ func (s *InternalContractLogStore) GetReorgVersion() (int, error) {
 	return strconv.Atoi(val)
 }
 
-// thread unsafe
+// IncrementReorgVersion publishes the new view in the rollback transaction.
 func (s *InternalContractLogStore) IncrementReorgVersion(dbTx *gorm.DB) error {
-	version, err := s.GetReorgVersion()
-	if err != nil {
-		return errors.WithMessage(err, "failed to get reorg version")
-	}
-
-	newVersion := strconv.Itoa(version + 1)
-	return s.cs.StoreConfig(MysqlConfKeyInternalContractReorgVersion, newVersion)
+	return incrementReorgVersion(dbTx, MysqlConfKeyInternalContractReorgVersion)
 }
 
 // Pop removes all logs at or after the given epoch (for reorg handling).
@@ -92,9 +89,7 @@ func (s *InternalContractLogStore) Pop(dbTx *gorm.DB, epochFrom uint64) error {
 
 // GetLogs retrieves internal contract logs matching the given filter criteria.
 func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxInternalContractLogFilter) ([]InternalContractLog, error) {
-	var logs []InternalContractLog
-
-	syncInfo, err := s.getLatestSyncInfo()
+	syncInfo, err := s.getLatestSyncInfo(ctx)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to get latest sync info")
 	}
@@ -107,30 +102,59 @@ func (s *InternalContractLogStore) GetLogs(ctx context.Context, filter CfxIntern
 	query = s.applyIndexFilters(query, filter)
 	query = s.applyTopicFilters(query, filter)
 
+	query = query.WithContext(ctx)
+	if store.IsBoundChecksEnabled(ctx) {
+		return s.getBoundedLogs(ctx, query, filter)
+	}
+	return s.getAllLogs(query)
+}
+
+func (s *InternalContractLogStore) getBoundedLogs(
+	ctx context.Context, query *gorm.DB, filter CfxInternalContractLogFilter,
+) ([]InternalContractLog, error) {
 	if err := s.checkResultSetBounds(ctx, query, filter); err != nil {
 		return nil, err
 	}
 
-	if err := query.WithContext(ctx).
-		Limit(int(store.MaxLogLimit) + 1).
-		Find(&logs).Error; err != nil {
+	var logs []InternalContractLog
+	if err := query.Limit(int(store.MaxLogLimit) + 1).Find(&logs).Error; err != nil {
 		return nil, err
 	}
+	sortInternalContractLogs(logs)
+	// A concurrent append after the bounds probe must still fail explicitly.
+	if len(logs) > int(store.MaxLogLimit) {
+		row := logs[store.MaxLogLimit]
+		return nil, s.suggestNarrowedRange(filter, struct{ Bn, Epoch uint64 }{row.BlockNumber, row.Epoch})
+	}
+	return logs, nil
+}
 
-	// sort log result
-	sort.Slice(logs, func(i, j int) bool {
+func (s *InternalContractLogStore) getAllLogs(query *gorm.DB) ([]InternalContractLog, error) {
+	var logs, batch []InternalContractLog
+	err := query.FindInBatches(&batch, 1000, func(_ *gorm.DB, _ int) error {
+		logs = append(logs, batch...)
+		return nil
+	}).Error
+	if err != nil {
+		return nil, err
+	}
+	sortInternalContractLogs(logs)
+	return logs, nil
+}
+
+// Sort after reading so SQL pagination only needs the primary key order.
+func sortInternalContractLogs(logs []InternalContractLog) {
+	sort.SliceStable(logs, func(i, j int) bool {
 		a, b := logs[i], logs[j]
 		return a.BlockNumber < b.BlockNumber ||
 			(a.BlockNumber == b.BlockNumber && a.LogIndex < b.LogIndex)
 	})
-
-	return logs, err
 }
 
 // getLatestSyncInfo retrieves the most recent epoch-to-block mapping record.
-func (s *InternalContractLogStore) getLatestSyncInfo() (CfxTraceSyncEpochBlockMap, error) {
+func (s *InternalContractLogStore) getLatestSyncInfo(ctx context.Context) (CfxTraceSyncEpochBlockMap, error) {
 	var info CfxTraceSyncEpochBlockMap
-	if err := s.db.Last(&info).Error; err != nil && !s.IsRecordNotFound(err) {
+	if err := s.db.WithContext(ctx).Last(&info).Error; err != nil && !s.IsRecordNotFound(err) {
 		return info, err
 	}
 	return info, nil
@@ -168,7 +192,7 @@ func (s *InternalContractLogStore) buildBlockHashQuery(
 		blockNumbers = append(blockNumbers, bn)
 	}
 
-	return query.Where("bn IN(?)", blockNumbers).Order("bn ASC"), nil
+	return query.Where("bn IN(?)", blockNumbers), nil
 }
 
 func (s *InternalContractLogStore) buildBlockRangeQuery(
@@ -183,7 +207,7 @@ func (s *InternalContractLogStore) buildBlockRangeQuery(
 		)
 	}
 
-	return query.Where("bn BETWEEN ? AND ?", fromBlock, toBlock).Order("bn ASC"), nil
+	return query.Where("bn BETWEEN ? AND ?", fromBlock, toBlock), nil
 }
 
 func (s *InternalContractLogStore) buildEpochRangeQuery(
@@ -206,7 +230,7 @@ func (s *InternalContractLogStore) buildEpochRangeQuery(
 	}
 
 	from, to := epochFrom.Uint64(), epochTo.Uint64()
-	return query.Where("epoch BETWEEN ? AND ?", from, to).Order("epoch ASC"), nil
+	return query.Where("epoch BETWEEN ? AND ?", from, to), nil
 }
 
 // applyIndexFilters adds contract address and event index conditions.
@@ -239,10 +263,16 @@ func (s *InternalContractLogStore) checkResultSetBounds(
 		return nil
 	}
 
+	orderBy := "bn ASC"
+	if filter.FromEpoch != nil {
+		orderBy = "epoch ASC"
+	}
+
 	var exceeding struct{ Bn, Epoch uint64 }
 	err := query.WithContext(ctx).
 		Model(&InternalContractLog{}).
 		Select("bn, epoch").
+		Order(orderBy).
 		Offset(int(store.MaxLogLimit)).
 		Take(&exceeding).Error
 
@@ -276,4 +306,11 @@ func (s *InternalContractLogStore) suggestNarrowedRange(
 	}
 
 	return store.ErrFilterResultSetTooLarge
+}
+
+// BlockMapping requires an exact trace-sync mapping, including epochs with no logs.
+func (s *InternalContractLogStore) BlockMapping(ctx context.Context, epoch uint64) (CfxTraceSyncEpochBlockMap, error) {
+	var mapping CfxTraceSyncEpochBlockMap
+	err := s.db.WithContext(ctx).Where("epoch = ?", epoch).Take(&mapping).Error
+	return mapping, err
 }
