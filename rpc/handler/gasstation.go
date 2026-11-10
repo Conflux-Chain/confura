@@ -326,8 +326,8 @@ func (w *PriorityFeeWindow) Calculate(percentiles []float64) (stats GasStats) {
 
 	// Calculate latest priority fee range.
 	stats.LatestPriorityFeeRange = w.calculateLatestPriorityFeeRange()
-	stats.HistoricalPriorityFeeRange = w.historicalPriorityFeeRange
-	stats.HistoricalBaseFeeRange = w.historicalBaseFeeRanges
+	stats.HistoricalPriorityFeeRange = cloneFeeRange(w.historicalPriorityFeeRange)
+	stats.HistoricalBaseFeeRange = cloneFeeRange(w.historicalBaseFeeRanges)
 
 	// Calculate the network congestion.
 	stats.NetworkCongestion = w.calculateNetworkCongestion()
@@ -336,6 +336,18 @@ func (w *PriorityFeeWindow) Calculate(percentiles []float64) (stats GasStats) {
 	stats.PriorityFeeTrend, stats.BaseFeeTrend = w.calculateFeeTrend()
 
 	return stats
+}
+
+// Copy under the window lock: response encoding runs after Calculate returns.
+func cloneFeeRange(values []*big.Int) []*big.Int {
+	if values == nil {
+		return nil
+	}
+	result := make([]*big.Int, len(values))
+	for i, value := range values {
+		result[i] = new(big.Int).Set(value)
+	}
+	return result
 }
 
 func (w *PriorityFeeWindow) calculateAvgPriorityFees(percentiles []float64) (res []*big.Int) {
