@@ -98,6 +98,7 @@ func NewEthBlockNumberOrHash(epochOrBh types.EpochOrBlockHash) (ebnh EthBlockNum
 		default:
 			return ebnh, ErrEpochUnsupported
 		}
+		return ebnh, nil
 	}
 
 	if blockHash, requirePivot, ok := epochOrBh.IsBlockHash(); ok {
