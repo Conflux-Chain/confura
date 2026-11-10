@@ -13,8 +13,10 @@ import (
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	rpcprovider "github.com/openweb3/go-rpc-provider"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 type internalContractLogReader interface {
@@ -82,20 +84,26 @@ func (h *CfxInternalContractLogsApiHandler) GetLogs(
 	}
 
 	for {
-		// query data with reorg guard
-		logs, err := h.getLogsReorgGuard(retry.ctx, cfxLogsWithContext(retry.ctx, cfx), filter)
-		if err != nil {
+		if err := retry.check(); err != nil {
 			return nil, err
 		}
+		// query data with reorg guard
+		logs, queryErr := h.getLogsReorgGuard(retry.ctx, cfxLogsWithContext(retry.ctx, cfx), filter)
+		if err := retry.check(); err != nil {
+			return nil, err
+		}
+		if queryErr != nil && !errors.Is(queryErr, ErrGetLogsConsistency) {
+			return nil, queryErr
+		}
 
-		// check the reorg version after query
+		// A view-dependent error is final only if the queried view stayed unchanged.
 		reorgVersion, err := h.logStore.GetReorgVersionWithContext(retry.ctx)
 		if err != nil {
 			return nil, err
 		}
 
 		if reorgVersion == lastReorgVersion {
-			return logs, nil
+			return logs, queryErr
 		}
 
 		// when reorg occurred, check timeout before retry.
@@ -162,7 +170,7 @@ func (h *CfxInternalContractLogsApiHandler) getLogsReorgGuard(
 		}
 		bn, ok := validated[strings.ToLower(log.BlockHash)]
 		if !ok || bn != log.BlockNumber {
-			return nil, errors.New("trace log identity differs from validated block")
+			return nil, errors.WithMessage(ErrGetLogsConsistency, "trace log identity differs from validated block")
 		}
 	}
 
@@ -249,6 +257,9 @@ func (h *CfxInternalContractLogsApiHandler) resolveBlockHashes(ctx context.Conte
 		epoch := block.EpochNumber.ToInt().Uint64()
 		mapping, err := h.logStore.BlockMapping(ctx, epoch)
 		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, fmt.Errorf("%w: trace mapping unavailable for epoch %d: %w", ErrGetLogsConsistency, epoch, err)
+			}
 			return nil, errors.WithMessagef(err, "trace mapping unavailable for epoch %d", epoch)
 		}
 		if mapping.Epoch != epoch || mapping.PivotHash == "" || mapping.BnMin > mapping.BnMax {
@@ -258,19 +269,37 @@ func (h *CfxInternalContractLogsApiHandler) resolveBlockHashes(ctx context.Conte
 		// synchronized event-log mapping. Never fetch traces on the query path.
 		checked, err := cfx.GetBlockByHashWithPivotAssumption(hash, types.Hash(mapping.PivotHash), hexutil.Uint64(epoch))
 		if err != nil {
+			if isTracePivotAssumptionError(err) {
+				return nil, fmt.Errorf("%w: trace pivot assumption failed: %w", ErrGetLogsConsistency, err)
+			}
 			return nil, errors.WithMessage(err, "trace pivot assumption failed")
 		}
 		if !strings.EqualFold(checked.Hash.String(), hash.String()) || checked.EpochNumber == nil || checked.EpochNumber.ToInt().Cmp(block.EpochNumber.ToInt()) != 0 ||
 			checked.BlockNumber == nil || !checked.BlockNumber.ToInt().IsUint64() {
-			return nil, fmt.Errorf("block %v does not match trace epoch %d", hash, epoch)
+			return nil, fmt.Errorf("%w: block %v does not match trace epoch %d", ErrGetLogsConsistency, hash, epoch)
 		}
 		bn := checked.BlockNumber.ToInt().Uint64()
 		if bn < mapping.BnMin || bn > mapping.BnMax {
-			return nil, fmt.Errorf("block %v is outside trace epoch %d", hash, epoch)
+			return nil, fmt.Errorf("%w: block %v is outside trace epoch %d", ErrGetLogsConsistency, hash, epoch)
 		}
 		result[hash] = bn
 	}
 	return result, nil
+}
+
+// Fullnode reports a pivot conflict as invalid parameters. Other RPC and
+// transport errors from the same method must not enter the reorg retry path.
+func isTracePivotAssumptionError(err error) bool {
+	var rpcErr rpcprovider.Error
+	if !errors.As(err, &rpcErr) || rpcErr.ErrorCode() != -32602 {
+		return false
+	}
+	switch rpcErr.Error() {
+	case "Invalid parameters: pivot chain assumption failed", "Invalid parameters: Error: pivot chain assumption failed":
+		return true
+	default:
+		return false
+	}
 }
 
 // prepareContext applies a timeout when bound checks are required,
