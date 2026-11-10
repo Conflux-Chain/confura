@@ -16,7 +16,19 @@ func (e EthData) Number() uint64 {
 }
 
 func (e EthData) Hash() string {
+	if e.Block == nil {
+		return ""
+	}
+
 	return e.Block.Hash.String()
+}
+
+func (e EthData) ParentHash() string {
+	if e.Block == nil {
+		return ""
+	}
+
+	return e.Block.ParentHash.String()
 }
 
 func (e EthData) ExtractBlocks() []BlockLike {

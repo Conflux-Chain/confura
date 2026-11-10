@@ -128,7 +128,22 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 		storeMaxEpoch = citypes.EpochNumberNil
 	}
 
-	if err := store.RequireContinuous(dataSlice, storeMaxEpoch); err != nil {
+	var storeMaxHash string
+	if ok {
+		var hashOk bool
+		storeMaxHash, hashOk, err = ms.PivotHash(storeMaxEpoch)
+		if err != nil {
+			return errors.WithMessage(err, "failed to get max epoch canonical hash")
+		}
+		if !hashOk {
+			return errors.WithMessagef(
+				store.ErrContinousEpochRequired,
+				"canonical hash missing for current epoch %v", storeMaxEpoch,
+			)
+		}
+	}
+
+	if err := store.RequireCanonicalContinuous(dataSlice, storeMaxEpoch, storeMaxHash); err != nil {
 		return err
 	}
 

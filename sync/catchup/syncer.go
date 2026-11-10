@@ -242,7 +242,7 @@ func (s *Syncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start, end
 }
 
 func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker *benchmarker) error {
-	var data T
+	var result sourcedChainData[T]
 	var state persistState[T]
 
 	for eno := start; eno <= end; {
@@ -252,7 +252,7 @@ func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker 
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case data = <-w.Data():
+			case result = <-w.Data():
 				if bmarker != nil {
 					bmarker.metricFetchPerEpochDuration(startTime)
 				}
@@ -263,11 +263,19 @@ func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker 
 				s.monitor.Update(eno)
 			}
 
-			epochDbRows, storeDbRows := state.update(s.filter, data)
+			if !state.canAppend(result.sourceID) {
+				if err := s.persist(ctx, &state, bmarker); err != nil {
+					return err
+				}
+				state.reset()
+			}
+
+			epochDbRows, storeDbRows := state.update(s.filter, result)
 
 			logrus.WithFields(logrus.Fields{
 				"workerName":         w.name,
-				"epochNo":            data.Number,
+				"sourceID":           result.sourceID,
+				"epochNo":            result.data.Number(),
 				"epochDbRows":        epochDbRows,
 				"storeDbRows":        storeDbRows,
 				"state.insertDbRows": state.insertDbRows,
@@ -295,22 +303,29 @@ type persistState[T store.ChainData] struct {
 	totalDbRows  int // total db rows for collected epochs
 	insertDbRows int // total db rows to be inserted for collected epochs
 	chainData    []T // all collected block chain data
+	sourceID     string
 }
 
 func (s *persistState[T]) reset() {
 	s.totalDbRows = 0
 	s.insertDbRows = 0
 	s.chainData = []T{}
+	s.sourceID = ""
 }
 
 func (s *persistState[T]) numEpochs() int {
 	return len(s.chainData)
 }
 
-func (s *persistState[T]) update(filter store.ChainDataFilter, data T) (int, int) {
-	totalDbRows, storeDbRows := countDbRows(filter, data)
+func (s *persistState[T]) canAppend(sourceID string) bool {
+	return len(s.chainData) == 0 || s.sourceID == sourceID
+}
 
-	s.chainData = append(s.chainData, data)
+func (s *persistState[T]) update(filter store.ChainDataFilter, result sourcedChainData[T]) (int, int) {
+	totalDbRows, storeDbRows := countDbRows(filter, result.data)
+
+	s.chainData = append(s.chainData, result.data)
+	s.sourceID = result.sourceID
 	s.totalDbRows += totalDbRows
 	s.insertDbRows += storeDbRows
 
@@ -329,7 +344,7 @@ func (s *Syncer[T]) persist(ctx context.Context, state *persistState[T], bmarker
 	})
 
 	if err != nil {
-		return errors.WithMessage(err, "failed to push db store")
+		return errors.WithMessagef(err, "failed to push db store from source %s", state.sourceID)
 	}
 
 	if bmarker != nil {

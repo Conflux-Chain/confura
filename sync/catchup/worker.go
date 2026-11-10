@@ -2,6 +2,7 @@ package catchup
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -9,19 +10,32 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type sourcedChainData[T store.ChainData] struct {
+	data     T
+	sourceID string
+}
+
 type worker[T store.ChainData] struct {
 	// worker name
 	name string
+	// stable source of the RPC client delegated to this worker
+	sourceID string
 	// result channel to collect queried epoch data
-	resultChan chan T
+	resultChan chan sourcedChainData[T]
 	// RPC client delegated to fetch blockchain data
 	client IRpcClient[T]
 }
 
 func mustNewWorker[T store.ChainData](name string, client IRpcClient[T], chanSize int) *worker[T] {
+	sourceID := client.SourceID()
+	if sourceID == "" {
+		sourceID = fmt.Sprintf("%s:%s", client.Space(), name)
+	}
+
 	return &worker[T]{
 		name:       name,
-		resultChan: make(chan T, chanSize),
+		sourceID:   sourceID,
+		resultChan: make(chan sourcedChainData[T], chanSize),
 		client:     client,
 	}
 }
@@ -47,7 +61,7 @@ func (w *worker[T]) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epo
 			select {
 			case <-ctx.Done():
 				return
-			case w.resultChan <- data[0]:
+			case w.resultChan <- sourcedChainData[T]{data: data[0], sourceID: w.sourceID}:
 				eno += stepN
 			}
 		}
@@ -59,6 +73,6 @@ func (w *worker[T]) Close() {
 	close(w.resultChan)
 }
 
-func (w *worker[T]) Data() <-chan T {
+func (w *worker[T]) Data() <-chan sourcedChainData[T] {
 	return w.resultChan
 }
