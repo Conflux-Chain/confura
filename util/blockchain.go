@@ -77,7 +77,10 @@ func ConvertToNumberedEpoch(cfx sdk.ClientOperator, epoch *types.Epoch) (*types.
 		return nil, errors.New("named epoch must be provided")
 	}
 
-	if _, ok := epoch.ToInt(); ok { // already a numbered epoch
+	if number, ok := epoch.ToInt(); ok { // already a numbered epoch
+		if !number.IsUint64() {
+			return nil, errors.New("epoch number is outside uint64 range")
+		}
 		return epoch, nil
 	}
 
@@ -88,6 +91,9 @@ func ConvertToNumberedEpoch(cfx sdk.ClientOperator, epoch *types.Epoch) (*types.
 		)
 	}
 
+	if epochNum == nil || !epochNum.ToInt().IsUint64() {
+		return nil, errors.New("resolved epoch number is outside uint64 range")
+	}
 	return types.NewEpochNumber(epochNum), nil
 }
 

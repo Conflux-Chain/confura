@@ -216,6 +216,9 @@ func (api *cfxAPI) GetBlockByHashWithPivotAssumption(
 }
 
 func (api *cfxAPI) GetBlockByEpochNumber(ctx context.Context, epoch types.Epoch, includeTxs bool) (any, error) {
+	if number, ok := epoch.ToInt(); ok && !number.IsUint64() {
+		return nil, errors.New("epoch number is outside uint64 range")
+	}
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(&epoch, "cfx_getBlockByEpochNumber", cfx)
 
@@ -439,6 +442,9 @@ func (api *cfxAPI) CheckBalanceAgainstTransaction(
 }
 
 func (api *cfxAPI) GetBlocksByEpoch(ctx context.Context, epoch types.Epoch) ([]types.Hash, error) {
+	if number, ok := epoch.ToInt(); ok && !number.IsUint64() {
+		return nil, errors.New("epoch number is outside uint64 range")
+	}
 	cfx := GetCfxClientFromContext(ctx)
 	api.inputEpochMetric.Update(&epoch, "cfx_getBlocksByEpoch", cfx)
 

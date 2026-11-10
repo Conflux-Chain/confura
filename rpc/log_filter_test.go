@@ -1,6 +1,9 @@
 package rpc
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -50,4 +53,44 @@ func TestLogNormalizationResolvesRange(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCoreLogFilterRejectsNumberOverflow(t *testing.T) {
+	for _, text := range []string{"0x0", "0xffffffffffffffff", "0x10000000000000000", "0x10000000000000001"} {
+		for _, selector := range []string{"epoch", "block"} {
+			t.Run(selector+text, func(t *testing.T) {
+				var filter cfxtypes.LogFilter
+				fieldFrom, fieldTo := "fromEpoch", "toEpoch"
+				if selector == "block" {
+					fieldFrom, fieldTo = "fromBlock", "toBlock"
+				}
+				require.NoError(t, json.Unmarshal([]byte(fmt.Sprintf(`{"%s":%q,"%s":%q}`, fieldFrom, text, fieldTo, text)), &filter))
+				flag, ok := ParseLogFilterType(&filter)
+				require.True(t, ok)
+				err := NormalizeLogFilter(logHeadResolver{}, flag, &filter)
+				if err == nil {
+					err = ValidateLogFilter(flag, &filter)
+				}
+				if len(text) > 18 {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
+}
+
+func TestCoreBlockAPIsRejectEpochOverflowBeforeRouting(t *testing.T) {
+	var epoch cfxtypes.Epoch
+	require.NoError(t, json.Unmarshal([]byte(`"0x10000000000000001"`), &epoch))
+	api := &cfxAPI{}
+	for _, include := range []bool{false, true} {
+		result, err := api.GetBlockByEpochNumber(context.Background(), epoch, include)
+		require.Error(t, err)
+		require.Nil(t, result)
+	}
+	result, err := api.GetBlocksByEpoch(context.Background(), epoch)
+	require.Error(t, err)
+	require.Nil(t, result)
 }

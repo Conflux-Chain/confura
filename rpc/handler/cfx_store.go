@@ -7,6 +7,7 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -46,6 +47,9 @@ func (h *CfxStoreHandler) GetBlockByEpochNumber(
 		return nil, store.ErrUnsupported
 	}
 
+	if !epBigInt.IsUint64() {
+		return nil, errors.New("epoch number is outside uint64 range")
+	}
 	epochNo := epBigInt.Uint64()
 	if includeTxs {
 		block, err = h.store.GetBlockByEpoch(ctx, epochNo)
@@ -68,6 +72,9 @@ func (h *CfxStoreHandler) GetBlocksByEpoch(ctx context.Context, epoch *types.Epo
 		return nil, store.ErrUnsupported
 	}
 
+	if !epBigInt.IsUint64() {
+		return nil, errors.New("epoch number is outside uint64 range")
+	}
 	blockHashes, err := h.store.GetBlocksByEpoch(ctx, epBigInt.Uint64())
 	if err != nil {
 		logrus.WithFields(logrus.Fields{

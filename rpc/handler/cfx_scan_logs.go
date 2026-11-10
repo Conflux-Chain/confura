@@ -148,6 +148,9 @@ func NormalizeCfxScanLogRequest(
 	resolvedTags := make(map[string]uint64)
 	resolveEpoch := func(epoch *cfxtypes.Epoch) (uint64, error) {
 		if epochNum, ok := epoch.ToInt(); ok {
+			if !epochNum.IsUint64() {
+				return 0, NewScanLogsErrorf(ErrScanLogsInvalidParams, "epoch number is outside uint64 range")
+			}
 			return epochNum.Uint64(), nil
 		}
 
@@ -164,6 +167,9 @@ func NormalizeCfxScanLogRequest(
 			return 0, errors.Errorf("failed to resolve epoch tag %s: empty epoch number", epoch)
 		}
 
+		if !epochNum.ToInt().IsUint64() {
+			return 0, NewScanLogsErrorf(ErrScanLogsInvalidParams, "resolved epoch number is outside uint64 range")
+		}
 		resolved := epochNum.ToInt().Uint64()
 		resolvedTags[key] = resolved
 		return resolved, nil
