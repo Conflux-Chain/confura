@@ -20,60 +20,57 @@ import (
 )
 
 type traceViewReader struct {
-	mapping        mysql.CfxTraceSyncEpochBlockMap
-	mappingErr     error
-	version, reads int
-	versionReads   int
-	versionErr     error
-	readErr        error
-	onRead         func()
-	onMapping      func()
-	reorg          bool
-	logs           []mysql.InternalContractLog
+	mapping         mysql.CfxTraceSyncEpochBlockMap
+	mappingErr      error
+	readErr         error
+	logs            []mysql.InternalContractLog
+	versionReads    int
+	mappingReads    int
+	reads           int
+	versionResponse func(int) (int, error)
+	mappingResponse func(int) (mysql.CfxTraceSyncEpochBlockMap, error)
+	logResponse     func(int) ([]mysql.InternalContractLog, error)
 }
 
 func (s *traceViewReader) GetReorgVersionWithContext(ctx context.Context) (int, error) {
 	s.versionReads++
-	if s.versionErr != nil {
-		return 0, s.versionErr
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
-	return s.version, ctx.Err()
+	if s.versionResponse != nil {
+		return s.versionResponse(s.versionReads)
+	}
+	return 0, nil
 }
 func (s *traceViewReader) BlockMapping(ctx context.Context, epoch uint64) (mysql.CfxTraceSyncEpochBlockMap, error) {
+	s.mappingReads++
 	if err := ctx.Err(); err != nil {
 		return s.mapping, err
 	}
-	mapping, err := s.mapping, s.mappingErr
-	if s.onMapping != nil {
-		s.onMapping()
+	if s.mappingResponse != nil {
+		return s.mappingResponse(s.mappingReads)
 	}
-	return mapping, err
+	return s.mapping, s.mappingErr
 }
 func (s *traceViewReader) GetLogs(ctx context.Context, f mysql.CfxInternalContractLogFilter) ([]mysql.InternalContractLog, error) {
 	s.reads++
-	if s.reorg {
-		s.version++
-		s.mapping.PivotHash = "new-pivot"
-		s.reorg = false
-	}
-	logs, err := s.logs, s.readErr
-	if s.onRead != nil {
-		s.onRead()
-	}
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return logs, ctx.Err()
+	if s.logResponse != nil {
+		return s.logResponse(s.reads)
+	}
+	return s.logs, s.readErr
 }
 
 type tracePivotClient struct {
 	sdk.ClientOperator
-	block     *types.BlockSummary
-	checked   types.Block
-	err       error
-	pivots    []types.Hash
-	summaries int
-	onPivot   func()
+	block         *types.BlockSummary
+	checked       types.Block
+	err           error
+	pivots        []types.Hash
+	summaries     int
+	pivotResponse func(int) (types.Block, error)
 }
 
 func (c *tracePivotClient) GetBlockSummaryByHash(types.Hash) (*types.BlockSummary, error) {
@@ -82,11 +79,10 @@ func (c *tracePivotClient) GetBlockSummaryByHash(types.Hash) (*types.BlockSummar
 }
 func (c *tracePivotClient) GetBlockByHashWithPivotAssumption(hash, pivot types.Hash, epoch hexutil.Uint64) (types.Block, error) {
 	c.pivots = append(c.pivots, pivot)
-	checked, err := c.checked, c.err
-	if c.onPivot != nil {
-		c.onPivot()
+	if c.pivotResponse != nil {
+		return c.pivotResponse(len(c.pivots))
 	}
-	return checked, err
+	return c.checked, c.err
 }
 
 func newTraceViewTestHandler() (*CfxInternalContractLogsApiHandler, *traceViewReader, *tracePivotClient) {
@@ -97,53 +93,67 @@ func newTraceViewTestHandler() (*CfxInternalContractLogsApiHandler, *traceViewRe
 	return handler, reader, client
 }
 
+// The first attempt uses the saved pivot; subsequent attempts see the new view.
+func setTraceReorgResponses(s *traceViewReader) {
+	s.versionResponse = func(call int) (int, error) {
+		if call == 1 {
+			return 0, nil
+		}
+		return 1, nil
+	}
+	s.mappingResponse = func(call int) (mysql.CfxTraceSyncEpochBlockMap, error) {
+		mapping := s.mapping
+		if call > 1 {
+			mapping.PivotHash = "new-pivot"
+		}
+		return mapping, nil
+	}
+}
+
 func TestInternalLogsRetriesChangedCanonicalView(t *testing.T) {
 	for _, scenario := range []string{"pivot", "pivot-provider", "log-identity", "block-identity", "block-range", "missing-mapping"} {
 		t.Run(scenario, func(t *testing.T) {
 			h, s, c := newTraceViewTestHandler()
-			reorg := func() {
-				s.version++
-				s.mapping.PivotHash = "new-pivot"
-			}
+			setTraceReorgResponses(s)
 			switch scenario {
 			case "pivot", "pivot-provider":
 				message := "Invalid parameters: pivot chain assumption failed"
 				if scenario == "pivot-provider" {
 					message = "Invalid parameters: Error: pivot chain assumption failed"
 				}
-				c.err = &rpcprovider.JsonError{Code: -32602, Message: message}
-				c.onPivot = func() {
-					reorg()
-					c.err = nil
-					c.onPivot = nil
+				c.pivotResponse = func(call int) (types.Block, error) {
+					if call == 1 {
+						return types.Block{}, &rpcprovider.JsonError{Code: -32602, Message: message}
+					}
+					return c.checked, nil
 				}
 			case "log-identity":
-				s.logs = []mysql.InternalContractLog{{BlockHash: "old-block", BlockNumber: 11}}
-				s.onRead = func() {
-					reorg()
-					s.logs = nil
-					s.onRead = nil
+				s.logResponse = func(call int) ([]mysql.InternalContractLog, error) {
+					if call == 1 {
+						return []mysql.InternalContractLog{{BlockHash: "old-block", BlockNumber: 11}}, nil
+					}
+					return nil, nil
 				}
-			case "block-identity":
-				c.checked.Hash = "old-block"
-				c.onPivot = func() {
-					reorg()
-					c.checked.Hash = "requested"
-					c.onPivot = nil
-				}
-			case "block-range":
-				c.checked.BlockNumber = hexBig(13)
-				c.onPivot = func() {
-					reorg()
-					c.checked.BlockNumber = hexBig(11)
-					c.onPivot = nil
+			case "block-identity", "block-range":
+				c.pivotResponse = func(call int) (types.Block, error) {
+					checked := c.checked
+					if call == 1 {
+						if scenario == "block-identity" {
+							checked.Hash = "old-block"
+						} else {
+							checked.BlockNumber = hexBig(13)
+						}
+					}
+					return checked, nil
 				}
 			case "missing-mapping":
-				s.mappingErr = gorm.ErrRecordNotFound
-				s.onMapping = func() {
-					reorg()
-					s.mappingErr = nil
-					s.onMapping = nil
+				s.mappingResponse = func(call int) (mysql.CfxTraceSyncEpochBlockMap, error) {
+					if call == 1 {
+						return mysql.CfxTraceSyncEpochBlockMap{}, gorm.ErrRecordNotFound
+					}
+					mapping := s.mapping
+					mapping.PivotHash = "new-pivot"
+					return mapping, nil
 				}
 			}
 			logs, err := h.GetLogs(context.Background(), c, &types.LogFilter{BlockHashes: []types.Hash{"requested"}})
@@ -165,8 +175,8 @@ func TestInternalLogsDoesNotRetryOrdinaryErrors(t *testing.T) {
 	} {
 		t.Run(queryErr.Error(), func(t *testing.T) {
 			h, s, c := newTraceViewTestHandler()
+			setTraceReorgResponses(s)
 			c.err = queryErr
-			c.onPivot = func() { s.version++ }
 			_, err := h.GetLogs(context.Background(), c, &types.LogFilter{BlockHashes: []types.Hash{"requested"}})
 			require.ErrorIs(t, err, queryErr)
 			require.Equal(t, 1, c.summaries)
@@ -176,42 +186,59 @@ func TestInternalLogsDoesNotRetryOrdinaryErrors(t *testing.T) {
 }
 
 func TestInternalLogsCanonicalErrorBoundaries(t *testing.T) {
-	for _, scenario := range []string{"stable", "version-failure", "cancelled", "continuous-reorg", "database-error"} {
+	for _, scenario := range []string{"stable", "version-failure", "database-error"} {
 		t.Run(scenario, func(t *testing.T) {
 			h, s, c := newTraceViewTestHandler()
 			pivotErr := &rpcprovider.JsonError{Code: -32602, Message: "Invalid parameters: pivot chain assumption failed"}
 			c.err = pivotErr
-			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-			defer cancel()
 			wantErr := error(pivotErr)
+			wantVersionReads := 2
 			switch scenario {
 			case "version-failure":
 				wantErr = errors.New("version read failed")
-				c.onPivot = func() { s.versionErr = wantErr }
-			case "cancelled":
-				wantErr = store.ErrGetLogsTimeout
-				c.onPivot = cancel
-			case "continuous-reorg":
-				wantErr = store.ErrGetLogsTimeout
-				c.onPivot = func() { s.version++ }
+				s.versionResponse = func(call int) (int, error) {
+					if call == 1 {
+						return 0, nil
+					}
+					return 0, wantErr
+				}
 			case "database-error":
 				wantErr = errors.New("database unavailable")
-				c.err = nil
-				s.readErr = wantErr
-				s.onRead = func() { s.version++ }
+				setTraceReorgResponses(s)
+				c.err, s.readErr = nil, wantErr
+				wantVersionReads = 1
 			}
-			_, err := h.GetLogs(ctx, c, &types.LogFilter{BlockHashes: []types.Hash{"requested"}})
+			_, err := h.GetLogs(context.Background(), c, &types.LogFilter{BlockHashes: []types.Hash{"requested"}})
 			require.ErrorIs(t, err, wantErr)
-			if scenario == "stable" || scenario == "version-failure" {
-				require.Equal(t, 2, s.versionReads)
-			}
-			if scenario == "continuous-reorg" {
-				require.Greater(t, c.summaries, 1)
-			} else {
-				require.Equal(t, 1, c.summaries)
-			}
+			require.Equal(t, wantVersionReads, s.versionReads)
+			require.Equal(t, 1, c.summaries)
 		})
 	}
+}
+
+func TestInternalLogsCanonicalErrorCancellation(t *testing.T) {
+	h, s, c := newTraceViewTestHandler()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	c.pivotResponse = func(int) (types.Block, error) {
+		cancel()
+		return types.Block{}, &rpcprovider.JsonError{Code: -32602, Message: "Invalid parameters: pivot chain assumption failed"}
+	}
+	_, err := h.GetLogs(ctx, c, &types.LogFilter{BlockHashes: []types.Hash{"requested"}})
+	require.ErrorIs(t, err, store.ErrGetLogsTimeout)
+	require.Equal(t, 1, c.summaries)
+	require.Equal(t, 1, s.versionReads)
+}
+
+func TestInternalLogsContinuousReorgTimeout(t *testing.T) {
+	h, s, c := newTraceViewTestHandler()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	s.versionResponse = func(call int) (int, error) { return call - 1, nil }
+	c.err = &rpcprovider.JsonError{Code: -32602, Message: "Invalid parameters: pivot chain assumption failed"}
+	_, err := h.GetLogs(ctx, c, &types.LogFilter{BlockHashes: []types.Hash{"requested"}})
+	require.ErrorIs(t, err, store.ErrGetLogsTimeout)
+	require.Greater(t, c.summaries, 1)
 }
 
 func TestInternalLogsHashPivotValidation(t *testing.T) {
@@ -241,7 +268,7 @@ func TestInternalLogsHashPivotValidation(t *testing.T) {
 			case "out-of-range":
 				c.checked.BlockNumber = hexBig(13)
 			case "reorg":
-				s.reorg = true
+				setTraceReorgResponses(s)
 				wantError = false
 			case "wrong-log":
 				s.logs = []mysql.InternalContractLog{{BlockHash: "other", BlockNumber: 11}}

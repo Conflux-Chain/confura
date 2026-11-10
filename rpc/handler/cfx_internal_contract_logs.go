@@ -240,66 +240,70 @@ func (h *CfxInternalContractLogsApiHandler) resolveBlockHashes(ctx context.Conte
 			continue
 		}
 
-		block, err := cfx.GetBlockSummaryByHash(hash)
+		bn, err := h.resolveBlockHash(ctx, cfx, hash)
 		if err != nil {
-			return nil, errors.WithMessage(err, "failed to get block by hash")
-		}
-		if block == nil {
-			return nil, fmt.Errorf("unable to identify block %v", hash)
-		}
-		if block.BlockNumber == nil {
-			return nil, fmt.Errorf("block with hash %v is not executed yet", hash)
-		}
-
-		if !strings.EqualFold(block.Hash.String(), hash.String()) || block.EpochNumber == nil || !block.EpochNumber.ToInt().IsUint64() {
-			return nil, fmt.Errorf("invalid block identity for %v", hash)
-		}
-		epoch := block.EpochNumber.ToInt().Uint64()
-		mapping, err := h.logStore.BlockMapping(ctx, epoch)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, fmt.Errorf("%w: trace mapping unavailable for epoch %d: %w", ErrGetLogsConsistency, epoch, err)
-			}
-			return nil, errors.WithMessagef(err, "trace mapping unavailable for epoch %d", epoch)
-		}
-		if mapping.Epoch != epoch || mapping.PivotHash == "" || mapping.BnMin > mapping.BnMax {
-			return nil, fmt.Errorf("invalid trace mapping for epoch %d", epoch)
-		}
-		// Validate against the pivot saved with the traces, not the independently
-		// synchronized event-log mapping. Never fetch traces on the query path.
-		checked, err := cfx.GetBlockByHashWithPivotAssumption(hash, types.Hash(mapping.PivotHash), hexutil.Uint64(epoch))
-		if err != nil {
-			if isTracePivotAssumptionError(err) {
-				return nil, fmt.Errorf("%w: trace pivot assumption failed: %w", ErrGetLogsConsistency, err)
-			}
-			return nil, errors.WithMessage(err, "trace pivot assumption failed")
-		}
-		if !strings.EqualFold(checked.Hash.String(), hash.String()) || checked.EpochNumber == nil || checked.EpochNumber.ToInt().Cmp(block.EpochNumber.ToInt()) != 0 ||
-			checked.BlockNumber == nil || !checked.BlockNumber.ToInt().IsUint64() {
-			return nil, fmt.Errorf("%w: block %v does not match trace epoch %d", ErrGetLogsConsistency, hash, epoch)
-		}
-		bn := checked.BlockNumber.ToInt().Uint64()
-		if bn < mapping.BnMin || bn > mapping.BnMax {
-			return nil, fmt.Errorf("%w: block %v is outside trace epoch %d", ErrGetLogsConsistency, hash, epoch)
+			return nil, err
 		}
 		result[hash] = bn
 	}
 	return result, nil
 }
 
-// Fullnode reports a pivot conflict as invalid parameters. Other RPC and
-// transport errors from the same method must not enter the reorg retry path.
-func isTracePivotAssumptionError(err error) bool {
+func (h *CfxInternalContractLogsApiHandler) resolveBlockHash(ctx context.Context, cfx sdk.ClientOperator, hash types.Hash) (uint64, error) {
+	block, err := cfx.GetBlockSummaryByHash(hash)
+	if err != nil {
+		return 0, errors.WithMessage(err, "failed to get block by hash")
+	}
+	if block == nil {
+		return 0, fmt.Errorf("unable to identify block %v", hash)
+	}
+	if block.BlockNumber == nil {
+		return 0, fmt.Errorf("block with hash %v is not executed yet", hash)
+	}
+
+	if !strings.EqualFold(block.Hash.String(), hash.String()) || block.EpochNumber == nil || !block.EpochNumber.ToInt().IsUint64() {
+		return 0, fmt.Errorf("invalid block identity for %v", hash)
+	}
+	epoch := block.EpochNumber.ToInt().Uint64()
+	mapping, err := h.logStore.BlockMapping(ctx, epoch)
+	if err != nil {
+		return 0, wrapTraceViewError(err, fmt.Sprintf("trace mapping unavailable for epoch %d", epoch), true)
+	}
+	if mapping.Epoch != epoch || mapping.PivotHash == "" || mapping.BnMin > mapping.BnMax {
+		return 0, fmt.Errorf("invalid trace mapping for epoch %d", epoch)
+	}
+	// Validate against the pivot saved with the traces, not the independently
+	// synchronized event-log mapping. Never fetch traces on the query path.
+	checked, err := cfx.GetBlockByHashWithPivotAssumption(hash, types.Hash(mapping.PivotHash), hexutil.Uint64(epoch))
+	if err != nil {
+		return 0, wrapTraceViewError(err, "trace pivot assumption failed", false)
+	}
+	if !strings.EqualFold(checked.Hash.String(), hash.String()) || checked.EpochNumber == nil || checked.EpochNumber.ToInt().Cmp(block.EpochNumber.ToInt()) != 0 ||
+		checked.BlockNumber == nil || !checked.BlockNumber.ToInt().IsUint64() {
+		return 0, fmt.Errorf("%w: block %v does not match trace epoch %d", ErrGetLogsConsistency, hash, epoch)
+	}
+	bn := checked.BlockNumber.ToInt().Uint64()
+	if bn < mapping.BnMin || bn > mapping.BnMax {
+		return 0, fmt.Errorf("%w: block %v is outside trace epoch %d", ErrGetLogsConsistency, hash, epoch)
+	}
+	return bn, nil
+}
+
+// Missing mappings and explicit Fullnode pivot conflicts depend on the chain
+// view. Other RPC and transport errors must not enter the reorg retry path.
+func wrapTraceViewError(err error, message string, fromMapping bool) error {
+	viewConflict := fromMapping && errors.Is(err, gorm.ErrRecordNotFound)
 	var rpcErr rpcprovider.Error
-	if !errors.As(err, &rpcErr) || rpcErr.ErrorCode() != -32602 {
-		return false
+	if !fromMapping && errors.As(err, &rpcErr) && rpcErr.ErrorCode() == -32602 {
+		switch rpcErr.Error() {
+		case "Invalid parameters: pivot chain assumption failed", "Invalid parameters: Error: pivot chain assumption failed":
+			viewConflict = true
+		}
 	}
-	switch rpcErr.Error() {
-	case "Invalid parameters: pivot chain assumption failed", "Invalid parameters: Error: pivot chain assumption failed":
-		return true
-	default:
-		return false
+	if viewConflict {
+		return fmt.Errorf("%w: %s: %w", ErrGetLogsConsistency, message, err)
 	}
+	return errors.WithMessage(err, message)
 }
 
 // prepareContext applies a timeout when bound checks are required,
