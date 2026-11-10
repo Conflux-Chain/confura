@@ -3,6 +3,7 @@ package cfxbridge
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"reflect"
 	"strings"
 
@@ -55,7 +56,11 @@ func (ebn *EthBlockNumber) UnmarshalJSON(data []byte) error {
 
 	// Supports hex, latest_state and earliest
 	if num, ok := epoch.ToInt(); ok {
-		ebn.value = ethTypes.BlockNumber(num.Int64())
+		number, err := numericBlockNumber(num)
+		if err != nil {
+			return err
+		}
+		ebn.value = number
 	} else if types.EpochLatestState.Equals(&epoch) {
 		ebn.value = ethTypes.LatestBlockNumber
 	} else if types.EpochEarliest.Equals(&epoch) {
@@ -80,8 +85,8 @@ func NewEthBlockNumberOrHash(epochOrBh types.EpochOrBlockHash) (ebnh EthBlockNum
 	if epoch, ok := epochOrBh.IsEpoch(); ok {
 		// Supports hex number
 		if num, ok := epoch.ToInt(); ok {
-			ebnh.number = ethTypes.BlockNumber(num.Int64())
-			return ebnh, nil
+			ebnh.number, err = numericBlockNumber(num)
+			return ebnh, err
 		}
 
 		// Supports particular tags (latest_state and earliest) and hash
@@ -124,7 +129,11 @@ func (ebnh *EthBlockNumberOrHash) UnmarshalJSON(data []byte) error {
 
 	// Supports hex number
 	if num, ok := epoch.ToInt(); ok {
-		ebnh.number = ethTypes.BlockNumber(num.Int64())
+		number, err := numericBlockNumber(num)
+		if err != nil {
+			return err
+		}
+		ebnh.number = number
 		return nil
 	}
 
@@ -389,4 +398,13 @@ func resolveToHashes(val interface{}) ([]common.Hash, error) {
 	}
 
 	return nil, errors.Errorf("failed to convert %v to hash or hashes", val)
+}
+
+// web3go represents tags as negative int64 values. Reject numbers that cannot
+// fit without changing identity instead of allowing them to become tags.
+func numericBlockNumber(number *big.Int) (ethTypes.BlockNumber, error) {
+	if number == nil || number.Sign() < 0 || !number.IsInt64() {
+		return 0, errors.New("block number is outside bridge int64 range")
+	}
+	return ethTypes.BlockNumber(number.Int64()), nil
 }
