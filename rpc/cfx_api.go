@@ -9,6 +9,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/util"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -310,7 +311,7 @@ func (api *cfxAPI) scanLogs(
 		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, err
 	}
 
-	cfx := GetCfxClientFromContext(ctx)
+	cfx := rpcutil.CfxWithContext(ctx, GetCfxClientFromContext(ctx))
 	params, err := handler.NormalizeCfxScanLogRequest(cfx, req, withPivotAssumption)
 	if err != nil {
 		return cacheTypes.Lazy[*handler.CfxScanLogResult]{}, err

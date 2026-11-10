@@ -342,7 +342,7 @@ func TestScanLogsJSONQuantitiesAndFirstPageGuard(t *testing.T) {
 	insertScanLogsMapping(t, db, 10, 10, 10, pivot.String())
 	cfxHandler := newTestCfxScanLogsHandler(db)
 	epochNumber := (*hexutil.Big)(new(big.Int).SetUint64(10))
-	cfxResult, err := cfxHandler.finishCfxCandidate(
+	cfxResult, err := cfxHandler.finishCfxCandidate(context.Background(),
 		CfxScanLogParams{
 			CfxScanLogRequest:   &CfxScanLogRequest{Limit: 1},
 			WithPivotAssumption: true,

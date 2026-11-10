@@ -203,7 +203,7 @@ func TestBuildEthGenerationRejectsFNCursorWhenFNRangeIsEmpty(t *testing.T) {
 	)
 
 	t.Run("empty mapping table", func(t *testing.T) {
-		_, err := handler.buildEthGeneration(EthScanLogParams{
+		_, err := handler.buildEthGeneration(context.Background(), EthScanLogParams{
 			EthScanLogRequest: &EthScanLogRequest{
 				Limit: 1, Cursor: &ScanLogCursor{BlockNumber: 101},
 			},
@@ -219,7 +219,7 @@ func TestBuildEthGenerationRejectsFNCursorWhenFNRangeIsEmpty(t *testing.T) {
 
 	for _, reverse := range []bool{false, true} {
 		t.Run(fmt.Sprintf("DB-covered request reverse=%t", reverse), func(t *testing.T) {
-			_, err := handler.buildEthGeneration(EthScanLogParams{
+			_, err := handler.buildEthGeneration(context.Background(), EthScanLogParams{
 				EthScanLogRequest: &EthScanLogRequest{
 					Limit: 1, Cursor: &ScanLogCursor{BlockNumber: 1000}, Reverse: reverse,
 				},
@@ -575,7 +575,7 @@ func TestBuildCfxGenerationRejectsInvalidEndpointMapping(t *testing.T) {
 	insertScanLogsMapping(t, db, 10, 101, 100, "0x10")
 	handler := newTestCfxScanLogsHandler(db)
 
-	_, err := handler.buildCfxGeneration(CfxScanLogParams{
+	_, err := handler.buildCfxGeneration(context.Background(), CfxScanLogParams{
 		CfxScanLogRequest: &CfxScanLogRequest{Limit: 1},
 		EpochRange:        citypes.RangeUint64{From: 10, To: 10},
 	})
@@ -1244,7 +1244,7 @@ func TestFinishCfxCandidateRejectsMissingGuardEpoch(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := (&CfxLogsApiHandler{}).finishCfxCandidate(
+			_, err := (&CfxLogsApiHandler{}).finishCfxCandidate(context.Background(),
 				CfxScanLogParams{CfxScanLogRequest: &CfxScanLogRequest{Reverse: test.reverse}},
 				assumption,
 				cfxScanGeneration{},

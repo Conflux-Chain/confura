@@ -8,6 +8,7 @@ import (
 	"github.com/Conflux-Chain/confura/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/openweb3/web3go/client"
 	web3types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 )
@@ -255,7 +256,7 @@ func ethFNFilter(scanFilter EthScanLogFilter) web3types.FilterQuery {
 // adapter has already resolved tags and rejected a future numeric upper bound;
 // this layer must not resolve latest again because doing so would change the
 // meaning of a normalized safe/finalized request.
-func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethScanGeneration, error) {
+func (handler *EthLogsApiHandler) buildEthGeneration(ctx context.Context, req EthScanLogParams) (ethScanGeneration, error) {
 	cursor := req.Cursor.toStoreCursor()
 	if scanRange(req.BlockRange).empty() {
 		if cursor != nil {
@@ -266,7 +267,7 @@ func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethS
 		return newEthFullnodeGeneration(emptyScanRange, nil, req.Reverse), nil
 	}
 
-	earliest, ok, err := handler.es.EarliestBlockMapping()
+	earliest, ok, err := handler.es.EarliestBlockMappingContext(ctx)
 	if err != nil {
 		return ethScanGeneration{}, err
 	}
@@ -283,7 +284,7 @@ func (handler *EthLogsApiHandler) buildEthGeneration(req EthScanLogParams) (ethS
 		return gen, nil
 	}
 
-	latest, ok, err := handler.es.LatestBlockMapping()
+	latest, ok, err := handler.es.LatestBlockMappingContext(ctx)
 	if err != nil {
 		return ethScanGeneration{}, err
 	}
@@ -518,9 +519,20 @@ func (handler *EthLogsApiHandler) scanLogs(
 	eth ethScanClient,
 	req EthScanLogParams,
 	assumption *EthPivotAssumption,
-) (*EthScanLogResult, error) {
+) (result *EthScanLogResult, err error) {
 	ctx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
 	defer cancel()
+	if client, ok := eth.(*client.RpcEthClient); ok {
+		copy := *client
+		copy.SetContext(ctx)
+		eth = &copy
+	}
+
+	defer func() {
+		if cancelErr := checkTimeout(ctx); err == nil && cancelErr != nil {
+			result, err = nil, cancelErr
+		}
+	}()
 
 	for {
 		if err := checkTimeout(ctx); err != nil {
@@ -529,15 +541,15 @@ func (handler *EthLogsApiHandler) scanLogs(
 
 		// Every Store-derived fact below belongs to this DB generation. An
 		// outer retry rebuilds the split and discards its cache as one unit.
-		v0, err := handler.es.GetReorgVersion()
+		v0, err := handler.es.GetReorgVersionContext(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		gen, err := handler.buildEthGeneration(req)
+		gen, err := handler.buildEthGeneration(ctx, req)
 		if err != nil {
 			if errors.Is(err, ErrScanLogsConsistency) {
-				_, retryOuter, commitErr := handler.commitEthDBGeneration(v0, nil, err)
+				_, retryOuter, commitErr := handler.commitEthDBGeneration(ctx, v0, nil, err)
 				if retryOuter {
 					markScanLogsMetric(ctx, "retry/db_outer")
 					continue
@@ -556,12 +568,12 @@ func (handler *EthLogsApiHandler) scanLogs(
 			dbCache = handler.newEthDBCache(req, gen)
 		}
 
-		dbAssumption, assumptionErr, err := handler.checkEthDBAssumption(gen, assumption)
+		dbAssumption, assumptionErr, err := handler.checkEthDBAssumption(ctx, gen, assumption)
 		if err != nil {
 			return nil, err
 		}
 		if assumptionErr != nil {
-			_, retryOuter, commitErr := handler.commitEthDBGeneration(v0, nil, assumptionErr)
+			_, retryOuter, commitErr := handler.commitEthDBGeneration(ctx, v0, nil, assumptionErr)
 			if retryOuter {
 				markScanLogsMetric(ctx, "retry/db_outer")
 				continue
@@ -586,7 +598,7 @@ func (handler *EthLogsApiHandler) scanLogs(
 					newScanCursor(dbCache.Tail(len(dbCache.logs))),
 					ethScanUsage{db: true},
 				)
-				result, retryOuter, commitErr := handler.commitEthDBGeneration(v0, result, nil)
+				result, retryOuter, commitErr := handler.commitEthDBGeneration(ctx, v0, result, nil)
 				if retryOuter {
 					markScanLogsMetric(ctx, "retry/db_outer")
 					continue
@@ -604,7 +616,7 @@ func (handler *EthLogsApiHandler) scanLogs(
 				result = finishEthCandidate(req, assumption, result.Logs, result.NextCursor, result.usage)
 			}
 
-			result, retryOuter, commitErr := handler.commitEthDBGeneration(v0, result, provisionalErr)
+			result, retryOuter, commitErr := handler.commitEthDBGeneration(ctx, v0, result, provisionalErr)
 			if retryOuter {
 				markScanLogsMetric(ctx, "retry/db_outer")
 				continue
@@ -654,6 +666,7 @@ type ethInnerCandidate struct {
 // captured generation. A mismatch is a provisional outcome, not an immediate
 // return: commitEthDBGeneration must first prove the DB version stayed stable.
 func (handler *EthLogsApiHandler) checkEthDBAssumption(
+	ctx context.Context,
 	gen ethScanGeneration,
 	assumption *EthPivotAssumption,
 ) (belongsToDB bool, provisionalErr error, err error) {
@@ -663,7 +676,7 @@ func (handler *EthLogsApiHandler) checkEthDBAssumption(
 		return false, nil, nil
 	}
 
-	pivot, ok, err := handler.es.PivotHash(uint64(assumption.BlockNumber))
+	pivot, ok, err := handler.es.PivotHashContext(ctx, uint64(assumption.BlockNumber))
 	if err != nil {
 		return true, nil, errors.WithMessage(err, "failed to get pivot hash")
 	}
@@ -690,11 +703,12 @@ func (handler *EthLogsApiHandler) checkEthDBAssumption(
 // depends solely on Store. It applies the same v0/v1 rule to successes and
 // provisional errors so neither can escape from a generation that changed.
 func (handler *EthLogsApiHandler) commitEthDBGeneration(
+	ctx context.Context,
 	v0 int,
 	result *EthScanLogResult,
 	provisionalErr error,
 ) (*EthScanLogResult, bool, error) {
-	v1, err := handler.es.GetReorgVersion()
+	v1, err := handler.es.GetReorgVersionContext(ctx)
 	if err != nil {
 		return nil, false, err
 	}
@@ -734,6 +748,9 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		}
 
 		before, err := eth.BlockByNumber(web3types.BlockNumber(checkpoint), false)
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
 		if err != nil {
 			return nil, false, errors.WithMessage(err, "failed to get pre-checkpoint block")
 		}
@@ -777,13 +794,16 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		// semantics. Strict prevention needs a node view token or atomic range RPC,
 		// which JSON-RPC batch does not provide.
 		after, err := eth.BlockByNumber(web3types.BlockNumber(checkpoint), false)
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
 		if err != nil {
 			return nil, false, errors.WithMessage(err, "failed to get post-checkpoint block")
 		}
 
 		dbStable := true
 		if outer.gen.dbAvailable {
-			v1, err := handler.es.GetReorgVersion()
+			v1, err := handler.es.GetReorgVersionContext(ctx)
 			if err != nil {
 				return nil, false, errors.WithMessage(err, "failed to get reorg version")
 			}
@@ -791,6 +811,9 @@ func (handler *EthLogsApiHandler) scanEthFullnodeGeneration(
 		}
 
 		checkpointStable := (after != nil && after.Hash == before.Hash)
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
 		decision := decideCanonicalCommit(dbStable, checkpointStable, !boundaryMismatch)
 
 		switch decision {
@@ -964,7 +987,11 @@ func (r *ethFNReader) readWindow(ctx context.Context, from, to uint64) ([]web3ty
 	filter.BlockHash = nil
 	fromBlock, toBlock := web3types.BlockNumber(from), web3types.BlockNumber(to)
 	filter.FromBlock, filter.ToBlock = &fromBlock, &toBlock
-	return r.client.Logs(filter)
+	logs, err := r.client.Logs(filter)
+	if cancelErr := ctx.Err(); cancelErr != nil {
+		return nil, cancelErr
+	}
+	return logs, err
 }
 
 // applyCursor compares logIndex only within cursor.bn. Log indices restart in

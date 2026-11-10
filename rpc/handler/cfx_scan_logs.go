@@ -7,6 +7,8 @@ import (
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-sdk/types/cfxaddress"
 	"github.com/ethereum/go-ethereum/common"
@@ -267,10 +269,10 @@ func cfxFNFilter(scanFilter CfxScanLogFilter) cfxtypes.LogFilter {
 // a pure ordered source Plan. It deliberately does not persist FN block bounds:
 // those bounds are canonical node data and must be rebuilt in every inner
 // before/after attempt.
-func (handler *CfxLogsApiHandler) buildCfxGeneration(req CfxScanLogParams) (cfxScanGeneration, error) {
+func (handler *CfxLogsApiHandler) buildCfxGeneration(ctx context.Context, req CfxScanLogParams) (cfxScanGeneration, error) {
 	cursor := req.Cursor.toStoreCursor()
 
-	earliest, ok, err := handler.ms.EarliestBlockMapping()
+	earliest, ok, err := handler.ms.EarliestBlockMappingContext(ctx)
 	if err != nil {
 		return cfxScanGeneration{}, errors.WithMessage(err, "failed to load earliest block mappings")
 	}
@@ -293,7 +295,7 @@ func (handler *CfxLogsApiHandler) buildCfxGeneration(req CfxScanLogParams) (cfxS
 		return cfxScanGeneration{}, store.ErrAlreadyPruned
 	}
 
-	latest, ok, err := handler.ms.LatestBlockMapping()
+	latest, ok, err := handler.ms.LatestBlockMappingContext(ctx)
 	if err != nil {
 		return cfxScanGeneration{}, errors.WithMessage(err, "failed to load latest block mappings")
 	}
@@ -326,12 +328,12 @@ func (handler *CfxLogsApiHandler) buildCfxGeneration(req CfxScanLogParams) (cfxS
 	} else {
 		// Both DB segment endpoints must have exact mappings. A missing endpoint
 		// contradicts the continuous DB coverage claimed by the captured watermarks.
-		fromMapping, fromOK, err := handler.ms.BlockMapping(gen.dbEpochs.From)
+		fromMapping, fromOK, err := handler.ms.BlockMappingContext(ctx, gen.dbEpochs.From)
 		if err != nil {
 			return gen, errors.WithMessage(err, "failed to load block mapping")
 		}
 
-		toMapping, toOK, err := handler.ms.BlockMapping(gen.dbEpochs.To)
+		toMapping, toOK, err := handler.ms.BlockMappingContext(ctx, gen.dbEpochs.To)
 		if err != nil {
 			return gen, errors.WithMessage(err, "failed to load block mapping")
 		}
@@ -509,6 +511,7 @@ func (handler *CfxLogsApiHandler) runCfxPlan(
 // DB v1. NextCursor itself is already materialized; PivotGuard may need a DB
 // pivot mapping or an FN pivot summary.
 func (handler *CfxLogsApiHandler) finishCfxCandidate(
+	ctx context.Context,
 	req CfxScanLogParams, assumption *CfxPivotAssumption, gen cfxScanGeneration,
 	logs []cfxtypes.Log, tail *ScanLogCursor, dbUsed, fnUsed bool, attempt *cfxFNAttemptView,
 ) (*CfxScanLogResult, error) {
@@ -546,7 +549,7 @@ func (handler *CfxLogsApiHandler) finishCfxCandidate(
 	if gen.dbAvailable && epoch <= gen.dbMaxEpoch {
 		usage.db = true
 
-		pivot, ok, err := handler.ms.PivotHash(epoch)
+		pivot, ok, err := handler.ms.PivotHashContext(ctx, epoch)
 		if err != nil {
 			return result, errors.WithMessagef(err, "failed to get db pivot hash for epoch %d", epoch)
 		}
@@ -634,9 +637,18 @@ func (handler *CfxLogsApiHandler) scanLogs(
 	cfx cfxScanClient,
 	req CfxScanLogParams,
 	assumption *CfxPivotAssumption,
-) (*CfxScanLogResult, error) {
+) (result *CfxScanLogResult, err error) {
 	ctx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
 	defer cancel()
+	if client, ok := cfx.(sdk.ClientOperator); ok {
+		cfx = rpcutil.CfxWithContext(ctx, client)
+	}
+
+	defer func() {
+		if cancelErr := checkTimeout(ctx); err == nil && cancelErr != nil {
+			result, err = nil, cancelErr
+		}
+	}()
 
 	for {
 		if err := checkTimeout(ctx); err != nil {
@@ -645,19 +657,19 @@ func (handler *CfxLogsApiHandler) scanLogs(
 
 		// v0 must precede every DB-derived canonical fact: coverage, mappings,
 		// assumption, guard and both positive and negative scan results.
-		v0, err := handler.ms.GetReorgVersion()
+		v0, err := handler.ms.GetReorgVersionContext(ctx)
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to load reorg version")
 		}
 
-		gen, err := handler.buildCfxGeneration(req)
+		gen, err := handler.buildCfxGeneration(ctx, req)
 		if err != nil {
 			if errors.Is(err, ErrScanLogsConsistency) {
 				// Mapping invariants were evaluated from the v0 generation. If Store
 				// changed while they were being read, rebuild before publishing the
 				// consistency error. Invalid cursors are deterministic request errors
 				// and return directly without entering a commit fence.
-				_, retryOuter, commitErr := handler.commitCfxDBGeneration(v0, nil, err)
+				_, retryOuter, commitErr := handler.commitCfxDBGeneration(ctx, v0, nil, err)
 				if retryOuter {
 					markScanLogsMetric(ctx, "retry/db_outer")
 					continue
@@ -678,12 +690,12 @@ func (handler *CfxLogsApiHandler) scanLogs(
 		}
 
 		// Check DB assumptions if the provided pivot is within the captured DB coverage.
-		dbAssumption, assumptionErr, err := handler.checkCfxDBAssumption(gen, assumption)
+		dbAssumption, assumptionErr, err := handler.checkCfxDBAssumption(ctx, gen, assumption)
 		if err != nil {
 			return nil, err
 		}
 		if assumptionErr != nil {
-			_, retryOuter, err := handler.commitCfxDBGeneration(v0, nil, assumptionErr)
+			_, retryOuter, err := handler.commitCfxDBGeneration(ctx, v0, nil, assumptionErr)
 			if retryOuter {
 				markScanLogsMetric(ctx, "retry/db_outer")
 				continue
@@ -702,11 +714,11 @@ func (handler *CfxLogsApiHandler) scanLogs(
 
 			if len(dbCache.logs) == int(req.Limit) && !fnAssumption {
 				scanCursor := newScanCursor(dbCache.Tail(len(dbCache.logs)))
-				result, provisionalErr := handler.finishCfxCandidate(
+				result, provisionalErr := handler.finishCfxCandidate(ctx,
 					req, assumption, gen, dbCache.logs, scanCursor, true, false, nil,
 				)
 
-				result, retryOuter, err := handler.commitCfxDBGeneration(v0, result, provisionalErr)
+				result, retryOuter, err := handler.commitCfxDBGeneration(ctx, v0, result, provisionalErr)
 				if retryOuter {
 					markScanLogsMetric(ctx, "retry/db_outer")
 					continue
@@ -719,11 +731,11 @@ func (handler *CfxLogsApiHandler) scanLogs(
 		if !gen.plan.contains(scanSourceFN) && !fnAssumption {
 			result, provisionalErr := handler.runCfxPlan(ctx, cfx, req, gen, dbCache, nil)
 			if provisionalErr == nil {
-				result, provisionalErr = handler.finishCfxCandidate(
+				result, provisionalErr = handler.finishCfxCandidate(ctx,
 					req, assumption, gen, result.Logs, result.NextCursor, true, false, nil,
 				)
 			}
-			result, retryOuter, err := handler.commitCfxDBGeneration(v0, result, provisionalErr)
+			result, retryOuter, err := handler.commitCfxDBGeneration(ctx, v0, result, provisionalErr)
 			if retryOuter {
 				markScanLogsMetric(ctx, "retry/db_outer")
 				continue
@@ -754,6 +766,7 @@ func (handler *CfxLogsApiHandler) scanLogs(
 // coverage. A mismatch is returned as a provisional generation result; callers
 // must close the v0/v1 fence before publishing it.
 func (handler *CfxLogsApiHandler) checkCfxDBAssumption(
+	ctx context.Context,
 	gen cfxScanGeneration, assumption *CfxPivotAssumption,
 ) (belongsToDB bool, provisionalErr error, err error) {
 	if assumption == nil || !gen.dbAvailable ||
@@ -761,7 +774,7 @@ func (handler *CfxLogsApiHandler) checkCfxDBAssumption(
 		return false, nil, nil
 	}
 
-	pivot, ok, err := handler.ms.PivotHash(uint64(assumption.EpochNumber))
+	pivot, ok, err := handler.ms.PivotHashContext(ctx, uint64(assumption.EpochNumber))
 	if err != nil {
 		return true, nil, errors.WithMessage(err, "failed to load pivot hash")
 	}
@@ -784,9 +797,10 @@ func (handler *CfxLogsApiHandler) checkCfxDBAssumption(
 // commitCfxDBGeneration is the single commit gate for results and provisional
 // errors that depend only on the captured DB generation.
 func (handler *CfxLogsApiHandler) commitCfxDBGeneration(
+	ctx context.Context,
 	v0 int, result *CfxScanLogResult, provisionalErr error,
 ) (res *CfxScanLogResult, shouldRetry bool, err error) {
-	v1, err := handler.ms.GetReorgVersion()
+	v1, err := handler.ms.GetReorgVersionContext(ctx)
 	if err != nil {
 		return nil, false, errors.WithMessage(err, "failed to load reorg version")
 	}
@@ -848,6 +862,9 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 		// The before summary both identifies the FN view and bounds all cursor BN
 		// lookups that may occur while building this candidate.
 		before, err := cfx.GetBlockSummaryByEpoch(cfxtypes.NewEpochNumberUint64(h))
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
 		markScanLogsMetric(ctx, "checkpoint_before")
 		if err != nil {
 			return nil, false, errors.WithMessage(err, "failed to get pivot block summary")
@@ -891,6 +908,9 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 		// Eliminating ABA requires a node-provided immutable view token or atomic
 		// range RPC; JSON-RPC batch does not provide that guarantee.
 		after, err := cfx.GetBlockSummaryByEpoch(cfxtypes.NewEpochNumberUint64(h))
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
 		markScanLogsMetric(ctx, "checkpoint_after")
 		if err != nil {
 			return nil, false, errors.WithMessagef(err, "failed to get block summary for epoch %d", h)
@@ -902,7 +922,7 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 
 		dbStable := true
 		if outer.gen.dbAvailable {
-			v1, err := handler.ms.GetReorgVersion()
+			v1, err := handler.ms.GetReorgVersionContext(ctx)
 			if err != nil {
 				return nil, false, errors.WithMessage(err, "failed to get reorg version")
 			}
@@ -910,6 +930,9 @@ func (handler *CfxLogsApiHandler) scanCfxFullnodeGeneration(
 		}
 
 		checkpointStable := equalCfxHash(afterRef.hash, attempt.checkpoint.hash)
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
 		decision := decideCanonicalCommit(dbStable, checkpointStable, !boundaryMismatch)
 
 		switch decision {
@@ -992,7 +1015,7 @@ func (handler *CfxLogsApiHandler) buildCfxInnerCandidate(
 	}
 
 	if provisionalErr == nil {
-		result, provisionalErr = handler.finishCfxCandidate(
+		result, provisionalErr = handler.finishCfxCandidate(ctx,
 			req, assumption, outer.gen, result.Logs, result.NextCursor,
 			candidate.usage.db, candidate.usage.fn, attempt,
 		)
@@ -1412,6 +1435,9 @@ func (r *cfxFNReader) readWindow(ctx context.Context, from, to uint64) ([]cfxtyp
 	filter.ToBlock = (*hexutil.Big)(new(big.Int).SetUint64(to))
 
 	logs, err := r.client.GetLogs(filter)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -537,12 +537,13 @@ func (api *ethAPI) scanLogs(
 	}
 
 	w3c := GetEthClientFromContext(ctx)
-	params, err := handler.NormalizeEthScanLogRequest(w3c.Eth, api.hardforkBlockNumber, req, withPivotAssumption)
+	eth := w3c.Client.WithContext(ctx).Eth
+	params, err := handler.NormalizeEthScanLogRequest(eth, api.hardforkBlockNumber, req, withPivotAssumption)
 	if err != nil {
 		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, err
 	}
 
-	result, err := api.LogApiHandler.ScanLogs(ctx, w3c.Client.Eth, params, assumption)
+	result, err := api.LogApiHandler.ScanLogs(ctx, eth, params, assumption)
 	if err != nil {
 		return cacheTypes.Lazy[*handler.EthScanLogResult]{}, err
 	}

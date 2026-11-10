@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"strconv"
@@ -338,4 +339,10 @@ func (cs *confStore) decodeNodeRouteGroup(cfg conf) (*NodeRouteGroup, error) {
 	}
 
 	return &grp, nil
+}
+
+// GetReorgVersionContext reads the generation fence within the request deadline.
+func (cs *confStore) GetReorgVersionContext(ctx context.Context) (int, error) {
+	scoped := newConfStore(cs.db.WithContext(ctx))
+	return scoped.GetReorgVersion()
 }

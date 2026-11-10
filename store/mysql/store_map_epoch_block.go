@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -335,4 +336,25 @@ func (e2bms *CfxTraceSyncEpochBlockMapStore) LoadPivotHashes(fromEpoch, toEpoch 
 
 func (e2bms *CfxTraceSyncEpochBlockMapStore) Pop(dbTx *gorm.DB, epochUntil uint64) error {
 	return dbTx.Where("epoch >= ?", epochUntil).Delete(&CfxTraceSyncEpochBlockMap{}).Error
+}
+
+// BlockMappingContext reads scan metadata within the request deadline.
+func (e2bms *epochBlockMapStore[T]) BlockMappingContext(ctx context.Context, epoch uint64) (epochBlockMap, bool, error) {
+	return e2bms.findOneBlockMappingWithDB(e2bms.db.WithContext(ctx), "epoch = ?", "", epoch)
+}
+
+// EarliestBlockMappingContext reads scan metadata within the request deadline.
+func (e2bms *epochBlockMapStore[T]) EarliestBlockMappingContext(ctx context.Context) (epochBlockMap, bool, error) {
+	return e2bms.earliestBlockMapping(e2bms.db.WithContext(ctx))
+}
+
+// LatestBlockMappingContext reads scan metadata within the request deadline.
+func (e2bms *epochBlockMapStore[T]) LatestBlockMappingContext(ctx context.Context) (epochBlockMap, bool, error) {
+	return e2bms.findOneBlockMappingWithDB(e2bms.db.WithContext(ctx), "", "epoch DESC")
+}
+
+// PivotHashContext reads a pivot identity within the request deadline.
+func (e2bms *epochBlockMapStore[T]) PivotHashContext(ctx context.Context, epoch uint64) (string, bool, error) {
+	mapping, ok, err := e2bms.BlockMappingContext(ctx, epoch)
+	return mapping.PivotHash, ok, err
 }
