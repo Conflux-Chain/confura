@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -17,7 +18,7 @@ func TestSearchPartitionsUsesSingleMetadataQuery(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&bnPartition{}))
-	require.NoError(t, db.Create([]bnPartition{
+	require.NoError(t, db.CreateInBatches([]bnPartition{
 		{
 			Entity: "logs", Index: 3,
 			BnMin: sql.NullInt64{Int64: 100, Valid: true},
@@ -25,10 +26,13 @@ func TestSearchPartitionsUsesSingleMetadataQuery(t *testing.T) {
 		},
 		{
 			Entity: "logs", Index: 4,
+		},
+		{
+			Entity: "logs", Index: 5,
 			BnMin: sql.NullInt64{Int64: 150, Valid: true},
 			BnMax: sql.NullInt64{Int64: 199, Valid: true},
 		},
-	}).Error)
+	}, 1).Error)
 
 	queryCount := 0
 	require.NoError(t, db.Callback().Query().Before("gorm:query").Register(
@@ -40,7 +44,7 @@ func TestSearchPartitionsUsesSingleMetadataQuery(t *testing.T) {
 		context.Background(), "logs", types.RangeUint64{From: 140, To: 160},
 	)
 	require.NoError(t, err)
-	assert.Equal(t, []uint32{3, 4}, partitionIndexes(partitions))
+	assert.Equal(t, []uint32{3, 5}, partitionIndexes(partitions))
 	assert.Nil(t, uncoverings)
 	assert.Equal(t, 1, queryCount)
 }
@@ -148,7 +152,7 @@ func TestSearchPartitionsFromMetadataRejectsDiscontinuity(t *testing.T) {
 		{
 			name: "invalid range metadata",
 			metadata: []*bnPartition{
-				{Index: 3},
+				{Index: 3, BnMin: sql.NullInt64{Int64: 100, Valid: true}},
 			},
 		},
 	}
@@ -161,6 +165,41 @@ func TestSearchPartitionsFromMetadataRejectsDiscontinuity(t *testing.T) {
 			require.Error(t, err)
 			assert.NotErrorIs(t, err, store.ErrAlreadyPruned)
 		})
+	}
+}
+
+func TestSearchPartitionsWithEmptyMetadata(t *testing.T) {
+	for _, allowOverlap := range []bool{false, true} {
+		for _, test := range []struct {
+			name            string
+			metadata        []*bnPartition
+			wantIndexes     []uint32
+			wantUncoverings *types.RangeUint64
+			wantError       bool
+		}{
+			{"empty middle", []*bnPartition{newTestBnPartition(3, 100, 149), {Index: 4}, newTestBnPartition(5, 150, 199)}, []uint32{3, 5}, nil, false},
+			{"empty edges", []*bnPartition{{Index: 3}, newTestBnPartition(4, 100, 199), {Index: 5}}, []uint32{4}, nil, false},
+			{"multiple empty", []*bnPartition{newTestBnPartition(3, 100, 149), {Index: 4}, {Index: 5}, newTestBnPartition(6, 150, 199)}, []uint32{3, 6}, nil, false},
+			{"all empty", []*bnPartition{{Index: 3}, {Index: 4}}, nil, &types.RangeUint64{From: 100, To: 199}, false},
+			{"missing empty record", []*bnPartition{newTestBnPartition(3, 100, 149), {Index: 5}}, nil, nil, true},
+			{"gap between empty records", []*bnPartition{{Index: 3}, {Index: 5}}, nil, nil, true},
+			{"duplicate empty index", []*bnPartition{{Index: 3}, {Index: 3}}, nil, nil, true},
+			{"nil metadata", []*bnPartition{nil}, nil, nil, true},
+			{"negative range", []*bnPartition{newTestBnPartition(3, -1, 100)}, nil, nil, true},
+			{"only upper bound", []*bnPartition{{Index: 3, BnMax: sql.NullInt64{Int64: 199, Valid: true}}}, nil, nil, true},
+			{"overlap across empty", []*bnPartition{newTestBnPartition(3, 100, 160), {Index: 4}, newTestBnPartition(5, 150, 199)}, []uint32{3, 5}, nil, !allowOverlap},
+		} {
+			t.Run(fmt.Sprintf("%s/overlap=%t", test.name, allowOverlap), func(t *testing.T) {
+				partitions, uncoverings, err := routePartitionsFromMetadata("logs", types.RangeUint64{From: 100, To: 199}, test.metadata, allowOverlap)
+				if test.wantError {
+					require.Error(t, err)
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, test.wantIndexes, partitionIndexes(partitions))
+				require.Equal(t, test.wantUncoverings, uncoverings)
+			})
+		}
 	}
 }
 

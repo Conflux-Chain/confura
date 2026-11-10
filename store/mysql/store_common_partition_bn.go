@@ -204,7 +204,6 @@ func (bnps *bnPartitionedStore) searchPartitionsWithOverlap(ctx context.Context,
 	metadata := make([]*bnPartition, 0)
 	err := bnps.db.WithContext(ctx).
 		Where("entity = ?", entity).
-		Where("bn_min IS NOT NULL AND bn_max IS NOT NULL").
 		Order("pi ASC").
 		Find(&metadata).Error
 	if err != nil {
@@ -228,55 +227,17 @@ func routePartitionsFromMetadata(entity string, searchRange types.RangeUint64, m
 	if searchRange.From > searchRange.To {
 		return nil, nil, errors.New("invalid block range")
 	}
+	metadata, err := validatePartitionMetadata(entity, metadata, allowOverlap)
+	if err != nil {
+		return nil, nil, err
+	}
 	if len(metadata) == 0 {
 		return nil, &searchRange, nil
 	}
 
-	for i, partition := range metadata {
-		if partition == nil || !partition.BnMin.Valid || !partition.BnMax.Valid {
-			return nil, nil, errors.Errorf(
-				"invalid bn partition metadata for entity %q at position %v", entity, i,
-			)
-		}
-		if partition.BnMin.Int64 < 0 || partition.BnMax.Int64 < 0 {
-			return nil, nil, errors.Errorf(
-				"negative bn partition metadata for entity %q partition %v",
-				entity, partition.Index,
-			)
-		}
-
-		bnMin, bnMax := uint64(partition.BnMin.Int64), uint64(partition.BnMax.Int64)
-		if bnMin > bnMax {
-			return nil, nil, errors.Errorf(
-				"invalid bn range [%v, %v] for entity %q partition %v",
-				bnMin, bnMax, entity, partition.Index,
-			)
-		}
-
-		if i == 0 {
-			continue
-		}
-
-		previous := metadata[i-1]
-		if partition.Index <= previous.Index || partition.Index-previous.Index != 1 {
-			return nil, nil, errors.Errorf(
-				"bn partition metadata index gap for entity %q between partitions %v and %v",
-				entity, previous.Index, partition.Index,
-			)
-		}
-
-		previousEnd := uint64(previous.BnMax.Int64)
-		if !allowOverlap && bnMin <= previousEnd {
-			return nil, nil, errors.Errorf(
-				"overlapping bn partition metadata for entity %q between partitions %v and %v",
-				entity, previous.Index, partition.Index,
-			)
-		}
-	}
-
 	bnStart := uint64(metadata[0].BnMin.Int64)
-	bnEnd := uint64(metadata[len(metadata)-1].BnMax.Int64)
-	for _, partition := range metadata {
+	bnEnd := uint64(metadata[0].BnMax.Int64)
+	for _, partition := range metadata[1:] {
 		bnStart = min(bnStart, uint64(partition.BnMin.Int64))
 		bnEnd = max(bnEnd, uint64(partition.BnMax.Int64))
 	}
@@ -302,6 +263,57 @@ func routePartitionsFromMetadata(entity string, searchRange types.RangeUint64, m
 	}
 
 	return partitions, uncoverings, nil
+}
+
+// Validate index continuity before skipping partitions emptied by rollback.
+// A zero count alone does not imply an empty range: blocks may have no logs.
+func validatePartitionMetadata(entity string, metadata []*bnPartition, allowOverlap bool) ([]*bnPartition, error) {
+	var nonempty []*bnPartition
+	for i, partition := range metadata {
+		if partition == nil {
+			return nil, errors.Errorf("invalid bn partition metadata for entity %q at position %v", entity, i)
+		}
+		if i > 0 {
+			previous := metadata[i-1]
+			if partition.Index <= previous.Index || partition.Index-previous.Index != 1 {
+				return nil, errors.Errorf(
+					"bn partition metadata index gap for entity %q between partitions %v and %v",
+					entity, previous.Index, partition.Index,
+				)
+			}
+		}
+		if !partition.BnMin.Valid && !partition.BnMax.Valid {
+			continue
+		}
+		if !partition.BnMin.Valid || !partition.BnMax.Valid {
+			return nil, errors.Errorf(
+				"invalid bn partition metadata for entity %q at position %v", entity, i,
+			)
+		}
+		if partition.BnMin.Int64 < 0 || partition.BnMax.Int64 < 0 {
+			return nil, errors.Errorf(
+				"negative bn partition metadata for entity %q partition %v",
+				entity, partition.Index,
+			)
+		}
+
+		bnMin, bnMax := uint64(partition.BnMin.Int64), uint64(partition.BnMax.Int64)
+		if bnMin > bnMax {
+			return nil, errors.Errorf(
+				"invalid bn range [%v, %v] for entity %q partition %v",
+				bnMin, bnMax, entity, partition.Index,
+			)
+		}
+
+		if !allowOverlap && len(nonempty) > 0 && bnMin <= uint64(nonempty[len(nonempty)-1].BnMax.Int64) {
+			return nil, errors.Errorf(
+				"overlapping bn partition metadata for entity %q between partitions %v and %v",
+				entity, nonempty[len(nonempty)-1].Index, partition.Index,
+			)
+		}
+		nonempty = append(nonempty, partition)
+	}
+	return nonempty, nil
 }
 
 // searchOverlapPartitions search entity partitions that overlap the search range regardless of the boundary.
