@@ -336,11 +336,14 @@ func (api *cfxAPI) getLogs(
 	fq types.LogFilter,
 	rpcMethod string,
 ) ([]types.Log, error) {
-	metrics.UpdateCfxRpcLogFilter(rpcMethod, cfx, &fq)
-
 	flag, ok := ParseLogFilterType(&fq)
 	if !ok {
 		return emptyLogs, ErrInvalidLogFilter
+	}
+
+	// Preserve an explicit empty selector; SDK serialization omits it.
+	if fq.BlockHashes == nil || len(fq.BlockHashes) != 0 {
+		metrics.UpdateCfxRpcLogFilter(rpcMethod, cfx, &fq)
 	}
 
 	if err := NormalizeLogFilter(cfx, flag, &fq); err != nil {
@@ -349,6 +352,10 @@ func (api *cfxAPI) getLogs(
 
 	if err := ValidateLogFilter(flag, &fq); err != nil {
 		return emptyLogs, err
+	}
+
+	if flag == LogFilterTypeBlockHash && len(fq.BlockHashes) == 0 {
+		return emptyLogs, nil
 	}
 
 	if logs, handled, err := api.tryGetInternalContractLogs(ctx, cfx, &fq); err != nil {

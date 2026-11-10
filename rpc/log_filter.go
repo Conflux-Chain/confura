@@ -36,7 +36,7 @@ func ParseLogFilterType(filter *types.LogFilter) (LogFilterType, bool) {
 	}
 
 	// check if block hashes provided
-	if len(filter.BlockHashes) != 0 {
+	if filter.BlockHashes != nil {
 		flag |= LogFilterTypeBlockHash
 	}
 
