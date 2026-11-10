@@ -31,15 +31,18 @@ func (api *ethAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 		return &rpc.Subscription{}, err
 	}
 
-	rpcSub := psCtx.notifier.CreateSubscription()
-
 	headersCh := make(chan *types.Header, pubsubChannelBufferSize)
 	dClient := getOrNewEthDelegateClient(psCtx.eth)
 
-	dSub, err := dClient.delegateSubscribeNewHeads(rpcSub.ID, headersCh)
+	dSub, err := dClient.delegateSubscribeNewHeads(rpc.NewID(), headersCh)
 	if err != nil {
 		releasePubSubSubscriptionPermit(permit)
 		logrus.WithError(err).Info("Failed to delegate pubsub newheads subscription")
+		return &rpc.Subscription{}, errSubscriptionProxyError
+	}
+
+	rpcSub, err := newDelegateRPCSubscription(ctx, psCtx.notifier, dSub, permit)
+	if err != nil {
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
@@ -100,15 +103,18 @@ func (api *ethAPI) Logs(ctx context.Context, filter types.FilterQuery) (*rpc.Sub
 		return &rpc.Subscription{}, err
 	}
 
-	rpcSub := psCtx.notifier.CreateSubscription()
-
 	logsCh := make(chan *types.Log, pubsubChannelBufferSize)
 	dClient := getOrNewEthDelegateClient(psCtx.eth)
 
-	dSub, err := dClient.delegateSubscribeLogs(rpcSub.ID, logsCh, filter)
+	dSub, err := dClient.delegateSubscribeLogs(rpc.NewID(), logsCh, filter)
 	if err != nil {
 		releasePubSubSubscriptionPermit(permit)
 		logrus.WithField("filter", filter).WithError(err).Info("Failed to delegate pubsub logs subscription")
+		return &rpc.Subscription{}, errSubscriptionProxyError
+	}
+
+	rpcSub, err := newDelegateRPCSubscription(ctx, psCtx.notifier, dSub, permit)
+	if err != nil {
 		return &rpc.Subscription{}, errSubscriptionProxyError
 	}
 
