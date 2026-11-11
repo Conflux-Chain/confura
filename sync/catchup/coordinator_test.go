@@ -2,6 +2,7 @@ package catchup
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -48,5 +49,41 @@ func TestCoordinatorStartupAssignments(t *testing.T) {
 		for i, n := range got {
 			require.EqualValues(t, i+1, n)
 		}
+	}
+}
+
+func TestBoostWorkerCanceledWithNoResultConsumer(t *testing.T) {
+	for _, size := range []int{0, 1} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			started, release := make(chan struct{}), make(chan struct{})
+			cli := &testClient{query: func(context.Context, uint64, uint64) ([]*store.EthData, error) {
+				close(started)
+				<-release
+				return []*store.EthData{testData(1)}, nil
+			}}
+			cfg := coordinatorConfig()
+			cfg.ResultQueueSize = size
+			w := &boostWorker[*store.EthData]{mustNewWorker("test", cli, 1)}
+			c := newCoordinator(cfg, []*boostWorker[*store.EthData]{w}, types.RangeUint64{From: 1, To: 1}, nil)
+			if size > 0 {
+				c.taskResultQueue <- syncTaskResult[*store.EthData]{}
+			}
+			c.pendingTaskQueue <- newSyncTask(1, 1)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var wg sync.WaitGroup
+			wg.Add(1)
+			done := make(chan struct{})
+			go func() { c.boostWorkerLoop(ctx, &wg, w); close(done) }()
+			<-started
+			cancel()
+			close(release)
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("worker blocked sending to abandoned result queue")
+			}
+			wg.Wait()
+		})
 	}
 }

@@ -206,10 +206,10 @@ func (c *coordinator[T]) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup
 						"numPendingTasks": len(c.pendingTaskQueue),
 					}).WithError(err).Debug("Catch-up boost worker processed task")
 				}
-				c.taskResultQueue <- syncTaskResult[T]{
-					task:   task,
-					result: data,
-					err:    err,
+				select {
+				case <-ctx.Done():
+					return
+				case c.taskResultQueue <- syncTaskResult[T]{task: task, result: data, err: err}:
 				}
 			}
 		}
