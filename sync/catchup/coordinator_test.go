@@ -87,3 +87,19 @@ func TestBoostWorkerCanceledWithNoResultConsumer(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskResultCoverage(t *testing.T) {
+	task := newSyncTask(1, 3)
+	for _, bad := range [][]*store.EthData{nil, {testData(1), testData(3)}, {testData(1), testData(1), testData(3)}, {testData(1), nil, testData(3)}, {testData(1), testData(2), testData(4)}} {
+		require.Error(t, validateTaskResult(task, bad))
+	}
+	require.NoError(t, validateTaskResult(task, []*store.EthData{testData(3), testData(1), testData(2)}))
+	out := make(chan *store.EthData, 3)
+	c := newCoordinator(coordinatorConfig(), nil, types.RangeUint64{From: 1, To: 3}, out)
+	require.NoError(t, c.collectResult(context.Background(), []*store.EthData{testData(3), testData(1), testData(2)}))
+	for n := uint64(1); n <= 3; n++ {
+		require.Equal(t, n, (<-out).Number())
+	}
+	require.NoError(t, c.collectResult(context.Background(), []*store.EthData{testData(1)}))
+	require.Empty(t, c.epochDataStore)
+}

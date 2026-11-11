@@ -249,6 +249,9 @@ func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				})
 				// Process the batch of results
 				for _, r := range taskResults {
+					if r.err == nil {
+						r.err = validateTaskResult(r.task, r.result)
+					}
 					if r.err != nil {
 						// Recall the task by splitting and re-assigning
 						heap.Push(&c.recallTaskPq, &syncTaskItem{syncTask: r.task})
@@ -314,6 +317,9 @@ func (c *coordinator[T]) estimateTaskSize(results []syncTaskResult[T]) uint64 {
 func (c *coordinator[T]) collectResult(ctx context.Context, result []T) error {
 	// Cache store epoch data
 	for _, data := range result {
+		if data.Number() < c.nextWriteEpoch {
+			continue
+		}
 		c.epochDataStore[data.Number()] = data
 	}
 
@@ -582,4 +588,22 @@ func (w *boostWorker[T]) queryChainData(fromEpoch, toEpoch uint64) (res []T, err
 
 	res, err = w.client.BoostQueryChainData(context.Background(), fromEpoch, toEpoch)
 	return
+}
+
+func validateTaskResult[T store.ChainData](task syncTask, result []T) error {
+	if task.From > task.To || len(result) == 0 || uint64(len(result)) != task.To-task.From+1 {
+		return errors.Errorf("incomplete result for task %v", task)
+	}
+	seen := make(map[uint64]bool, len(result))
+	for _, data := range result {
+		if nilChainData(data) {
+			return errors.New("nil chain data in task result")
+		}
+		n := data.Number()
+		if n < task.From || n > task.To || seen[n] {
+			return errors.Errorf("invalid epoch %v in task %v", n, task)
+		}
+		seen[n] = true
+	}
+	return nil
 }
