@@ -303,11 +303,10 @@ func (l *DlockLeaderManager) onElected(ctx context.Context) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	l.electionStatus.Store(StatusElected)
 	for _, cb := range l.electedCallbacks {
 		cb(ctx, l)
 	}
-
-	l.electionStatus.Store(StatusElected)
 }
 
 // OnOusted registers a callback function to be invoked on leader ousted.
@@ -331,7 +330,7 @@ func (l *DlockLeaderManager) onOusted(ctx context.Context) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	for _, cb := range l.electedCallbacks {
+	for _, cb := range l.oustedCallbacks {
 		cb(ctx, l)
 	}
 }
