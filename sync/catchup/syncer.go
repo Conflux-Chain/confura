@@ -15,7 +15,6 @@ import (
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 // Syncer accelerates core space epoch data catch-up using concurrently workers.
@@ -179,6 +178,7 @@ func (s *Syncer[T]) Sync(ctx context.Context) {
 }
 
 func (s *Syncer[T]) SyncOnce(ctx context.Context, start, end uint64) {
+	ctx = election.WithLeadership(ctx, s.elm)
 	var bmarker *benchmarker
 	if s.Benchmark {
 		bmarker = newBenchmarker()
@@ -324,9 +324,7 @@ func (s *Syncer[T]) persist(ctx context.Context, state *persistState[T], bmarker
 	}
 
 	start := time.Now()
-	err := s.db.PushnWithFinalizer(state.chainData, func(d *gorm.DB) error {
-		return s.elm.Extend(ctx)
-	})
+	err := s.db.PushnWithGuard(ctx, state.chainData, s.elm.Guard(ctx))
 
 	if err != nil {
 		return errors.WithMessage(err, "failed to push db store")

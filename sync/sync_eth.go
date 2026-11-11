@@ -12,14 +12,12 @@ import (
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"github.com/Conflux-Chain/go-conflux-util/health"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/openweb3/web3go"
 	ethtypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 type ethSyncConfig struct {
@@ -68,7 +66,6 @@ func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.EthStore) *EthSynce
 	var ethConf ethSyncConfig
 	viperutil.MustUnmarshalKey("sync.eth", &ethConf)
 
-	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
 	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (latestBlockNum uint64, retErr error) {
 		for _, ethC := range ethClients {
 			block, err := ethC.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
@@ -96,7 +93,7 @@ func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.EthStore) *EthSynce
 		syncIntervalCatchUp: time.Millisecond,
 		monitor:             monitor,
 		pivotWin:            newEvmSlidingPivotWindow(syncPivotInfoWinCapacity),
-		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.eth"),
+		elm:                 election.MustNewLeaderManagerFromViper(db.DB(), "sync.eth"),
 	}
 	monitor.SetObserver(syncer)
 
@@ -191,6 +188,7 @@ func (syncer *EthSyncer) nextBlockTo(maxBlockTo uint64) (uint64, uint64) {
 
 // Sync data once and return true if catch up to the most recent block, otherwise false.
 func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
+	ctx = election.WithLeadership(ctx, syncer.elm)
 	w3c := syncer.w3cs[syncer.w3cIdx.Load()]
 
 	latestBlock, err := w3c.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
@@ -302,9 +300,7 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	err = syncer.db.PushnWithFinalizer(ethDataSlice, func(d *gorm.DB) error {
-		return syncer.elm.Extend(ctx)
-	})
+	err = syncer.db.PushnWithGuard(ctx, ethDataSlice, syncer.elm.Guard(ctx))
 
 	if err != nil {
 		if errors.Is(err, store.ErrLeaderRenewal) {
@@ -358,9 +354,7 @@ func (syncer *EthSyncer) reorgRevert(ctx context.Context, revertTo uint64) error
 	}
 
 	// remove block data from database due to chain re-org
-	err := syncer.db.PopnWithFinalizer(revertTo, func(d *gorm.DB) error {
-		return syncer.elm.Extend(ctx)
-	})
+	err := syncer.db.PopnWithGuard(ctx, revertTo, syncer.elm.Guard(ctx))
 
 	if err != nil {
 		if errors.Is(err, store.ErrLeaderRenewal) {

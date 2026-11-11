@@ -145,8 +145,30 @@ func TestMySQLRollbackCrossPartition(t *testing.T) {
 			for _, table := range []string{"logs_0", entity + "_0", entity + "_1"} {
 				beforeCounts[table] = integrationCount(t, db, table)
 			}
+			beforeVersion, e := ms.confStore.GetReorgVersion()
+			require.NoError(t, e)
 			failure := errors.New("reject rollback")
-			require.ErrorIs(t, ms.PopnWithFinalizer(1, func(*gorm.DB) error { return failure }), failure)
+			injected := false
+			err := func() error {
+				// Fail after the last write, so deletions and metadata updates have
+				// already executed and must all roll back with the reorg version.
+				const callbackName = "test:fail_after_reorg_version"
+				callbacks := db.Callback().Create()
+				require.NoError(t, callbacks.After("gorm:create").Register(callbackName, func(tx *gorm.DB) {
+					cfg, ok := tx.Statement.Dest.(*conf)
+					if tx.Error == nil && ok && cfg.Name == MysqlConfKeyReorgVersion {
+						injected = true
+						tx.AddError(failure)
+					}
+				}))
+				defer func() { require.NoError(t, callbacks.Remove(callbackName)) }()
+				return ms.Popn(1)
+			}()
+			require.ErrorIs(t, err, failure)
+			require.True(t, injected, "failure must occur after the reorg version write")
+			afterVersion, e := ms.confStore.GetReorgVersion()
+			require.NoError(t, e)
+			require.Equal(t, beforeVersion, afterVersion)
 			maxEpoch, ok, e := ms.MaxEpoch()
 			require.NoError(t, e)
 			require.True(t, ok)

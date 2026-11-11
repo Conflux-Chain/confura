@@ -70,7 +70,7 @@ func setup() error {
 	}
 
 	defaults.SetDefaults(&conf)
-	db := conf.MustOpenOrCreate(&dlock.Dlock{})
+	db = conf.MustOpenOrCreate(&dlock.Dlock{})
 	testMysqlBe = dlock.NewMySQLBackend(db)
 
 	return nil
@@ -103,11 +103,10 @@ func TestLeaderManager(t *testing.T) {
 	wg := sync.WaitGroup{}
 	mu := sync.Mutex{}
 
-	dlm := dlock.NewLockManager(testMysqlBe)
 	for i := 0; i < 50; i++ {
 		conf := elecConfig
 		conf.ID = fmt.Sprintf("leader%d", i)
-		leaderMan := NewDlockLeaderManager(dlm, conf, elecKey)
+		leaderMan := NewDlockLeaderManager(db, conf, elecKey)
 
 		wg.Add(1)
 		go func() {
