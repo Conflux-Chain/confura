@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BIN=${CONFURA_BIN:-"$ROOT_DIR/bin/confura"}
 UPSTREAM=${CONFURA_CFX_BRIDGE_ETHNODE:-"https://evmtestnet-internal.confluxrpc.com"}
+CFX_UPSTREAM=${CONFURA_CFX_BRIDGE_CFXNODE:-"http://test-internal.confluxrpc.com"}
 ENDPOINT=${CONFURA_CFX_BRIDGE_ENDPOINT:-":32537"}
 RUN_DIR=${CONFURA_RUN_DIR:-"$ROOT_DIR/run"}
 LOG_FILE=${CONFURA_LOG_FILE:-"$ROOT_DIR/cfx-bridge.log"}
@@ -31,7 +32,8 @@ case "${1:-start}" in
       exit 0
     fi
     cd "$ROOT_DIR"
-    echo "starting cfx bridge: upstream=$UPSTREAM endpoint=$ENDPOINT"
+    echo "starting cfx bridge: cfx_upstream=$CFX_UPSTREAM eth_upstream=$UPSTREAM endpoint=$ENDPOINT"
+    INFURA_RPC_CFXBRIDGE_CFXNODE="$CFX_UPSTREAM" \
     INFURA_RPC_CFXBRIDGE_ETHNODE="$UPSTREAM" \
     INFURA_RPC_CFXBRIDGE_ENDPOINT="$ENDPOINT" \
       nohup "$BIN" rpc --cfxBridge >>"$LOG_FILE" 2>&1 &
