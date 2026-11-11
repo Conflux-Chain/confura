@@ -205,6 +205,10 @@ func (s *Syncer[T]) SyncOnce(ctx context.Context, start, end uint64) {
 }
 
 func (s *Syncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
+	// The previous attempt has joined all producers before a new one starts.
+	for _, w := range s.workers {
+		w.resultChan = make(chan T, cap(w.resultChan))
+	}
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -257,6 +261,9 @@ func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker 
 					bmarker.metricFetchPerEpochDuration(startTime)
 				}
 
+				if nilChainData(data) || data.Number() != eno {
+					return errors.Errorf("unexpected epoch collected, expected %v", eno)
+				}
 				// collect epoch data
 				eno++
 

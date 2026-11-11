@@ -2,10 +2,12 @@ package catchup
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -35,6 +37,9 @@ func (w *worker[T]) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epo
 			return
 		default:
 			data, err := w.client.QueryChainData(ctx, eno, eno)
+			if err == nil && (len(data) != 1 || nilChainData(data[0]) || data[0].Number() != eno) {
+				err = errors.Errorf("invalid result for epoch %v", eno)
+			}
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
 					"epochNo":    eno,
@@ -61,4 +66,10 @@ func (w *worker[T]) Close() {
 
 func (w *worker[T]) Data() <-chan T {
 	return w.resultChan
+}
+
+// ChainData is implemented by pointers; reject typed nils before calling its methods.
+func nilChainData[T store.ChainData](data T) bool {
+	v := reflect.ValueOf(data)
+	return !v.IsValid() || (v.Kind() == reflect.Pointer && v.IsNil())
 }
