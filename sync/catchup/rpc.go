@@ -66,7 +66,7 @@ func (c *CoreRpcClient) QueryChainData(ctx context.Context, fromEpoch, toEpoch u
 	}
 
 	for epochNo := fromEpoch; epochNo <= toEpoch; epochNo++ {
-		epochData, err := store.QueryEpochData(c, fromEpoch, true)
+		epochData, err := store.QueryEpochData(c, epochNo, true)
 		if err != nil {
 			return nil, err
 		}
