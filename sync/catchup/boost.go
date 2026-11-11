@@ -168,12 +168,10 @@ func (c *coordinator[T]) run(ctx context.Context, wg *sync.WaitGroup) {
 		go c.boostWorkerLoop(ctx, &innerWg, w)
 	}
 
-	// Start the result dispatch loop
+	// Finish seeding before the dispatcher can assign more work.
+	c.assignTasks(ctx, c.DefaultTaskSize)
 	innerWg.Add(1)
 	go c.dispatchLoop(ctx, &innerWg)
-
-	// Seeds the pending tasks queue with initial workload for workers.
-	c.assignTasks(ctx, c.DefaultTaskSize)
 
 	innerWg.Wait()
 }
