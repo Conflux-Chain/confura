@@ -220,6 +220,9 @@ func (e *EvmRpcClient) GetFinalizationStatus(ctx context.Context) (*Finalization
 	if err != nil {
 		return nil, err
 	}
+	if block == nil || block.Number == nil {
+		return nil, errors.New("invalid finalized block: missing block or number")
+	}
 	return &FinalizationStatus{
 		LatestFinalized: block.Number.Uint64(),
 	}, nil
