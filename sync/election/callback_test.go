@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Conflux-Chain/confura/store"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,6 +25,20 @@ func TestLeadershipCallbacks(t *testing.T) {
 		lm.onOusted(context.Background())
 	}
 	require.Equal(t, []LeaderStatus{StatusElected, StatusOusted, StatusElected, StatusOusted}, events)
+}
+
+func TestGuardRejectsWorkCapturedDuringElectedCallbacks(t *testing.T) {
+	lm := NewDlockLeaderManager(nil, Config{}, "test")
+	lm.nonce.Store("new-term")
+	var captured context.Context
+	lm.OnElected(func(context.Context, LeaderManager) {
+		captured = WithLeadership(context.Background(), lm)
+	})
+	lm.onElected(context.Background())
+	// Even after callbacks finish, this work must not inherit readiness it did
+	// not have when it captured the new term. Rejection precedes any DB access.
+	require.True(t, lm.electedCallbacksDone.Load())
+	require.ErrorIs(t, lm.Guard(captured)(nil), store.ErrLeaderRenewal)
 }
 
 func awaitResult(lm LeaderManager, ctx context.Context) <-chan bool {

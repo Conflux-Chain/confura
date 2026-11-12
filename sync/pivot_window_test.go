@@ -294,6 +294,37 @@ func TestSlidingPivotWindowReset(t *testing.T) {
 	assert.Equal(t, newBlocks[0].hash, hash)
 }
 
+func TestSlidingPivotWindowRejectsOldGeneration(t *testing.T) {
+	for _, capacity := range []uint32{1, 3} {
+		t.Run(fmt.Sprint(capacity), func(t *testing.T) {
+			w := newSlidingPivotWindow[mockBlock](capacity)
+			old := w.Generation()
+			a := mockBlock{number: 1, hash: "A1"}
+			require.NoError(t, w.PushIfGeneration(a, old))
+			w.Reset() // publication before reset is cleared
+			require.NoError(t, w.PushIfGeneration(a, old))
+			require.Zero(t, w.Size(), "publication after reset is ignored")
+			b := mockBlock{number: 1, hash: "B1"}
+			require.NoError(t, w.PushIfGeneration(b, w.Generation()))
+			require.NoError(t, w.PushIfGeneration(a, old))
+			hash, ok := w.Get(1)
+			require.True(t, ok)
+			require.Equal(t, b.hash, hash, "stale work must preserve the new window")
+			for range 100 {
+				generation := w.Generation()
+				start := make(chan struct{})
+				var wg sync.WaitGroup
+				wg.Add(2)
+				go func() { defer wg.Done(); <-start; _ = w.PushIfGeneration(a, generation) }()
+				go func() { defer wg.Done(); <-start; w.Reset() }()
+				close(start)
+				wg.Wait()
+				require.Zero(t, w.Size(), "both lock orderings leave the reset window empty")
+			}
+		})
+	}
+}
+
 func TestSlidingPivotWindowConcurrent(t *testing.T) {
 	w := newSlidingPivotWindow[mockBlock](100)
 	blocks := createChain(0, 1000)

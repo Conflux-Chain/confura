@@ -39,7 +39,7 @@ func TestEthSyncRejectsMalformedSafeHead(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			provider := &syncHeadProvider{block: tc.block}
-			s := &EthSyncer{w3cs: []*web3go.Client{web3go.NewClientWithProvider(provider)}, elm: election.NewNoopLeaderManager()}
+			s := &EthSyncer{w3cs: []*web3go.Client{web3go.NewClientWithProvider(provider)}, elm: election.NewNoopLeaderManager(), pivotWin: newEvmSlidingPivotWindow(1)}
 			done, err := s.syncOnce(context.Background())
 			require.ErrorContains(t, err, "invalid empty block")
 			require.False(t, done)

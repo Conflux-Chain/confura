@@ -190,6 +190,7 @@ func (syncer *EthSyncer) nextBlockTo(maxBlockTo uint64) (uint64, uint64) {
 // Sync data once and return true if catch up to the most recent block, otherwise false.
 func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	ctx = election.WithLeadership(ctx, syncer.elm)
+	cacheGeneration := syncer.pivotWin.Generation()
 	w3c := syncer.w3cs[syncer.w3cIdx.Load()]
 
 	latestBlock, err := w3c.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
@@ -319,7 +320,7 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	}
 
 	for _, edata := range ethDataSlice { // cache eth block info for late use
-		err := syncer.pivotWin.Push(evmPivotBlockWrapper{edata.Block})
+		err := syncer.pivotWin.PushIfGeneration(evmPivotBlockWrapper{edata.Block}, cacheGeneration)
 		if err != nil {
 			logger.WithField("blockNumber", edata.Number).WithError(err).Info(
 				"ETH syncer failed to push block into cache window",

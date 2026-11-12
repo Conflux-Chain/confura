@@ -13,12 +13,13 @@ type leadershipKey struct{}
 type leadershipTerm struct {
 	manager *DlockLeaderManager
 	nonce   string
+	ready   bool
 }
 
 // WithLeadership binds work to its original term, including work that outlives a reelection.
 func WithLeadership(ctx context.Context, lm LeaderManager) context.Context {
 	if l, ok := lm.(*DlockLeaderManager); ok {
-		return context.WithValue(ctx, leadershipKey{}, leadershipTerm{l, l.term()})
+		return context.WithValue(ctx, leadershipKey{}, leadershipTerm{l, l.term(), l.electedCallbacksDone.Load()})
 	}
 	return ctx
 }
@@ -28,6 +29,11 @@ func (l *DlockLeaderManager) Guard(ctx context.Context) func(*gorm.DB) error {
 	return func(tx *gorm.DB) error {
 		if err := l.validateTerm(ctx, nonce); err != nil {
 			return err
+		}
+		// Await may have returned in an earlier term. Work captured before the
+		// current term's callbacks completed must not gain permission afterward.
+		if term, ok := ctx.Value(leadershipKey{}).(leadershipTerm); ok && !term.ready {
+			return store.ErrLeaderRenewal
 		}
 		err := l.lockMan.RenewInTx(ctx, tx, l.lockIntent(nonce))
 		if errors.Is(err, dlock.ErrLockNotHeld) {

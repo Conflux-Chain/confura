@@ -194,6 +194,7 @@ func (syncer *DatabaseSyncer) loadLastSyncEpoch() error {
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
 func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 	ctx = election.WithLeadership(ctx, syncer.elm)
+	cacheGeneration := syncer.pivotWin.Generation()
 	cfx := syncer.cfxs[syncer.cfxIdx.Load()]
 
 	// Fetch latest confirmed epoch from blockchain
@@ -315,7 +316,7 @@ func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 	syncer.monitor.Update(syncer.epochFrom)
 
 	for _, epdata := range epochDataSlice { // cache epoch pivot info for late use
-		err := syncer.pivotWin.Push(cfxPivotBlockWrapper{epdata.GetPivotBlock()})
+		err := syncer.pivotWin.PushIfGeneration(cfxPivotBlockWrapper{epdata.GetPivotBlock()}, cacheGeneration)
 		if err != nil {
 			logger.WithField("pivotBlockEpoch", epdata.Number).WithError(err).Info(
 				"Db syncer failed to push pivot block into epoch cache window",
