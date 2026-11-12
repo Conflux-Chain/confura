@@ -373,7 +373,11 @@ func (c *EvmRpcClient) BoostQueryChainData(ctx context.Context, fromBlock, toBlo
 			txnHash := logs[logCursor].TxHash
 			txnReceipt, ok := ethData.Receipts[txnHash]
 			if !ok {
+				// EVM logs imply success if the fullnode response is valid.
+				// The store adapter needs Status to retain these logs.
+				success := uint64(1)
 				txnReceipt = &ethTypes.Receipt{
+					Status:           &success,
 					TransactionIndex: uint64(l.TxIndex),
 					BlockNumber:      blockNum,
 					BlockHash:        ethData.Block.Hash,

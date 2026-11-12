@@ -192,3 +192,11 @@ func TestCoreBoostLogIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestEvmBoostReceiptExecutionStatus(t *testing.T) {
+	block, logs := evmLogFixture()
+	data, err := fixtureEvmClient(block, logs).BoostQueryChainData(context.Background(), 1, 1)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, *data[0].Receipts[logs[0].TxHash].Status)
+	require.True(t, data[0].ExtractBlocks()[0].Transactions()[0].Executed(), "synthesized receipt must preserve events through the store adapter")
+}
