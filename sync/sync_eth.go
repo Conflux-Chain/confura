@@ -14,6 +14,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/Conflux-Chain/go-conflux-util/health"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/openweb3/web3go"
 	ethtypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -192,7 +193,7 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 	w3c := syncer.w3cs[syncer.w3cIdx.Load()]
 
 	latestBlock, err := w3c.Eth.BlockByNumber(ethtypes.SafeBlockNumber, false)
-	if err == nil && latestBlock == nil {
+	if err == nil && (latestBlock == nil || latestBlock.Number == nil || !latestBlock.Number.IsUint64() || latestBlock.Hash == (common.Hash{})) {
 		err = errors.New("invalid empty block")
 	}
 	if err != nil {
@@ -243,6 +244,9 @@ func (syncer *EthSyncer) syncOnce(ctx context.Context) (bool, error) {
 
 		if err != nil {
 			return false, errors.WithMessagef(err, "failed to query eth data for block %v", blockNo)
+		}
+		if data == nil || data.Block == nil || data.Block.Number == nil || !data.Block.Number.IsUint64() || data.Block.Number.Uint64() != blockNo {
+			return false, errors.New("block does not match requested number")
 		}
 
 		if i == 0 { // the first block must be continuous to the latest block in db store
