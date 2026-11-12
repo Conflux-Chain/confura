@@ -41,7 +41,7 @@ type ErrorCallback func(ctx context.Context, lm LeaderManager, err error)
 type LeaderManager interface {
 	// Identity returns leader identity
 	Identity() string
-	// Wait until being elected as leader or context canceled
+	// Await waits for leadership and completion of elected callbacks, or cancellation.
 	Await(ctx context.Context) bool
 	// Extend extends the leadership lease
 	Extend(ctx context.Context) error
@@ -90,8 +90,9 @@ type Config struct {
 type DlockLeaderManager struct {
 	Config // election configuration
 
-	electionKey    string       // election key
-	electionStatus atomic.Int32 // election status
+	electionKey          string       // election key
+	electionStatus       atomic.Int32 // election status
+	electedCallbacksDone atomic.Bool  // readiness for new work after elected callbacks
 
 	lockMan        *mysqlLockManager
 	nonce          atomic.Value // a distinct nonce for each leadership term
@@ -118,7 +119,7 @@ func (l *DlockLeaderManager) Identity() string {
 	return l.ID
 }
 
-// Await blocks until being elected as leader or context canceled.
+// Await admits work only after elected callbacks finish and while the lease is valid.
 func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -129,6 +130,7 @@ func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 			return false
 		case <-timer.C:
 			if l.electionStatus.Load() == StatusElected &&
+				l.electedCallbacksDone.Load() &&
 				l.lockExpiryTime.Load() > time.Now().Unix() {
 				return true
 			}
@@ -220,6 +222,7 @@ func (l *DlockLeaderManager) Stop() error {
 
 // retryLock consistently retries to acquire a lock until success.
 func (l *DlockLeaderManager) retryLock(ctx context.Context) error {
+	l.electedCallbacksDone.Store(false)
 	l.nonce.Store(uuid.NewString())
 	retryTimer := time.NewTimer(0)
 	defer retryTimer.Stop()
@@ -319,6 +322,7 @@ func (l *DlockLeaderManager) OnElected(cb ElectedCallback) {
 
 // onElected is called after the current process is elected as the leader.
 func (l *DlockLeaderManager) onElected(ctx context.Context) {
+	l.electedCallbacksDone.Store(false)
 	logrus.WithFields(logrus.Fields{
 		"electionKey": l.electionKey,
 		"leaderID":    l.ID,
@@ -330,6 +334,10 @@ func (l *DlockLeaderManager) onElected(ctx context.Context) {
 	l.electionStatus.Store(StatusElected)
 	for _, cb := range l.electedCallbacks {
 		cb(ctx, l)
+	}
+	// Callbacks observe elected status, but new work waits for their state resets.
+	if ctx.Err() == nil {
+		l.electedCallbacksDone.Store(true)
 	}
 }
 
@@ -344,6 +352,7 @@ func (l *DlockLeaderManager) OnOusted(cb OustedCallback) {
 // onOusted is called after the current process is not the leader anymore,
 // either because of an error or failure of renewing lease.
 func (l *DlockLeaderManager) onOusted(ctx context.Context) {
+	l.electedCallbacksDone.Store(false)
 	logrus.WithFields(logrus.Fields{
 		"electionKey": l.electionKey,
 		"leaderID":    l.ID,
