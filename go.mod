@@ -1,8 +1,7 @@
 module github.com/Conflux-Chain/confura
 
-go 1.23.0
+go 1.26.11
 
-toolchain go1.23.10
 
 require (
 	github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20260414083601-cfb736638339

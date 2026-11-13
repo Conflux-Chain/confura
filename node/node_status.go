@@ -88,7 +88,7 @@ func (s *Status) MarshalJSON() ([]byte, error) {
 	}
 
 	availability := metricUtil.GetOrRegisterTimeWindowPercentageDefault(s.metric.availability).Value()
-	latency := metricUtil.GetOrRegisterHistogram(s.metric.latency).Snapshot()
+	latency := metricUtil.GetOrRegisterHistogram("%s", s.metric.latency).Snapshot()
 
 	scopy := Status{
 		NodeName:         s.nodeName,
@@ -172,7 +172,7 @@ func (s *Status) checkHealth(targetEpoch uint64) error {
 	// latency too high
 	percentile := cfg.Monitor.Unhealth.LatencyPercentile
 	maxLatency := cfg.Monitor.Unhealth.MaxLatency
-	latencySnapshot := metricUtil.GetOrRegisterHistogram(s.metric.latency).Snapshot()
+	latencySnapshot := metricUtil.GetOrRegisterHistogram("%s", s.metric.latency).Snapshot()
 	latency := time.Duration(latencySnapshot.Percentile(percentile))
 	if latency > maxLatency {
 		return errors.Errorf("Latency too high (%v)", latency)
@@ -199,13 +199,13 @@ func newStatusMetrics(latency, availability string) *statusMetrics {
 
 func (sm *statusMetrics) update(start time.Time, err error) {
 	if err == nil {
-		metricUtil.GetOrRegisterHistogram(sm.latency).Update(time.Since(start).Nanoseconds())
+		metricUtil.GetOrRegisterHistogram("%s", sm.latency).Update(time.Since(start).Nanoseconds())
 	}
 
 	metricUtil.GetOrRegisterTimeWindowPercentageDefault(sm.availability).Mark(err == nil)
 }
 
 func (sm *statusMetrics) unregisterAll() {
-	metrics.Unregister(sm.latency)
-	metrics.Unregister(sm.availability)
+	metrics.Unregister("%s", sm.latency)
+	metrics.Unregister("%s", sm.availability)
 }

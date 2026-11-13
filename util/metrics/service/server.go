@@ -43,52 +43,52 @@ func (api *MetricsAPI) All() map[string]map[string]interface{} {
 
 // Counter
 func (api *MetricsAPI) ClearCounter(name string) {
-	metricUtil.GetOrRegisterCounter(name).Clear()
+	metricUtil.GetOrRegisterCounter("%s", name).Clear()
 }
 
 func (api *MetricsAPI) DecCounter(name string, i int64) {
-	metricUtil.GetOrRegisterCounter(name).Dec(i)
+	metricUtil.GetOrRegisterCounter("%s", name).Dec(i)
 }
 
 func (api *MetricsAPI) IncCounter(name string, i int64) {
-	metricUtil.GetOrRegisterCounter(name).Inc(i)
+	metricUtil.GetOrRegisterCounter("%s", name).Inc(i)
 }
 
 // Gauge
 func (api *MetricsAPI) UpdateGauge(name string, v int64) {
-	metricUtil.GetOrRegisterGauge(name).Update(v)
+	metricUtil.GetOrRegisterGauge("%s", name).Update(v)
 }
 
 // GaugeFloat64
 func (api *MetricsAPI) UpdateGaugeFloat64(name string, v float64) {
-	metricUtil.GetOrRegisterGaugeFloat64(name).Update(v)
+	metricUtil.GetOrRegisterGaugeFloat64("%s", name).Update(v)
 }
 
 // Meter
 func (api *MetricsAPI) MarkMeter(name string, n int64) {
-	metricUtil.GetOrRegisterMeter(name).Mark(n)
+	metricUtil.GetOrRegisterMeter("%s", name).Mark(n)
 }
 
 func (api *MetricsAPI) StopMeter(name string) {
-	metricUtil.GetOrRegisterMeter(name).Stop()
+	metricUtil.GetOrRegisterMeter("%s", name).Stop()
 }
 
 // Histogram
 func (api *MetricsAPI) ClearHistogram(name string) {
-	metricUtil.GetOrRegisterHistogram(name).Clear()
+	metricUtil.GetOrRegisterHistogram("%s", name).Clear()
 }
 
 func (api *MetricsAPI) UpdateHistogram(name string, v int64) {
-	metricUtil.GetOrRegisterHistogram(name).Update(v)
+	metricUtil.GetOrRegisterHistogram("%s", name).Update(v)
 }
 
 // Timer
 func (api *MetricsAPI) UpdateTimer(name string, v int64) {
-	metricUtil.GetOrRegisterTimer(name).Update(time.Duration(v))
+	metricUtil.GetOrRegisterTimer("%s", name).Update(time.Duration(v))
 }
 
 func (api *MetricsAPI) StopTimer(name string) {
-	metricUtil.GetOrRegisterTimer(name).Stop()
+	metricUtil.GetOrRegisterTimer("%s", name).Stop()
 }
 
 // Percentage

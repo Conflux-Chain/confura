@@ -2,6 +2,7 @@ package rate
 
 import (
 	"crypto/rand"
+	"io"
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/pkg/errors"
@@ -16,7 +17,7 @@ func GenerateRandomLimitKey(limitType LimitType) (string, error) {
 		return "", errors.New("invalid limit type")
 	}
 	data := make([]byte, LimitKeyLength)
-	if _, err := rand.Read(data); err != nil {
+	if _, err := io.ReadFull(rand.Reader, data); err != nil {
 		return "", errors.Wrap(err, "failed to generate limit key")
 	}
 
