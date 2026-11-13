@@ -81,7 +81,8 @@ func newTestLogSession(t *testing.T, space string, cache int) (*gorm.DB, *testLo
 		f := &ethLogFilter{ethFilter: newEthFilter("0x1", filterTypeLog, &node.Web3goClient{URL: "http://fixture.invalid"}), worker: w, logStore: store}
 		fs := &ethFilterSystem{filterSystemBase: &filterSystemBase{logStore: store}}
 		s.w, s.f = w.filterWorker, f
-		s.persist = func(c filterChanges) error { return fs.onPolled("fixture", "0xabc", c) }
+		s.w.observer = fs
+		s.persist = func(c filterChanges) error { return fs.onPolled(context.Background(), "fixture", "0xabc", c) }
 		s.batch = func(ns ...uint64) filterChanges {
 			ls := []ethtypes.Log{}
 			for _, n := range ns {
@@ -94,7 +95,8 @@ func newTestLogSession(t *testing.T, space string, cache int) (*gorm.DB, *testLo
 		f := &cfxLogFilter{cfxFilter: newCfxFilter("0x1", filterTypeLog, &sdk.Client{}), worker: w, logStore: store}
 		fs := &cfxFilterSystem{filterSystemBase: &filterSystemBase{logStore: store}}
 		s.w, s.f = w.filterWorker, f
-		s.persist = func(c filterChanges) error { return fs.onPolled("fixture", "0xabc", c) }
+		s.w.observer = fs
+		s.persist = func(c filterChanges) error { return fs.onPolled(context.Background(), "fixture", "0xabc", c) }
 		s.batch = func(ns ...uint64) filterChanges {
 			ls := []*cfxtypes.SubscriptionLog{}
 			for _, n := range ns {

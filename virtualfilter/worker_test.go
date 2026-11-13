@@ -46,7 +46,7 @@ func TestRejectMalformedChanges(t *testing.T) {
 	for _, changes := range cases {
 		w := testWorker(t, &testPollingClient{changes: changes}, newEthFilterChain(2))
 		require.ErrorIs(t, w.pollOnce(), errInvalidFilterChanges)
-		require.Equal(t, nilFilterCursor, w.session.fchain.snapshotLatestCursor())
+		require.Nil(t, w.session.fchain)
 	}
 	for _, changes := range []filterChanges{&ethtypes.FilterChanges{}, &cfxtypes.CfxFilterChanges{Type: "empty"}} {
 		w := testWorker(t, &testPollingClient{changes: changes}, newEthFilterChain(2))

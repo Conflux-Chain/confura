@@ -2,7 +2,6 @@ package virtualfilter
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,11 +59,11 @@ func newPollingSession(fid rpc.ID, chain filterChain) *pollingSession {
 // pollingObserver observes virtual filter worker polling
 type pollingObserver interface {
 	// on polling session established
-	onEstablished(nodeName string, fid rpc.ID) error
+	onEstablished(ctx context.Context, nodeName string, fid rpc.ID) error
 	// on filter changes polled
-	onPolled(nodeName string, fid rpc.ID, fchanges filterChanges) error
+	onPolled(ctx context.Context, nodeName string, fid rpc.ID, fchanges filterChanges) error
 	// on polling session close
-	onClosed(nodeName string, fid rpc.ID) error
+	onClosed(ctx context.Context, nodeName string, fid rpc.ID) error
 }
 
 // filterWorker consistently polls filter changes from full node and simulate
@@ -116,7 +115,7 @@ func (w *filterWorker) accept(f virtualFilter) error {
 		w.session = session
 
 		if w.observer != nil {
-			w.observer.onEstablished(w.nodeName, w.session.fid)
+			w.observer.onEstablished(w.shutdownCtx.Ctx, w.nodeName, w.session.fid)
 		}
 
 		go w.poll()
@@ -177,52 +176,50 @@ func (w *filterWorker) poll() {
 	}
 }
 
-func (w *filterWorker) pollOnce() error {
-	logger := logrus.WithFields(logrus.Fields{
-		"fid":      w.session.fid,
-		"nodeName": w.nodeName,
-	})
-
-	fchanges, err := w.client.fetch(w.session.fid)
+func (w *filterWorker) pollOnce() (result error) {
+	w.mu.RLock()
+	fid, lastPollingTime := w.session.fid, w.session.lastPollingTime
+	w.mu.RUnlock()
+	fchanges, err := w.client.fetch(fid)
+	if err != nil && !isFilterNotFoundError(err) && !errors.Is(err, errInvalidFilterChanges) && time.Since(lastPollingTime) < maxPollingDelayDuration {
+		logrus.WithError(err).Info("Filter worker client failed to poll filter changes")
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.session.fid != fid || w.session.fchain == nil {
+		return errFilterNotFound
+	}
+	// An upstream read is destructive. Any failure after it succeeds invalidates
+	// this session before readers can see a partial persistent or chain view.
+	defer func() {
+		if result != nil {
+			w.session.fcursors = nil
+			w.session.fchain = nil
+		}
+	}()
 	if err != nil {
-		// shared proxy filter not found by full node? this may be due to full node reboot
-		if isFilterNotFoundError(err) || errors.Is(err, errInvalidFilterChanges) {
-			return err
-		}
-
-		duration := time.Since(w.session.lastPollingTime)
-		if duration < maxPollingDelayDuration { // retry for fault tolerance
-			logger.WithError(err).Info("Filter worker client failed to poll filter changes")
-			return nil
-		}
-
 		return err
 	}
-
 	if err := validateLogChanges(fchanges); err != nil {
 		return err
 	}
-
-	// merge the changes to the filter chain
-	if err := w.merge(fchanges); err != nil {
-		// logging the invalid polled filter changes for diagonistics
-		fcJsonStr, _ := json.Marshal(fchanges)
-		logger.WithField("filterChangesJson", string(fcJsonStr)).Info("Invalid filter changes to merge")
-
-		w.dumpFilterChain()
-
-		logger.WithError(err).Error("Filter worker failed to merge filter chain")
-		return err
-	}
-
-	// notify polled changes
+	ctx, cancel := context.WithTimeout(w.shutdownCtx.Ctx, maxPollingDelayDuration)
+	defer cancel()
 	if w.observer != nil {
-		if err := w.observer.onPolled(w.nodeName, w.session.fid, fchanges); err != nil {
+		if err := w.observer.onPolled(ctx, w.nodeName, fid, fchanges); err != nil {
 			return errors.WithMessage(err, "poll event handling error by observer")
 		}
 	}
-
-	// update last polling time
+	start := time.Now()
+	err = w.session.fchain.merge(fchanges)
+	metrics.Registry.VirtualFilter.PersistFilterChanges(w.space, w.nodeName, "memory").UpdateSince(start)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	w.session.lastPollingTime = time.Now()
 	return nil
 }
@@ -306,7 +303,7 @@ func (w *filterWorker) close(lockfree ...bool) {
 	w.session = nilPollingSession
 
 	if w.observer != nil {
-		w.observer.onClosed(w.nodeName, fid)
+		w.observer.onClosed(w.shutdownCtx.Ctx, w.nodeName, fid)
 	}
 }
 
