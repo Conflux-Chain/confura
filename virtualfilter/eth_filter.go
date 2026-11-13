@@ -35,8 +35,10 @@ func newEthFilter(fid rpc.ID, typ filterType, client *node.Web3goClient) *ethFil
 
 // implements `virtualFilter` interface
 
-func (f *ethFilter) fetch() (filterChanges, error) {
-	return f.client.Filter.GetFilterChanges(f.id)
+func (f *ethFilter) fetch(ctx context.Context) (filterChanges, error) {
+	var changes *types.FilterChanges
+	err := f.client.Filter.CallContext(ctx, &changes, "eth_getFilterChanges", f.id)
+	return changes, err
 }
 
 func (f *ethFilter) uninstall() (bool, error) {
@@ -54,6 +56,10 @@ func newEthBlockFilter(client *node.Web3goClient) (*ethFilter, error) {
 		return nil, err
 	}
 
+	if fid == nil || *fid == nilRpcId {
+		return nil, errInvalidFilterChanges
+	}
+
 	f := newEthFilter(*fid, filterTypeBlock, client)
 	metricVirtualFilterSession("eth", f, 1)
 
@@ -64,6 +70,10 @@ func newEthPendingTxnFilter(client *node.Web3goClient) (*ethFilter, error) {
 	fid, err := client.Filter.NewPendingTransactionFilter()
 	if err != nil {
 		return nil, err
+	}
+
+	if fid == nil || *fid == nilRpcId {
+		return nil, errInvalidFilterChanges
 	}
 
 	f := newEthFilter(*fid, filterTypePendingTxn, client)
@@ -106,9 +116,14 @@ func (f *ethLogFilter) uninstall() (bool, error) {
 	return f.worker.reject(f)
 }
 
-func (f *ethLogFilter) fetch() (filterChanges, error) {
+func (f *ethLogFilter) fetch(ctx context.Context) (filterChanges, error) {
+	delegate, unlock, err := f.worker.beginRead(ctx, f.id)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	// get change blocks from filter worker since last polling
-	pchanges, err := f.worker.fetchPollingChanges(f.id)
+	pchanges, err := f.worker.fetchPollingChanges(delegate.cursor)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +144,7 @@ func (f *ethLogFilter) fetch() (filterChanges, error) {
 
 	blockLogs := make(map[string][]types.Log, len(missingBlockhashes))
 	if len(missingBlockhashes) > 0 { // load missing event logs from db store
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), store.TimeoutGetLogs)
+		timeoutCtx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
 		defer cancel()
 
 		startTime := time.Now()
@@ -169,5 +184,9 @@ func (f *ethLogFilter) fetch() (filterChanges, error) {
 		changeLogs = append(changeLogs, logs...)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	delegate.cursor = f.worker.session.fchain.snapshotLatestCursor()
 	return &types.FilterChanges{Logs: changeLogs}, nil
 }

@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"time"
 
 	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
@@ -42,6 +43,7 @@ func newFilterSystemBase(
 		filterMgr:   newFilterManager(),
 	}
 
+	shutdownCtx.Wg.Add(1)
 	go fs.timeoutLoop(ttl)
 	return fs
 }
@@ -52,22 +54,28 @@ func (fs *filterSystemBase) getFilter(id rpc.ID) (virtualFilter, bool) {
 
 // timeoutLoop runs at the interval set by 'ttl' and deletes expired virtual filters
 func (fs *filterSystemBase) timeoutLoop(ttl time.Duration) {
+	defer fs.shutdownCtx.Wg.Done()
 	ticker := time.NewTicker(ttl / 2)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		expfs := fs.filterMgr.expire(ttl)
-		for _, vf := range expfs {
-			vf.uninstall()
+	for {
+		select {
+		case <-fs.shutdownCtx.Ctx.Done():
+			return
+		case <-ticker.C:
+			expfs := fs.filterMgr.expire(ttl)
+			for _, vf := range expfs {
+				vf.uninstall()
+			}
 		}
 	}
 }
 
 // implement `filterWorkerObserver` interface
 
-func (fs *filterSystemBase) onEstablished(nodeName string, fid rpc.ID) error {
+func (fs *filterSystemBase) onEstablished(ctx context.Context, nodeName string, fid rpc.ID) error {
 	// prepare partition table for changed logs persistence
-	_, _, err := fs.logStore.PreparePartition(string(fid))
+	_, _, err := fs.logStore.WithContext(ctx).PreparePartition(string(fid))
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"nodeName": nodeName,
@@ -78,9 +86,9 @@ func (fs *filterSystemBase) onEstablished(nodeName string, fid rpc.ID) error {
 	return err
 }
 
-func (fs *filterSystemBase) onClosed(nodeName string, fid rpc.ID) error {
+func (fs *filterSystemBase) onClosed(ctx context.Context, nodeName string, fid rpc.ID) error {
 	// clean all partition tables for the proxy filter
-	err := fs.logStore.DeletePartitions(string(fid))
+	err := fs.logStore.WithContext(ctx).DeletePartitions(string(fid))
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"nodeName": nodeName,

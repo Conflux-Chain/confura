@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
@@ -65,8 +66,8 @@ func (api *ethFilterApi) GetLogFilter(fid w3rpc.ID) (*types.FilterQuery, error) 
 	return &ethf.crit, nil
 }
 
-func (api *ethFilterApi) GetFilterChanges(id w3rpc.ID) (*types.FilterChanges, error) {
-	return api.fs.getFilterChanges(id)
+func (api *ethFilterApi) GetFilterChanges(ctx context.Context, id w3rpc.ID) (*types.FilterChanges, error) {
+	return api.fs.getFilterChanges(ctx, id)
 }
 
 func (api *ethFilterApi) loadOrGetFnClient(nodeUrl string) (*node.Web3goClient, error) {

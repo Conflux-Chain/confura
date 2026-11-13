@@ -92,6 +92,12 @@ func NewVirtualFilterLogStore(db *gorm.DB) *VirtualFilterLogStore {
 	}
 }
 
+// WithContext returns a store whose writes and partition operations use ctx.
+// The original store remains safe for independent requests.
+func (vfls *VirtualFilterLogStore) WithContext(ctx context.Context) *VirtualFilterLogStore {
+	return NewVirtualFilterLogStore(vfls.db.WithContext(ctx))
+}
+
 // PreparePartition create a new log partition for the virtual filter if necessary.
 func (vfls *VirtualFilterLogStore) PreparePartition(fid string) (bnPartition, bool, error) {
 	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)

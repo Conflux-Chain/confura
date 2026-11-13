@@ -36,10 +36,15 @@ func newEthFilterChain(maxFilterBlocks int) *ethFilterChain {
 }
 
 func (fc *ethFilterChain) merge(fchanges filterChanges) error {
+	if err := fc.checkCapacity(fchanges); err != nil {
+		return err
+	}
 	chainedBlocksList := parseEthFilterChanges(fchanges.(*types.FilterChanges))
 	if len(chainedBlocksList) == 0 {
 		return nil
 	}
+
+	fc.revision++
 
 	// update the virtual filter blockchain
 	for i := range chainedBlocksList {
@@ -74,6 +79,9 @@ func (fc *ethFilterChain) reorg(reverted *list.List) error {
 		}
 
 		rnode.filterNodable = rblock
+		if fc.fullBlockhashCache != nil {
+			fc.fullBlockhashCache.Add(rblock.blockHash, struct{}{})
+		}
 		rnode = rnode.getPrev()
 	}
 

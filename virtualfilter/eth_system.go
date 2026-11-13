@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -55,7 +56,7 @@ func (fs *ethFilterSystem) newPendingTransactionFilter(client *node.Web3goClient
 func (fs *ethFilterSystem) newFilter(client *node.Web3goClient, crit types.FilterQuery) (rpc.ID, error) {
 	worker, _ := fs.workers.LoadOrStoreFn(client.NodeName(), func(k interface{}) interface{} {
 		return newEthFilterWorker(
-			fs.conf.MaxFullFilterBlocks, fs, client, fs.shutdownCtx,
+			fs.conf.MaxFullFilterBlocks, fs.conf.MaxFilterChainNodes, fs, client, fs.shutdownCtx,
 		)
 	})
 
@@ -68,13 +69,13 @@ func (fs *ethFilterSystem) newFilter(client *node.Web3goClient, crit types.Filte
 	return f.fid(), nil
 }
 
-func (fs *ethFilterSystem) getFilterChanges(id rpc.ID) (*types.FilterChanges, error) {
+func (fs *ethFilterSystem) getFilterChanges(ctx context.Context, id rpc.ID) (*types.FilterChanges, error) {
 	vf, ok := fs.filterMgr.get(id)
 	if !ok {
 		return nil, errFilterNotFound
 	}
 
-	fc, err := vf.fetch()
+	fc, err := vf.fetch(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +94,7 @@ func (fs *ethFilterSystem) uninstallFilter(id rpc.ID) (bool, error) {
 
 // implement `filterWorkerObserver` interface
 
-func (fs *ethFilterSystem) onPolled(nodeName string, fid rpc.ID, changes filterChanges) error {
+func (fs *ethFilterSystem) onPolled(ctx context.Context, nodeName string, fid rpc.ID, changes filterChanges) error {
 	// convert to virtual filter log
 	fchanges := changes.(*types.FilterChanges)
 	if len(fchanges.Logs) == 0 {
@@ -109,14 +110,14 @@ func (fs *ethFilterSystem) onPolled(nodeName string, fid rpc.ID, changes filterC
 	})
 
 	// prepare table partition for insert at first
-	partition, newCreated, err := fs.logStore.PreparePartition(string(fid))
+	partition, newCreated, err := fs.logStore.WithContext(ctx).PreparePartition(string(fid))
 	if err != nil {
 		logger.WithError(err).Error("Filter system failed to prepare virtual filter partition")
 		return err
 	}
 
 	if newCreated { // if new partition created, also try to prune limit exceeded archive partitions
-		if err := fs.logStore.GC(string(fid)); err != nil {
+		if err := fs.logStore.WithContext(ctx).GC(string(fid)); err != nil {
 			logger.WithError(err).Error("Filter system failed to GC virtual filter partitions")
 			return err
 		}
@@ -136,7 +137,7 @@ func (fs *ethFilterSystem) onPolled(nodeName string, fid rpc.ID, changes filterC
 	}
 
 	// append polled change logs to partition table
-	if err := fs.logStore.Append(string(fid), vflogs, partition); err != nil {
+	if err := fs.logStore.WithContext(ctx).Append(string(fid), vflogs, partition); err != nil {
 		logger.WithField("partition", partition).
 			WithError(err).
 			Error("Filter system failed to append filter changeds to database")
