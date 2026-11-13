@@ -18,8 +18,8 @@ import (
 	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/Conflux-Chain/confura/util/relay"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	vfclient "github.com/Conflux-Chain/confura/virtualfilter/client"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 )
 
 var (

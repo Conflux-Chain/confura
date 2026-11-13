@@ -1,11 +1,11 @@
 # builder image
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26.11-alpine AS builder
 RUN mkdir /build
 WORKDIR /build
 COPY go.mod go.sum ./
 # you may use `GOPROXY` to speed it up in Mainland China.
 # RUN  GOPROXY=https://goproxy.cn,direct go mod tidy
-RUN go mod tidy
+RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o confura .
 

@@ -3,6 +3,7 @@ package election
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"gorm.io/gorm"
@@ -37,8 +38,15 @@ func (m *mysqlLockManager) RenewInTx(ctx context.Context, tx *gorm.DB, intent *d
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if intent.Lease <= 0 {
+		return dlock.ErrInvalidLease
+	}
+	leaseMillis := intent.Lease.Milliseconds()
+	if intent.Lease%time.Millisecond != 0 {
+		leaseMillis++
+	}
 	tx = tx.WithContext(ctx)
-	// Lock first, then evaluate expiry in a new statement: NOW() in a statement
+	// Lock first, then evaluate expiry in a new statement: UTC_TIMESTAMP(3) in a statement
 	// that waited for a row lock would otherwise refer to the start of that wait.
 	var lease dlock.Dlock
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -49,10 +57,11 @@ func (m *mysqlLockManager) RenewInTx(ctx context.Context, tx *gorm.DB, intent *d
 		return err
 	}
 	result := tx.Model(&dlock.Dlock{}).
-		Where("`key` = ? AND nonce = ? AND expired_at >= NOW()", intent.Key, intent.Nonce).
+		Where("`key` = ? AND nonce = ? AND expired_at > UTC_TIMESTAMP(3)", intent.Key, intent.Nonce).
 		Updates(map[string]interface{}{
-			"expired_at": gorm.Expr("NOW() + INTERVAL ? SECOND", intent.Lease.Seconds()),
+			"expired_at": gorm.Expr("UTC_TIMESTAMP(3) + INTERVAL ? MICROSECOND", leaseMillis*1000),
 			"version":    gorm.Expr("version + 1"),
+			"updated_at": gorm.Expr("UTC_TIMESTAMP(3)"),
 		})
 	if result.Error != nil {
 		return result.Error

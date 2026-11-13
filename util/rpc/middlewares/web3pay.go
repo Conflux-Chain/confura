@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/confura/util/viper"
 	web3pay "github.com/Conflux-Chain/web3pay-service/client"
 	web3paymw "github.com/Conflux-Chain/web3pay-service/client/middleware"
 	"github.com/openweb3/go-rpc-provider"

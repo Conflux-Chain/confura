@@ -3,7 +3,7 @@ package rpc
 import (
 	"time"
 
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/confura/util/viper"
 )
 
 var (

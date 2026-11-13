@@ -97,6 +97,6 @@ func TestMySQLLeadershipWriteGuard(t *testing.T) {
 	require.ErrorIs(t, ms.PushnWithGuard(ctx, data(3), a.Guard(oldCtx)), store.ErrLeaderRenewal)
 	require.ErrorIs(t, a.Extend(oldCtx), store.ErrLeaderRenewal)
 	require.NoError(t, ms.PushnWithGuard(ctx, data(3), a.Guard(WithLeadership(ctx, a))))
-	require.NoError(t, db.Model(&dlock.Dlock{}).Where("`key` = ?", "sync.test").Update("expired_at", gorm.Expr("NOW() - INTERVAL 1 SECOND")).Error)
+	require.NoError(t, db.Model(&dlock.Dlock{}).Where("`key` = ?", "sync.test").Update("expired_at", gorm.Expr("UTC_TIMESTAMP(3) - INTERVAL 1 SECOND")).Error)
 	require.ErrorIs(t, a.Extend(ctx), store.ErrLeaderRenewal, "renewal must not reacquire an expired term")
 }
