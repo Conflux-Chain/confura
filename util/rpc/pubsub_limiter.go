@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/Conflux-Chain/confura/util/rpc/handlers"
-	"github.com/Conflux-Chain/go-conflux-util/viper"
+	"github.com/Conflux-Chain/confura/util/viper"
 	"github.com/sirupsen/logrus"
 )
 

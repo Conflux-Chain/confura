@@ -13,10 +13,10 @@ import (
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	citypes "github.com/Conflux-Chain/confura/types"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/health"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )

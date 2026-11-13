@@ -2,11 +2,13 @@ package sync
 
 import (
 	"context"
+	"fmt"
 	gosync "sync"
 
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/tracelog"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
+	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync"
@@ -14,7 +16,6 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/poll"
 	"github.com/Conflux-Chain/go-conflux-util/blockchain/sync/process/db"
 	"github.com/Conflux-Chain/go-conflux-util/ctxutil"
-	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/sirupsen/logrus"
 )
 
@@ -118,34 +119,49 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 		logrus.WithError(err).Fatal("Failed to get latest finalized epoch")
 	}
 
-	syncParams := sync.ParamsDB[core.EpochData]{
-		Adapter:         s.adapter,
-		Poller:          s.conf.Poller,
-		Processor:       s.conf.Processor,
-		DB:              s.logStore.DB(),
-		NextBlockNumber: s.epochFrom,
+	syncParams := sync.LatestParamsDB[core.EpochData]{
+		Adapter:   s.adapter,
+		Poller:    s.conf.Poller,
+		Processor: s.conf.Processor,
+		DB:        s.logStore.DB(),
 	}
 
 	finalizedEpoch := latestFinalized.ToInt().Uint64()
-	if s.epochFrom > finalizedEpoch {
-		pivotHashes, err := s.epochBlockMapStore.LoadPivotHashes(finalizedEpoch, s.epochFrom-1)
-		if err != nil {
-			logrus.WithError(err).Fatal("Failed to load pivot hashes for reorg window")
-		}
-
-		for epoch := finalizedEpoch; epoch < s.epochFrom; epoch++ {
-			if _, ok := pivotHashes[epoch]; !ok {
-				logrus.WithField("missingEpoch", epoch).Fatal("Missing pivot hash in reorg window")
-			}
-		}
-
-		syncParams.Reorg = poll.ReorgWindowParams{
-			FinalizedBlockNumber: finalizedEpoch,
-			FinalizedBlockHash:   pivotHashes[finalizedEpoch],
-			LatestBlocks:         pivotHashes,
-		}
+	syncParams.Reorg, err = loadTraceReorgWindow(s.epochFrom, finalizedEpoch, s.epochBlockMapStore.LoadPivotHashes)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to restore trace reorg window")
 	}
 
 	proc := tracelog.NewProcessor(s.registry, s.logStore, s.epochBlockMapStore)
-	sync.StartLatestDB(ctx, wg, syncParams, proc)
+	if err := sync.StartLatestDB(ctx, wg, syncParams, proc); err != nil {
+		logrus.WithError(err).Fatal("Failed to start latest trace sync")
+	}
+}
+
+// loadTraceReorgWindow restores the last committed height. Finality may advance
+// after catch-up; in that case the preceding committed epoch is also finalized
+// and remains the anchor, so the next epoch is not skipped.
+func loadTraceReorgWindow(next, finalized uint64, load func(uint64, uint64) (map[uint64]string, error)) (poll.ReorgWindowParams, error) {
+	if next == 0 {
+		return poll.ReorgWindowParams{}, nil
+	}
+	anchor := min(finalized, next-1)
+	hashes, err := load(anchor, next-1)
+	if err != nil {
+		return poll.ReorgWindowParams{}, err
+	}
+	latest := make(map[uint64]string)
+	for epoch := anchor; epoch < next; epoch++ {
+		if hashes[epoch] == "" {
+			return poll.ReorgWindowParams{}, fmt.Errorf("missing pivot hash for epoch %d", epoch)
+		}
+		if epoch > anchor {
+			latest[epoch] = hashes[epoch]
+		}
+	}
+	return poll.ReorgWindowParams{
+		FinalizedBlockNumber: anchor,
+		FinalizedBlockHash:   hashes[anchor],
+		LatestBlocks:         latest,
+	}, nil
 }
