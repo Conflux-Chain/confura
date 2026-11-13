@@ -46,8 +46,8 @@ github.com/Conflux-Chain/go-conflux-sdk v1.6.3 h1:cEJyG7OJHw2+vSbFMh53nlnzstuhnf
 github.com/Conflux-Chain/go-conflux-sdk v1.6.3/go.mod h1:8jfCPUR8MgY+yvqj2rPTHAtQLtt1tvmXuto9VV2eIJg=
 github.com/Conflux-Chain/go-conflux-util v0.8.2 h1:1RHav7m+hTtq97da15mp7XcIDv97/DyiJ3J+J+2tw3I=
 github.com/Conflux-Chain/go-conflux-util v0.8.2/go.mod h1:biDKE1cvAIGOmZpM+4SJX3iqAI17np4toIFlM2YbUbo=
-github.com/Conflux-Chain/web3pay-service v1.0.3-0.20261113063217-9bd2713b7979 h1:cvmyTNAD2pqGZBYyk15UayyW91fU/xC6M3DwK0IZtFM=
-github.com/Conflux-Chain/web3pay-service v1.0.3-0.20261113063217-9bd2713b7979/go.mod h1:OV9M8rHmKARcGKcFiCw++SCB2U2ZswEdQoRSihec2nQ=
+github.com/Conflux-Chain/web3pay-service v1.0.3-0.20261113094810-099d302afdd4 h1:IBZgZV+ZxTTYDDaIns3t5MnUYMHfryxgv92Isn7dYnU=
+github.com/Conflux-Chain/web3pay-service v1.0.3-0.20261113094810-099d302afdd4/go.mod h1:3TnKlXeB4bAgJwXIYDZ5fIfkhx47rYUG+MCpvEYtjOo=
 github.com/DataDog/zstd v1.5.7 h1:ybO8RBeh29qrxIhCA9E8gKY6xfONU9T6G6aP9DTKfLE=
 github.com/DataDog/zstd v1.5.7/go.mod h1:g4AWEaM3yOg3HYfnJ3YIawPnVdXJh9QME85blwSAmyw=
 github.com/DmitriyVTitov/size v1.5.0 h1:/PzqxYrOyOUX1BXj6J9OuVRVGe+66VL4D9FlUaW515g=

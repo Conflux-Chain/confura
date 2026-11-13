@@ -6,7 +6,7 @@ require (
 	github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20261113085211-51d67429b9a0
 	github.com/Conflux-Chain/go-conflux-sdk v1.6.3
 	github.com/Conflux-Chain/go-conflux-util v0.8.2
-	github.com/Conflux-Chain/web3pay-service v1.0.3-0.20261113063217-9bd2713b7979
+	github.com/Conflux-Chain/web3pay-service v1.0.3-0.20261113094810-099d302afdd4
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
 	github.com/cespare/xxhash v1.1.0
