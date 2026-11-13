@@ -16,6 +16,8 @@ type cfxFilterChain struct {
 	// cache to hold block hashes for filter epoch full of event logs, once whose
 	// size exceeded the limit, eviction will be enforced.
 	fullBlockhashCache *lru.Cache
+	latestRevert       *cfxFilterEpoch
+	revertRevision     uint64
 }
 
 func newCfxFilterChain(maxFullFilterEpochs int) *cfxFilterChain {
@@ -35,6 +37,8 @@ func (fc *cfxFilterChain) merge(fchanges filterChanges) error {
 	if len(chainedEpochsList) == 0 {
 		return nil
 	}
+
+	fc.revision++
 
 	// update the virtual filter blockchain
 	for i := range chainedEpochsList {
@@ -57,6 +61,8 @@ func (fc *cfxFilterChain) merge(fchanges filterChanges) error {
 func (fc *cfxFilterChain) reorg(reverted *list.List) error {
 	for ele := reverted.Front(); ele != nil; ele = ele.Next() {
 		repoch := ele.Value.(*cfxFilterEpoch)
+		fc.latestRevert = repoch
+		fc.revertRevision = fc.revision
 
 		rnode := fc.back()
 		if rnode == nil { // push the reorg epoch anyway
@@ -70,6 +76,7 @@ func (fc *cfxFilterChain) reorg(reverted *list.List) error {
 			}
 
 			filterEpoch.revertedTo = repoch.revertedTo
+			filterEpoch.reverted = true
 			rnode = rnode.getPrev()
 		}
 
@@ -190,6 +197,7 @@ type cfxFilterEpoch struct {
 	epochNum  uint64
 	blockHash types.Hash
 
+	reverted   bool
 	revertedTo uint64      // reverted to epoch number, 0 means no reorg
 	logs       []types.Log // logs contained within this block
 }
@@ -207,7 +215,7 @@ func newCfxFilterEpochFromLogs(logs []types.Log) *cfxFilterEpoch {
 }
 
 func newCfxFilterEpochWithReorg(revertedTo uint64) *cfxFilterEpoch {
-	return &cfxFilterEpoch{revertedTo: revertedTo}
+	return &cfxFilterEpoch{revertedTo: revertedTo, reverted: true}
 }
 
 // implements `filterNodable`
@@ -220,7 +228,7 @@ func (fe *cfxFilterEpoch) cursor() filterCursor {
 }
 
 func (fe *cfxFilterEpoch) reorged() bool {
-	return fe.revertedTo > 0
+	return fe.reverted || fe.revertedTo > 0
 }
 
 // parseCfxFilterChanges parses core space filter changes to return multiple linked lists

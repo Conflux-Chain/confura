@@ -363,7 +363,7 @@ func (w *ethFilterWorker) fetchPollingChanges(cursor filterCursor) (*ethPollingC
 		}
 
 		// skip node at the filter cursor, whose block is not re-organized
-		if node.cursor() == cursor && !block.reverted {
+		if node.cursor().sameNode(cursor) && !block.reverted {
 			return true
 		}
 
@@ -508,7 +508,7 @@ func (w *cfxFilterWorker) fetchPollingChanges(cursor filterCursor) (*cfxPollingC
 		}
 
 		// skip node at the filter cursor, whose epoch is not re-organized
-		if node.cursor() == cursor && !epoch.reorged() {
+		if node.cursor().sameNode(cursor) && !epoch.reorged() {
 			return true
 		}
 
@@ -518,6 +518,17 @@ func (w *cfxFilterWorker) fetchPollingChanges(cursor filterCursor) (*cfxPollingC
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Keep the most recent compensation even when deeper reverts arrive after
+	// the canonical chain became empty. Collapse it with the fork prefix.
+	chain := w.session.fchain.(*cfxFilterChain)
+	if chain.latestRevert != nil && chain.revertRevision > cursor.revision {
+		i := 0
+		for i < len(fepochs) && fepochs[i].reorged() {
+			i++
+		}
+		fepochs = append([]cfxFilterEpoch{*chain.latestRevert}, fepochs[i:]...)
 	}
 
 	pchanges := &cfxPollingChanges{

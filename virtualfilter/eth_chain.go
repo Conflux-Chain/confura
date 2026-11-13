@@ -41,6 +41,8 @@ func (fc *ethFilterChain) merge(fchanges filterChanges) error {
 		return nil
 	}
 
+	fc.revision++
+
 	// update the virtual filter blockchain
 	for i := range chainedBlocksList {
 		head := chainedBlocksList[i].Front()

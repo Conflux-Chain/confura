@@ -17,8 +17,14 @@ type filterNodable interface {
 }
 
 type filterCursor struct {
-	height uint64 // block height
-	hash   string // block hash
+	height   uint64 // block height
+	hash     string // block hash
+	empty    bool   // consumed canonical chain is empty
+	revision uint64 // change position at the empty chain
+}
+
+func (c filterCursor) sameNode(other filterCursor) bool {
+	return c.height == other.height && c.hash == other.hash
 }
 
 type filterChainIterator func(node *filterNode, forkPoint bool) bool
@@ -38,6 +44,7 @@ type filterChain interface {
 }
 
 type filterChainBase struct {
+	revision    uint64
 	root        filterNode             // sentinel root node
 	genesis     *filterNode            // (the first) genesis chain node
 	len         int                    // canonical chain length
@@ -59,10 +66,12 @@ func newFilterChainBase(derived filterChain) *filterChainBase {
 // snapshotLatestCursor snapshots the latest cursor
 func (fc *filterChainBase) snapshotLatestCursor() filterCursor {
 	if tail := fc.back(); tail != nil {
-		return tail.cursor()
+		cursor := tail.cursor()
+		cursor.revision = fc.revision
+		return cursor
 	}
 
-	return nilFilterCursor
+	return filterCursor{empty: true, revision: fc.revision}
 }
 
 // hasNode check if node on the filter chain
@@ -77,6 +86,15 @@ func (c *filterChainBase) hasNode(node *filterNode) bool {
 
 // traverses the filter chain from some specified cursor
 func (c *filterChainBase) traverse(cursor filterCursor, iterator filterChainIterator) error {
+	// An empty cursor starts at the current canonical head, never at old genesis.
+	if cursor.empty {
+		for node := c.front(); node != nil; node = node.getNext() {
+			if !iterator(node, false) {
+				break
+			}
+		}
+		return nil
+	}
 	if c.genesis == nil { // unexploited filter chain?
 		return nil
 	}
