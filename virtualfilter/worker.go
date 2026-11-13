@@ -32,7 +32,7 @@ type pollingSession struct {
 	// last polling time
 	lastPollingTime time.Time
 	// delegate virtual filter cursors
-	fcursors map[rpc.ID]filterCursor
+	fcursors map[rpc.ID]*filterDelegate
 	// simulated filter blockchain (for world outlook) to which
 	// the polling will be applied
 	fchain filterChain
@@ -53,7 +53,7 @@ func newPollingSession(fid rpc.ID, chain filterChain) *pollingSession {
 		fid:             fid,
 		fchain:          chain,
 		lastPollingTime: time.Now(),
-		fcursors:        make(map[rpc.ID]filterCursor),
+		fcursors:        make(map[rpc.ID]*filterDelegate),
 	}
 }
 
@@ -70,7 +70,7 @@ type pollingObserver interface {
 // filterWorker consistently polls filter changes from full node and simulate
 // a virtual filter chain for late retrieval.
 type filterWorker struct {
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	quitflag    uint32
 	shutdownCtx cmdutil.GracefulShutdownContext
 
@@ -123,7 +123,7 @@ func (w *filterWorker) accept(f virtualFilter) error {
 	}
 
 	// snapshot filter cursor for the delegate virtual filter
-	w.session.fcursors[f.fid()] = w.session.fchain.snapshotLatestCursor()
+	w.session.fcursors[f.fid()] = &filterDelegate{cursor: w.session.fchain.snapshotLatestCursor()}
 	return nil
 }
 
@@ -342,15 +342,7 @@ type ethPollingChanges struct {
 }
 
 // fetchPollingChanges fetch filter changes since last polling
-func (w *ethFilterWorker) fetchPollingChanges(fid rpc.ID) (*ethPollingChanges, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	cursor, ok := w.session.fcursors[fid]
-	if !ok {
-		return nil, errFilterNotFound
-	}
-
+func (w *ethFilterWorker) fetchPollingChanges(cursor filterCursor) (*ethPollingChanges, error) {
 	startTime := time.Now()
 	defer metrics.Registry.VirtualFilter.QueryFilterChanges("eth", w.nodeName, "memory").UpdateSince(startTime)
 
@@ -385,9 +377,6 @@ func (w *ethFilterWorker) fetchPollingChanges(fid rpc.ID) (*ethPollingChanges, e
 	if err != nil {
 		return nil, err
 	}
-
-	// update the filter cursor
-	w.session.fcursors[fid] = w.session.fchain.snapshotLatestCursor()
 
 	pchanges := &ethPollingChanges{
 		fid: w.session.fid, blocks: fblocks,
@@ -498,15 +487,7 @@ type cfxPollingChanges struct {
 }
 
 // fetchPollingChanges fetch filter changes since last polling
-func (w *cfxFilterWorker) fetchPollingChanges(fid rpc.ID) (*cfxPollingChanges, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	cursor, ok := w.session.fcursors[fid]
-	if !ok {
-		return nil, errFilterNotFound
-	}
-
+func (w *cfxFilterWorker) fetchPollingChanges(cursor filterCursor) (*cfxPollingChanges, error) {
 	startTime := time.Now()
 	defer metrics.Registry.VirtualFilter.PersistFilterChanges(w.space, w.nodeName, "cfx").UpdateSince(startTime)
 
@@ -542,11 +523,36 @@ func (w *cfxFilterWorker) fetchPollingChanges(fid rpc.ID) (*cfxPollingChanges, e
 		return nil, err
 	}
 
-	// update the filter cursor
-	w.session.fcursors[fid] = w.session.fchain.snapshotLatestCursor()
-
 	pchanges := &cfxPollingChanges{
 		fid: w.session.fid, epochs: fepochs,
 	}
 	return pchanges, nil
+}
+
+// Cursor fields are protected by the delegate mutex. Map membership and the
+// chain view are protected by the worker mutex. Writers never lock delegates.
+type filterDelegate struct {
+	mu     sync.Mutex
+	cursor filterCursor
+}
+
+func (w *filterWorker) beginRead(ctx context.Context, fid rpc.ID) (*filterDelegate, func(), error) {
+	w.mu.RLock()
+	delegate := w.session.fcursors[fid]
+	w.mu.RUnlock()
+	if delegate == nil {
+		return nil, nil, errFilterNotFound
+	}
+	delegate.mu.Lock()
+	w.mu.RLock()
+	unlock := func() { w.mu.RUnlock(); delegate.mu.Unlock() }
+	if w.session.fcursors[fid] != delegate {
+		unlock()
+		return nil, nil, errFilterNotFound
+	}
+	if err := ctx.Err(); err != nil {
+		unlock()
+		return nil, nil, err
+	}
+	return delegate, unlock, nil
 }

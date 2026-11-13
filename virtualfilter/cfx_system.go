@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -70,13 +71,13 @@ func (fs *cfxFilterSystem) newFilter(client *sdk.Client, crit types.LogFilter) (
 	return f.fid(), nil
 }
 
-func (fs *cfxFilterSystem) getFilterChanges(id rpc.ID) (*types.CfxFilterChanges, error) {
+func (fs *cfxFilterSystem) getFilterChanges(ctx context.Context, id rpc.ID) (*types.CfxFilterChanges, error) {
 	vf, ok := fs.filterMgr.get(id)
 	if !ok {
 		return nil, errFilterNotFound
 	}
 
-	fc, err := vf.fetch()
+	fc, err := vf.fetch(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -68,13 +69,13 @@ func (fs *ethFilterSystem) newFilter(client *node.Web3goClient, crit types.Filte
 	return f.fid(), nil
 }
 
-func (fs *ethFilterSystem) getFilterChanges(id rpc.ID) (*types.FilterChanges, error) {
+func (fs *ethFilterSystem) getFilterChanges(ctx context.Context, id rpc.ID) (*types.FilterChanges, error) {
 	vf, ok := fs.filterMgr.get(id)
 	if !ok {
 		return nil, errFilterNotFound
 	}
 
-	fc, err := vf.fetch()
+	fc, err := vf.fetch(ctx)
 	if err != nil {
 		return nil, err
 	}

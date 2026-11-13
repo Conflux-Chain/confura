@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -27,13 +28,13 @@ var (
 type filterChanges interface{}
 
 type virtualFilter interface {
-	fid() rpc.ID                    // filter ID
-	ftype() filterType              // filter type
-	nodeName() string               // delegate full node name
-	refresh()                       // refresh last polling time
-	expired(ttl time.Duration) bool // if this filter is expired with the provided TTL
-	fetch() (filterChanges, error)  // fetch filter changes since last polling
-	uninstall() (bool, error)       // uninstall filter
+	fid() rpc.ID                                  // filter ID
+	ftype() filterType                            // filter type
+	nodeName() string                             // delegate full node name
+	refresh()                                     // refresh last polling time
+	expired(ttl time.Duration) bool               // if this filter is expired with the provided TTL
+	fetch(context.Context) (filterChanges, error) // fetch filter changes since last polling
+	uninstall() (bool, error)                     // uninstall filter
 }
 
 type filterBase struct {

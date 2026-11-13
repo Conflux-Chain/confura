@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
@@ -61,8 +62,8 @@ func (api *cfxFilterApi) GetLogFilter(fid w3rpc.ID) (*types.LogFilter, error) {
 	return &cfxf.crit, nil
 }
 
-func (api *cfxFilterApi) GetFilterChanges(id w3rpc.ID) (*types.CfxFilterChanges, error) {
-	return api.fs.getFilterChanges(id)
+func (api *cfxFilterApi) GetFilterChanges(ctx context.Context, id w3rpc.ID) (*types.CfxFilterChanges, error) {
+	return api.fs.getFilterChanges(ctx, id)
 }
 
 func (api *cfxFilterApi) loadOrGetFnClient(nodeUrl string) (*sdk.Client, error) {
