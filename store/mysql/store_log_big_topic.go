@@ -64,7 +64,7 @@ func newBigTopicLogStore[T store.ChainData](
 }
 
 // preparePartitions creates partitions for big topics and migrates existing data if needed.
-func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bnPartition, error) {
+func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T, guards ...func(*gorm.DB) error) (map[uint64]bnPartition, error) {
 	topic0Sigs := extractUniqueTopic0Signatures(dataSlice...)
 	topic2Partitions := make(map[uint64]bnPartition)
 
@@ -95,7 +95,7 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 
 		tlEntity, tlTabler := btls.topicEntity(topic0.ID), btls.topicTabler(topic0.ID)
 		if !migrated {
-			if err := btls.migrate(topic0); err != nil {
+			if err := btls.migrate(topic0, guards...); err != nil {
 				return nil, errors.WithMessage(err, "failed to migrate topic logs")
 			}
 		}
@@ -117,7 +117,7 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bn
 }
 
 // migrate moves logs from shared shard table to dedicated big topic table.
-func (btls *bigTopicLogStore[T]) migrate(topic *Topic) error {
+func (btls *bigTopicLogStore[T]) migrate(topic *Topic, guards ...func(*gorm.DB) error) error {
 	tiTableName := btls.tils.GetPartitionedTableName(topic.Hash)
 
 	tlEntity, tlTabler := btls.topicEntity(topic.ID), btls.topicTabler(topic.ID)
@@ -129,6 +129,13 @@ func (btls *bigTopicLogStore[T]) migrate(topic *Topic) error {
 	}
 
 	return btls.db.Transaction(func(dbTx *gorm.DB) error {
+		for _, guard := range guards {
+			if guard != nil {
+				if err := guard(dbTx); err != nil {
+					return err
+				}
+			}
+		}
 		migrated, err := newBnPartitionedStore(dbTx).hasPartition(tlEntity)
 		if err != nil {
 			return err

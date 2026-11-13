@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 type LeaderStatus = int32
@@ -40,10 +41,12 @@ type ErrorCallback func(ctx context.Context, lm LeaderManager, err error)
 type LeaderManager interface {
 	// Identity returns leader identity
 	Identity() string
-	// Wait until being elected as leader or context canceled
+	// Await waits for leadership and completion of elected callbacks, or cancellation.
 	Await(ctx context.Context) bool
 	// Extend extends the leadership lease
 	Extend(ctx context.Context) error
+	// Guard captures the current term and authorizes a write transaction until it ends.
+	Guard(ctx context.Context) func(*gorm.DB) error
 	// Campaign starts the leader election process
 	Campaign(ctx context.Context)
 	// Stop stops the leader election process
@@ -56,14 +59,14 @@ type LeaderManager interface {
 	OnError(cb ErrorCallback)
 }
 
-// MustNewLeaderManagerFromViper creates a new LeaderManager with the given LockManager and election key.
-func MustNewLeaderManagerFromViper(dlm *dlock.LockManager, elecKey string) LeaderManager {
+// MustNewLeaderManagerFromViper creates a leader manager sharing the data store database.
+func MustNewLeaderManagerFromViper(db *gorm.DB, elecKey string) LeaderManager {
 	var conf Config
 	viper.MustUnmarshalKey("sync.election", &conf)
 
 	if conf.Enabled {
 		logrus.WithField("config", conf).Info("HA leader election enabled")
-		return NewDlockLeaderManager(dlm, conf, elecKey)
+		return NewDlockLeaderManager(db, conf, elecKey)
 	}
 
 	return &noopLeaderManager{}
@@ -87,11 +90,13 @@ type Config struct {
 type DlockLeaderManager struct {
 	Config // election configuration
 
-	electionKey    string       // election key
-	electionStatus atomic.Int32 // election status
+	electionKey          string       // election key
+	electionStatus       atomic.Int32 // election status
+	electedCallbacksDone atomic.Bool  // readiness for new work after elected callbacks
 
-	lockMan        *dlock.LockManager // provides lock operations
-	lockExpiryTime atomic.Int64       // expiry timestamp for the dlock
+	lockMan        *mysqlLockManager
+	nonce          atomic.Value // a distinct nonce for each leadership term
+	lockExpiryTime atomic.Int64 // expiry timestamp for the dlock
 
 	mu               sync.Mutex        // mutex lock
 	cancel           atomic.Value      // function to cancel the campaign process.
@@ -101,11 +106,11 @@ type DlockLeaderManager struct {
 }
 
 // NewDlockLeaderManager creates a new `LeaderManager` with the provided configuration and election key.
-func NewDlockLeaderManager(dlm *dlock.LockManager, conf Config, elecKey string) *DlockLeaderManager {
+func NewDlockLeaderManager(db *gorm.DB, conf Config, elecKey string) *DlockLeaderManager {
 	conf.ID += "#" + uuid.NewString()[:8] // append a unique suffix to the `Id`
 	return &DlockLeaderManager{
 		Config:      conf,
-		lockMan:     dlm,
+		lockMan:     newMysqlLockManager(db),
 		electionKey: elecKey,
 	}
 }
@@ -114,7 +119,7 @@ func (l *DlockLeaderManager) Identity() string {
 	return l.ID
 }
 
-// Await blocks until being elected as leader or context canceled.
+// Await admits work only after elected callbacks finish and while the lease is valid.
 func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -125,6 +130,7 @@ func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 			return false
 		case <-timer.C:
 			if l.electionStatus.Load() == StatusElected &&
+				l.electedCallbacksDone.Load() &&
 				l.lockExpiryTime.Load() > time.Now().Unix() {
 				return true
 			}
@@ -136,18 +142,10 @@ func (l *DlockLeaderManager) Await(ctx context.Context) bool {
 
 // Extend extends leadership lease.
 func (l *DlockLeaderManager) Extend(ctx context.Context) error {
-	if l.electionStatus.Load() == StatusElected {
-		err := l.acquireLock(ctx)
-		if err == nil {
-			return nil
-		}
-
-		if !errors.Is(err, dlock.ErrLockAcquisitionFailed) {
-			return err
-		}
+	if l.electionStatus.Load() != StatusElected {
+		return store.ErrLeaderRenewal
 	}
-
-	return store.ErrLeaderRenewal
+	return l.renew(ctx)
 }
 
 // Campaign starts the election process, which will run in a goroutine until context canceled.
@@ -215,11 +213,17 @@ func (l *DlockLeaderManager) Stop() error {
 		}
 	}
 
-	return l.lockMan.Release(context.Background(), l.lockIntent())
+	err := l.lockMan.Release(context.Background(), l.lockIntent(l.term()))
+	if errors.Is(err, dlock.ErrLockNotHeld) {
+		return nil
+	}
+	return err
 }
 
 // retryLock consistently retries to acquire a lock until success.
 func (l *DlockLeaderManager) retryLock(ctx context.Context) error {
+	l.electedCallbacksDone.Store(false)
+	l.nonce.Store(uuid.NewString())
 	retryTimer := time.NewTimer(0)
 	defer retryTimer.Stop()
 
@@ -249,13 +253,13 @@ func (l *DlockLeaderManager) renewLock(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-renewTimer.C:
-			err := l.acquireLock(ctx)
+			err := l.Extend(ctx)
 			if err == nil {
 				renewTimer.Reset(l.Renew)
 				continue
 			}
 
-			if errors.Is(err, dlock.ErrLockAcquisitionFailed) {
+			if errors.Is(err, store.ErrLeaderRenewal) {
 				return nil
 			}
 
@@ -267,7 +271,10 @@ func (l *DlockLeaderManager) renewLock(ctx context.Context) error {
 // acquireLock helper function to acquire a distributed lock.
 func (l *DlockLeaderManager) acquireLock(ctx context.Context) error {
 	start := time.Now()
-	err := l.lockMan.Acquire(ctx, l.lockIntent())
+	if l.term() == "" {
+		l.nonce.Store(uuid.NewString())
+	}
+	err := l.lockMan.Acquire(ctx, l.lockIntent(l.term()))
 	if err == nil {
 		l.lockExpiryTime.Store(start.Add(l.Lease).Unix())
 		return nil
@@ -276,13 +283,33 @@ func (l *DlockLeaderManager) acquireLock(ctx context.Context) error {
 	return err
 }
 
-// lockIntent helper function to assemble a lock intent.
-func (l *DlockLeaderManager) lockIntent() *dlock.LockIntent {
-	return &dlock.LockIntent{
-		Key:   l.electionKey,
-		Nonce: l.ID,
-		Lease: l.Lease,
+func (l *DlockLeaderManager) term() string {
+	if v := l.nonce.Load(); v != nil {
+		return v.(string)
 	}
+	return ""
+}
+
+// renew cannot reacquire an expired lease, even if its nonce has not changed.
+func (l *DlockLeaderManager) renew(ctx context.Context) error {
+	start := time.Now()
+	nonce := l.termFromContext(ctx)
+	if err := l.validateTerm(ctx, nonce); err != nil {
+		return err
+	}
+	err := l.lockMan.Renew(ctx, l.lockIntent(nonce))
+	if errors.Is(err, dlock.ErrLockNotHeld) {
+		return store.ErrLeaderRenewal
+	}
+	if err != nil {
+		return err
+	}
+	l.lockExpiryTime.Store(start.Add(l.Lease).Unix())
+	return nil
+}
+
+func (l *DlockLeaderManager) lockIntent(nonce string) *dlock.LockIntent {
+	return dlock.NewLockIntent(l.electionKey, nonce, l.Lease)
 }
 
 // OnElected registers a callback function to be invoked on leader elected.
@@ -295,6 +322,7 @@ func (l *DlockLeaderManager) OnElected(cb ElectedCallback) {
 
 // onElected is called after the current process is elected as the leader.
 func (l *DlockLeaderManager) onElected(ctx context.Context) {
+	l.electedCallbacksDone.Store(false)
 	logrus.WithFields(logrus.Fields{
 		"electionKey": l.electionKey,
 		"leaderID":    l.ID,
@@ -303,11 +331,14 @@ func (l *DlockLeaderManager) onElected(ctx context.Context) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	l.electionStatus.Store(StatusElected)
 	for _, cb := range l.electedCallbacks {
 		cb(ctx, l)
 	}
-
-	l.electionStatus.Store(StatusElected)
+	// Callbacks observe elected status, but new work waits for their state resets.
+	if ctx.Err() == nil {
+		l.electedCallbacksDone.Store(true)
+	}
 }
 
 // OnOusted registers a callback function to be invoked on leader ousted.
@@ -321,6 +352,7 @@ func (l *DlockLeaderManager) OnOusted(cb OustedCallback) {
 // onOusted is called after the current process is not the leader anymore,
 // either because of an error or failure of renewing lease.
 func (l *DlockLeaderManager) onOusted(ctx context.Context) {
+	l.electedCallbacksDone.Store(false)
 	logrus.WithFields(logrus.Fields{
 		"electionKey": l.electionKey,
 		"leaderID":    l.ID,
@@ -331,7 +363,7 @@ func (l *DlockLeaderManager) onOusted(ctx context.Context) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	for _, cb := range l.electedCallbacks {
+	for _, cb := range l.oustedCallbacks {
 		cb(ctx, l)
 	}
 }
@@ -374,7 +406,10 @@ func NewNoopLeaderManager() *noopLeaderManager {
 
 func (l *noopLeaderManager) Identity() string                 { return "noop" }
 func (l *noopLeaderManager) Extend(ctx context.Context) error { return nil }
-func (l *noopLeaderManager) OnError(cb ErrorCallback)         { /* do nothing */ }
+func (l *noopLeaderManager) Guard(ctx context.Context) func(*gorm.DB) error {
+	return func(*gorm.DB) error { return ctx.Err() }
+}
+func (l *noopLeaderManager) OnError(cb ErrorCallback) { /* do nothing */ }
 
 func (l *noopLeaderManager) Await(ctx context.Context) bool {
 	select {

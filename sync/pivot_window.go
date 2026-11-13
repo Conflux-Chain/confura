@@ -16,7 +16,8 @@ type Chainable[H comparable] interface {
 }
 
 type slidingPivotWindow[T Chainable[H], H comparable] struct {
-	mu sync.RWMutex
+	mu         sync.RWMutex
+	generation uint64 // incremented on reset to reject delayed cache publication
 
 	pivots []H    // pivot hash circular buffer
 	head   uint32 // array index for the oldest pivot hash
@@ -58,7 +59,28 @@ func (w *slidingPivotWindow[T, H]) Get(number uint64) (hash H, found bool) {
 func (w *slidingPivotWindow[T, H]) Push(node T) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	return w.push(node)
+}
 
+func (w *slidingPivotWindow[T, H]) Generation() uint64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.generation
+}
+
+// PushIfGeneration ignores work started before a reset. The check and update
+// share the reset lock, so a delayed writer cannot repopulate the new window.
+func (w *slidingPivotWindow[T, H]) PushIfGeneration(node T, generation uint64) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if generation != w.generation {
+		return nil
+	}
+	return w.push(node)
+}
+
+// push requires w.mu to be held.
+func (w *slidingPivotWindow[T, H]) push(node T) error {
 	if w.length > 0 {
 		expectedNumber := w.start + uint64(w.length)
 
@@ -125,6 +147,7 @@ func (w *slidingPivotWindow[T, H]) Reset() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.head, w.length = 0, 0
+	w.generation++
 }
 
 type cfxPivotBlockWrapper struct {

@@ -15,12 +15,10 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/Conflux-Chain/go-conflux-sdk/types"
-	"github.com/Conflux-Chain/go-conflux-util/dlock"
 	"github.com/Conflux-Chain/go-conflux-util/health"
 	viperutil "github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 const (
@@ -72,7 +70,6 @@ func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.CfxStore) *Databa
 	var conf cfxSyncConfig
 	viperutil.MustUnmarshalKey("sync.cfx", &conf)
 
-	dlm := dlock.NewLockManager(dlock.NewMySQLBackend(db.DB()))
 	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (latestEpochNum uint64, retErr error) {
 		for _, cfx := range cfxClients {
 			epoch, err := cfx.GetEpochNumber(types.EpochLatestConfirmed)
@@ -98,7 +95,7 @@ func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.CfxStore) *Databa
 		syncIntervalCatchUp: time.Millisecond,
 		monitor:             monitor,
 		pivotWin:            newCfxSlidingPivotWindow(syncPivotInfoWinCapacity),
-		elm:                 election.MustNewLeaderManagerFromViper(dlm, "sync.cfx"),
+		elm:                 election.MustNewLeaderManagerFromViper(db.DB(), "sync.cfx"),
 	}
 	monitor.SetObserver(syncer)
 
@@ -196,6 +193,8 @@ func (syncer *DatabaseSyncer) loadLastSyncEpoch() error {
 
 // Sync data once and return true if catch up to the latest confirmed epoch, otherwise false.
 func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
+	ctx = election.WithLeadership(ctx, syncer.elm)
+	cacheGeneration := syncer.pivotWin.Generation()
 	cfx := syncer.cfxs[syncer.cfxIdx.Load()]
 
 	// Fetch latest confirmed epoch from blockchain
@@ -299,9 +298,7 @@ func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	err = syncer.db.PushnWithFinalizer(epochDataSlice, func(d *gorm.DB) error {
-		return syncer.elm.Extend(ctx)
-	})
+	err = syncer.db.PushnWithGuard(ctx, epochDataSlice, syncer.elm.Guard(ctx))
 
 	if err != nil {
 		if errors.Is(err, store.ErrLeaderRenewal) {
@@ -319,7 +316,7 @@ func (syncer *DatabaseSyncer) syncOnce(ctx context.Context) (bool, error) {
 	syncer.monitor.Update(syncer.epochFrom)
 
 	for _, epdata := range epochDataSlice { // cache epoch pivot info for late use
-		err := syncer.pivotWin.Push(cfxPivotBlockWrapper{epdata.GetPivotBlock()})
+		err := syncer.pivotWin.PushIfGeneration(cfxPivotBlockWrapper{epdata.GetPivotBlock()}, cacheGeneration)
 		if err != nil {
 			logger.WithField("pivotBlockEpoch", epdata.Number).WithError(err).Info(
 				"Db syncer failed to push pivot block into epoch cache window",
@@ -387,9 +384,7 @@ func (syncer *DatabaseSyncer) pivotSwitchRevert(ctx context.Context, revertTo ui
 	logger.Info("Db syncer reverting epoch data due to pivot chain switch")
 
 	// remove epoch data from database due to pivot switch
-	err := syncer.db.PopnWithFinalizer(revertTo, func(tx *gorm.DB) error {
-		return syncer.elm.Extend(ctx)
-	})
+	err := syncer.db.PopnWithGuard(ctx, revertTo, syncer.elm.Guard(ctx))
 
 	if err != nil {
 		if errors.Is(err, store.ErrLeaderRenewal) {

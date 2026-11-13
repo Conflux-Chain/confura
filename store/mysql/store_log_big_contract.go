@@ -73,7 +73,7 @@ func newBigContractLogStore[T store.ChainData](
 // preparePartitions create new contract log partitions for the big contract if necessary.
 // Also migrates event logs from address indexed table to separate contract specified log table
 // for the initial partitioning.
-func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T) (map[uint64]bnPartition, error) {
+func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T, guards ...func(*gorm.DB) error) (map[uint64]bnPartition, error) {
 	contractAddrs := extractUniqueContractAddresses(dataSlice...)
 	contract2BnPartitions := make(map[uint64]bnPartition)
 
@@ -104,7 +104,7 @@ func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T) (map[uint64
 
 		clEntity, clTabler := bcls.contractEntity(contract.ID), bcls.contractTabler(contract.ID)
 		if !migrated {
-			if err := bcls.migrate(contract); err != nil {
+			if err := bcls.migrate(contract, guards...); err != nil {
 				return nil, errors.WithMessage(err, "failed to migrate contract logs")
 			}
 		}
@@ -126,7 +126,7 @@ func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T) (map[uint64
 }
 
 // migrate migrates address indexed event logs for the big contract to separate log table partition.
-func (bcls *bigContractLogStore[T]) migrate(contract *Contract) error {
+func (bcls *bigContractLogStore[T]) migrate(contract *Contract, guards ...func(*gorm.DB) error) error {
 	aiTableName := bcls.ails.GetPartitionedTableName(contract.Address)
 
 	clEntity, clTabler := bcls.contractEntity(contract.ID), bcls.contractTabler(contract.ID)
@@ -138,6 +138,13 @@ func (bcls *bigContractLogStore[T]) migrate(contract *Contract) error {
 	}
 
 	return bcls.db.Transaction(func(dbTx *gorm.DB) error {
+		for _, guard := range guards {
+			if guard != nil {
+				if err := guard(dbTx); err != nil {
+					return err
+				}
+			}
+		}
 		migrated, err := newBnPartitionedStore(dbTx).hasPartition(clEntity)
 		if err != nil {
 			return err

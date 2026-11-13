@@ -147,7 +147,7 @@ func newCoordinator[T store.ChainData](
 		nextWriteEpoch:      fullRange.From,
 		epochResultChan:     resultChan,
 		epochDataStore:      make(map[uint64]T),
-		pendingTaskQueue:    make(chan syncTask, cfg.TaskQueueSize),
+		pendingTaskQueue:    make(chan syncTask, max(cfg.TaskQueueSize, len(workers))),
 		taskResultQueue:     make(chan syncTaskResult[T], cfg.ResultQueueSize),
 		backpressureControl: backpressureControl,
 	}
@@ -168,12 +168,10 @@ func (c *coordinator[T]) run(ctx context.Context, wg *sync.WaitGroup) {
 		go c.boostWorkerLoop(ctx, &innerWg, w)
 	}
 
-	// Start the result dispatch loop
+	// Finish seeding before the dispatcher can assign more work.
+	c.assignTasks(ctx, c.DefaultTaskSize)
 	innerWg.Add(1)
 	go c.dispatchLoop(ctx, &innerWg)
-
-	// Seeds the pending tasks queue with initial workload for workers.
-	c.assignTasks(ctx, c.DefaultTaskSize)
 
 	innerWg.Wait()
 }
@@ -188,16 +186,10 @@ func (c *coordinator[T]) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup
 		select {
 		case <-ctx.Done():
 			return
-		case <-c.backpressureChan():
-			time.Sleep(time.Second)
-			continue
 		default:
 			select {
 			case <-ctx.Done():
 				return
-			case <-c.backpressureChan():
-				time.Sleep(time.Second)
-				continue
 			case task := <-c.pendingTaskQueue:
 				data, err := w.queryChainData(task.From, task.To)
 				if logrus.IsLevelEnabled(logrus.DebugLevel) {
@@ -208,10 +200,10 @@ func (c *coordinator[T]) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup
 						"numPendingTasks": len(c.pendingTaskQueue),
 					}).WithError(err).Debug("Catch-up boost worker processed task")
 				}
-				c.taskResultQueue <- syncTaskResult[T]{
-					task:   task,
-					result: data,
-					err:    err,
+				select {
+				case <-ctx.Done():
+					return
+				case c.taskResultQueue <- syncTaskResult[T]{task: task, result: data, err: err}:
 				}
 			}
 		}
@@ -229,16 +221,10 @@ func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-c.backpressureChan():
-			time.Sleep(time.Second)
-			continue
 		default:
 			select {
 			case <-ctx.Done():
 				return
-			case <-c.backpressureChan():
-				time.Sleep(time.Second)
-				continue
 			case result := <-c.taskResultQueue:
 				// Collect a batch of results
 				taskResults := []syncTaskResult[T]{result}
@@ -251,9 +237,13 @@ func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 				})
 				// Process the batch of results
 				for _, r := range taskResults {
+					if r.err == nil {
+						r.err = validateTaskResult(r.task, r.result)
+					}
 					if r.err != nil {
 						// Recall the task by splitting and re-assigning
 						heap.Push(&c.recallTaskPq, &syncTaskItem{syncTask: r.task})
+						r.result = nil
 						resultHistory = append(resultHistory, r)
 						continue
 					}
@@ -262,8 +252,8 @@ func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 					if err := c.collectResult(ctx, r.result); err != nil {
 						return
 					}
+					r.result = nil // History needs task metadata, not the payload.
 					resultHistory = append(resultHistory, r)
-					r.result = nil // free memory
 				}
 				// Sort the task result history
 				sort.Slice(resultHistory, func(i, j int) bool {
@@ -316,6 +306,9 @@ func (c *coordinator[T]) estimateTaskSize(results []syncTaskResult[T]) uint64 {
 func (c *coordinator[T]) collectResult(ctx context.Context, result []T) error {
 	// Cache store epoch data
 	for _, data := range result {
+		if data.Number() < c.nextWriteEpoch {
+			continue
+		}
 		c.epochDataStore[data.Number()] = data
 	}
 
@@ -349,14 +342,20 @@ func (c *coordinator[T]) assignTasks(ctx context.Context, taskSize uint64) error
 	for numPendingTasks := len(c.pendingTaskQueue); numPendingTasks < len(c.workers); numPendingTasks++ {
 		// Handle recall tasks by splitting them into sub-tasks if possible
 		if len(c.recallTaskPq) > 0 {
+			// Keep the earliest gap repairable while distant work is paused.
+			if c.isBackpressured() && c.recallTaskPq[0].From > c.nextWriteEpoch {
+				break
+			}
 			recallTask := heap.Pop(&c.recallTaskPq).(*syncTaskItem).syncTask
-			midEpoch := (recallTask.From + recallTask.To) / 2
+			midEpoch := recallTask.From + (recallTask.To-recallTask.From)/2
 			if err := c.addPendingTask(ctx, recallTask.From, midEpoch); err != nil {
 				return err
 			}
 			if midEpoch+1 <= recallTask.To {
 				numPendingTasks++
-				if err := c.addPendingTask(ctx, midEpoch+1, recallTask.To); err != nil {
+				if c.isBackpressured() || len(c.pendingTaskQueue) == cap(c.pendingTaskQueue) {
+					heap.Push(&c.recallTaskPq, &syncTaskItem{syncTask: newSyncTask(midEpoch+1, recallTask.To)})
+				} else if err := c.addPendingTask(ctx, midEpoch+1, recallTask.To); err != nil {
 					return err
 				}
 			}
@@ -368,7 +367,17 @@ func (c *coordinator[T]) assignTasks(ctx context.Context, taskSize uint64) error
 			break
 		}
 
-		end := min(c.nextAssignEpoch+taskSize-1, c.fullEpochRange.To)
+		if c.isBackpressured() {
+			if c.nextAssignEpoch != c.nextWriteEpoch {
+				break
+			}
+			taskSize = 1
+		}
+		// Bound retained heights behind a slow task when memory control is enabled.
+		if c.MemoryThreshold > 0 && (c.nextAssignEpoch-c.nextWriteEpoch)/max(c.MaxTaskSize, 1) >= uint64(len(c.workers)) {
+			break
+		}
+		end := c.nextAssignEpoch + min(taskSize-1, c.fullEpochRange.To-c.nextAssignEpoch)
 		if err := c.addPendingTask(ctx, c.nextAssignEpoch, end); err != nil {
 			return err
 		}
@@ -394,10 +403,22 @@ func (c *coordinator[T]) addPendingTask(ctx context.Context, start, end uint64) 
 	}
 }
 
+// isBackpressured reports whether memory control is pausing distant assignments.
+func (c *coordinator[T]) isBackpressured() bool {
+	select {
+	case <-c.backpressureChan():
+		return true
+	default:
+		return false
+	}
+}
+
 // enableBackpressure toggles backpressure by closing or resetting the control channel.
 func (c *coordinator[T]) enableBackpressure(enabled bool) {
 	if enabled {
-		close(c.backpressureChan())
+		if !c.isBackpressured() {
+			close(c.backpressureChan())
+		}
 	} else {
 		c.backpressureControl.Store(make(chan struct{}))
 	}
@@ -438,7 +459,8 @@ func (s *boostSyncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start
 
 	// Start memory monitor
 	if s.Boost.MemoryThreshold > 0 {
-		go s.memoryMonitorLoop(ctx, coord)
+		wg.Add(1)
+		go func() { defer wg.Done(); s.memoryMonitorLoop(ctx, coord) }()
 	}
 
 	// Start persisting results
@@ -584,4 +606,22 @@ func (w *boostWorker[T]) queryChainData(fromEpoch, toEpoch uint64) (res []T, err
 
 	res, err = w.client.BoostQueryChainData(context.Background(), fromEpoch, toEpoch)
 	return
+}
+
+func validateTaskResult[T store.ChainData](task syncTask, result []T) error {
+	if task.From > task.To || len(result) == 0 || uint64(len(result)) != task.To-task.From+1 {
+		return errors.Errorf("incomplete result for task %v", task)
+	}
+	seen := make(map[uint64]bool, len(result))
+	for _, data := range result {
+		if nilChainData(data) {
+			return errors.New("nil chain data in task result")
+		}
+		n := data.Number()
+		if n < task.From || n > task.To || seen[n] {
+			return errors.Errorf("invalid epoch %v in task %v", n, task)
+		}
+		seen[n] = true
+	}
+	return nil
 }

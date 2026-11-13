@@ -66,7 +66,7 @@ func (c *CoreRpcClient) QueryChainData(ctx context.Context, fromEpoch, toEpoch u
 	}
 
 	for epochNo := fromEpoch; epochNo <= toEpoch; epochNo++ {
-		epochData, err := store.QueryEpochData(c, fromEpoch, true)
+		epochData, err := store.QueryEpochData(c, epochNo, true)
 		if err != nil {
 			return nil, err
 		}
@@ -88,8 +88,10 @@ func (c *CoreRpcClient) getFirstBlockOfEpoch(epochNum uint64) (*cfxTypes.Block, 
 	if err != nil {
 		return nil, errors.WithMessagef(err, "failed to get block by hash %v", blockHashes[0])
 	}
-	if block == nil {
-		return nil, errors.Errorf("block %v not found", blockHashes[0])
+	if block == nil || block.Hash != blockHashes[0] ||
+		block.EpochNumber == nil || !block.EpochNumber.ToInt().IsUint64() || block.EpochNumber.ToInt().Uint64() != epochNum ||
+		block.BlockNumber == nil || !block.BlockNumber.ToInt().IsUint64() {
+		return nil, errors.New("first block does not match requested epoch/hash")
 	}
 	return block, nil
 }
@@ -99,12 +101,16 @@ func (c *CoreRpcClient) getPivotBlock(epochNum uint64) (*cfxTypes.Block, error) 
 	if err != nil {
 		return nil, err
 	}
-	if block == nil {
-		return nil, errors.New("block not found")
+	if block == nil || block.Hash == "" ||
+		block.EpochNumber == nil || !block.EpochNumber.ToInt().IsUint64() || block.EpochNumber.ToInt().Uint64() != epochNum ||
+		block.BlockNumber == nil || !block.BlockNumber.ToInt().IsUint64() {
+		return nil, errors.New("pivot block does not match requested epoch")
 	}
 	return block, nil
 }
 
+// BoostQueryChainData validates identities in the fetched data without extra RPCs.
+// It does not pin Core reads to one pivot or prove log-response completeness.
 func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
 	if fromEpoch > toEpoch {
 		return nil, errors.New("invalid epoch range")
@@ -120,6 +126,24 @@ func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEp
 		return nil, errors.WithMessage(err, "failed to get event logs")
 	}
 
+	type logID struct {
+		hash  cfxTypes.Hash
+		index uint64
+	}
+	seen := make(map[logID]bool, len(logs))
+	for i, l := range logs {
+		if l.EpochNumber == nil || !l.EpochNumber.ToInt().IsUint64() || l.BlockHash == nil || l.TransactionHash == nil ||
+			l.LogIndex == nil || !l.LogIndex.ToInt().IsUint64() || l.TransactionIndex == nil || !l.TransactionIndex.ToInt().IsUint64() {
+			return nil, errors.New("invalid core log identity")
+		}
+		n := l.EpochNumber.ToInt().Uint64()
+		id := logID{*l.BlockHash, l.LogIndex.ToInt().Uint64()}
+		if n < fromEpoch || n > toEpoch || (i > 0 && n < logs[i-1].EpochNumber.ToInt().Uint64()) || seen[id] {
+			return nil, errors.New("out-of-range, unordered or duplicate core logs")
+		}
+		seen[id] = true
+	}
+
 	var logCursor int
 	for epochNum := fromEpoch; epochNum <= toEpoch; epochNum++ {
 		// Initialize epoch data for the current epoch
@@ -130,6 +154,7 @@ func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEp
 
 		// Cache to store blocks fetched by their hash to avoid repeated network calls
 		blockCache := make(map[cfxTypes.Hash]*cfxTypes.Block)
+		blockTxCache := make(map[cfxTypes.Hash]map[cfxTypes.Hash]*cfxTypes.Transaction)
 
 		// Ensure to add the first block within the range
 		if epochNum == fromEpoch {
@@ -155,8 +180,10 @@ func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEp
 				if err != nil {
 					return nil, errors.WithMessagef(err, "failed to get block by hash %v", *blockHash)
 				}
-				if block == nil {
-					return nil, errors.Errorf("block %v not found", *blockHash)
+				if block == nil || block.Hash != *blockHash ||
+					block.EpochNumber == nil || !block.EpochNumber.ToInt().IsUint64() || block.EpochNumber.ToInt().Uint64() != epochNum ||
+					block.BlockNumber == nil || !block.BlockNumber.ToInt().IsUint64() {
+					return nil, errors.New("log block does not match requested epoch/hash")
 				}
 				blockCache[*blockHash] = block
 				epochData.Blocks = append(epochData.Blocks, block)
@@ -166,6 +193,22 @@ func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEp
 			txnHash := logs[logCursor].TransactionHash
 			txnReceipt, ok := epochData.Receipts[*txnHash]
 			if !ok {
+				// Index each block once; transactions may emit many logs.
+				txs, indexed := blockTxCache[*blockHash]
+				if !indexed {
+					block := blockCache[*blockHash]
+					txs = make(map[cfxTypes.Hash]*cfxTypes.Transaction, len(block.Transactions))
+					for i := range block.Transactions {
+						tx := &block.Transactions[i]
+						txs[tx.Hash] = tx
+					}
+					blockTxCache[*blockHash] = txs
+				}
+				tx := txs[*txnHash]
+				// Core success is status 0; do not compare transactionIndex to block position.
+				if tx == nil || tx.BlockHash == nil || *tx.BlockHash != *blockHash || tx.Status == nil || *tx.Status != 0 {
+					return nil, errors.New("log transaction is not successfully executed in its block")
+				}
 				txnReceipt = &cfxTypes.TransactionReceipt{
 					EpochNumber:     (hexutil.Uint64)(epochNum),
 					BlockHash:       *blockHash,
@@ -173,6 +216,8 @@ func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEp
 				}
 
 				epochData.Receipts[*txnHash] = txnReceipt
+			} else if txnReceipt.BlockHash != *blockHash {
+				return nil, errors.New("transaction logs span multiple blocks")
 			}
 
 			// Append the current log to the transaction receipt's logs
@@ -220,6 +265,9 @@ func (e *EvmRpcClient) GetFinalizationStatus(ctx context.Context) (*Finalization
 	if err != nil {
 		return nil, err
 	}
+	if block == nil || block.Number == nil {
+		return nil, errors.New("invalid finalized block: missing block or number")
+	}
 	return &FinalizationStatus{
 		LatestFinalized: block.Number.Uint64(),
 	}, nil
@@ -251,8 +299,8 @@ func (c *EvmRpcClient) getBlockByNumber(blockNum uint64) (*ethTypes.Block, error
 	if err != nil {
 		return nil, err
 	}
-	if block == nil {
-		return nil, errors.New("block not found")
+	if block == nil || block.Number == nil || !block.Number.IsUint64() || block.Number.Uint64() != blockNum || block.Hash == (common.Hash{}) {
+		return nil, errors.New("block does not match requested number")
 	}
 	return block, nil
 }
@@ -268,6 +316,13 @@ func (c *EvmRpcClient) BoostQueryChainData(ctx context.Context, fromBlock, toBlo
 	logs, err := c.Eth.Logs(logFilter)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to get event logs")
+	}
+
+	for i, l := range logs {
+		if l.Removed || l.BlockNumber < fromBlock || l.BlockNumber > toBlock || (i > 0 &&
+			(l.BlockNumber < logs[i-1].BlockNumber || (l.BlockNumber == logs[i-1].BlockNumber && l.Index <= logs[i-1].Index))) {
+			return nil, errors.New("removed, out-of-range, unordered or duplicate EVM logs")
+		}
 	}
 
 	var logCursor int
@@ -305,16 +360,34 @@ func (c *EvmRpcClient) BoostQueryChainData(ctx context.Context, fromBlock, toBlo
 				ethData.Block = block
 			}
 
+			l := &logs[logCursor]
+			txs := ethData.Block.Transactions.Transactions()
+			if l.BlockHash != ethData.Block.Hash || uint64(l.TxIndex) >= uint64(len(txs)) || txs[l.TxIndex].Hash != l.TxHash {
+				return nil, errors.New("log does not match its block/transaction")
+			}
+			if txs[l.TxIndex].Status != nil && *txs[l.TxIndex].Status != 1 {
+				return nil, errors.New("log belongs to a failed transaction")
+			}
+
 			// Retrieve or initialize the transaction receipt associated with the current log
 			txnHash := logs[logCursor].TxHash
 			txnReceipt, ok := ethData.Receipts[txnHash]
 			if !ok {
+				// EVM logs imply success if the fullnode response is valid.
+				// The store adapter needs Status to retain these logs.
+				success := uint64(1)
 				txnReceipt = &ethTypes.Receipt{
-					BlockNumber:     blockNum,
-					BlockHash:       ethData.Block.Hash,
-					TransactionHash: txnHash,
+					Status:           &success,
+					TransactionIndex: uint64(l.TxIndex),
+					BlockNumber:      blockNum,
+					BlockHash:        ethData.Block.Hash,
+					TransactionHash:  txnHash,
 				}
 				ethData.Receipts[txnHash] = txnReceipt
+			}
+
+			if txnReceipt.TransactionIndex != uint64(l.TxIndex) {
+				return nil, errors.New("conflicting transaction indexes in logs")
 			}
 
 			// Append the current log to the transaction receipt's logs

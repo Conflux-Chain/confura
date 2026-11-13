@@ -15,7 +15,6 @@ import (
 	"github.com/openweb3/web3go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 // Syncer accelerates core space epoch data catch-up using concurrently workers.
@@ -179,6 +178,7 @@ func (s *Syncer[T]) Sync(ctx context.Context) {
 }
 
 func (s *Syncer[T]) SyncOnce(ctx context.Context, start, end uint64) {
+	ctx = election.WithLeadership(ctx, s.elm)
 	var bmarker *benchmarker
 	if s.Benchmark {
 		bmarker = newBenchmarker()
@@ -205,6 +205,10 @@ func (s *Syncer[T]) SyncOnce(ctx context.Context, start, end uint64) {
 }
 
 func (s *Syncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
+	// The previous attempt has joined all producers before a new one starts.
+	for _, w := range s.workers {
+		w.resultChan = make(chan T, cap(w.resultChan))
+	}
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -257,6 +261,9 @@ func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker 
 					bmarker.metricFetchPerEpochDuration(startTime)
 				}
 
+				if nilChainData(data) || data.Number() != eno {
+					return errors.Errorf("unexpected epoch collected, expected %v", eno)
+				}
 				// collect epoch data
 				eno++
 
@@ -324,9 +331,7 @@ func (s *Syncer[T]) persist(ctx context.Context, state *persistState[T], bmarker
 	}
 
 	start := time.Now()
-	err := s.db.PushnWithFinalizer(state.chainData, func(d *gorm.DB) error {
-		return s.elm.Extend(ctx)
-	})
+	err := s.db.PushnWithGuard(ctx, state.chainData, s.elm.Guard(ctx))
 
 	if err != nil {
 		return errors.WithMessage(err, "failed to push db store")

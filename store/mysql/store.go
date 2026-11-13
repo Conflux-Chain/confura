@@ -11,6 +11,7 @@ import (
 	"github.com/Conflux-Chain/confura/util/metrics"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type CommonStores struct {
@@ -110,11 +111,13 @@ func (ms *MysqlStore[T]) Push(data T) error {
 }
 
 func (ms *MysqlStore[T]) Pushn(dataSlice []T) error {
-	return ms.PushnWithFinalizer(dataSlice, nil)
+	return ms.PushnWithGuard(context.Background(), dataSlice, nil)
 }
 
-// PushnWithFinalizer saves multiple epoch data into db with an extra finalizer to commit or rollback the transaction.
-func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.DB) error) error {
+// PushnWithGuard saves epochs, running a non-nil guard at the start of each
+// migration transaction and the main data transaction. Each transaction commits
+// independently. Registration and partition DDL run outside these transactions.
+func (ms *MysqlStore[T]) PushnWithGuard(ctx context.Context, dataSlice []T, guard func(*gorm.DB) error) error {
 	if len(dataSlice) == 0 {
 		return nil
 	}
@@ -158,13 +161,13 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 		}
 
 		// prepare for big contract log partitions if necessary
-		contract2BnPartitions, err = ms.bcls.preparePartitions(dataSlice)
+		contract2BnPartitions, err = ms.bcls.preparePartitions(dataSlice, guard)
 		if err != nil {
 			return errors.WithMessage(err, "failed to prepare big contract log partitions")
 		}
 
 		// prepare for big topic log partitions if necessary
-		topic2BnPartitions, err = ms.btls.preparePartitions(dataSlice)
+		topic2BnPartitions, err = ms.btls.preparePartitions(dataSlice, guard)
 		if err != nil {
 			return errors.WithMessage(err, "failed to prepare big topic log partitions")
 		}
@@ -180,7 +183,24 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 		return errors.New("failed to prepare epoch block map partition")
 	}
 
-	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
+	return ms.baseStore.db.WithContext(ctx).Transaction(func(dbTx *gorm.DB) error {
+		if guard != nil {
+			if err := guard(dbTx); err != nil {
+				return err
+			}
+			// Recheck the watermark after locking the leadership row.
+			var latest epochBlockMap
+			err := dbTx.Clauses(clause.Locking{Strength: "UPDATE"}).Order("epoch DESC").Take(&latest).Error
+			current := citypes.EpochNumberNil
+			if err == nil {
+				current = latest.Epoch
+			} else if err != gorm.ErrRecordNotFound {
+				return err
+			}
+			if err := store.RequireContinuous(dataSlice, current); err != nil {
+				return err
+			}
+		}
 		if !ms.filter.IsBlockDisabled() {
 			// save blocks
 			if err := ms.blockStore.Add(dbTx, dataSlice); err != nil {
@@ -239,21 +259,18 @@ func (ms *MysqlStore[T]) PushnWithFinalizer(dataSlice []T, finalizer func(*gorm.
 			return errors.WithMessage(err, "failed to save epoch to block mapping data")
 		}
 
-		if finalizer != nil {
-			return finalizer(dbTx)
-		}
-
 		return nil
 	})
 }
 
 // Popn pops multiple epoch data from database.
 func (ms *MysqlStore[T]) Popn(epochUntil uint64) error {
-	return ms.PopnWithFinalizer(epochUntil, nil)
+	return ms.PopnWithGuard(context.Background(), epochUntil, nil)
 }
 
-// PopnWithFinalizer pops multiple epoch data from database with an extra finalizer to commit or rollback the transaction.
-func (ms *MysqlStore[T]) PopnWithFinalizer(epochUntil uint64, finalizer func(*gorm.DB) error) error {
+// PopnWithGuard removes epochs starting at epochUntil and updates the watermark
+// and reorg version in one transaction. A non-nil guard runs before any changes.
+func (ms *MysqlStore[T]) PopnWithGuard(ctx context.Context, epochUntil uint64, guard func(*gorm.DB) error) error {
 	maxEpoch, ok, err := ms.MaxEpoch()
 	if err != nil {
 		return errors.WithMessage(err, "failed to get max epoch")
@@ -266,7 +283,19 @@ func (ms *MysqlStore[T]) PopnWithFinalizer(epochUntil uint64, finalizer func(*go
 	startTime := time.Now()
 	defer metrics.Registry.Store.Pop("mysql").UpdateSince(startTime)
 
-	return ms.baseStore.db.Transaction(func(dbTx *gorm.DB) error {
+	return ms.baseStore.db.WithContext(ctx).Transaction(func(dbTx *gorm.DB) error {
+		if guard != nil {
+			if err := guard(dbTx); err != nil {
+				return err
+			}
+			var latest epochBlockMap
+			if err := dbTx.Clauses(clause.Locking{Strength: "UPDATE"}).Order("epoch DESC").Take(&latest).Error; err != nil {
+				return err
+			}
+			if latest.Epoch != maxEpoch {
+				return store.ErrContinuousEpochRequired
+			}
+		}
 		if !ms.filter.IsBlockDisabled() {
 			// remove blocks
 			if err := ms.blockStore.Remove(dbTx, epochUntil, maxEpoch); err != nil {
@@ -316,10 +345,6 @@ func (ms *MysqlStore[T]) PopnWithFinalizer(epochUntil uint64, finalizer func(*go
 		// pop is always due to pivot chain switch, update reorg version too
 		if err := ms.confStore.createOrUpdateReorgVersion(dbTx); err != nil {
 			return errors.WithMessage(err, "failed to update reorg version")
-		}
-
-		if finalizer != nil {
-			return finalizer(dbTx)
 		}
 
 		return nil
