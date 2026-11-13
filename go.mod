@@ -3,7 +3,7 @@ module github.com/Conflux-Chain/confura
 go 1.26.11
 
 require (
-	github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20261113062426-db4d607ffdb5
+	github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20261113085211-51d67429b9a0
 	github.com/Conflux-Chain/go-conflux-sdk v1.6.3
 	github.com/Conflux-Chain/go-conflux-util v0.8.2
 	github.com/Conflux-Chain/web3pay-service v1.0.3-0.20261113063217-9bd2713b7979
