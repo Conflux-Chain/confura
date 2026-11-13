@@ -54,6 +54,10 @@ func newEthBlockFilter(client *node.Web3goClient) (*ethFilter, error) {
 		return nil, err
 	}
 
+	if fid == nil || *fid == nilRpcId {
+		return nil, errInvalidFilterChanges
+	}
+
 	f := newEthFilter(*fid, filterTypeBlock, client)
 	metricVirtualFilterSession("eth", f, 1)
 
@@ -64,6 +68,10 @@ func newEthPendingTxnFilter(client *node.Web3goClient) (*ethFilter, error) {
 	fid, err := client.Filter.NewPendingTransactionFilter()
 	if err != nil {
 		return nil, err
+	}
+
+	if fid == nil || *fid == nilRpcId {
+		return nil, errInvalidFilterChanges
 	}
 
 	f := newEthFilter(*fid, filterTypePendingTxn, client)

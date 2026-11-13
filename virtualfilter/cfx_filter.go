@@ -57,6 +57,10 @@ func newCfxBlockFilter(client *sdk.Client) (*cfxFilter, error) {
 		return nil, err
 	}
 
+	if fid == nil || *fid == nilRpcId {
+		return nil, errInvalidFilterChanges
+	}
+
 	f := newCfxFilter(*fid, filterTypeBlock, client)
 	metricVirtualFilterSession("cfx", f, 1)
 	return f, nil
@@ -66,6 +70,10 @@ func newCfxPendingTxnFilter(client *sdk.Client) (*cfxFilter, error) {
 	fid, err := client.Filter().NewPendingTransactionFilter()
 	if err != nil {
 		return nil, err
+	}
+
+	if fid == nil || *fid == nilRpcId {
+		return nil, errInvalidFilterChanges
 	}
 
 	f := newCfxFilter(*fid, filterTypePendingTxn, client)

@@ -186,7 +186,7 @@ func (w *filterWorker) pollOnce() error {
 	fchanges, err := w.client.fetch(w.session.fid)
 	if err != nil {
 		// shared proxy filter not found by full node? this may be due to full node reboot
-		if isFilterNotFoundError(err) {
+		if isFilterNotFoundError(err) || errors.Is(err, errInvalidFilterChanges) {
 			return err
 		}
 
@@ -196,6 +196,10 @@ func (w *filterWorker) pollOnce() error {
 			return nil
 		}
 
+		return err
+	}
+
+	if err := validateLogChanges(fchanges); err != nil {
 		return err
 	}
 
@@ -399,6 +403,10 @@ func (w *ethFilterWorker) establish() (pollingSession, error) {
 		return nilPollingSession, err
 	}
 
+	if fid == nil || *fid == nilRpcId {
+		return nilPollingSession, errInvalidFilterChanges
+	}
+
 	session := newPollingSession(*fid, newEthFilterChain(w.maxFullFilterBlocks))
 	return *session, nil
 }
@@ -408,8 +416,13 @@ func (w *ethFilterWorker) fetch(fid rpc.ID) (filterChanges, error) {
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), maxPollingDelayDuration)
 	defer cancel()
 
+	var raw upstreamLogResult
+	err := w.client.Filter.CallContext(timeoutCtx, &raw, "eth_getFilterChanges", fid)
+	if err != nil {
+		return nil, err
+	}
 	var fchanges *ethtypes.FilterChanges
-	err := w.client.Filter.CallContext(timeoutCtx, &fchanges, "eth_getFilterChanges", fid)
+	err = decodeUpstreamLogResult(raw, &fchanges)
 	return fchanges, err
 }
 
@@ -452,6 +465,10 @@ func (w *cfxFilterWorker) establish() (pollingSession, error) {
 		return nilPollingSession, err
 	}
 
+	if fid == nil || *fid == nilRpcId {
+		return nilPollingSession, errInvalidFilterChanges
+	}
+
 	session := newPollingSession(*fid, newCfxFilterChain(w.maxFullFilterEpochs))
 	return *session, nil
 }
@@ -461,8 +478,13 @@ func (w *cfxFilterWorker) fetch(fid rpc.ID) (filterChanges, error) {
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), maxPollingDelayDuration)
 	defer cancel()
 
+	var raw upstreamLogResult
+	err := w.client.CallContext(timeoutCtx, &raw, "cfx_getFilterChanges", fid)
+	if err != nil {
+		return nil, err
+	}
 	var fchanges *cfxtypes.CfxFilterChanges
-	err := w.client.CallContext(timeoutCtx, &fchanges, "cfx_getFilterChanges", fid)
+	err = decodeUpstreamLogResult(raw, &fchanges)
 	return fchanges, err
 }
 
