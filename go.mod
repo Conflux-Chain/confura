@@ -5,7 +5,7 @@ go 1.26.11
 require (
 	github.com/Conflux-Chain/confura-data-cache v1.0.1-0.20261113062426-db4d607ffdb5
 	github.com/Conflux-Chain/go-conflux-sdk v1.6.3
-	github.com/Conflux-Chain/go-conflux-util v0.8.1
+	github.com/Conflux-Chain/go-conflux-util v0.8.2
 	github.com/Conflux-Chain/web3pay-service v1.0.3-0.20261113063217-9bd2713b7979
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/buraksezer/consistent v0.9.0
@@ -18,8 +18,8 @@ require (
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/mitchellh/mapstructure v1.4.3
 	github.com/montanaflynn/stats v0.6.6
-	github.com/openweb3/go-rpc-provider v0.3.9
-	github.com/openweb3/web3go v0.3.7
+	github.com/openweb3/go-rpc-provider v0.3.10
+	github.com/openweb3/web3go v0.3.8
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9
 	github.com/rs/cors v1.7.0
@@ -148,7 +148,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/openweb3/go-ethereum-hdwallet v0.1.0 // indirect
-	github.com/openweb3/go-sdk-common v0.0.0-20261112080213-2a43cf71b367 // indirect
+	github.com/openweb3/go-sdk-common v0.1.0 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pelletier/go-toml v1.9.4 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
