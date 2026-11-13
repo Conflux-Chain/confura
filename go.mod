@@ -28,7 +28,7 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.10.0
 	github.com/stretchr/testify v1.12.1
-	github.com/valyala/fasthttp v1.40.0
+	github.com/valyala/fasthttp v1.70.0
 	github.com/zealws/golang-ring v0.0.0-20210116075443-7c86fdb43134
 	go.uber.org/multierr v1.6.0
 	golang.org/x/crypto v0.58.0
