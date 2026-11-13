@@ -3,7 +3,6 @@ package virtualfilter
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
@@ -22,6 +21,7 @@ var (
 	nilPollingSession = pollingSession{fid: nilRpcId}
 
 	errFilterWorkerShutdown = errors.New("filter worker already shutdown")
+	errFilterCleanupPending = errors.New("filter session cleanup pending")
 )
 
 // pollingSession session context data for the filer worker during polling
@@ -40,11 +40,11 @@ type pollingSession struct {
 // pollingClient client for filter worker to polling from full node
 type pollingClient interface {
 	// establish polling session
-	establish() (pollingSession, error)
+	establish(ctx context.Context) (pollingSession, error)
 	// fetch changes from filter with specific id
-	fetch(fid rpc.ID) (filterChanges, error)
+	fetch(ctx context.Context, fid rpc.ID) (filterChanges, error)
 	// uninstall filter with specific id
-	uninstall(fid rpc.ID) (bool, error)
+	uninstall(ctx context.Context, fid rpc.ID) (bool, error)
 }
 
 func newPollingSession(fid rpc.ID, chain filterChain) *pollingSession {
@@ -70,7 +70,8 @@ type pollingObserver interface {
 // a virtual filter chain for late retrieval.
 type filterWorker struct {
 	mu          sync.RWMutex
-	quitflag    uint32
+	running     bool
+	closing     *closingSession
 	shutdownCtx cmdutil.GracefulShutdownContext
 
 	space    string          // network space
@@ -98,32 +99,49 @@ func newFilterWorker(
 
 // accept accepts delegate for virtual filter
 func (w *filterWorker) accept(f virtualFilter) error {
-	if atomic.LoadUint32(&w.quitflag) != 0 { // worker already shutdown
-		return errFilterWorkerShutdown
-	}
-
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
-	// establish filter polling session if not done yet
+	if w.shutdownCtx.Ctx.Err() != nil {
+		return errFilterWorkerShutdown
+	}
+	if w.closing != nil {
+		return errFilterCleanupPending
+	}
 	if w.session.fid == nilRpcId {
-		session, err := w.client.establish()
+		ctx, cancel := context.WithTimeout(w.shutdownCtx.Ctx, maxPollingDelayDuration)
+		defer cancel()
+		session, err := w.client.establish(ctx)
 		if err != nil {
 			return err
 		}
-
 		w.session = session
-
 		if w.observer != nil {
-			w.observer.onEstablished(w.shutdownCtx.Ctx, w.nodeName, w.session.fid)
+			if err := w.observer.onEstablished(ctx, w.nodeName, session.fid); err != nil {
+				w.closeLocked()
+				w.startPollingLocked()
+				return err
+			}
 		}
+		if err := ctx.Err(); err != nil {
+			w.closeLocked()
+			w.startPollingLocked()
+			return err
+		}
+	}
+	if w.session.fchain == nil {
+		return errFilterCleanupPending
+	}
+	w.session.fcursors[f.fid()] = &filterDelegate{cursor: w.session.fchain.snapshotLatestCursor()}
+	w.startPollingLocked()
+	return nil
+}
 
+func (w *filterWorker) startPollingLocked() {
+	if !w.running {
+		w.running = true
+		w.shutdownCtx.Wg.Add(1)
 		go w.poll()
 	}
-
-	// snapshot filter cursor for the delegate virtual filter
-	w.session.fcursors[f.fid()] = &filterDelegate{cursor: w.session.fchain.snapshotLatestCursor()}
-	return nil
 }
 
 // reject rejects delegate for virtual filter
@@ -142,36 +160,47 @@ func (w *filterWorker) reject(f virtualFilter) (bool, error) {
 // poll consistently polls filter changes from full node and applies the polled data
 // to the current polling session.
 func (w *filterWorker) poll() {
+	defer w.shutdownCtx.Wg.Done()
 	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
-
-	done := make(chan bool, 1)
-	defer close(done)
-
-	// graceful shutdown guard monitor
-	go w.shutdownTimeoutGuard(w.session.fid, done)
-
 	for {
 		select {
+		case <-w.shutdownCtx.Ctx.Done():
+			w.close()
+			ctx, cancel := context.WithTimeout(context.Background(), rpcutil.DefaultShutdownTimeout)
+			w.retryCleanup(ctx, true)
+			cancel()
+			w.mu.Lock()
+			if w.closing != nil {
+				logrus.WithField("fid", w.closing.fid).Warn("Virtual filter cleanup incomplete at shutdown")
+			}
+			w.running = false
+			w.mu.Unlock()
+			return
 		case <-ticker.C:
-			if w.gc() { // garbage collected?
+			w.mu.Lock()
+			if w.session.fid != nilRpcId && len(w.session.fcursors) == 0 {
+				w.closeLocked()
+			}
+			closing := w.closing != nil
+			if !closing && w.session.fid == nilRpcId {
+				w.running = false
+				w.mu.Unlock()
 				return
 			}
-
+			w.mu.Unlock()
+			if closing {
+				w.retryCleanup(w.shutdownCtx.Ctx, false)
+				continue
+			}
 			start := time.Now()
 			err := w.pollOnce()
-			metrics.Registry.VirtualFilter.
-				PollOnceQps(w.space, w.nodeName, err).UpdateSince(start)
-
+			metrics.Registry.VirtualFilter.PollOnceQps(w.space, w.nodeName, err).UpdateSince(start)
 			if err != nil {
 				logrus.WithError(err).Info("Virtual filter session closed due to error")
 				w.close()
-				return
+				w.retryCleanup(w.shutdownCtx.Ctx, false)
 			}
-		case <-w.shutdownCtx.Ctx.Done():
-			atomic.StoreUint32(&w.quitflag, 1)
-			w.close()
-			return
 		}
 	}
 }
@@ -180,7 +209,7 @@ func (w *filterWorker) pollOnce() (result error) {
 	w.mu.RLock()
 	fid, lastPollingTime := w.session.fid, w.session.lastPollingTime
 	w.mu.RUnlock()
-	fchanges, err := w.client.fetch(fid)
+	fchanges, err := w.client.fetch(w.shutdownCtx.Ctx, fid)
 	if err != nil && !isFilterNotFoundError(err) && !errors.Is(err, errInvalidFilterChanges) && time.Since(lastPollingTime) < maxPollingDelayDuration {
 		logrus.WithError(err).Info("Filter worker client failed to poll filter changes")
 		return nil
@@ -194,8 +223,7 @@ func (w *filterWorker) pollOnce() (result error) {
 	// this session before readers can see a partial persistent or chain view.
 	defer func() {
 		if result != nil {
-			w.session.fcursors = nil
-			w.session.fchain = nil
+			w.closeLocked()
 		}
 	}()
 	if err != nil {
@@ -247,64 +275,73 @@ func (w *filterWorker) merge(fchanges filterChanges) error {
 	return nil
 }
 
-// To make the virtual filter service more resilient, we'd like it not take too long
-// to stop or reboot. Here starts a monitor routine to kill the thread if timeout.
-func (w *filterWorker) shutdownTimeoutGuard(fid rpc.ID, done <-chan bool) {
-	w.shutdownCtx.Wg.Add(1)
-	defer w.shutdownCtx.Wg.Done()
-
-	select {
-	case <-w.shutdownCtx.Ctx.Done(): // on shutdown
-		atomic.StoreUint32(&w.quitflag, 1)
-
-		select {
-		case <-time.After(rpcutil.DefaultShutdownTimeout):
-			logrus.WithFields(logrus.Fields{
-				"nodeName": w.nodeName,
-				"fid":      fid,
-			}).Info("Virtual filter worker killed due to timeout")
-			return
-		case <-done:
-			break
-		}
-	case <-done:
-		break
-	}
+// closingSession retains ownership until both independent cleanup steps succeed.
+// It deliberately holds no chain or delegate data and there is at most one per worker.
+type closingSession struct {
+	fid                     rpc.ID
+	upstreamDone, storeDone bool
+	busy                    bool
+	retryAt                 time.Time
+	delay                   time.Duration
 }
 
-// garbage collects by closing the filter session if idle
-func (w *filterWorker) gc() bool {
+func (w *filterWorker) closeLocked() {
+	if w.session.fid == nilRpcId {
+		return
+	}
+	w.closing = &closingSession{fid: w.session.fid, storeDone: w.observer == nil}
+	w.session = nilPollingSession
+}
+
+func (w *filterWorker) close() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
-	if len(w.session.fcursors) == 0 {
-		// idle if no virtual filter delegated
-		logrus.WithField("fid", w.session.fid).
-			Info("Virtual filter session closed due to idle")
-
-		w.close(true)
-		return true
-	}
-
-	return false
+	w.closeLocked()
 }
 
-// close the polling session of filter worker
-func (w *filterWorker) close(lockfree ...bool) {
-	if len(lockfree) == 0 || !lockfree[0] {
-		w.mu.Lock()
-		defer w.mu.Unlock()
+// I/O runs without the data lock; busy and identity checks serialize attempts.
+func (w *filterWorker) retryCleanup(parent context.Context, force bool) {
+	w.mu.Lock()
+	c := w.closing
+	if c == nil || c.busy || (!force && time.Now().Before(c.retryAt)) {
+		w.mu.Unlock()
+		return
 	}
-
-	fid := w.session.fid
-	w.client.uninstall(fid)
-
-	// reset polling session
-	w.session = nilPollingSession
-
-	if w.observer != nil {
-		w.observer.onClosed(w.shutdownCtx.Ctx, w.nodeName, fid)
+	c.busy = true
+	upstreamDone, storeDone := c.upstreamDone, c.storeDone
+	w.mu.Unlock()
+	ctx, cancel := context.WithTimeout(parent, rpcutil.DefaultShutdownTimeout)
+	defer cancel()
+	if !upstreamDone {
+		_, err := w.client.uninstall(ctx, c.fid)
+		upstreamDone = err == nil || isFilterNotFoundError(err)
+		if !upstreamDone {
+			logrus.WithError(err).WithField("fid", c.fid).Warn("Virtual filter upstream cleanup failed")
+		}
 	}
+	if !storeDone {
+		err := w.observer.onClosed(ctx, w.nodeName, c.fid)
+		storeDone = err == nil
+		if !storeDone {
+			logrus.WithError(err).WithField("fid", c.fid).Warn("Virtual filter partition cleanup failed")
+		}
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closing != c {
+		return
+	}
+	c.upstreamDone, c.storeDone, c.busy = upstreamDone, storeDone, false
+	if upstreamDone && storeDone {
+		w.closing = nil
+		return
+	}
+	if c.delay == 0 {
+		c.delay = pollingInterval
+	} else {
+		c.delay = min(2*c.delay, 30*time.Second)
+	}
+	c.retryAt = time.Now().Add(c.delay)
 }
 
 // evm space filter worker
@@ -383,8 +420,9 @@ func (w *ethFilterWorker) fetchPollingChanges(cursor filterCursor) (*ethPollingC
 
 // implements `pollingClient` interface
 
-func (w *ethFilterWorker) establish() (pollingSession, error) {
-	fid, err := w.client.Filter.NewLogFilter(&ethtypes.FilterQuery{})
+func (w *ethFilterWorker) establish(ctx context.Context) (pollingSession, error) {
+	var fid *rpc.ID
+	err := w.client.Filter.CallContext(ctx, &fid, "eth_newFilter", ethtypes.FilterQuery{})
 	if err != nil {
 		return nilPollingSession, err
 	}
@@ -397,9 +435,9 @@ func (w *ethFilterWorker) establish() (pollingSession, error) {
 	return *session, nil
 }
 
-func (w *ethFilterWorker) fetch(fid rpc.ID) (filterChanges, error) {
+func (w *ethFilterWorker) fetch(ctx context.Context, fid rpc.ID) (filterChanges, error) {
 	// set as much timeout as possible for more fault tolerance
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), maxPollingDelayDuration)
+	timeoutCtx, cancel := context.WithTimeout(ctx, maxPollingDelayDuration)
 	defer cancel()
 
 	var raw upstreamLogResult
@@ -412,8 +450,10 @@ func (w *ethFilterWorker) fetch(fid rpc.ID) (filterChanges, error) {
 	return fchanges, err
 }
 
-func (w *ethFilterWorker) uninstall(fid rpc.ID) (bool, error) {
-	return w.client.Filter.UninstallFilter(fid)
+func (w *ethFilterWorker) uninstall(ctx context.Context, fid rpc.ID) (bool, error) {
+	var removed bool
+	err := w.client.Filter.CallContext(ctx, &removed, "eth_uninstallFilter", fid)
+	return removed, err
 }
 
 // core space filter worker
@@ -445,8 +485,9 @@ func newCfxFilterWorker(
 
 // implements `pollingClient` interface
 
-func (w *cfxFilterWorker) establish() (pollingSession, error) {
-	fid, err := w.client.Filter().NewFilter(cfxtypes.LogFilter{})
+func (w *cfxFilterWorker) establish(ctx context.Context) (pollingSession, error) {
+	var fid *rpc.ID
+	err := w.client.CallContext(ctx, &fid, "cfx_newFilter", cfxtypes.LogFilter{})
 	if err != nil {
 		return nilPollingSession, err
 	}
@@ -459,9 +500,9 @@ func (w *cfxFilterWorker) establish() (pollingSession, error) {
 	return *session, nil
 }
 
-func (w *cfxFilterWorker) fetch(fid rpc.ID) (filterChanges, error) {
+func (w *cfxFilterWorker) fetch(ctx context.Context, fid rpc.ID) (filterChanges, error) {
 	// set as much timeout as possible for more fault tolerance
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), maxPollingDelayDuration)
+	timeoutCtx, cancel := context.WithTimeout(ctx, maxPollingDelayDuration)
 	defer cancel()
 
 	var raw upstreamLogResult
@@ -474,8 +515,10 @@ func (w *cfxFilterWorker) fetch(fid rpc.ID) (filterChanges, error) {
 	return fchanges, err
 }
 
-func (w *cfxFilterWorker) uninstall(fid rpc.ID) (bool, error) {
-	return w.client.Filter().UninstallFilter(fid)
+func (w *cfxFilterWorker) uninstall(ctx context.Context, fid rpc.ID) (bool, error) {
+	var removed bool
+	err := w.client.CallContext(ctx, &removed, "cfx_uninstallFilter", fid)
+	return removed, err
 }
 
 type cfxPollingChanges struct {

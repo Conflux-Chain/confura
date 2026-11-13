@@ -23,11 +23,13 @@ type testPollingClient struct {
 	err     error
 }
 
-func (c *testPollingClient) establish() (pollingSession, error) {
+func (c *testPollingClient) establish(context.Context) (pollingSession, error) {
 	return *newPollingSession("0xabc", newEthFilterChain(2)), nil
 }
-func (c *testPollingClient) fetch(rpc.ID) (filterChanges, error) { return c.changes, c.err }
-func (c *testPollingClient) uninstall(rpc.ID) (bool, error)      { return true, nil }
+func (c *testPollingClient) fetch(context.Context, rpc.ID) (filterChanges, error) {
+	return c.changes, c.err
+}
+func (c *testPollingClient) uninstall(context.Context, rpc.ID) (bool, error) { return true, nil }
 
 func testWorker(t *testing.T, c pollingClient, chain filterChain) *filterWorker {
 	t.Helper()
@@ -47,6 +49,7 @@ func TestRejectMalformedChanges(t *testing.T) {
 		w := testWorker(t, &testPollingClient{changes: changes}, newEthFilterChain(2))
 		require.ErrorIs(t, w.pollOnce(), errInvalidFilterChanges)
 		require.Nil(t, w.session.fchain)
+		require.NotNil(t, w.closing)
 	}
 	for _, changes := range []filterChanges{&ethtypes.FilterChanges{}, &cfxtypes.CfxFilterChanges{Type: "empty"}} {
 		w := testWorker(t, &testPollingClient{changes: changes}, newEthFilterChain(2))
@@ -83,7 +86,7 @@ func TestSDKNullFilterResults(t *testing.T) {
 				require.NoError(t, err)
 				client = &cfxFilterWorker{client: c}
 			}
-			_, err := client.establish()
+			_, err := client.establish(context.Background())
 			require.ErrorIs(t, err, errInvalidFilterChanges)
 			w := testWorker(t, client, newEthFilterChain(2))
 			require.ErrorIs(t, w.pollOnce(), errInvalidFilterChanges)

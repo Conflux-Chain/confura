@@ -43,6 +43,7 @@ func newFilterSystemBase(
 		filterMgr:   newFilterManager(),
 	}
 
+	shutdownCtx.Wg.Add(1)
 	go fs.timeoutLoop(ttl)
 	return fs
 }
@@ -53,13 +54,19 @@ func (fs *filterSystemBase) getFilter(id rpc.ID) (virtualFilter, bool) {
 
 // timeoutLoop runs at the interval set by 'ttl' and deletes expired virtual filters
 func (fs *filterSystemBase) timeoutLoop(ttl time.Duration) {
+	defer fs.shutdownCtx.Wg.Done()
 	ticker := time.NewTicker(ttl / 2)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		expfs := fs.filterMgr.expire(ttl)
-		for _, vf := range expfs {
-			vf.uninstall()
+	for {
+		select {
+		case <-fs.shutdownCtx.Ctx.Done():
+			return
+		case <-ticker.C:
+			expfs := fs.filterMgr.expire(ttl)
+			for _, vf := range expfs {
+				vf.uninstall()
+			}
 		}
 	}
 }
