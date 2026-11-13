@@ -26,7 +26,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.10.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/valyala/fasthttp v1.40.0
 	github.com/zealws/golang-ring v0.0.0-20210116075443-7c86fdb43134
 	go.uber.org/multierr v1.6.0
@@ -57,7 +57,11 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.5 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 // indirect
+	github.com/bytedance/gopkg v0.1.4 // indirect
+	github.com/bytedance/sonic v1.15.2 // indirect
+	github.com/bytedance/sonic/loader v0.5.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/cloudwego/base64x v0.1.7 // indirect
 	github.com/cockroachdb/errors v1.11.3 // indirect
 	github.com/cockroachdb/fifo v0.0.0-20240606204812-0bbfbd93a7ce // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
@@ -77,18 +81,20 @@ require (
 	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/gammazero/deque v0.1.0 // indirect
 	github.com/gammazero/workerpool v1.1.2 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
-	github.com/gin-contrib/cors v1.3.1 // indirect
-	github.com/gin-contrib/sse v0.1.0 // indirect
-	github.com/gin-gonic/gin v1.8.1 // indirect
+	github.com/gin-contrib/cors v1.7.11 // indirect
+	github.com/gin-contrib/sse v1.1.1 // indirect
+	github.com/gin-gonic/gin v1.12.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/go-playground/locales v0.14.0 // indirect
-	github.com/go-playground/universal-translator v0.18.0 // indirect
-	github.com/go-playground/validator/v10 v10.11.1 // indirect
+	github.com/go-playground/locales v0.14.1 // indirect
+	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/go-telegram/bot v1.2.2 // indirect
-	github.com/goccy/go-json v0.10.5 // indirect
+	github.com/goccy/go-json v0.10.6 // indirect
+	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
@@ -112,13 +118,14 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kilic/bls12-381 v0.1.0 // indirect
-	github.com/klauspost/compress v1.16.0 // indirect
+	github.com/klauspost/compress v1.17.6 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/leodido/go-urn v1.2.1 // indirect
+	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/magiconair/properties v1.8.5 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.23 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
@@ -131,7 +138,7 @@ require (
 	github.com/openweb3/go-sdk-common v0.0.0-20240627072707-f78f0155ab34 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pelletier/go-toml v1.9.4 // indirect
-	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
+	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/pion/dtls/v2 v2.2.7 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/stun/v2 v2.0.0 // indirect
@@ -142,6 +149,8 @@ require (
 	github.com/prometheus/client_model v0.2.1-0.20210607210712-147c58e9608a // indirect
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
+	github.com/quic-go/quic-go v0.60.0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -159,12 +168,15 @@ require (
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
-	github.com/ugorji/go/codec v1.2.7 // indirect
+	github.com/ugorji/go/codec v1.3.1 // indirect
 	github.com/urfave/cli/v2 v2.27.5 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.8.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
+	golang.org/x/arch v0.29.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
