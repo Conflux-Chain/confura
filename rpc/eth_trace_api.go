@@ -32,6 +32,9 @@ func (api *ethTraceAPI) Block(ctx context.Context, blockNumOrHash types.BlockNum
 
 func (api *ethTraceAPI) Filter(ctx context.Context, filter types.TraceFilter) ([]types.LocalizedTrace, error) {
 	w3c := GetEthClientFromContext(ctx)
+	if err := validateEthTraceFilter(w3c, filter); err != nil {
+		return nil, err
+	}
 	return api.stateHandler.TraceFilter(ctx, w3c, filter)
 }
 
