@@ -3,12 +3,16 @@ package virtualfilter
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/Conflux-Chain/confura/node"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/openweb3/web3go"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	cmdutil "github.com/Conflux-Chain/confura/cmd/util"
@@ -19,12 +23,17 @@ import (
 )
 
 type testPollingClient struct {
+	chain   func() filterChain
 	changes filterChanges
 	err     error
 }
 
 func (c *testPollingClient) establish(context.Context) (pollingSession, error) {
-	return *newPollingSession("0xabc", newEthFilterChain(2)), nil
+	chain := filterChain(newEthFilterChain(2))
+	if c.chain != nil {
+		chain = c.chain()
+	}
+	return *newPollingSession("0xabc", chain), nil
 }
 func (c *testPollingClient) fetch(context.Context, rpc.ID) (filterChanges, error) {
 	return c.changes, c.err
@@ -34,8 +43,9 @@ func (c *testPollingClient) uninstall(context.Context, rpc.ID) (bool, error) { r
 func testWorker(t *testing.T, c pollingClient, chain filterChain) *filterWorker {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	return &filterWorker{space: "eth", nodeName: "fixture", client: c, session: *newPollingSession("0xabc", chain), shutdownCtx: cmdutil.GracefulShutdownContext{Ctx: ctx, Wg: &sync.WaitGroup{}}}
+	wg := &sync.WaitGroup{}
+	t.Cleanup(func() { cancel(); wg.Wait() })
+	return &filterWorker{space: "eth", nodeName: "fixture", client: c, session: *newPollingSession("0xabc", chain), shutdownCtx: cmdutil.GracefulShutdownContext{Ctx: ctx, Wg: wg}}
 }
 
 func TestRejectMalformedChanges(t *testing.T) {
@@ -90,6 +100,64 @@ func TestSDKNullFilterResults(t *testing.T) {
 			require.ErrorIs(t, err, errInvalidFilterChanges)
 			w := testWorker(t, client, newEthFilterChain(2))
 			require.ErrorIs(t, w.pollOnce(), errInvalidFilterChanges)
+		})
+	}
+}
+
+func TestUpstreamRecoveryContract(t *testing.T) {
+	for _, space := range []string{"eth", "cfx"} {
+		t.Run(space, func(t *testing.T) {
+			_, s := newTestLogSession(t, space, 1)
+			c := &testPollingClient{err: errors.New("connection reset")}
+			s.w.client = c
+			require.NoError(t, s.w.pollOnce())
+			require.Contains(t, s.w.session.fcursors, s.f.fid())
+			c.err = nil
+			c.changes = s.batch(1, 2)
+			require.NoError(t, s.w.pollOnce())
+			got, err := s.f.fetch(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, 2, logCount(got))
+			c.err = errFilterNotFound
+			require.ErrorIs(t, s.w.pollOnce(), errFilterNotFound)
+			_, err = s.f.fetch(context.Background())
+			require.ErrorIs(t, err, errFilterNotFound)
+			require.NotNil(t, s.w.closing)
+		})
+	}
+}
+
+func BenchmarkDelegateRead(b *testing.B) {
+	for _, sameID := range []bool{true, false} {
+		name := "differentIDs"
+		if sameID {
+			name = "sameID"
+		}
+		b.Run(name, func(b *testing.B) {
+			w := &filterWorker{session: *newPollingSession("0xabc", newEthFilterChain(1))}
+			count := runtime.GOMAXPROCS(0)
+			ids := make([]rpc.ID, count)
+			for i := range ids {
+				ids[i] = rpc.ID(fmt.Sprintf("0x%x", i+1))
+				w.session.fcursors[ids[i]] = &filterDelegate{}
+			}
+			var next atomic.Uint64
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				idx := int(next.Add(1) - 1)
+				if sameID {
+					idx = 0
+				}
+				id := ids[idx]
+				for pb.Next() {
+					_, unlock, err := w.beginRead(context.Background(), id)
+					if err != nil {
+						b.Fatal(err)
+					}
+					unlock()
+				}
+			})
 		})
 	}
 }

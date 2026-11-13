@@ -1,14 +1,17 @@
 package virtualfilter
 
 import (
+	cfxtypes "github.com/Conflux-Chain/go-conflux-sdk/types"
+	ethtypes "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
 )
 
 var (
 	nilFilterCursor = filterCursor{}
 
-	errRewindNodeNotFound = errors.New("rewind node not found")
-	errBadFilterCursor    = errors.New("bad filter cursor")
+	errRewindNodeNotFound  = errors.New("rewind node not found")
+	errBadFilterCursor     = errors.New("bad filter cursor")
+	errFilterChainCapacity = errors.New("filter chain capacity exceeded")
 )
 
 type filterNodable interface {
@@ -20,7 +23,7 @@ type filterCursor struct {
 	height   uint64 // block height
 	hash     string // block hash
 	empty    bool   // consumed canonical chain is empty
-	revision uint64 // change position at the empty chain
+	revision uint64 // last consumed chain change
 }
 
 func (c filterCursor) sameNode(other filterCursor) bool {
@@ -30,6 +33,7 @@ func (c filterCursor) sameNode(other filterCursor) bool {
 type filterChainIterator func(node *filterNode, forkPoint bool) bool
 
 type filterChain interface {
+	checkCapacity(filterChanges) error
 	// snapshotLatestCursor returns the filter cursor
 	// of the latest node in the filter chain
 	snapshotLatestCursor() filterCursor
@@ -44,6 +48,7 @@ type filterChain interface {
 }
 
 type filterChainBase struct {
+	maxNodes    int
 	revision    uint64
 	root        filterNode             // sentinel root node
 	genesis     *filterNode            // (the first) genesis chain node
@@ -54,6 +59,7 @@ type filterChainBase struct {
 func newFilterChainBase(derived filterChain) *filterChainBase {
 	fcb := &filterChainBase{
 		hashToNodes: make(map[string]*filterNode),
+		maxNodes:    defaultMaxFilterChainNodes,
 	}
 
 	// init root node
@@ -244,5 +250,55 @@ func (n *filterNode) getPrev() *filterNode {
 		return p
 	}
 
+	return nil
+}
+
+// Count all retained fork/canonical nodes, not just the canonical list. The
+// preflight set stops growing at the limit, before parsing or inserting nodes.
+func (c *filterChainBase) checkCapacity(changes filterChanges) error {
+	count := len(c.hashToNodes)
+	if c.genesis != nil && c.genesis.cursor().hash == "" {
+		count++
+	}
+	pending := make(map[string]struct{})
+	add := func(hash string) error {
+		if _, ok := c.hashToNodes[hash]; ok {
+			return nil
+		}
+		if _, ok := pending[hash]; ok {
+			return nil
+		}
+		count++
+		if count > c.maxNodes {
+			return errFilterChainCapacity
+		}
+		pending[hash] = struct{}{}
+		return nil
+	}
+	switch batch := changes.(type) {
+	case *ethtypes.FilterChanges:
+		for _, log := range batch.Logs {
+			if err := add(log.BlockHash.String()); err != nil {
+				return err
+			}
+		}
+	case *cfxtypes.CfxFilterChanges:
+		hasGenesis := c.genesis != nil
+		for _, item := range batch.Logs {
+			if item.IsRevertLog() {
+				if !hasGenesis {
+					if err := add(""); err != nil {
+						return err
+					}
+					hasGenesis = true
+				}
+			} else {
+				if err := add(item.BlockHash.String()); err != nil {
+					return err
+				}
+				hasGenesis = true
+			}
+		}
+	}
 	return nil
 }

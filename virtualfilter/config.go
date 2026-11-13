@@ -6,6 +6,8 @@ import (
 	"github.com/Conflux-Chain/go-conflux-util/viper"
 )
 
+const defaultMaxFilterChainNodes = 100000
+
 // ethConfig represents the configuration of the EVM space virtual filter system.
 type ethConfig struct {
 	Endpoint string        `default:":48545"` // server listening endpoint (default: :48545)
@@ -13,12 +15,18 @@ type ethConfig struct {
 
 	// max number of filter blocks full of event logs to restrict memory usage (default: 100)
 	MaxFullFilterBlocks int `default:"100"`
+
+	// Max retained canonical and fork nodes. Exceeding it invalidates the session.
+	MaxFilterChainNodes int `default:"100000"`
 }
 
 func mustNewEthConfigFromViper() *ethConfig {
 	var conf ethConfig
 	viper.MustUnmarshalKey("ethVirtualFilters", &conf)
 
+	if conf.MaxFilterChainNodes <= 0 {
+		panic("MaxFilterChainNodes must be positive")
+	}
 	return &conf
 }
 
@@ -29,11 +37,17 @@ type cfxConfig struct {
 
 	// max number of filter epochs full of event logs to restrict memory usage (default: 100)
 	MaxFullFilterEpochs int `default:"100"`
+
+	// Max retained canonical and fork nodes. Exceeding it invalidates the session.
+	MaxFilterChainNodes int `default:"100000"`
 }
 
 func mustNewCfxConfigFromViper() *cfxConfig {
 	var conf cfxConfig
 	viper.MustUnmarshalKey("virtualFilters", &conf)
 
+	if conf.MaxFilterChainNodes <= 0 {
+		panic("MaxFilterChainNodes must be positive")
+	}
 	return &conf
 }

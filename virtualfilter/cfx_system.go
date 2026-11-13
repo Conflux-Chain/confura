@@ -58,7 +58,7 @@ func (fs *cfxFilterSystem) newFilter(client *sdk.Client, crit types.LogFilter) (
 	nodeName := rpcutil.Url2NodeName(client.GetNodeURL())
 	worker, _ := fs.workers.LoadOrStoreFn(nodeName, func(k interface{}) interface{} {
 		return newCfxFilterWorker(
-			fs.conf.MaxFullFilterEpochs, fs, client, fs.shutdownCtx,
+			fs.conf.MaxFullFilterEpochs, fs.conf.MaxFilterChainNodes, fs, client, fs.shutdownCtx,
 		)
 	})
 

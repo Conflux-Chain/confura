@@ -5,9 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	driver "gorm.io/driver/mysql"
 	"math/big"
+	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/store/mysql"
@@ -45,6 +50,9 @@ func init() {
 }
 func testLogStore(t *testing.T) (*gorm.DB, *mysql.VirtualFilterLogStore) {
 	t.Helper()
+	if socket := os.Getenv("CONFURA_TEST_MYSQL_SOCKET"); socket != "" {
+		return testMySQLLogStore(t, socket)
+	}
 	db, err := gorm.Open(sqlite.Dialector{DriverName: "vf_test_sqlite", DSN: t.TempDir() + "/filter.db?_journal_mode=WAL&_busy_timeout=5000"}, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
 	d, err := db.DB()
@@ -217,4 +225,64 @@ func TestDelegateReadOwnership(t *testing.T) {
 	cancel()
 	unlock()
 	require.ErrorIs(t, <-done, context.Canceled)
+}
+
+var testDBSequence atomic.Uint64
+
+// Explicit opt-in for a disposable local MySQL socket. Never load app config.
+func testMySQLLogStore(t *testing.T, socket string) (*gorm.DB, *mysql.VirtualFilterLogStore) {
+	t.Helper()
+	cfg := &gorm.Config{Logger: logger.Default.LogMode(logger.Silent), CreateBatchSize: 200}
+	admin, err := gorm.Open(driver.Open("root@unix("+socket+")/?parseTime=true"), cfg)
+	require.NoError(t, err)
+	name := fmt.Sprintf("vf_test_%d_%d", time.Now().UnixNano(), testDBSequence.Add(1))
+	require.NoError(t, admin.Exec("CREATE DATABASE "+name).Error)
+	db, err := gorm.Open(driver.Open("root@unix("+socket+")/"+name+"?parseTime=true&timeout=3s&readTimeout=10s&writeTimeout=10s"), cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { d, _ := db.DB(); d.Close(); admin.Exec("DROP DATABASE " + name); a, _ := admin.DB(); a.Close() })
+	require.NoError(t, db.Exec(`CREATE TABLE bn_partitions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, entity VARCHAR(64) NOT NULL, pi INT UNSIGNED NOT NULL, count INT UNSIGNED NOT NULL DEFAULT 0, bn_min BIGINT DEFAULT NULL, bn_max BIGINT DEFAULT NULL, created_at datetime(3), updated_at datetime(3), UNIQUE KEY uidx_entity_pi(entity,pi))`).Error)
+	return db, mysql.NewVirtualFilterLogStore(db)
+}
+
+func TestExpiryCannotResurrectInFlightFilter(t *testing.T) {
+	for _, space := range []string{"eth", "cfx"} {
+		t.Run(space, func(t *testing.T) {
+			db, s := newTestLogSession(t, space, 1)
+			batch := s.batch(1, 2)
+			require.NoError(t, s.persist(batch))
+			require.NoError(t, s.w.merge(batch))
+			mgr := newFilterManager()
+			mgr.add(s.f)
+			base := &filterSystemBase{filterMgr: mgr}
+			var consume func() (filterChanges, error)
+			if space == "eth" {
+				fs := &ethFilterSystem{filterSystemBase: base}
+				consume = func() (filterChanges, error) { return fs.getFilterChanges(context.Background(), s.f.fid()) }
+			} else {
+				fs := &cfxFilterSystem{filterSystemBase: base}
+				consume = func() (filterChanges, error) { return fs.getFilterChanges(context.Background(), s.f.fid()) }
+			}
+			entered, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			require.NoError(t, db.Callback().Query().After("gorm:query").Register("expiry_read", func(tx *gorm.DB) {
+				if tx.Statement.Table == "vflogs_0xabc_0" {
+					once.Do(func() { close(entered); <-release })
+				}
+			}))
+			done := make(chan error, 1)
+			go func() { _, e := consume(); done <- e }()
+			<-entered
+			expired := mgr.expire(0)
+			require.Len(t, expired, 1)
+			removed := make(chan struct{})
+			go func() { expired[s.f.fid()].uninstall(); close(removed) }()
+			close(release)
+			require.NoError(t, <-done)
+			<-removed
+			_, ok := mgr.get(s.f.fid())
+			require.False(t, ok)
+			_, err := consume()
+			require.ErrorIs(t, err, errFilterNotFound)
+		})
+	}
 }

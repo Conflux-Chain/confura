@@ -56,7 +56,7 @@ func (fs *ethFilterSystem) newPendingTransactionFilter(client *node.Web3goClient
 func (fs *ethFilterSystem) newFilter(client *node.Web3goClient, crit types.FilterQuery) (rpc.ID, error) {
 	worker, _ := fs.workers.LoadOrStoreFn(client.NodeName(), func(k interface{}) interface{} {
 		return newEthFilterWorker(
-			fs.conf.MaxFullFilterBlocks, fs, client, fs.shutdownCtx,
+			fs.conf.MaxFullFilterBlocks, fs.conf.MaxFilterChainNodes, fs, client, fs.shutdownCtx,
 		)
 	})
 

@@ -33,6 +33,9 @@ func newCfxFilterChain(maxFullFilterEpochs int) *cfxFilterChain {
 }
 
 func (fc *cfxFilterChain) merge(fchanges filterChanges) error {
+	if err := fc.checkCapacity(fchanges); err != nil {
+		return err
+	}
 	chainedEpochsList := parseCfxFilterChanges(fchanges.(*types.CfxFilterChanges))
 	if len(chainedEpochsList) == 0 {
 		return nil
@@ -198,7 +201,7 @@ type cfxFilterEpoch struct {
 	blockHash types.Hash
 
 	reverted   bool
-	revertedTo uint64      // reverted to epoch number, 0 means no reorg
+	revertedTo uint64      // revert target, including epoch zero
 	logs       []types.Log // logs contained within this block
 }
 

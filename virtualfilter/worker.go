@@ -69,10 +69,11 @@ type pollingObserver interface {
 // filterWorker consistently polls filter changes from full node and simulate
 // a virtual filter chain for late retrieval.
 type filterWorker struct {
-	mu          sync.RWMutex
-	running     bool
-	closing     *closingSession
-	shutdownCtx cmdutil.GracefulShutdownContext
+	mu                  sync.RWMutex
+	running             bool
+	closing             *closingSession
+	shutdownCtx         cmdutil.GracefulShutdownContext
+	maxFilterChainNodes int
 
 	space    string          // network space
 	nodeName string          // full node name
@@ -88,12 +89,13 @@ func newFilterWorker(
 	shutdownCtx cmdutil.GracefulShutdownContext,
 ) *filterWorker {
 	return &filterWorker{
-		observer:    obs,
-		space:       space,
-		nodeName:    nodeName,
-		client:      client,
-		session:     nilPollingSession,
-		shutdownCtx: shutdownCtx,
+		observer:            obs,
+		space:               space,
+		nodeName:            nodeName,
+		client:              client,
+		session:             nilPollingSession,
+		shutdownCtx:         shutdownCtx,
+		maxFilterChainNodes: defaultMaxFilterChainNodes,
 	}
 }
 
@@ -232,6 +234,9 @@ func (w *filterWorker) pollOnce() (result error) {
 	if err := validateLogChanges(fchanges); err != nil {
 		return err
 	}
+	if err := w.session.fchain.checkCapacity(fchanges); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(w.shutdownCtx.Ctx, maxPollingDelayDuration)
 	defer cancel()
 	if w.observer != nil {
@@ -353,7 +358,7 @@ type ethFilterWorker struct {
 }
 
 func newEthFilterWorker(
-	maxFullFilterBlocks int,
+	maxFullFilterBlocks, maxFilterChainNodes int,
 	obs pollingObserver,
 	client *node.Web3goClient,
 	shutdownCtx cmdutil.GracefulShutdownContext,
@@ -366,6 +371,7 @@ func newEthFilterWorker(
 	w.filterWorker = newFilterWorker(
 		"eth", client.NodeName(), w, obs, shutdownCtx,
 	)
+	w.maxFilterChainNodes = maxFilterChainNodes
 
 	return w
 }
@@ -431,7 +437,9 @@ func (w *ethFilterWorker) establish(ctx context.Context) (pollingSession, error)
 		return nilPollingSession, errInvalidFilterChanges
 	}
 
-	session := newPollingSession(*fid, newEthFilterChain(w.maxFullFilterBlocks))
+	chain := newEthFilterChain(w.maxFullFilterBlocks)
+	chain.maxNodes = w.maxFilterChainNodes
+	session := newPollingSession(*fid, chain)
 	return *session, nil
 }
 
@@ -465,7 +473,7 @@ type cfxFilterWorker struct {
 }
 
 func newCfxFilterWorker(
-	maxFullFilterEpochs int,
+	maxFullFilterEpochs, maxFilterChainNodes int,
 	obs pollingObserver,
 	client *sdk.Client,
 	shutdownCtx cmdutil.GracefulShutdownContext,
@@ -479,6 +487,7 @@ func newCfxFilterWorker(
 	w.filterWorker = newFilterWorker(
 		"cfx", nodeName, w, obs, shutdownCtx,
 	)
+	w.maxFilterChainNodes = maxFilterChainNodes
 
 	return w
 }
@@ -496,7 +505,9 @@ func (w *cfxFilterWorker) establish(ctx context.Context) (pollingSession, error)
 		return nilPollingSession, errInvalidFilterChanges
 	}
 
-	session := newPollingSession(*fid, newCfxFilterChain(w.maxFullFilterEpochs))
+	chain := newCfxFilterChain(w.maxFullFilterEpochs)
+	chain.maxNodes = w.maxFilterChainNodes
+	session := newPollingSession(*fid, chain)
 	return *session, nil
 }
 
