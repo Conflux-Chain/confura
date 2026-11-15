@@ -91,7 +91,7 @@ func (fs *ethFilterSystem) uninstallFilter(id rpc.ID) (bool, error) {
 	return true, nil
 }
 
-// implement `filterWorkerObserver` interface
+// implement `pollingObserver` interface
 
 func (fs *ethFilterSystem) onPolled(nodeName string, fid rpc.ID, changes filterChanges) error {
 	// convert to virtual filter log

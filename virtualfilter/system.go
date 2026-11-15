@@ -63,7 +63,7 @@ func (fs *filterSystemBase) timeoutLoop(ttl time.Duration) {
 	}
 }
 
-// implement `filterWorkerObserver` interface
+// implement `pollingObserver` interface
 
 func (fs *filterSystemBase) onEstablished(nodeName string, fid rpc.ID) error {
 	// prepare partition table for changed logs persistence
