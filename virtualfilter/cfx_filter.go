@@ -38,13 +38,21 @@ func newCfxFilter(fid rpc.ID, typ filterType, client *sdk.Client) *cfxFilter {
 
 // implements `virtualFilter` interface
 
-func (f *cfxFilter) fetch() (filterChanges, error) {
-	return f.client.Filter().GetFilterChanges(f.id)
+func (f *cfxFilter) fetch(ctx context.Context) (filterChanges, error) {
+	var changes *types.CfxFilterChanges
+	err := f.client.CallContext(ctx, &changes, "cfx_getFilterChanges", f.id)
+	return changes, err
 }
 
-func (f *cfxFilter) uninstall() (bool, error) {
+func (f *cfxFilter) uninstall(ctx context.Context) (bool, error) {
 	metricVirtualFilterSession("cfx", f, -1)
-	return f.client.Filter().UninstallFilter(f.id)
+	// The fixed HTTP transport observes deadlines, but cannot interrupt an
+	// in-flight request on cancellation. Bound that remaining wait explicitly.
+	ctx, cancel := context.WithTimeout(ctx, rpcutil.DefaultShutdownTimeout)
+	defer cancel()
+	var removed bool
+	err := f.client.CallContext(ctx, &removed, "cfx_uninstallFilter", f.id)
+	return removed, err
 }
 
 func (f *cfxFilter) nodeName() string {
@@ -57,6 +65,10 @@ func newCfxBlockFilter(client *sdk.Client) (*cfxFilter, error) {
 		return nil, err
 	}
 
+	if fid == nil || *fid == nilRpcId {
+		return nil, errInvalidFilterChanges
+	}
+
 	f := newCfxFilter(*fid, filterTypeBlock, client)
 	metricVirtualFilterSession("cfx", f, 1)
 	return f, nil
@@ -66,6 +78,10 @@ func newCfxPendingTxnFilter(client *sdk.Client) (*cfxFilter, error) {
 	fid, err := client.Filter().NewPendingTransactionFilter()
 	if err != nil {
 		return nil, err
+	}
+
+	if fid == nil || *fid == nilRpcId {
+		return nil, errInvalidFilterChanges
 	}
 
 	f := newCfxFilter(*fid, filterTypePendingTxn, client)
@@ -102,14 +118,19 @@ func newCfxLogFilter(
 	return lf, nil
 }
 
-func (f *cfxLogFilter) uninstall() (bool, error) {
+func (f *cfxLogFilter) uninstall(ctx context.Context) (bool, error) {
 	metricVirtualFilterSession("cfx", f, -1)
 	return f.worker.reject(f)
 }
 
-func (f *cfxLogFilter) fetch() (filterChanges, error) {
+func (f *cfxLogFilter) fetch(ctx context.Context) (filterChanges, error) {
+	delegate, unlock, err := f.worker.beginRead(ctx, f.id)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	// get change epochs from filter worker since last polling
-	pchanges, err := f.worker.fetchPollingChanges(f.id)
+	pchanges, err := f.worker.fetchPollingChanges(delegate)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +151,7 @@ func (f *cfxLogFilter) fetch() (filterChanges, error) {
 
 	blockLogs := make(map[string][]types.Log, len(missingBlockhashes))
 	if len(missingBlockhashes) > 0 { // load missing event logs from db store
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), store.TimeoutGetLogs)
+		timeoutCtx, cancel := context.WithTimeout(ctx, store.TimeoutGetLogs)
 		defer cancel()
 
 		startTime := time.Now()
@@ -196,5 +217,10 @@ func (f *cfxLogFilter) fetch() (filterChanges, error) {
 		Type: "log", Logs: changeLogs,
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	delegate.cursor = f.worker.session.fchain.snapshotLatestCursor()
+	delegate.pendingRevert = nil
 	return fc, nil
 }

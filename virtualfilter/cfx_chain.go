@@ -31,10 +31,15 @@ func newCfxFilterChain(maxFullFilterEpochs int) *cfxFilterChain {
 }
 
 func (fc *cfxFilterChain) merge(fchanges filterChanges) error {
+	if err := fc.checkCapacity(fchanges); err != nil {
+		return err
+	}
 	chainedEpochsList := parseCfxFilterChanges(fchanges.(*types.CfxFilterChanges))
 	if len(chainedEpochsList) == 0 {
 		return nil
 	}
+
+	fc.revision++
 
 	// update the virtual filter blockchain
 	for i := range chainedEpochsList {
@@ -70,6 +75,7 @@ func (fc *cfxFilterChain) reorg(reverted *list.List) error {
 			}
 
 			filterEpoch.revertedTo = repoch.revertedTo
+			filterEpoch.reverted = true
 			rnode = rnode.getPrev()
 		}
 
@@ -190,7 +196,8 @@ type cfxFilterEpoch struct {
 	epochNum  uint64
 	blockHash types.Hash
 
-	revertedTo uint64      // reverted to epoch number, 0 means no reorg
+	reverted   bool
+	revertedTo uint64      // revert target, including epoch zero
 	logs       []types.Log // logs contained within this block
 }
 
@@ -207,7 +214,7 @@ func newCfxFilterEpochFromLogs(logs []types.Log) *cfxFilterEpoch {
 }
 
 func newCfxFilterEpochWithReorg(revertedTo uint64) *cfxFilterEpoch {
-	return &cfxFilterEpoch{revertedTo: revertedTo}
+	return &cfxFilterEpoch{revertedTo: revertedTo, reverted: true}
 }
 
 // implements `filterNodable`
@@ -220,7 +227,7 @@ func (fe *cfxFilterEpoch) cursor() filterCursor {
 }
 
 func (fe *cfxFilterEpoch) reorged() bool {
-	return fe.revertedTo > 0
+	return fe.reverted || fe.revertedTo > 0
 }
 
 // parseCfxFilterChanges parses core space filter changes to return multiple linked lists

@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -57,7 +58,7 @@ func (fs *cfxFilterSystem) newFilter(client *sdk.Client, crit types.LogFilter) (
 	nodeName := rpcutil.Url2NodeName(client.GetNodeURL())
 	worker, _ := fs.workers.LoadOrStoreFn(nodeName, func(k interface{}) interface{} {
 		return newCfxFilterWorker(
-			fs.conf.MaxFullFilterEpochs, fs, client, fs.shutdownCtx,
+			fs.conf.MaxFullFilterEpochs, fs.conf.MaxFilterChainNodes, fs, client, fs.shutdownCtx,
 		)
 	})
 
@@ -70,13 +71,13 @@ func (fs *cfxFilterSystem) newFilter(client *sdk.Client, crit types.LogFilter) (
 	return f.fid(), nil
 }
 
-func (fs *cfxFilterSystem) getFilterChanges(id rpc.ID) (*types.CfxFilterChanges, error) {
+func (fs *cfxFilterSystem) getFilterChanges(ctx context.Context, id rpc.ID) (*types.CfxFilterChanges, error) {
 	vf, ok := fs.filterMgr.get(id)
 	if !ok {
 		return nil, errFilterNotFound
 	}
 
-	fc, err := vf.fetch()
+	fc, err := vf.fetch(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +86,9 @@ func (fs *cfxFilterSystem) getFilterChanges(id rpc.ID) (*types.CfxFilterChanges,
 	return fc.(*types.CfxFilterChanges), nil
 }
 
-func (fs *cfxFilterSystem) uninstallFilter(id rpc.ID) (bool, error) {
+func (fs *cfxFilterSystem) uninstallFilter(ctx context.Context, id rpc.ID) (bool, error) {
 	if vf, ok := fs.filterMgr.delete(id); ok {
-		return vf.uninstall()
+		return vf.uninstall(ctx)
 	}
 
 	return true, nil
@@ -95,7 +96,7 @@ func (fs *cfxFilterSystem) uninstallFilter(id rpc.ID) (bool, error) {
 
 // implement `filterWorkerObserver` interface
 
-func (fs *cfxFilterSystem) onPolled(nodeName string, fid rpc.ID, changes filterChanges) error {
+func (fs *cfxFilterSystem) onPolled(ctx context.Context, nodeName string, fid rpc.ID, changes filterChanges) error {
 	// convert to virtual filter log
 	fchanges := changes.(*types.CfxFilterChanges)
 	if len(fchanges.Logs) == 0 {
@@ -111,38 +112,50 @@ func (fs *cfxFilterSystem) onPolled(nodeName string, fid rpc.ID, changes filterC
 	})
 
 	// prepare table partition for insert at first
-	partition, newCreated, err := fs.logStore.PreparePartition(string(fid))
+	partition, newCreated, err := fs.logStore.WithContext(ctx).PreparePartition(string(fid))
 	if err != nil {
 		logger.WithError(err).Error("Filter system failed to prepare virtual filter partition")
 		return err
 	}
 
 	if newCreated { // if new partition created, also try to prune limit exceeded archive partitions
-		if err := fs.logStore.GC(string(fid)); err != nil {
+		if err := fs.logStore.WithContext(ctx).GC(string(fid)); err != nil {
 			logger.WithError(err).Error("Filter system failed to GC virtual filter partitions")
 			return err
 		}
 	}
 
+	// Persist the same complete block incarnation that the chain retains.
+	// Reorg boundaries matter: individual log identities/indices can change
+	// when a Core block is executed again, so per-log deduplication is insufficient.
+	latest := make(map[string][]types.Log)
+	var hashes []string
+	for _, group := range parseCfxFilterChanges(fchanges) {
+		for item := group.Front(); item != nil; item = item.Next() {
+			block := item.Value.(*cfxFilterEpoch)
+			if block.reorged() {
+				continue
+			}
+			hash := block.blockHash.String()
+			if _, ok := latest[hash]; !ok {
+				hashes = append(hashes, hash)
+			}
+			latest[hash] = block.logs
+		}
+	}
 	vflogs := make([]mysql.VirtualFilterLog, 0, len(fchanges.Logs))
-	for _, sublog := range fchanges.Logs {
-		if sublog.IsRevertLog() { // skip reorg log
-			continue
+	for _, hash := range hashes {
+		for _, log := range latest[hash] {
+			vflog, err := convertCfxLogToVirtualFilterLog(&log)
+			if err != nil {
+				return errors.WithMessage(err, "failed to convert virtual filter log")
+			}
+			vflogs = append(vflogs, *vflog)
 		}
-
-		vflog, err := convertCfxLogToVirtualFilterLog(sublog.Log)
-		if err != nil {
-			logger.WithField("log", *sublog.Log).
-				WithError(err).
-				Error("Filter system failed to convert virtual filter log")
-			return errors.WithMessage(err, "failed to convert virtual filter log")
-		}
-
-		vflogs = append(vflogs, *vflog)
 	}
 
 	// append polled change logs to partition table
-	if err := fs.logStore.Append(string(fid), vflogs, partition); err != nil {
+	if err := fs.logStore.WithContext(ctx).Append(string(fid), vflogs, partition); err != nil {
 		logger.WithField("partition", partition).
 			WithError(err).
 			Error("Filter system failed to append filter changeds to database")

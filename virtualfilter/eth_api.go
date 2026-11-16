@@ -1,6 +1,7 @@
 package virtualfilter
 
 import (
+	"context"
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/util"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
@@ -42,8 +43,8 @@ func (api *ethFilterApi) NewPendingTransactionFilter(nodeUrl string) (w3rpc.ID, 
 	return api.fs.newPendingTransactionFilter(client)
 }
 
-func (api *ethFilterApi) UninstallFilter(id w3rpc.ID) (bool, error) {
-	return api.fs.uninstallFilter(id)
+func (api *ethFilterApi) UninstallFilter(ctx context.Context, id w3rpc.ID) (bool, error) {
+	return api.fs.uninstallFilter(ctx, id)
 }
 
 func (api *ethFilterApi) NewFilter(nodeUrl string, crit types.FilterQuery) (w3rpc.ID, error) {
@@ -65,14 +66,16 @@ func (api *ethFilterApi) GetLogFilter(fid w3rpc.ID) (*types.FilterQuery, error) 
 	return &ethf.crit, nil
 }
 
-func (api *ethFilterApi) GetFilterChanges(id w3rpc.ID) (*types.FilterChanges, error) {
-	return api.fs.getFilterChanges(id)
+func (api *ethFilterApi) GetFilterChanges(ctx context.Context, id w3rpc.ID) (*types.FilterChanges, error) {
+	return api.fs.getFilterChanges(ctx, id)
 }
 
 func (api *ethFilterApi) loadOrGetFnClient(nodeUrl string) (*node.Web3goClient, error) {
 	nodeName := rpcutil.Url2NodeName(nodeUrl)
 	client, _, err := api.fnClients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
-		client, err := rpcutil.NewEthClient(nodeUrl, rpcutil.WithClientHookMetrics(true))
+		// The worker owns retries. SDK retry sleeps ignore cancellation and must
+		// not extend shutdown or repeat destructive filter calls.
+		client, err := rpcutil.NewEthClient(nodeUrl, rpcutil.WithClientHookMetrics(true), rpcutil.WithClientRetryCount(0))
 		if err != nil {
 			logrus.WithField("fnNodeUrl", nodeUrl).
 				WithError(err).
