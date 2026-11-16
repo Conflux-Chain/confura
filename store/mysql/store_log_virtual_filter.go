@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"sync"
 
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/types"
@@ -84,37 +85,25 @@ func (filter *vfLogFilter) Find(db *gorm.DB) ([]VirtualFilterLog, error) {
 // VirtualFilterLogStore partitioned store for virtual filter which polls filter changed data instantly.
 type VirtualFilterLogStore struct {
 	*bnPartitionedStore
+	// Incomplete DDL targets, shared by context-scoped copies. Session owners
+	// serialize operations for each fid and retain that fid until cleanup succeeds.
+	pendingTables *sync.Map // fid => []string
 }
 
 func NewVirtualFilterLogStore(db *gorm.DB) *VirtualFilterLogStore {
 	return &VirtualFilterLogStore{
 		bnPartitionedStore: newBnPartitionedStore(db),
+		pendingTables:      &sync.Map{},
 	}
 }
 
 // WithContext returns a store whose writes and partition operations use ctx.
 // The original store remains safe for independent requests.
 func (vfls *VirtualFilterLogStore) WithContext(ctx context.Context) *VirtualFilterLogStore {
-	return NewVirtualFilterLogStore(vfls.db.WithContext(ctx))
-}
-
-// PreparePartition create a new log partition for the virtual filter if necessary.
-func (vfls *VirtualFilterLogStore) PreparePartition(fid string) (bnPartition, bool, error) {
-	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)
-	partition, newCreated, err := vfls.autoPartition(fentity, ftabler, bnPartitionedLogVolumeSize)
-	if err != nil {
-		return partition, false, errors.WithMessage(err, "failed to auto partition")
+	return &VirtualFilterLogStore{
+		bnPartitionedStore: newBnPartitionedStore(vfls.db.WithContext(ctx)),
+		pendingTables:      vfls.pendingTables,
 	}
-
-	return partition, newCreated, nil
-}
-
-// DeletePartitions deletes all table partitions for the virtual filter with specified id.
-func (vfls *VirtualFilterLogStore) DeletePartitions(fid string) error {
-	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)
-	_, err := vfls.deleteEntityPartitions(fentity, ftabler)
-
-	return err
 }
 
 // Append appends incoming filter changed event logs, if some old ones of same block hashes already
@@ -252,15 +241,6 @@ func (vfls *VirtualFilterLogStore) getLogs(ctx context.Context, fid string, sfil
 	})
 
 	return result, nil
-}
-
-// GC garbage collects archive partitions exceeded the max archive partition limit
-// starting from the oldest partition.
-func (vfls *VirtualFilterLogStore) GC(fid string) error {
-	fentity, ftabler := vfls.filterEntity(fid), vfls.filterTabler(fid)
-	_, err := vfls.pruneArchivePartitions(fentity, ftabler, maxArchiveVirtualFilterLogPartitions)
-
-	return err
 }
 
 // expandPartitioBnRange expands block number range of the specified entity partition.
