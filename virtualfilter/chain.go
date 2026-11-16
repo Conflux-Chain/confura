@@ -77,6 +77,9 @@ func (fc *filterChainBase) snapshotLatestCursor() filterCursor {
 		return cursor
 	}
 
+	if fc.genesis == nil {
+		return nilFilterCursor
+	}
 	return filterCursor{empty: true, revision: fc.revision}
 }
 
