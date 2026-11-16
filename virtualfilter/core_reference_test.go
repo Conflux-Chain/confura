@@ -45,13 +45,17 @@ func coreBranch(epoch, hash uint64) *cfxtypes.SubscriptionLog {
 }
 
 func TestCoreConsumerReference(t *testing.T) {
+	changed := testCfxLog(2)
+	changed.LogIndex = testCfxLog(3).EpochNumber
 	cases := map[string][]*cfxtypes.CfxFilterChanges{
-		"deep_then_shallow":   {coreRevert(1), coreBatch(coreBranch(2, 102), coreBranch(3, 103)), coreRevert(2)},
-		"remine":              {coreRevert(1), coreBatch(testCfxLog(2), testCfxLog(3), testCfxLog(4))},
-		"remine_then_shallow": {coreRevert(1), coreBatch(testCfxLog(2), testCfxLog(3), testCfxLog(4)), coreRevert(3)},
-		"unread_below_target": {coreBatch(testCfxLog(5), testCfxLog(6), testCfxLog(7)), coreRevert(6)},
-		"empty_then_deeper":   {coreRevert(0), coreRevert(0), coreBatch(coreBranch(1, 101), coreBranch(2, 102))},
-		"one_batch":           {coreBatch(coreRevert(1).Logs[0], coreBranch(2, 102), coreBranch(3, 103), coreRevert(2).Logs[0])},
+		"changed_payload_in_batch": {coreBatch(coreRevert(1).Logs[0], testCfxLog(2), coreRevert(1).Logs[0], changed, testCfxLog(3))},
+		"repeated_hash_in_batch":   {coreBatch(coreRevert(1).Logs[0], testCfxLog(2), testCfxLog(3), coreRevert(1).Logs[0], testCfxLog(2), testCfxLog(3), testCfxLog(4))},
+		"deep_then_shallow":        {coreRevert(1), coreBatch(coreBranch(2, 102), coreBranch(3, 103)), coreRevert(2)},
+		"remine":                   {coreRevert(1), coreBatch(testCfxLog(2), testCfxLog(3), testCfxLog(4))},
+		"remine_then_shallow":      {coreRevert(1), coreBatch(testCfxLog(2), testCfxLog(3), testCfxLog(4)), coreRevert(3)},
+		"unread_below_target":      {coreBatch(testCfxLog(5), testCfxLog(6), testCfxLog(7)), coreRevert(6)},
+		"empty_then_deeper":        {coreRevert(0), coreRevert(0), coreBatch(coreBranch(1, 101), coreBranch(2, 102))},
+		"one_batch":                {coreBatch(coreRevert(1).Logs[0], coreBranch(2, 102), coreBranch(3, 103), coreRevert(2).Logs[0])},
 	}
 	// Deterministic mixed extension/revert stream with distinct fork hashes.
 	rng := rand.New(rand.NewSource(442))

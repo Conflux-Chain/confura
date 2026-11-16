@@ -123,17 +123,31 @@ func (fs *ethFilterSystem) onPolled(ctx context.Context, nodeName string, fid rp
 		}
 	}
 
-	vflogs := make([]mysql.VirtualFilterLog, 0, len(fchanges.Logs))
-	for i := range fchanges.Logs {
-		vflog, err := convertEthLogToVirtualFilterLog(&fchanges.Logs[i])
-		if err != nil {
-			logger.WithField("log", fchanges.Logs[i]).
-				WithError(err).
-				Error("Filter system failed to convert virtual filter log")
-			return errors.WithMessage(err, "failed to convert virtual filter log")
-		}
+	// Persist the same complete block incarnation that the chain retains.
+	// Reorg boundaries matter: individual log identities/indices can change
+	// when a Core block is executed again, so per-log deduplication is insufficient.
+	latest := make(map[string][]types.Log)
+	var hashes []string
+	for _, group := range parseEthFilterChanges(fchanges) {
+		for item := group.Front(); item != nil; item = item.Next() {
+			block := item.Value.(*ethFilterBlock)
 
-		vflogs = append(vflogs, *vflog)
+			hash := block.blockHash.String()
+			if _, ok := latest[hash]; !ok {
+				hashes = append(hashes, hash)
+			}
+			latest[hash] = block.logs
+		}
+	}
+	vflogs := make([]mysql.VirtualFilterLog, 0, len(fchanges.Logs))
+	for _, hash := range hashes {
+		for _, log := range latest[hash] {
+			vflog, err := convertEthLogToVirtualFilterLog(&log)
+			if err != nil {
+				return errors.WithMessage(err, "failed to convert virtual filter log")
+			}
+			vflogs = append(vflogs, *vflog)
+		}
 	}
 
 	// append polled change logs to partition table
