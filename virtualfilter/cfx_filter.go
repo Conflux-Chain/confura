@@ -44,9 +44,15 @@ func (f *cfxFilter) fetch(ctx context.Context) (filterChanges, error) {
 	return changes, err
 }
 
-func (f *cfxFilter) uninstall() (bool, error) {
+func (f *cfxFilter) uninstall(ctx context.Context) (bool, error) {
 	metricVirtualFilterSession("cfx", f, -1)
-	return f.client.Filter().UninstallFilter(f.id)
+	// The fixed HTTP transport observes deadlines, but cannot interrupt an
+	// in-flight request on cancellation. Bound that remaining wait explicitly.
+	ctx, cancel := context.WithTimeout(ctx, rpcutil.DefaultShutdownTimeout)
+	defer cancel()
+	var removed bool
+	err := f.client.CallContext(ctx, &removed, "cfx_uninstallFilter", f.id)
+	return removed, err
 }
 
 func (f *cfxFilter) nodeName() string {
@@ -112,7 +118,7 @@ func newCfxLogFilter(
 	return lf, nil
 }
 
-func (f *cfxLogFilter) uninstall() (bool, error) {
+func (f *cfxLogFilter) uninstall(ctx context.Context) (bool, error) {
 	metricVirtualFilterSession("cfx", f, -1)
 	return f.worker.reject(f)
 }

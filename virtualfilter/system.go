@@ -65,7 +65,10 @@ func (fs *filterSystemBase) timeoutLoop(ttl time.Duration) {
 		case <-ticker.C:
 			expfs := fs.filterMgr.expire(ttl)
 			for _, vf := range expfs {
-				vf.uninstall()
+				if fs.shutdownCtx.Ctx.Err() != nil {
+					return
+				}
+				vf.uninstall(fs.shutdownCtx.Ctx)
 			}
 		}
 	}

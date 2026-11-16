@@ -10,6 +10,7 @@ import (
 	"github.com/Conflux-Chain/confura/store"
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/metrics"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/openweb3/go-rpc-provider"
 	"github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
@@ -41,9 +42,15 @@ func (f *ethFilter) fetch(ctx context.Context) (filterChanges, error) {
 	return changes, err
 }
 
-func (f *ethFilter) uninstall() (bool, error) {
+func (f *ethFilter) uninstall(ctx context.Context) (bool, error) {
 	metricVirtualFilterSession("eth", f, -1)
-	return f.client.Filter.UninstallFilter(f.id)
+	// The fixed HTTP transport observes deadlines, but cannot interrupt an
+	// in-flight request on cancellation. Bound that remaining wait explicitly.
+	ctx, cancel := context.WithTimeout(ctx, rpcutil.DefaultShutdownTimeout)
+	defer cancel()
+	var removed bool
+	err := f.client.Filter.CallContext(ctx, &removed, "eth_uninstallFilter", f.id)
+	return removed, err
 }
 
 func (f *ethFilter) nodeName() string {
@@ -111,7 +118,7 @@ func newEthLogFilter(
 	return lf, nil
 }
 
-func (f *ethLogFilter) uninstall() (bool, error) {
+func (f *ethLogFilter) uninstall(ctx context.Context) (bool, error) {
 	metricVirtualFilterSession("eth", f, -1)
 	return f.worker.reject(f)
 }

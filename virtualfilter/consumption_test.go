@@ -275,7 +275,7 @@ func TestExpiryCannotResurrectInFlightFilter(t *testing.T) {
 			expired := mgr.expire(0)
 			require.Len(t, expired, 1)
 			removed := make(chan struct{})
-			go func() { expired[s.f.fid()].uninstall(); close(removed) }()
+			go func() { expired[s.f.fid()].uninstall(context.Background()); close(removed) }()
 			close(release)
 			require.NoError(t, <-done)
 			<-removed

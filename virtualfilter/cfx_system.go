@@ -86,9 +86,9 @@ func (fs *cfxFilterSystem) getFilterChanges(ctx context.Context, id rpc.ID) (*ty
 	return fc.(*types.CfxFilterChanges), nil
 }
 
-func (fs *cfxFilterSystem) uninstallFilter(id rpc.ID) (bool, error) {
+func (fs *cfxFilterSystem) uninstallFilter(ctx context.Context, id rpc.ID) (bool, error) {
 	if vf, ok := fs.filterMgr.delete(id); ok {
-		return vf.uninstall()
+		return vf.uninstall(ctx)
 	}
 
 	return true, nil

@@ -34,7 +34,7 @@ type virtualFilter interface {
 	refresh()                                     // refresh last polling time
 	expired(ttl time.Duration) bool               // if this filter is expired with the provided TTL
 	fetch(context.Context) (filterChanges, error) // fetch filter changes since last polling
-	uninstall() (bool, error)                     // uninstall filter
+	uninstall(context.Context) (bool, error)      // uninstall filter
 }
 
 type filterBase struct {
