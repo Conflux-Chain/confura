@@ -124,7 +124,7 @@ func (f *cfxLogFilter) fetch(ctx context.Context) (filterChanges, error) {
 	}
 	defer unlock()
 	// get change epochs from filter worker since last polling
-	pchanges, err := f.worker.fetchPollingChanges(delegate.cursor)
+	pchanges, err := f.worker.fetchPollingChanges(delegate)
 	if err != nil {
 		return nil, err
 	}
@@ -215,5 +215,6 @@ func (f *cfxLogFilter) fetch(ctx context.Context) (filterChanges, error) {
 		return nil, err
 	}
 	delegate.cursor = f.worker.session.fchain.snapshotLatestCursor()
+	delegate.pendingRevert = nil
 	return fc, nil
 }

@@ -16,8 +16,6 @@ type cfxFilterChain struct {
 	// cache to hold block hashes for filter epoch full of event logs, once whose
 	// size exceeded the limit, eviction will be enforced.
 	fullBlockhashCache *lru.Cache
-	latestRevert       *cfxFilterEpoch
-	revertRevision     uint64
 }
 
 func newCfxFilterChain(maxFullFilterEpochs int) *cfxFilterChain {
@@ -64,8 +62,6 @@ func (fc *cfxFilterChain) merge(fchanges filterChanges) error {
 func (fc *cfxFilterChain) reorg(reverted *list.List) error {
 	for ele := reverted.Front(); ele != nil; ele = ele.Next() {
 		repoch := ele.Value.(*cfxFilterEpoch)
-		fc.latestRevert = repoch
-		fc.revertRevision = fc.revision
 
 		rnode := fc.back()
 		if rnode == nil { // push the reorg epoch anyway

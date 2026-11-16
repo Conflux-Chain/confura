@@ -245,7 +245,7 @@ func (w *filterWorker) pollOnce() (result error) {
 		}
 	}
 	start := time.Now()
-	err = w.session.fchain.merge(fchanges)
+	err = w.mergeLocked(fchanges)
 	metrics.Registry.VirtualFilter.PersistFilterChanges(w.space, w.nodeName, "memory").UpdateSince(start)
 	if err != nil {
 		return err
@@ -274,9 +274,38 @@ func (w *filterWorker) merge(fchanges filterChanges) error {
 	defer w.mu.Unlock()
 
 	if c := w.session.fchain; c != nil {
-		return c.merge(fchanges)
+		return w.mergeLocked(fchanges)
 	}
 
+	return nil
+}
+
+// mergeLocked publishes chain changes and compensation under the worker write
+// lock. Each delegate retains only its deepest unconsumed Core revert target.
+func (w *filterWorker) mergeLocked(changes filterChanges) error {
+	if err := w.session.fchain.merge(changes); err != nil {
+		return err
+	}
+	batch, ok := changes.(*cfxtypes.CfxFilterChanges)
+	if !ok {
+		return nil
+	}
+	var target *uint64
+	for _, item := range batch.Logs {
+		if item.IsRevertLog() {
+			n := item.RevertTo.ToInt().Uint64()
+			if target == nil || n < *target {
+				target = &n
+			}
+		}
+	}
+	if target != nil {
+		for _, d := range w.session.fcursors {
+			if d.pendingRevert == nil || *target < *d.pendingRevert {
+				d.pendingRevert = target
+			}
+		}
+	}
 	return nil
 }
 
@@ -538,10 +567,11 @@ type cfxPollingChanges struct {
 }
 
 // fetchPollingChanges fetch filter changes since last polling
-func (w *cfxFilterWorker) fetchPollingChanges(cursor filterCursor) (*cfxPollingChanges, error) {
+func (w *cfxFilterWorker) fetchPollingChanges(delegate *filterDelegate) (*cfxPollingChanges, error) {
 	startTime := time.Now()
 	defer metrics.Registry.VirtualFilter.PersistFilterChanges(w.space, w.nodeName, "cfx").UpdateSince(startTime)
 
+	cursor := delegate.cursor
 	var fepochs []cfxFilterEpoch
 	err := w.session.fchain.traverse(cursor, func(node *filterNode, forkPoint bool) bool {
 		if node == nil { // skip nil node
@@ -574,15 +604,26 @@ func (w *cfxFilterWorker) fetchPollingChanges(cursor filterCursor) (*cfxPollingC
 		return nil, err
 	}
 
-	// Keep the most recent compensation even when deeper reverts arrive after
-	// the canonical chain became empty. Collapse it with the fork prefix.
-	chain := w.session.fchain.(*cfxFilterChain)
-	if chain.latestRevert != nil && chain.revertRevision > cursor.revision {
-		i := 0
-		for i < len(fepochs) && fepochs[i].reorged() {
-			i++
+	// A revert removes the consumer's entire suffix. Replay that suffix even
+	// when its hashes have been re-mined and the old cursor is canonical again.
+	// Also retain unseen canonical logs at/below the target: upstream may have
+	// extended the chain before reverting, all between two consumer reads.
+	if delegate.pendingRevert != nil {
+		target := *delegate.pendingRevert
+		unseen := make(map[string]bool, len(fepochs))
+		for _, epoch := range fepochs {
+			if !epoch.reorged() {
+				unseen[epoch.blockHash.String()] = true
+			}
 		}
-		fepochs = append([]cfxFilterEpoch{*chain.latestRevert}, fepochs[i:]...)
+		fepochs = []cfxFilterEpoch{*newCfxFilterEpochWithReorg(target)}
+		chain := w.session.fchain.(*cfxFilterChain)
+		for node := chain.front(); node != nil; node = node.getNext() {
+			epoch := node.filterNodable.(*cfxFilterEpoch)
+			if epoch.epochNum > target || unseen[epoch.blockHash.String()] {
+				fepochs = append(fepochs, *epoch)
+			}
+		}
 	}
 
 	pchanges := &cfxPollingChanges{
@@ -593,9 +634,12 @@ func (w *cfxFilterWorker) fetchPollingChanges(cursor filterCursor) (*cfxPollingC
 
 // Cursor fields are protected by the delegate mutex. Map membership and the
 // chain view are protected by the worker mutex. Writers never lock delegates.
+// pendingRevert is updated under the worker write lock and consumed under both
+// the delegate mutex and the worker read lock. Its pointed-to value is immutable.
 type filterDelegate struct {
-	mu     sync.Mutex
-	cursor filterCursor
+	mu            sync.Mutex
+	cursor        filterCursor
+	pendingRevert *uint64
 }
 
 func (w *filterWorker) beginRead(ctx context.Context, fid rpc.ID) (*filterDelegate, func(), error) {

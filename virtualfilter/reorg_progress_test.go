@@ -47,7 +47,7 @@ func TestEmptyChainConsumptionProgress(t *testing.T) {
 				cw := s.f.(*cfxLogFilter).worker
 				for _, id := range []string{"new", "slow"} {
 					d := s.w.session.fcursors[rpc.ID(id)]
-					pc, err := cw.fetchPollingChanges(d.cursor)
+					pc, err := cw.fetchPollingChanges(d)
 					require.NoError(t, err)
 					require.NotEmpty(t, pc.epochs)
 					require.True(t, pc.epochs[0].reorged())
