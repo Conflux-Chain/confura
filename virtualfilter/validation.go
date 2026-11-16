@@ -46,6 +46,25 @@ func validateLogChanges(changes filterChanges) error {
 type upstreamLogResult = json.RawMessage
 
 func decodeUpstreamLogResult(raw upstreamLogResult, target interface{}) error {
+	// The eSpace SDK decodes missing/null log fields as zero values, including
+	// [null] and [{}]. Check identity presence before that distinction is lost.
+	// Zero height/index are valid, so checking the decoded numeric values is not
+	// sufficient. Optional payload fields retain the SDK's compatibility rules.
+	if _, ok := target.(**ethtypes.FilterChanges); ok {
+		var identities []struct {
+			BlockHash   *json.RawMessage `json:"blockHash"`
+			BlockNumber *json.RawMessage `json:"blockNumber"`
+			LogIndex    *json.RawMessage `json:"logIndex"`
+		}
+		if err := json.Unmarshal(raw, &identities); err != nil {
+			return fmt.Errorf("%w: %v", errInvalidFilterChanges, err)
+		}
+		for _, identity := range identities {
+			if identity.BlockHash == nil || identity.BlockNumber == nil || identity.LogIndex == nil {
+				return errInvalidFilterChanges
+			}
+		}
+	}
 	if err := json.Unmarshal(raw, target); err != nil {
 		return fmt.Errorf("%w: %v", errInvalidFilterChanges, err)
 	}
