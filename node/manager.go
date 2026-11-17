@@ -55,14 +55,13 @@ func (m *Manager) Add(nodes ...Node) {
 	}
 }
 
-// Remove removes monitored fullnode
+// Remove detaches group members. The owner remains responsible for closing nodes.
 func (m *Manager) Remove(nodeNames ...string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for _, nn := range nodeNames {
-		if node, ok := m.nodes[nn]; ok {
-			node.Close()
+		if _, ok := m.nodes[nn]; ok {
 			delete(m.nodes, nn)
 			delete(m.monitorStatuses, nn)
 			m.hashRing.Remove(nn)

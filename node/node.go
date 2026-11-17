@@ -42,6 +42,8 @@ type baseNode struct {
 	cancel       context.CancelFunc
 	atomicStatus atomic.Value
 	monitors     []HealthMonitor
+	done         chan struct{}
+	closeOnce    sync.Once
 }
 
 func newBaseNode(name, url string, cancel context.CancelFunc) *baseNode {
@@ -68,6 +70,9 @@ func (n *baseNode) String() string {
 
 // monitor periodically heartbeats with node to monitor health status
 func (n *baseNode) monitor(ctx context.Context, node Node) {
+	if n.done != nil {
+		defer close(n.done)
+	}
 	ticker := time.NewTicker(cfg.Monitor.Interval)
 	defer ticker.Stop()
 
@@ -80,13 +85,10 @@ func (n *baseNode) monitor(ctx context.Context, node Node) {
 			status := n.atomicStatus.Load().(Status)
 			status.Update(node)
 
-			monitors := n.snapshot()
-			for _, hm := range monitors {
-				status.Report(hm)
-			}
+			numMonitors := n.report(&status)
 
 			logrus.WithFields(logrus.Fields{
-				"numHealthMonitors": len(monitors),
+				"numHealthMonitors": numMonitors,
 				"status":            status,
 			}).Debug("Node health status reported")
 
@@ -95,13 +97,16 @@ func (n *baseNode) monitor(ctx context.Context, node Node) {
 	}
 }
 
-// snapshot snapshots all health monitors.
-func (n *baseNode) snapshot() []HealthMonitor {
+// report serializes callbacks with Deregister, so detached monitors cannot report
+// into a later membership with the same name. Manager callbacks must not call
+// back into the node while holding the manager lock.
+func (n *baseNode) report(status *Status) int {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-
-	res := make([]HealthMonitor, 0, len(n.monitors))
-	return append(res, n.monitors...)
+	for _, hm := range n.monitors {
+		status.Report(hm)
+	}
+	return len(n.monitors)
 }
 
 // Register registers a health monitor to node.
@@ -126,11 +131,23 @@ func (n *baseNode) Deregister(hm HealthMonitor) {
 	n.monitors = monitors
 }
 
-func (n *baseNode) Close() {
-	n.cancel()
+func (n *baseNode) Close() { n.close(nil) }
 
-	status := n.Status()
-	status.Close()
+func (n *baseNode) close(closeTransport func()) {
+	n.closeOnce.Do(func() {
+		if n.cancel != nil {
+			n.cancel()
+		}
+		// Closing the transport can interrupt a heartbeat before we wait for it.
+		if closeTransport != nil {
+			closeTransport()
+		}
+		if n.done != nil {
+			<-n.done
+		}
+		status := n.Status()
+		status.Close()
+	})
 }
 
 // EthNode represents an evm space node with friendly name and health status.
@@ -155,6 +172,7 @@ func NewEthNode(group Group, name, url string) (*EthNode, error) {
 
 	n.atomicStatus.Store(NewStatus(group, name))
 
+	n.done = make(chan struct{})
 	go n.monitor(ctx, n)
 
 	return n, nil
@@ -173,6 +191,11 @@ func (n *EthNode) LatestEpochNumber() (uint64, error) {
 	}
 
 	return block.Uint64(), nil
+}
+
+// Close stops health monitoring and releases the underlying RPC transport.
+func (n *EthNode) Close() {
+	n.baseNode.close(n.Client.Close)
 }
 
 // CfxNode represents a core space fullnode with friendly name and health status.
@@ -197,6 +220,7 @@ func NewCfxNode(group Group, name, url string) (*CfxNode, error) {
 
 	n.atomicStatus.Store(NewStatus(group, name))
 
+	n.done = make(chan struct{})
 	go n.monitor(ctx, n)
 
 	return n, nil
@@ -218,6 +242,5 @@ func (n *CfxNode) LatestEpochNumber() (uint64, error) {
 }
 
 func (n *CfxNode) Close() {
-	n.baseNode.Close()
-	n.ClientOperator.Close()
+	n.baseNode.close(n.ClientOperator.Close)
 }
