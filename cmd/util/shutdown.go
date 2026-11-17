@@ -41,12 +41,14 @@ func GracefulShutdown(wg *sync.WaitGroup, cancel context.CancelFunc) {
 //
 // Note, this method is not suitable for any non-blocking task that release resources in defer way.
 func StartAndGracefulShutdown(run func(ctx context.Context, wg *sync.WaitGroup)) {
-	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-
-	if run != nil {
-		go run(ctx, &wg)
+	life, err := NewLifecycle(context.Background())
+	if err != nil {
+		logrus.WithError(err).Fatal("Invalid shutdown configuration")
 	}
-
-	GracefulShutdown(&wg, cancel)
+	defer life.Close()
+	if run != nil {
+		RunTracked(life.Ctx, &life.Wg, run)
+	}
+	life.Wait()
+	life.Shutdown()
 }

@@ -1,12 +1,12 @@
 package test
 
 import (
+	"fmt"
 	"math"
+	"strings"
 	"time"
 
-	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/test"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ var (
 	testCmd = &cobra.Command{
 		Use:   "cfx",
 		Short: "validate if epoch data from core space JSON-RPC proxy complies with fullnode",
-		Run:   startTest,
+		RunE:  startTest,
 	}
 )
 
@@ -65,15 +65,17 @@ func init() {
 	Cmd.AddCommand(testCmd)
 }
 
-func startTest(cmd *cobra.Command, args []string) {
-	if len(validConf.FullnodeRpcEndpoint) == 0 || len(validConf.InfuraRpcEndpoint) == 0 {
-		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for epoch data test/validation")
+func startTest(cmd *cobra.Command, args []string) error {
+	if err := validateEndpoints(false, validConf.FullnodeRpcEndpoint, validConf.InfuraRpcEndpoint); err != nil {
+		return err
 	}
-
-	logrus.Info("Starting epoch data validator...")
-
-	validator := test.MustNewEpochValidator(&validConf)
-	defer validator.Destroy()
-
-	util.StartAndGracefulShutdown(validator.Run)
+	if err := validateIntervals(validConf.ScanInterval, validConf.SamplingInterval); err != nil {
+		return err
+	}
+	switch strings.ToLower(validConf.SamplingEpochType) {
+	case "lm", "ls", "lc", "lf", "lcp", "latest_mined", "latest_state", "latest_confirmed", "latest_finalized", "latest_checkpoint":
+	default:
+		return fmt.Errorf("unsupported sampling epoch type")
+	}
+	return runValidator(cmd, func() (test.TestValidator, error) { return test.NewEpochValidator(&validConf) })
 }

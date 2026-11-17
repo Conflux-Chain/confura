@@ -3,9 +3,7 @@ package test
 import (
 	"strings"
 
-	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/test"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +15,7 @@ var (
 	wsTestCmd = &cobra.Command{
 		Use:   "ws",
 		Short: "validate if chain data from websocket Pub/Sub proxy complies with fullnode",
-		Run:   startWSTest,
+		RunE:  startWSTest,
 	}
 )
 
@@ -45,26 +43,17 @@ func init() {
 	Cmd.AddCommand(wsTestCmd)
 }
 
-func startWSTest(cmd *cobra.Command, args []string) {
-	if len(psConf.FullnodeRpcEndpoint) == 0 || len(psConf.InfuraRpcEndpoint) == 0 {
-		logrus.Fatal("Fullnode && infura websocket rpc endpoint must be configured for pubsub test/validation")
+func startWSTest(cmd *cobra.Command, args []string) error {
+	if err := validateNetwork(psNetwork); err != nil {
+		return err
 	}
-
-	validator := mustNewWSTestValidator()
-	defer validator.Destroy()
-
-	logrus.Info("Starting websocket pubsub validator...")
-	util.StartAndGracefulShutdown(validator.Run)
-}
-
-func mustNewWSTestValidator() test.TestValidator {
-	switch {
-	case strings.EqualFold(psNetwork, "eth"):
-		return test.MustNewEthPubSubValidator(&psConf)
-	case strings.EqualFold(psNetwork, "cfx"):
-		return test.MustNewCfxPubSubValidator(&psConf)
-	default:
-		logrus.Fatal("invalid network space (only `cfx` and `eth` acceptable)")
-		return nil
+	if err := validateEndpoints(true, psConf.FullnodeRpcEndpoint, psConf.InfuraRpcEndpoint); err != nil {
+		return err
 	}
+	return runValidator(cmd, func() (test.TestValidator, error) {
+		if strings.EqualFold(psNetwork, "eth") {
+			return test.NewEthPubSubValidator(&psConf)
+		}
+		return test.NewCfxPubSubValidator(&psConf)
+	})
 }

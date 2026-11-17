@@ -3,9 +3,7 @@ package test
 import (
 	"strings"
 
-	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/test"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +15,7 @@ var (
 	vfTestCmd = &cobra.Command{
 		Use:   "vf",
 		Short: "validate if filter changes polled from Virtual-Filter proxy complies with fullnode",
-		Run:   startVFTest,
+		RunE:  startVFTest,
 	}
 )
 
@@ -45,26 +43,17 @@ func init() {
 	Cmd.AddCommand(vfTestCmd)
 }
 
-func startVFTest(cmd *cobra.Command, args []string) {
-	if len(vfConf.FullnodeRpcEndpoint) == 0 || len(vfConf.InfuraRpcEndpoint) == 0 {
-		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for virtual filter validation")
+func startVFTest(cmd *cobra.Command, args []string) error {
+	if err := validateNetwork(vfNetwork); err != nil {
+		return err
 	}
-
-	validator := mustNewVfTestValidator()
-	defer validator.Destroy()
-
-	logrus.Info("Starting virtual filter validator...")
-	util.StartAndGracefulShutdown(validator.Run)
-}
-
-func mustNewVfTestValidator() test.TestValidator {
-	switch {
-	case strings.EqualFold(vfNetwork, "eth"):
-		return test.MustNewEthVFValidator(&vfConf)
-	case strings.EqualFold(vfNetwork, "cfx"):
-		return test.MustNewCfxVFValidator(&vfConf)
-	default:
-		logrus.Fatal("invalid network space (only `cfx` and `eth` acceptable)")
-		return nil
+	if err := validateEndpoints(false, vfConf.FullnodeRpcEndpoint, vfConf.InfuraRpcEndpoint); err != nil {
+		return err
 	}
+	return runValidator(cmd, func() (test.TestValidator, error) {
+		if strings.EqualFold(vfNetwork, "eth") {
+			return test.NewEthVFValidator(&vfConf)
+		}
+		return test.NewCfxVFValidator(&vfConf)
+	})
 }

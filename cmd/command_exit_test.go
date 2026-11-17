@@ -34,6 +34,12 @@ func TestCommandFailureExitStatus(t *testing.T) {
 		{[]string{"noderoute", "ls", "-n", "typo"}, "invalid network"},
 		{[]string{"noderoute", "ls", "-n", "eth"}, "eth database is unavailable"},
 		{[]string{"benchmark", "catchup", "-n", "eth"}, "database is not provided"},
+		{[]string{"test", "cfx", "-f", "http://127.0.0.1:1", "-u", "http://127.0.0.1:1", "--scan-interval", "0s"}, "intervals must be positive"},
+		{[]string{"test", "eth", "-f", "http://127.0.0.1:1", "-u", "http://127.0.0.1:1", "--sampling-interval", "-1s"}, "intervals must be positive"},
+		{[]string{"test", "cfx", "-f", "http://127.0.0.1:1", "-u", "http://127.0.0.1:1", "-t", "typo"}, "unsupported sampling epoch type"},
+		{[]string{"test", "ws", "-n", "typo", "-f", "ws://127.0.0.1:1", "-u", "ws://127.0.0.1:1"}, "network must be cfx or eth"},
+		{[]string{"test", "ws", "-n", "eth", "-f", "http://127.0.0.1:1", "-u", "ws://127.0.0.1:1"}, "subscription endpoints require ws or wss"},
+		{[]string{"test", "vf", "-n", "cfx", "-f", "ws://127.0.0.1:1", "-u", "http://127.0.0.1:1"}, "RPC endpoints require http or https"},
 	} {
 		t.Run(tc.args[0]+"/"+tc.args[1]+"/"+tc.want, func(t *testing.T) {
 			args := append([]string{"-test.run=^TestCommandFailureExitStatus$", "--"}, tc.args...)

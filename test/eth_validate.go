@@ -58,7 +58,7 @@ func init() {
 	}
 }
 
-func MustNewEthValidator(conf *EthValidConfig) *EthValidator {
+func NewEthValidator(conf *EthValidConfig) (*EthValidator, error) {
 	// Prepare fullnode && infura client instance
 	endpoints := []string{conf.FullnodeRpcEndpoint, conf.InfuraRpcEndpoint}
 	clientInsts := [2]*web3go.Client{}
@@ -66,7 +66,12 @@ func MustNewEthValidator(conf *EthValidConfig) *EthValidator {
 	for i, endpoint := range endpoints {
 		client, err := web3go.NewClient(endpoint)
 		if err != nil {
-			logrus.WithField("endpoint", endpoint).WithError(err).Fatal("Failed to new web3 client")
+			for _, opened := range clientInsts {
+				if opened != nil {
+					opened.Close()
+				}
+			}
+			return nil, err
 		}
 		clientInsts[i] = client
 	}
@@ -80,7 +85,7 @@ func MustNewEthValidator(conf *EthValidConfig) *EthValidator {
 	defer logrus.WithField("config", conf).Info("Test validation configurations loaded")
 
 	if conf.ScanFromBlock != math.MaxUint64 {
-		return validator
+		return validator, nil
 	}
 
 	conf.ScanFromBlock = 1 // default scan from block #1
@@ -91,7 +96,7 @@ func MustNewEthValidator(conf *EthValidConfig) *EthValidator {
 		logrus.WithError(err).Debugf(
 			"Eth validator failed to load last validated block from file %v", validBlockFromNoFilePath,
 		)
-		return validator
+		return validator, nil
 	}
 
 	datStr := strings.TrimSpace(string(dat))
@@ -107,7 +112,15 @@ func MustNewEthValidator(conf *EthValidConfig) *EthValidator {
 		)
 	}
 
-	return validator
+	return validator, nil
+}
+
+func MustNewEthValidator(conf *EthValidConfig) *EthValidator {
+	v, err := NewEthValidator(conf)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize validator")
+	}
+	return v
 }
 
 func (validator *EthValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
@@ -116,6 +129,10 @@ func (validator *EthValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 
 	wg.Add(1)
 	defer wg.Done()
+	var samples sync.WaitGroup
+	defer samples.Wait()
+	validator.fn = validator.fn.WithContext(ctx)
+	validator.infura = validator.infura.WithContext(ctx)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"fullNodeUrl": validator.conf.FullnodeRpcEndpoint,
@@ -141,7 +158,9 @@ func (validator *EthValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 			logrus.Info("ETH validator shutdown ok")
 			return
 		case <-samplingTicker.C:
-			go func() { // randomly pick some nearhead block for validation test
+			samples.Add(1)
+			go func() {
+				defer samples.Done() // randomly pick some nearhead block for validation test
 				if err := validator.doSampling(); err != nil {
 					logger.WithError(err).Error("ETH validator failed to do sampling for block validation")
 				}
@@ -675,6 +694,8 @@ func (validator *EthValidator) saveScanCursor() error {
 }
 
 func (validator *EthValidator) Destroy() {
+	validator.fn.Close()
+	validator.infura.Close()
 	// Save scanning cursor
 	validator.saveScanCursor()
 }
