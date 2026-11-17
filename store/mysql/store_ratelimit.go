@@ -2,10 +2,14 @@ package mysql
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/rate"
+	driver "github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // RateLimit rate limit keyset table
@@ -51,7 +55,17 @@ func (rls *RateLimitStore) AddRateLimit(
 		Memo:      memo,
 	}
 
-	return rls.addRateLimitChecked(ratelimit, expected)
+	// SQL errors and SQL trace output can include the full credential.
+	quiet := NewRateLimitStore(rls.db.Session(&gorm.Session{Logger: rls.db.Logger.LogMode(logger.Silent)}))
+	err := quiet.addRateLimitChecked(ratelimit, expected)
+	var dbErr *driver.MySQLError
+	if errors.As(err, &dbErr) {
+		if dbErr.Number == 1062 {
+			return errors.New("access key already exists")
+		}
+		return fmt.Errorf("write access key failed (MySQL error %d)", dbErr.Number)
+	}
+	return err
 }
 
 func (rls *RateLimitStore) DeleteRateLimit(limitKey string) (bool, error) {

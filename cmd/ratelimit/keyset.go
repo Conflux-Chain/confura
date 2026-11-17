@@ -2,7 +2,9 @@ package ratelimit
 
 import (
 	"fmt"
+	"github.com/Conflux-Chain/confura/util/rpc/handlers"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/store/mysql"
@@ -82,6 +84,11 @@ func addKey(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("add key: %w", err)
 	}
 
+	limitKey, err := normalizeLimitKey(keysetCfg.LimitKey, keysetCfg.LimitType)
+	if err != nil {
+		return err
+	}
+
 	dbs, err := util.OpenManagementStore(keysetCfg.Network)
 	if err != nil {
 		return fmt.Errorf("add key: %w", err)
@@ -107,14 +114,6 @@ func addKey(cmd *cobra.Command, args []string) error {
 		aclSnapshot = snapshot
 	}
 
-	limitKey := strings.TrimSpace(keysetCfg.LimitKey)
-	if len(limitKey) == 0 { // generate random limit key if not provided
-		limitKey, err = rate.GenerateRandomLimitKey(keysetCfg.LimitType)
-		if err != nil {
-			return fmt.Errorf("add key: %w", err)
-		}
-	}
-
 	if err := util.ConfirmWrite(cmd, keysetCfg.Network, "add access key", struct {
 		Key, Type, Memo string
 		Strategy, ACL   *mysql.ConfigSnapshot
@@ -134,6 +133,7 @@ func addKey(cmd *cobra.Command, args []string) error {
 }
 
 func delKey(cmd *cobra.Command, args []string) error {
+	keysetCfg.LimitKey = strings.TrimSpace(keysetCfg.LimitKey)
 	err := validateKeysetCmdConfig(false, true, false)
 	if err != nil {
 		return fmt.Errorf("delete key: %w", err)
@@ -311,4 +311,16 @@ func hookKeysetCmdAllowListFlag(keysetCmd *cobra.Command) {
 	keysetCmd.Flags().StringVarP(
 		&keysetCfg.AllowList, "acl", "l", "", "allowlist used",
 	)
+}
+
+// normalizeLimitKey is called once, before opening the selected database.
+func normalizeLimitKey(input string, kind rate.LimitType) (string, error) {
+	key := strings.TrimSpace(input)
+	if key == "" {
+		return rate.GenerateRandomLimitKey(kind)
+	}
+	if !handlers.IsAccessTokenValid(key) || utf8.RuneCountInString(key) > 128 {
+		return "", errors.New("invalid access key: use a valid alphanumeric token of at most 128 characters")
+	}
+	return key, nil
 }
