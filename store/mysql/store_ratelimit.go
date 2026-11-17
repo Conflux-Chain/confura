@@ -59,6 +59,18 @@ func (rls *RateLimitStore) DeleteRateLimit(limitKey string) (bool, error) {
 	return res.RowsAffected > 0, res.Error
 }
 
+func (rls *RateLimitStore) DeleteRateLimitChecked(expected *RateLimit) (bool, error) {
+	res := rls.db.Where("id = ? AND limit_key = ? AND s_id = ? AND acl_id = ? AND limit_type = ? AND memo = ? AND updated_at = ?",
+		expected.ID, expected.LimitKey, expected.SID, expected.AclID, expected.LimitType, expected.Memo, expected.UpdatedAt).Delete(&RateLimit{})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return false, ErrConfigChanged
+	}
+	return true, nil
+}
+
 func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res []*RateLimit, err error) {
 	db := rls.db
 

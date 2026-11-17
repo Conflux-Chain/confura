@@ -41,6 +41,9 @@ var (
 )
 
 func init() {
+	util.AddConfirmationFlag(addStrategyCmd)
+	util.AddConfirmationFlag(removeStrategyCmd)
+
 	Cmd.AddCommand(addStrategyCmd)
 	hookStrategyCmdFlags(addStrategyCmd, true, true)
 
@@ -88,23 +91,21 @@ func addStrategy(cmd *cobra.Command, args []string) error {
 	defer dbs.Close()
 
 	name := mysql.RateLimitStrategyConfKeyPrefix + stratCfg.Name
-	cfgmap, err := dbs.LoadConfig(name)
+	snapshot, err := dbs.LoadConfigSnapshot(name)
 	if err != nil {
 		return fmt.Errorf("add strategy: %w", err)
 	}
 
 	op := "add a new rate limit strategy"
-	if len(cfgmap) > 0 {
+	if snapshot != nil {
 		op = "update an existed rate limit strategy"
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"name":  strategy.Name,
-		"rules": strategy.LimitOptions,
-	}).Info("Press the Enter Key to ", op)
-	fmt.Scanln() // wait for Enter Key
+	if err := util.ConfirmWrite(cmd, stratCfg.Network, op, strategy); err != nil {
+		return err
+	}
 
-	if err := dbs.StoreConfig(name, stratCfg.Rules); err != nil {
+	if err := dbs.StoreConfigIfUnchanged(name, stratCfg.Rules, snapshot); err != nil {
 		return fmt.Errorf("add strategy: %w", err)
 	}
 
@@ -135,9 +136,9 @@ func delStrategy(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	logrus.WithField("strategy", stratCfg.Name).
-		Info("Press the Enter Key to delete the rate limit strategy!")
-	fmt.Scanln() // wait for Enter Key
+	if err := util.ConfirmWrite(cmd, stratCfg.Network, "delete configuration", snapshot); err != nil {
+		return err
+	}
 
 	removed, err := dbs.DeleteConfigChecked(name, snapshot)
 	if err != nil {

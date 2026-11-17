@@ -109,3 +109,27 @@ func TestMySQLConcurrentPolicyDeletionAndKeyCreation(t *testing.T) {
 		require.Zero(t, dangling)
 	}
 }
+
+func TestConfirmedObjectsCannotBeReplaced(t *testing.T) {
+	db := policyTestDB(t, false)
+	cs := newConfStore(db)
+	require.NoError(t, cs.StoreConfigIfUnchanged("example", "first", nil))
+	snapshot, err := cs.LoadConfigSnapshot("example")
+	require.NoError(t, err)
+	require.ErrorIs(t, cs.StoreConfigIfUnchanged("example", "second", nil), ErrConfigChanged)
+	require.NoError(t, cs.StoreConfigIfUnchanged("example", "second", snapshot))
+	require.ErrorIs(t, cs.StoreConfigIfUnchanged("example", "third", snapshot), ErrConfigChanged)
+	require.NoError(t, db.AutoMigrate(&NodeRoute{}))
+	routes := NewNodeRouteStore(db)
+	require.NoError(t, routes.AddNodeRoute("route", "old"))
+	route, err := routes.FindNodeRoute("route")
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&NodeRoute{}).Where("id = ?", route.ID).Update("group", "new").Error)
+	_, err = routes.DeleteNodeRouteChecked(route)
+	require.ErrorIs(t, err, ErrConfigChanged)
+	key := &RateLimit{SID: 1, LimitKey: "key"}
+	require.NoError(t, db.Create(key).Error)
+	require.NoError(t, db.Model(&RateLimit{}).Where("id = ?", key.ID).Update("s_id", 2).Error)
+	_, err = NewRateLimitStore(db).DeleteRateLimitChecked(key)
+	require.ErrorIs(t, err, ErrConfigChanged)
+}

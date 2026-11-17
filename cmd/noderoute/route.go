@@ -41,6 +41,9 @@ var (
 )
 
 func init() {
+	util.AddConfirmationFlag(addRouteCmd)
+	util.AddConfirmationFlag(delRouteCmd)
+
 	Cmd.AddCommand(addRouteCmd)
 	hookRouteCmdFlags(addRouteCmd, true, true)
 
@@ -77,12 +80,9 @@ func addRoute(cmd *cobra.Command, args []string) error {
 			))
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"routeKey":   routeCfg.Key,
-		"routeGroup": routeGroups[routeCfg.Group],
-	}).Info("Press the Enter Key to add new node route")
-
-	fmt.Scanln() // wait for Enter Key
+	if err := util.ConfirmWrite(cmd, routeCfg.Network, "add node route", routeCfg); err != nil {
+		return err
+	}
 
 	if err := dbs.AddNodeRoute(routeCfg.Key, routeCfg.Group); err != nil {
 		return fmt.Errorf("add route: %w", err)
@@ -105,10 +105,18 @@ func delRoute(cmd *cobra.Command, args []string) error {
 
 	defer dbs.Close()
 
-	logrus.WithField("routeKey", routeCfg.Key).Info("Press Enter Key to delete the node route!")
-	fmt.Scanln() // wait for Enter Key
-
-	removed, err := dbs.DeleteNodeRoute(routeCfg.Key)
+	route, err := dbs.FindNodeRoute(routeCfg.Key)
+	if err != nil {
+		return err
+	}
+	if route == nil {
+		cmd.Println("Node route does not exist")
+		return nil
+	}
+	if err := util.ConfirmWrite(cmd, routeCfg.Network, "delete node route", route); err != nil {
+		return err
+	}
+	removed, err := dbs.DeleteNodeRouteChecked(route)
 	if err != nil {
 		return fmt.Errorf("delete route: %w", err)
 	}

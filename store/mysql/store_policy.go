@@ -36,6 +36,24 @@ func (cs *confStore) LoadConfigSnapshot(name string) (*ConfigSnapshot, error) {
 	return snapshotConfig(row), nil
 }
 
+// StoreConfigIfUnchanged writes only the configuration the operator confirmed.
+// A nil snapshot means that the name must still be absent.
+func (cs *confStore) StoreConfigIfUnchanged(name, value string, expected *ConfigSnapshot) error {
+	return cs.db.Transaction(func(tx *gorm.DB) error {
+		row, err := lockConfig(tx, name, expected)
+		if err != nil {
+			return err
+		}
+		if expected == nil {
+			if row != nil {
+				return ErrConfigChanged
+			}
+			return tx.Create(&conf{Name: name, Value: value}).Error
+		}
+		return tx.Model(row).Update("value", value).Error
+	})
+}
+
 func lockConfig(tx *gorm.DB, name string, expected *ConfigSnapshot) (*conf, error) {
 	var row conf
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", name).First(&row).Error

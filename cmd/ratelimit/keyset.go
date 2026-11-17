@@ -57,6 +57,9 @@ var (
 )
 
 func init() {
+	util.AddConfirmationFlag(addKeyCmd)
+	util.AddConfirmationFlag(delKeyCmd)
+
 	Cmd.AddCommand(addKeyCmd)
 	hookKeysetCmdFlags(addKeyCmd, true, true, false, true)
 	hookKeysetCmdLimitKeyFlag(addKeyCmd, false)
@@ -86,16 +89,10 @@ func addKey(cmd *cobra.Command, args []string) error {
 
 	defer dbs.Close()
 
-	strategy, strategySnapshot, err := dbs.LoadRateLimitStrategySnapshot(keysetCfg.Strategy)
+	_, strategySnapshot, err := dbs.LoadRateLimitStrategySnapshot(keysetCfg.Strategy)
 	if err != nil {
 		return fmt.Errorf("add key: %w", err)
 	}
-
-	logger := logrus.WithFields(logrus.Fields{
-		"strategyID":    strategy.ID,
-		"strategyName":  strategy.Name,
-		"strategyRules": strategy.LimitOptions,
-	})
 
 	var acl acl.AllowList
 	var aclSnapshot *mysql.ConfigSnapshot
@@ -118,12 +115,12 @@ func addKey(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	logger.WithFields(logrus.Fields{
-		"allowlist": acl,
-		"limitKey":  limitKey,
-		"limitType": limitTypeMap[keysetCfg.LimitType],
-	}).Info("Press the Enter Key to add new rate limit key")
-	fmt.Scanln() // wait for Enter Key
+	if err := util.ConfirmWrite(cmd, keysetCfg.Network, "add access key", struct {
+		Key, Type, Memo string
+		Strategy, ACL   *mysql.ConfigSnapshot
+	}{limitKey, limitTypeMap[keysetCfg.LimitType], keysetCfg.Memo, strategySnapshot, aclSnapshot}); err != nil {
+		return err
+	}
 
 	err = dbs.RateLimitStore.AddRateLimit(
 		strategySnapshot.ID, acl.ID, keysetCfg.LimitType, limitKey, keysetCfg.Memo, strategySnapshot, aclSnapshot,
@@ -149,11 +146,18 @@ func delKey(cmd *cobra.Command, args []string) error {
 
 	defer dbs.Close()
 
-	logrus.WithField("limitKey", keysetCfg.LimitKey).
-		Info("Press the Enter Key to delete the rate limit key!")
-	fmt.Scanln() // wait for Enter Key
-
-	removed, err := dbs.DeleteRateLimit(keysetCfg.LimitKey)
+	keys, err := dbs.LoadRateLimitKeyset(&rate.KeysetFilter{KeySet: []string{keysetCfg.LimitKey}})
+	if err != nil {
+		return err
+	}
+	if len(keys) == 0 {
+		cmd.Println("Rate limit key does not exist")
+		return nil
+	}
+	if err := util.ConfirmWrite(cmd, keysetCfg.Network, "delete access key", keys[0]); err != nil {
+		return err
+	}
+	removed, err := dbs.DeleteRateLimitChecked(keys[0])
 	if err != nil {
 		return fmt.Errorf("delete key: %w", err)
 	}

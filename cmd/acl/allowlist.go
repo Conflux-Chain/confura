@@ -44,6 +44,9 @@ var (
 )
 
 func init() {
+	util.AddConfirmationFlag(addAllowListCmd)
+	util.AddConfirmationFlag(removeAllowListCmd)
+
 	Cmd.AddCommand(addAllowListCmd)
 	hookAllowListCmdFlags(addAllowListCmd, true, true)
 
@@ -91,20 +94,21 @@ func addAllowList(cmd *cobra.Command, args []string) error {
 	defer dbs.Close()
 
 	name := mysql.AclAllowListConfKeyPrefix + allowList.Name
-	cfgmap, err := dbs.LoadConfig(name)
+	snapshot, err := dbs.LoadConfigSnapshot(name)
 	if err != nil {
 		return fmt.Errorf("add allowlist: %w", err)
 	}
 
 	op := "add a new allowlist"
-	if len(cfgmap) > 0 {
+	if snapshot != nil {
 		op = "update an existed allowlist"
 	}
 
-	logrus.WithField("allowlist", *allowList).Info("Press the Enter Key to ", op)
-	fmt.Scanln() // wait for Enter Key
+	if err := util.ConfirmWrite(cmd, alCfg.Network, op, allowList); err != nil {
+		return err
+	}
 
-	if err := dbs.StoreConfig(name, alCfg.Rules); err != nil {
+	if err := dbs.StoreConfigIfUnchanged(name, alCfg.Rules, snapshot); err != nil {
 		return fmt.Errorf("add allowlist: %w", err)
 	}
 
@@ -135,9 +139,9 @@ func delAllowList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	logrus.WithField("allowList", alCfg.Name).
-		Info("Press the Enter Key to delete the allowlist!")
-	fmt.Scanln() // wait for Enter Key
+	if err := util.ConfirmWrite(cmd, alCfg.Network, "delete configuration", snapshot); err != nil {
+		return err
+	}
 
 	removed, err := dbs.DeleteConfigChecked(name, snapshot)
 	if err != nil {
