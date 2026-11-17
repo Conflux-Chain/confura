@@ -157,11 +157,14 @@ func (p *clientProvider[T]) getClient(ctx context.Context, key string, group Gro
 		return res, ErrClientUnavailable
 	}
 
-	return p.getOrRegisterClient(url, group)
+	return p.getOrRegisterClient(ctx, url, group)
 }
 
 // getOrRegisterClient gets or registers RPC client for fullnode proxy.
-func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T, err error) {
+func (p *clientProvider[T]) getOrRegisterClient(ctx context.Context, url string, group Group) (res T, err error) {
+	if err := ctx.Err(); err != nil {
+		return res, err
+	}
 	clients := p.getOrRegisterGroup(group)
 	nodeName := rpcutil.Url2NodeName(url)
 
@@ -173,12 +176,18 @@ func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T,
 	logger.Trace("Route RPC requests")
 
 	client, loaded, err := clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// TODO improvements required
 		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
 		// 2. Different metrics for different full nodes.
 		return p.factory(group, url)
 	})
 
+	if err := ctx.Err(); err != nil {
+		return res, err
+	}
 	if err != nil {
 		err := errors.WithMessage(err, "bad full node connection")
 		logger.WithError(err).Error("Failed to get full node client from provider")
@@ -230,7 +239,7 @@ func (p *clientProvider[T]) GetClientsByGroup(grp Group) (clients []T, err error
 
 	nodeUrls := np.ListNodesByGroup(grp)
 	for _, url := range nodeUrls {
-		if c, err := p.getOrRegisterClient(string(url), grp); err == nil {
+		if c, err := p.getOrRegisterClient(context.Background(), string(url), grp); err == nil {
 			clients = append(clients, c)
 		} else {
 			return nil, err
