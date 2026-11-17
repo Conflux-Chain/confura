@@ -45,6 +45,10 @@ func NewCoreRpcClient(cfx sdk.ClientOperator) *CoreRpcClient {
 }
 
 func (c *CoreRpcClient) GetFinalizationStatus(ctx context.Context) (*FinalizationStatus, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	c = NewCoreRpcClient(rpc.CfxWithContext(ctx, c.ClientOperator))
 	status, err := c.GetStatus()
 	if err != nil {
 		return nil, err
@@ -61,6 +65,10 @@ func (c *CoreRpcClient) Space() string {
 }
 
 func (c *CoreRpcClient) QueryChainData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	c = NewCoreRpcClient(rpc.CfxWithContext(ctx, c.ClientOperator))
 	if fromEpoch > toEpoch {
 		return nil, errors.New("invalid epoch range")
 	}
@@ -71,6 +79,12 @@ func (c *CoreRpcClient) QueryChainData(ctx context.Context, fromEpoch, toEpoch u
 			return nil, err
 		}
 		res = append(res, &epochData)
+		if epochNo == toEpoch {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	return res, err
@@ -112,6 +126,10 @@ func (c *CoreRpcClient) getPivotBlock(epochNum uint64) (*cfxTypes.Block, error) 
 // BoostQueryChainData validates identities in the fetched data without extra RPCs.
 // It does not pin Core reads to one pivot or prove log-response completeness.
 func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEpoch uint64) (res []*store.EpochData, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	c = NewCoreRpcClient(rpc.CfxWithContext(ctx, c.ClientOperator))
 	if fromEpoch > toEpoch {
 		return nil, errors.New("invalid epoch range")
 	}
@@ -238,6 +256,12 @@ func (c *CoreRpcClient) BoostQueryChainData(ctx context.Context, fromEpoch, toEp
 
 		// Append the constructed epoch data to the result list
 		res = append(res, epochData)
+		if epochNum == toEpoch {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	if logCursor != len(logs) {
@@ -261,7 +285,7 @@ func NewEvmRpcClient(w3c *web3go.Client) *EvmRpcClient {
 }
 
 func (e *EvmRpcClient) GetFinalizationStatus(ctx context.Context) (*FinalizationStatus, error) {
-	block, err := e.Eth.BlockByNumber(ethTypes.FinalizedBlockNumber, false)
+	block, err := e.WithContext(ctx).Eth.BlockByNumber(ethTypes.FinalizedBlockNumber, false)
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +313,12 @@ func (c *EvmRpcClient) QueryChainData(ctx context.Context, fromBlock, toBlock ui
 			return nil, err
 		}
 		ethDataSlice = append(ethDataSlice, data)
+		if blockNo == toBlock {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	return ethDataSlice, nil
@@ -306,6 +336,7 @@ func (c *EvmRpcClient) getBlockByNumber(blockNum uint64) (*ethTypes.Block, error
 }
 
 func (c *EvmRpcClient) BoostQueryChainData(ctx context.Context, fromBlock, toBlock uint64) ([]*store.EthData, error) {
+	c = NewEvmRpcClient(c.WithContext(ctx))
 	if fromBlock > toBlock {
 		return nil, errors.New("invalid block range")
 	}
@@ -405,6 +436,12 @@ func (c *EvmRpcClient) BoostQueryChainData(ctx context.Context, fromBlock, toBlo
 
 		// Append the constructed epoch data to the result list
 		ethDataSlice = append(ethDataSlice, ethData)
+		if blockNum == toBlock {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	if logCursor != len(logs) {

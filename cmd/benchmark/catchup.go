@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/sync/catchup"
@@ -50,12 +51,16 @@ func hookCatchUpCmdFlags(cmd *cobra.Command) {
 		&catchUpConfig.Start, "start", "s", 0, "start epoch or block number to sync from",
 	)
 	cmd.Flags().Uint64VarP(
-		&catchUpConfig.Count, "count", "c", 10_000, "number of epochs or blocks to sync",
+		&catchUpConfig.Count, "count", "c", 10_000, "number of epochs or blocks to sync (0 means 1)",
 	)
 }
 
 // runCatchUpBenchmark starts the catch-up benchmarking process.
 func runCatchUpBenchmark(cmd *cobra.Command, args []string) error {
+	end, err := catchUpRangeEnd(catchUpConfig.Start, catchUpConfig.Count)
+	if err != nil {
+		return err
+	}
 	// Initialize required contexts
 	storeCtx, syncCtx, err := initializeContexts()
 	if err != nil {
@@ -64,19 +69,23 @@ func runCatchUpBenchmark(cmd *cobra.Command, args []string) error {
 	defer storeCtx.Close()
 	defer syncCtx.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
 	// Initialize the catch-up syncer.
-	catchUpSyncer := createCatchUpSyncer(syncCtx, storeCtx)
+	catchUpSyncer, err := createCatchUpSyncer(syncCtx, storeCtx)
+	if err != nil {
+		return err
+	}
 	defer catchUpSyncer.Close()
 
 	// Determine sync range
 	start := catchUpConfig.Start
-	end := catchUpConfig.Start + max(catchUpConfig.Count, 1) - 1
 
 	// Start the catch-up sync process
-	catchUpSyncer.SyncOnce(ctx, start, end)
+	if err := catchUpSyncer.SyncOnce(ctx, start, end); err != nil {
+		return err
+	}
 
 	// Also report RPC metrics after sync completes.
 	reportRpcMetrics(catchUpSyncer.UseBoost())
@@ -101,16 +110,16 @@ func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
 
 type catchupSyncer interface {
 	UseBoost() bool
-	SyncOnce(context.Context, uint64, uint64)
+	SyncOnce(context.Context, uint64, uint64) error
 	Close() error
 }
 
 // createCatchUpSyncer initializes the catch-up syncer with the necessary dependencies.
-func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext) catchupSyncer {
+func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext) (catchupSyncer, error) {
 	viper.Set("sync.catchup.benchmark", true)
 
 	if catchUpConfig.Network == "eth" {
-		return catchup.MustNewEthSyncer(
+		return catchup.NewEthSyncer(
 			syncCtx.SyncEths,
 			storeCtx.EthDB,
 			election.NewNoopLeaderManager(),
@@ -119,7 +128,7 @@ func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext)
 		)
 	}
 
-	return catchup.MustNewCfxSyncer(
+	return catchup.NewCfxSyncer(
 		syncCtx.SyncCfxs,
 		storeCtx.CfxDB,
 		election.NewNoopLeaderManager(),
@@ -201,4 +210,12 @@ func reportClassicMetrics() {
 	fmt.Printf(" success ratio: %v\n", queryRateGaugue.Value())
 
 	fmt.Println("// --------------------------------------------")
+}
+
+func catchUpRangeEnd(start, count uint64) (uint64, error) {
+	count = max(count, 1)
+	if count-1 > math.MaxUint64-start {
+		return 0, fmt.Errorf("catch-up range overflows uint64")
+	}
+	return start + count - 1, nil
 }

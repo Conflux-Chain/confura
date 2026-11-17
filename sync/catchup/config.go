@@ -1,6 +1,9 @@
 package catchup
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type config struct {
 	// Pool of full nodes to accelerate catching up until the latest stable epoch
@@ -45,4 +48,15 @@ type boostConfig struct {
 	MemoryCheckInterval time.Duration `default:"20s"`
 	// Force persistence interval
 	ForcePersistenceInterval time.Duration `default:"45s"`
+}
+
+func (c config) validate() error {
+	if c.WorkerChanSize < 0 || c.DbRowsThreshold <= 0 || c.MaxDbRows < 0 {
+		return fmt.Errorf("invalid catch-up buffer or batch size")
+	}
+	b := c.Boost
+	if b.Enabled && (b.TaskQueueSize < 0 || b.ResultQueueSize < 0 || b.WriteBufferSize < 0 || b.DefaultTaskSize == 0 || b.MinTaskSize == 0 || b.MaxTaskSize < b.MinTaskSize || b.MaxSampleSize <= 0 || b.ForcePersistenceInterval <= 0 || b.MemoryCheckInterval <= 0) {
+		return fmt.Errorf("invalid boost limits or intervals")
+	}
+	return nil
 }

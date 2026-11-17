@@ -125,6 +125,8 @@ type coordinator[T store.ChainData] struct {
 
 	// Synchronization state
 	nextAssignEpoch uint64
+	allAssigned     bool
+	fail            chan<- error
 
 	// Result pipeline
 	nextWriteEpoch  uint64
@@ -191,7 +193,7 @@ func (c *coordinator[T]) boostWorkerLoop(ctx context.Context, wg *sync.WaitGroup
 			case <-ctx.Done():
 				return
 			case task := <-c.pendingTaskQueue:
-				data, err := w.queryChainData(task.From, task.To)
+				data, err := w.queryChainData(ctx, task.From, task.To)
 				if logrus.IsLevelEnabled(logrus.DebugLevel) {
 					logrus.WithFields(logrus.Fields{
 						"worker":          w.name,
@@ -241,6 +243,13 @@ func (c *coordinator[T]) dispatchLoop(ctx context.Context, wg *sync.WaitGroup) {
 						r.err = validateTaskResult(r.task, r.result)
 					}
 					if r.err != nil {
+						if c.fail != nil {
+							select {
+							case c.fail <- r.err:
+							case <-ctx.Done():
+							}
+							return
+						}
 						// Recall the task by splitting and re-assigning
 						heap.Push(&c.recallTaskPq, &syncTaskItem{syncTask: r.task})
 						r.result = nil
@@ -331,6 +340,9 @@ func (c *coordinator[T]) collectResult(ctx context.Context, result []T) error {
 			return ctx.Err()
 		case c.epochResultChan <- data:
 			delete(c.epochDataStore, data.Number())
+			if c.nextWriteEpoch == c.fullEpochRange.To {
+				return nil
+			}
 			c.nextWriteEpoch++
 		}
 	}
@@ -351,7 +363,7 @@ func (c *coordinator[T]) assignTasks(ctx context.Context, taskSize uint64) error
 			if err := c.addPendingTask(ctx, recallTask.From, midEpoch); err != nil {
 				return err
 			}
-			if midEpoch+1 <= recallTask.To {
+			if midEpoch < recallTask.To {
 				numPendingTasks++
 				if c.isBackpressured() || len(c.pendingTaskQueue) == cap(c.pendingTaskQueue) {
 					heap.Push(&c.recallTaskPq, &syncTaskItem{syncTask: newSyncTask(midEpoch+1, recallTask.To)})
@@ -363,7 +375,7 @@ func (c *coordinator[T]) assignTasks(ctx context.Context, taskSize uint64) error
 		}
 
 		// The full epoch range has already been assigned
-		if c.nextAssignEpoch > c.fullEpochRange.To {
+		if c.allAssigned || c.nextAssignEpoch > c.fullEpochRange.To {
 			break
 		}
 
@@ -381,7 +393,10 @@ func (c *coordinator[T]) assignTasks(ctx context.Context, taskSize uint64) error
 		if err := c.addPendingTask(ctx, c.nextAssignEpoch, end); err != nil {
 			return err
 		}
-		c.nextAssignEpoch = end + 1
+		c.allAssigned = end == c.fullEpochRange.To
+		if !c.allAssigned {
+			c.nextAssignEpoch = end + 1
+		}
 	}
 	return nil
 }
@@ -446,47 +461,34 @@ func newBoostSyncer[T store.ChainData](s *Syncer[T]) *boostSyncer[T] {
 	}
 }
 
-func (s *boostSyncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
+func (s *boostSyncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) error {
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
-
-	// Start coordinator
-	fullEpochRange := types.RangeUint64{From: start, To: end}
-	coord := newCoordinator(s.Boost, s.workers, fullEpochRange, s.resultChan)
-
+	defer cancel()
+	coord := newCoordinator(s.Boost, s.workers, types.RangeUint64{From: start, To: end}, s.resultChan)
+	failures := make(chan error, 1)
+	if s.Benchmark {
+		coord.fail = failures
+	}
 	wg.Add(1)
 	go coord.run(ctx, &wg)
-
-	// Start memory monitor
 	if s.Boost.MemoryThreshold > 0 {
 		wg.Add(1)
 		go func() { defer wg.Done(); s.memoryMonitorLoop(ctx, coord) }()
 	}
-
-	// Start persisting results
+	result := make(chan error, 1)
 	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer cancel()
-
-		err := s.fetchAndPersistResults(ctx, start, end, bmarker)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			if errors.Is(err, store.ErrLeaderRenewal) {
-				logrus.WithFields(logrus.Fields{
-					"start":          start,
-					"end":            end,
-					"leaderIdentity": s.elm.Identity(),
-				}).Info("Catch-up boost syncer failed to renew leadership on fetching result")
-			} else {
-				logrus.WithFields(logrus.Fields{
-					"start": start,
-					"end":   end,
-				}).WithError(err).Error("Catch-up boost syncer failed to fetch result")
-			}
-		}
-	}()
-
+	go func() { defer wg.Done(); result <- s.fetchAndPersistResults(ctx, start, end, bmarker) }()
+	var err error
+	select {
+	case err = <-result:
+	case err = <-failures:
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+	cancel()
 	wg.Wait()
+	return err
 }
 
 // memoryMonitorLoop checks memory periodically and applies backpressure when memory is high.
@@ -537,7 +539,8 @@ func (s *boostSyncer[T]) fetchAndPersistResults(ctx context.Context, start, end 
 	defer timer.Stop()
 
 	var state persistState[T]
-	for eno := start; eno <= end; {
+	finished := false
+	for eno := start; !finished; {
 		forcePersist := false
 		startTime := time.Now()
 
@@ -546,13 +549,16 @@ func (s *boostSyncer[T]) fetchAndPersistResults(ctx context.Context, start, end 
 			return ctx.Err()
 		case epochData := <-s.resultChan:
 			// collect epoch data
-			if epochData.Number() != eno {
-				return errors.Errorf("unexpected epoch collected, expected %v got %v", eno, epochData.Number())
+			if nilChainData(epochData) || epochData.Number() != eno {
+				return errors.Errorf("unexpected epoch collected, expected %v", eno)
 			}
 			if bmarker != nil {
 				bmarker.metricFetchPerEpochDuration(startTime)
 			}
-			eno++
+			finished = eno == end
+			if !finished {
+				eno++
+			}
 			s.monitor.Update(eno)
 
 			epochDbRows, storeDbRows := state.update(s.filter, epochData)
@@ -592,7 +598,7 @@ type boostWorker[T store.ChainData] struct {
 
 // queryChainData fetches blocks and logs for a given epoch range to construct a minimal chain data struct
 // using `getLogs` rpc for best performance.
-func (w *boostWorker[T]) queryChainData(fromEpoch, toEpoch uint64) (res []T, err error) {
+func (w *boostWorker[T]) queryChainData(ctx context.Context, fromEpoch, toEpoch uint64) (res []T, err error) {
 	space := w.client.Space()
 	startTime := time.Now()
 
@@ -604,7 +610,7 @@ func (w *boostWorker[T]) queryChainData(fromEpoch, toEpoch uint64) (res []T, err
 		}
 	}()
 
-	res, err = w.client.BoostQueryChainData(context.Background(), fromEpoch, toEpoch)
+	res, err = w.client.BoostQueryChainData(ctx, fromEpoch, toEpoch)
 	return
 }
 

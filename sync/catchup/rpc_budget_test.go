@@ -83,6 +83,9 @@ func TestCoreBoostRPCBudget(t *testing.T) {
 				return nil
 			}})
 			require.NoError(t, err)
+			// Production sdk.NewClient initializes the network ID before context copies.
+			_, err = client.GetNetworkID()
+			require.NoError(t, err)
 			data, err := NewCoreRpcClient(client).BoostQueryChainData(context.Background(), 1, tc.to)
 			require.NoError(t, err)
 			require.Equal(t, append([]string{"status"}, tc.want...), calls, "SDK network-ID discovery happens once")
