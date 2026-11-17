@@ -40,22 +40,22 @@ func NewCfxInternalContractLogsApiHandler(
 	}
 }
 
-func MustNewCfxInternalContractLogsApiHandler(
+func NewCfxInternalContractLogsHandlerFromStore(
 	cfxDB *mysql.CfxStore,
 	clientProvider *node.CfxClientProvider,
-) *CfxInternalContractLogsApiHandler {
+) (*CfxInternalContractLogsApiHandler, error) {
 	cfx, err := clientProvider.GetClientRandom()
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get random client from node client provider")
+		return nil, err
 	}
 
 	registry, err := tracelog.NewRegistry(cfx)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to create internal contract registry")
+		return nil, err
 	}
 
 	internalContractStore := mysql.NewInternalContractLogStore(cfxDB.DB())
-	return NewCfxInternalContractLogsApiHandler(registry, internalContractStore)
+	return NewCfxInternalContractLogsApiHandler(registry, internalContractStore), nil
 }
 
 // FilterRegisteredInternalContractAddresses filters the given addresses to only include registered internal contracts.
@@ -389,4 +389,12 @@ func buildTopics(
 // hexBig converts a uint64 to *hexutil.Big (eliminates repetitive boilerplate).
 func hexBig(v uint64) *hexutil.Big {
 	return (*hexutil.Big)(new(big.Int).SetUint64(v))
+}
+
+func MustNewCfxInternalContractLogsApiHandler(db *mysql.CfxStore, provider *node.CfxClientProvider) *CfxInternalContractLogsApiHandler {
+	h, err := NewCfxInternalContractLogsHandlerFromStore(db, provider)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize internal contract logs")
+	}
+	return h
 }

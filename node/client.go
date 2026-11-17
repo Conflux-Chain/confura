@@ -38,6 +38,7 @@ type clientProvider[T any] struct {
 	defaultGroup Group
 	factory      clientFactory[T]
 	mu           sync.Mutex
+	closeOnce    sync.Once
 
 	// db store to load node route configs
 	db *mysql.CommonStores
@@ -295,10 +296,29 @@ func NewEthClientProvider(dataCache cacheRpc.Interface, db *mysql.CommonStores, 
 		if grp == GroupEthHttp || grp == GroupEthLogs {
 			nearheadCache, err = rpcutil.NewEthNearHeadCacheFromViper(url)
 			if err != nil {
+				client.Close()
 				return nil, errors.WithMessagef(err, "failed to create near head cache for %s", url)
 			}
 		}
 
 		return rpcutil.NewWeb3goClient(url, client, dataCache, nearheadCache)
+	})
+}
+
+// Close releases clients after the server and all background users have stopped.
+func (p *clientProvider[T]) Close() {
+	p.closeOnce.Do(func() {
+		p.clients.Range(func(_, value interface{}) bool {
+			value.(*util.ConcurrentMap).Range(func(_, client interface{}) bool {
+				if c, ok := client.(interface{ Close() }); ok {
+					c.Close()
+				}
+				return true
+			})
+			return true
+		})
+		if r, ok := p.router.(interface{ Close() }); ok {
+			r.Close()
+		}
 	})
 }

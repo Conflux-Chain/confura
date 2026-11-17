@@ -49,6 +49,8 @@ type Registry struct {
 
 	// strategy resolver
 	resolver *CompositeResolver
+	cancelGC context.CancelFunc
+	gcDone   chan struct{}
 }
 
 func NewRegistry(kloader *KeyLoader, valFactory acl.ValidatorFactory) *Registry {
@@ -66,7 +68,9 @@ func NewRegistry(kloader *KeyLoader, valFactory acl.ValidatorFactory) *Registry 
 
 	m.publishLimiterStrategies()
 	m.Registry = http.NewRegistry(m)
-	go m.ScheduleGC(GCScheduleInterval)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelGC, m.gcDone = cancel, make(chan struct{})
+	go func() { defer close(m.gcDone); m.ScheduleGCCtx(ctx, GCScheduleInterval) }()
 
 	return m
 }
@@ -155,3 +159,5 @@ func (r *Registry) publishLimiterStrategies() {
 	}
 	r.limiterStrategies.Store(snapshot)
 }
+
+func (r *Registry) Close() { r.cancelGC(); <-r.gcDone }

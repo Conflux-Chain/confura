@@ -76,8 +76,25 @@ type NodeProvider interface {
 }
 
 // MustNewRouter creates an instance of Router.
-func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf map[Group]UrlConfig) Router {
+func MustNewRouter(redisURL, nodeRPCURL, nodeGRpcUrl string, groupConf map[Group]UrlConfig) Router {
+	r, err := NewRouter(redisURL, nodeRPCURL, nodeGRpcUrl, groupConf)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize router")
+	}
+	return r
+}
+
+func NewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf map[Group]UrlConfig) (_ Router, err error) {
 	var routers []Router
+	defer func() {
+		if err != nil {
+			for _, r := range routers {
+				if c, ok := r.(interface{ Close() }); ok {
+					c.Close()
+				}
+			}
+		}
+	}()
 	group2Urls := make(map[Group][]string, len(groupConf))
 	for group, config := range groupConf {
 		group2Urls[group] = config.Nodes
@@ -88,7 +105,7 @@ func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf ma
 		// redis://<user>:<password>@<host>:<port>/<db_number>
 		opt, err := redis.ParseURL(redisURL)
 		if err != nil {
-			logrus.WithError(err).Fatal("Failed to parse redis URL")
+			return nil, err
 		}
 
 		// The TLS dialer in go-redis v8 also needs an explicit dial limit.
@@ -102,7 +119,7 @@ func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf ma
 	if len(nodeGRpcUrl) > 0 {
 		router, err := NewNodeGRPCRouter(nodeGRpcUrl)
 		if err != nil {
-			logrus.WithError(err).Fatal("Failed to create gRPC router")
+			return nil, err
 		}
 
 		logrus.Info("Succeeded to create gRPC router")
@@ -115,7 +132,7 @@ func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf ma
 		// http://127.0.0.1:22530
 		client, err := rpc.DialHTTP(nodeRPCURL)
 		if err != nil {
-			logrus.WithError(err).Fatal("Failed to create rpc client")
+			return nil, err
 		}
 
 		routers = append(routers, NewNodeRpcRouter(client))
@@ -124,11 +141,12 @@ func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf ma
 		localRouter, err := NewLocalRouterFromNodeRPC(client)
 		if err != nil {
 			if !isRouterUnavailable(err) {
-				logrus.WithError(err).Fatal("Failed to load local routes from node RPC")
+				localRouter.Close()
+				return nil, err
 			}
 			// Presets are used only before the first successful full snapshot.
 			localRouter.update(group2Urls)
-			go localRouter.poll(client)
+			localRouter.startPoll(client)
 			logrus.WithError(err).Warn("Node manager unavailable; starting with configured local routes")
 		}
 		routers = append(routers, localRouter)
@@ -139,7 +157,7 @@ func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf ma
 		routers = append(routers, NewLocalRouter(group2Urls))
 	}
 
-	return NewChainedRouter(groupConf, routers...)
+	return NewChainedRouter(groupConf, routers...), nil
 }
 
 // chainedRouter routes RPC requests in chained responsibility pattern.
@@ -253,6 +271,7 @@ func (r *NodeRpcRouter) Route(ctx context.Context, group Group, key []byte) (str
 
 // NodeGRPCRouter routes RPC requests via node management gRPC service.
 type NodeGRPCRouter struct {
+	conn   *grpc.ClientConn
 	client pb.RouterClient
 
 	timeout time.Duration
@@ -267,7 +286,7 @@ func NewNodeGRPCRouter(url string) (*NodeGRPCRouter, error) {
 		return nil, errors.WithMessage(err, "Failed to dial grpc router")
 	}
 
-	return &NodeGRPCRouter{
+	return &NodeGRPCRouter{conn: conn,
 		client:  pb.NewRouterClient(conn),
 		timeout: routerTimeout(),
 	}, nil
@@ -333,9 +352,13 @@ func newLocalNodeGroup(urls []string) *localNodeGroup {
 
 // LocalRouter routes RPC requests based on local hash ring.
 type LocalRouter struct {
-	mu      sync.Mutex
-	groups  map[Group]*localNodeGroup
-	timeout time.Duration
+	pollStarted bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	done        chan struct{}
+	mu          sync.Mutex
+	groups      map[Group]*localNodeGroup
+	timeout     time.Duration
 }
 
 func NewLocalRouter(group2Urls map[Group][]string) *LocalRouter {
@@ -384,7 +407,8 @@ func (r *LocalRouter) ListNodesByGroup(group Group) (urls []string) {
 }
 
 func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
-	router := &LocalRouter{
+	ctx, cancel := context.WithCancel(context.Background())
+	router := &LocalRouter{ctx: ctx, cancel: cancel, done: make(chan struct{}),
 		groups:  make(map[Group]*localNodeGroup),
 		timeout: routerTimeout(),
 	}
@@ -393,17 +417,24 @@ func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
 		return router, err
 	}
 
-	go router.poll(client)
+	router.startPoll(client)
 
 	return router, nil
 }
 
-func (r *LocalRouter) poll(client *rpc.Client) {
+func (r *LocalRouter) poll(client *rpc.Client) { r.pollContext(context.Background(), client) }
+
+func (r *LocalRouter) pollContext(ctx context.Context, client *rpc.Client) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 
 	// could update nodes periodically all the time
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		if err := r.pollOnce(client); err != nil {
 			logrus.WithError(err).Error("Failed to poll route groups from node manager RPC")
 		}
@@ -488,4 +519,32 @@ func isRouterUnavailable(err error) bool {
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
+}
+
+func (r *LocalRouter) Close() {
+	if r.cancel != nil {
+		r.cancel()
+		if r.pollStarted {
+			<-r.done
+		}
+	}
+}
+func (r *NodeRpcRouter) Close() { r.client.Close() }
+func (r *NodeGRPCRouter) Close() {
+	if r.conn != nil {
+		_ = r.conn.Close()
+	}
+}
+func (r *RedisRouter) Close() { _ = r.client.Close() }
+func (r *chainedRouter) Close() {
+	for _, source := range r.routers {
+		if c, ok := source.(interface{ Close() }); ok {
+			c.Close()
+		}
+	}
+}
+
+func (r *LocalRouter) startPoll(client *rpc.Client) {
+	r.pollStarted = true
+	go func() { defer close(r.done); r.pollContext(r.ctx, client) }()
 }

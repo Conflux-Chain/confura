@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
@@ -22,7 +22,7 @@ var (
 	virtualFilterCmd = &cobra.Command{
 		Use:   "vf",
 		Short: "Start virtual filter service",
-		Run:   startVirtualFilterService,
+		RunE:  startVirtualFilterService,
 	}
 )
 
@@ -40,46 +40,68 @@ func init() {
 	rootCmd.AddCommand(virtualFilterCmd)
 }
 
-func startVirtualFilterService(*cobra.Command, []string) {
+func startVirtualFilterService(cmd *cobra.Command, args []string) error {
 	if !vfOpt.cfxEnabled && !vfOpt.ethEnabled {
-		logrus.Fatal("No virtual filter server specified")
+		return fmt.Errorf("No virtual filter server specified")
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
+	life, err := util.NewLifecycle(cmd.Context())
+	if err != nil {
+		return err
+	}
+	defer life.Close()
+	ctx, wg := life.Ctx, &life.Wg
+	storeCtx, err := util.InitStoreContext("cfx", "eth")
+	if err != nil {
+		return err
+	}
+	defer func() { life.Shutdown(); storeCtx.Close() }()
 
 	if vfOpt.cfxEnabled {
-		startCoreSpaceVirtualFilterServer(ctx, &wg, storeCtx)
+		if err := startCoreSpaceVirtualFilterServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	if vfOpt.ethEnabled {
-		startEvmSpaceVirtualFilterServer(ctx, &wg, storeCtx)
+		if err := startEvmSpaceVirtualFilterServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
-	util.GracefulShutdown(&wg, cancel)
+	life.Wait()
+	return life.Err()
 }
 
 // startEvmSpaceVirtualFilterServer starts evm space virtual filter RPC server
-func startEvmSpaceVirtualFilterServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+func startEvmSpaceVirtualFilterServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) error {
+	if storeCtx.EthDB == nil {
+		return fmt.Errorf("eth database is required for virtual filters")
+	}
 	// serve HTTP endpoint
-	vfServer, httpEndpoint := virtualfilter.MustNewEvmSpaceServerFromViper(
+	vfServer, httpEndpoint, err := virtualfilter.NewEvmSpaceServerFromViper(
 		util.GracefulShutdownContext{Ctx: ctx, Wg: wg},
 		storeCtx.EthDB.VirtualFilterLogStore,
 	)
 
-	go vfServer.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
+	if err != nil {
+		return err
+	}
+	return vfServer.Start(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
 }
 
 // startCoreSpaceVirtualFilterServer starts core space virtual filter RPC server
-func startCoreSpaceVirtualFilterServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+func startCoreSpaceVirtualFilterServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) error {
+	if storeCtx.CfxDB == nil {
+		return fmt.Errorf("cfx database is required for virtual filters")
+	}
 	// serve HTTP endpoint
-	vfServer, httpEndpoint := virtualfilter.MustNewCoreSpaceServerFromViper(
+	vfServer, httpEndpoint, err := virtualfilter.NewCoreSpaceServerFromViper(
 		util.GracefulShutdownContext{Ctx: ctx, Wg: wg},
 		storeCtx.CfxDB.VirtualFilterLogStore,
 	)
 
-	go vfServer.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
+	if err != nil {
+		return err
+	}
+	return vfServer.Start(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
 }

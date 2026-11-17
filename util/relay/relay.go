@@ -1,6 +1,9 @@
 package relay
 
 import (
+	"context"
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util"
@@ -30,21 +33,47 @@ type TxnRelayer interface {
 }
 
 func MustNewTxnRelayerFromViper() TxnRelayer {
-	var relayConf TxnRelayerConfig
-	viper.MustUnmarshalKey("relay", &relayConf)
-
-	return newCfxTxnRelayer(&relayConf)
+	r, err := NewTxnRelayerFromViper(false)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize transaction relay")
+	}
+	return r
 }
 
 func MustNewEthTxnRelayerFromViper() TxnRelayer {
-	var relayConf TxnRelayerConfig
-	viper.MustUnmarshalKey("relay", &relayConf)
+	r, err := NewTxnRelayerFromViper(true)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize transaction relay")
+	}
+	return r
+}
 
-	return newEthTxnRelayer(&relayConf)
+// ManagedTxnRelayer owns its workers and clients.
+type ManagedTxnRelayer interface {
+	TxnRelayer
+	Close()
+}
+
+func NewTxnRelayerFromViper(eth bool) (ManagedTxnRelayer, error) {
+	var relayConf TxnRelayerConfig
+	if err := viper.UnmarshalKey("relay", &relayConf); err != nil {
+		return nil, err
+	}
+	if relayConf.BufferSize < 0 {
+		return nil, fmt.Errorf("relay buffer size must not be negative")
+	}
+	if eth {
+		return newEthTxnRelayer(&relayConf), nil
+	}
+	return newCfxTxnRelayer(&relayConf), nil
 }
 
 // txnRelayer base transaction relayer
 type txnRelayer struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	closeOnce sync.Once
 	*TxnRelayerConfig
 
 	poolClients *util.ConcurrentMap // fullnode client pool
@@ -52,7 +81,8 @@ type txnRelayer struct {
 }
 
 func newTxnRelayer(relayConf *TxnRelayerConfig) *txnRelayer {
-	return &txnRelayer{
+	ctx, cancel := context.WithCancel(context.Background())
+	return &txnRelayer{ctx: ctx, cancel: cancel,
 		TxnRelayerConfig: relayConf,
 		poolClients:      &util.ConcurrentMap{},
 		txnQueue:         make(chan hexutil.Bytes, relayConf.BufferSize),
@@ -61,6 +91,9 @@ func newTxnRelayer(relayConf *TxnRelayerConfig) *txnRelayer {
 
 // Relay relays raw transaction broadcasting asynchronously.
 func (relayer *txnRelayer) Relay(signedTx hexutil.Bytes) bool {
+	if relayer.ctx.Err() != nil {
+		return false
+	}
 	// Avoid copying a transaction while a buffered queue is already full.
 	// This is only an early rejection: select still decides admission atomically.
 	if capacity := cap(relayer.txnQueue); capacity > 0 && len(relayer.txnQueue) == capacity {
@@ -69,6 +102,8 @@ func (relayer *txnRelayer) Relay(signedTx hexutil.Bytes) bool {
 	// Own queued bytes; callers may reuse their request buffer after return.
 	raw := append(hexutil.Bytes(nil), signedTx...)
 	select {
+	case <-relayer.ctx.Done():
+		return false
 	case relayer.txnQueue <- raw:
 		return true
 	default:
@@ -80,7 +115,8 @@ func (relayer *txnRelayer) Relay(signedTx hexutil.Bytes) bool {
 func (relayer *txnRelayer) run(process func()) {
 	concurrency := max(relayer.Concurrency, 1)
 	for i := 0; i < concurrency; i++ {
-		go process()
+		relayer.wg.Add(1)
+		go func() { defer relayer.wg.Done(); process() }()
 	}
 }
 
@@ -112,8 +148,13 @@ func (relayer *cfxTxnRelayer) Relay(signedTx hexutil.Bytes) bool {
 
 // process processes raw transaction queue
 func (relayer *cfxTxnRelayer) process() {
-	for rawTxn := range relayer.txnQueue {
-		relayer.relay(rawTxn)
+	for {
+		select {
+		case <-relayer.ctx.Done():
+			return
+		case rawTxn := <-relayer.txnQueue:
+			relayer.relay(rawTxn)
+		}
 	}
 }
 
@@ -133,7 +174,7 @@ func (relayer *cfxTxnRelayer) relay(signedTx hexutil.Bytes) {
 			continue
 		}
 
-		txHash, err := cfx.(sdk.ClientOperator).SendRawTransaction(signedTx)
+		txHash, err := rpcutil.CfxWithContext(relayer.ctx, cfx.(sdk.ClientOperator)).SendRawTransaction(signedTx)
 		logrus.WithFields(logrus.Fields{
 			"url":    url,
 			"txHash": txHash,
@@ -169,8 +210,13 @@ func (relayer *ethTxnRelayer) Relay(signedTx hexutil.Bytes) bool {
 
 // process processes raw transaction queue
 func (relayer *ethTxnRelayer) process() {
-	for rawTxn := range relayer.txnQueue {
-		relayer.relay(rawTxn)
+	for {
+		select {
+		case <-relayer.ctx.Done():
+			return
+		case rawTxn := <-relayer.txnQueue:
+			relayer.relay(rawTxn)
+		}
 	}
 }
 
@@ -190,10 +236,23 @@ func (relayer *ethTxnRelayer) relay(signedTx hexutil.Bytes) {
 			continue
 		}
 
-		txHash, err := w3c.(*web3go.Client).Eth.SendRawTransaction(signedTx)
+		txHash, err := w3c.(*web3go.Client).WithContext(relayer.ctx).Eth.SendRawTransaction(signedTx)
 		logrus.WithFields(logrus.Fields{
 			"url":    url,
 			"txHash": txHash,
 		}).WithError(err).Trace("Evm space raw transaction relayed")
 	}
+}
+
+func (relayer *txnRelayer) Close() {
+	relayer.closeOnce.Do(func() {
+		relayer.cancel()
+		relayer.wg.Wait()
+		relayer.poolClients.Range(func(_, value interface{}) bool {
+			if c, ok := value.(interface{ Close() }); ok {
+				c.Close()
+			}
+			return true
+		})
+	})
 }

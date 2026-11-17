@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"time"
 
 	pb "github.com/Conflux-Chain/confura/node/router/proto"
 	"github.com/sirupsen/logrus"
@@ -12,25 +13,48 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// MustServeGRPC starts gRPC router service and wait for graceful shutdown.
-func MustServeGRPC(ctx context.Context, wg *sync.WaitGroup, endpoint string, handler *apiHandler) {
-	wg.Add(1)
-	defer wg.Done()
-
+// StartGRPC binds the router service before returning.
+func StartGRPC(ctx context.Context, wg *sync.WaitGroup, endpoint string, handler *apiHandler) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	listener, err := net.Listen("tcp", endpoint)
 	if err != nil {
-		logrus.WithError(err).WithField("endpoint", endpoint).Fatal("Failed to listen for gRPC router server")
+		return err
 	}
+	serveGRPC(ctx, wg, listener, &grpcRouterServer{handler: handler})
+	return nil
+}
 
-	server := grpc.NewServer()
-	pb.RegisterRouterServer(server, &grpcRouterServer{handler: handler})
-	go server.Serve(listener)
+func serveGRPC(ctx context.Context, wg *sync.WaitGroup, listener net.Listener, handler pb.RouterServer) {
+	server := grpc.NewServer(grpc.WaitForHandlers(true))
+	pb.RegisterRouterServer(server, handler)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		served := make(chan struct{})
+		go func() { defer close(served); _ = server.Serve(listener) }()
+		select {
+		case <-ctx.Done():
+		case <-served:
+		}
+		stopped := make(chan struct{})
+		go func() { server.GracefulStop(); close(stopped) }()
+		select {
+		case <-stopped:
+		case <-time.After(3 * time.Second):
+			server.Stop()
+			<-stopped
+		}
+		<-served
+	}()
+}
 
-	logrus.WithField("endpoint", endpoint).Info("Succeeded to run gRPC router server")
-
+func MustServeGRPC(ctx context.Context, wg *sync.WaitGroup, endpoint string, handler *apiHandler) {
+	if err := StartGRPC(ctx, wg, endpoint, handler); err != nil {
+		logrus.WithError(err).Fatal("Failed to start gRPC router")
+	}
 	<-ctx.Done()
-
-	server.GracefulStop()
 }
 
 type grpcRouterServer struct {

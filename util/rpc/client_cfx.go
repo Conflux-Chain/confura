@@ -100,3 +100,17 @@ func CfxWithContext(ctx context.Context, cfx sdk.ClientOperator) sdk.ClientOpera
 	}
 	return cfx
 }
+
+func NewCfxClientsFromViper(options ...ClientOption) (clients []*sdk.Client, err error) {
+	for _, url := range cfxClientCfg.Http {
+		client, err := NewCfxClient(url, options...)
+		if err != nil {
+			for _, opened := range clients {
+				opened.Close()
+			}
+			return nil, err
+		}
+		clients = append(clients, client)
+	}
+	return clients, nil
+}

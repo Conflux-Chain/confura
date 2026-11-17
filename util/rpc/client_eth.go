@@ -86,3 +86,17 @@ func NewEthClient(url string, options ...ClientOption) (*web3go.Client, error) {
 
 	return eth, nil
 }
+
+func NewEthClientsFromViper(options ...ClientOption) (clients []*web3go.Client, err error) {
+	for _, url := range ethClientCfg.Http {
+		client, err := NewEthClient(url, options...)
+		if err != nil {
+			for _, opened := range clients {
+				opened.Close()
+			}
+			return nil, err
+		}
+		clients = append(clients, client)
+	}
+	return clients, nil
+}

@@ -98,17 +98,33 @@ type SyncContext struct {
 }
 
 func MustInitSyncContext(storeCtx StoreContext) SyncContext {
-	sc := SyncContext{StoreContext: storeCtx}
-
-	if storeCtx.CfxDB != nil {
-		sc.SyncCfxs = rpc.MustNewCfxClientsFromViper(rpc.WithClientHookMetrics(true))
+	sc, err := InitSyncContext(storeCtx)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize sync clients")
 	}
-
-	if storeCtx.EthDB != nil {
-		sc.SyncEths = rpc.MustNewEthClientsFromViper(rpc.WithClientHookMetrics(true))
-	}
-
 	return sc
+}
+
+func InitSyncContext(storeCtx StoreContext) (sc SyncContext, err error) {
+	sc.StoreContext = storeCtx
+	defer func() {
+		if err != nil {
+			sc.Close()
+		}
+	}()
+	if storeCtx.CfxDB != nil {
+		sc.SyncCfxs, err = rpc.NewCfxClientsFromViper(rpc.WithClientHookMetrics(true))
+		if err != nil {
+			return sc, err
+		}
+	}
+	if storeCtx.EthDB != nil {
+		sc.SyncEths, err = rpc.NewEthClientsFromViper(rpc.WithClientHookMetrics(true))
+		if err != nil {
+			return sc, err
+		}
+	}
+	return sc, nil
 }
 
 func (ctx *SyncContext) Close() {

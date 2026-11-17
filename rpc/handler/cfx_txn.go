@@ -26,9 +26,11 @@ type CfxTxnHandler struct {
 	relayTxn bool                // whether to relay to other group nodes while sending txn
 }
 
-func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
+func NewCfxTxnHandler(relayer relay.TxnRelayer) (*CfxTxnHandler, error) {
 	cfg := struct{ RelayTxn bool }{}
-	viper.MustUnmarshalKey("relay", &cfg)
+	if err := viper.UnmarshalKey("relay", &cfg); err != nil {
+		return nil, err
+	}
 
 	var nodeRpcClient *rpc.Client
 	if nodeRpcUrl := node.Config().Router.NodeRPCURL; len(nodeRpcUrl) > 0 {
@@ -36,9 +38,7 @@ func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
 
 		nodeRpcClient, err = rpc.DialHTTP(nodeRpcUrl)
 		if err != nil {
-			logrus.WithField("nodeRpcUrl", nodeRpcUrl).
-				WithError(err).
-				Fatal("Txn handler failed to create node RPC client")
+			return nil, err
 		}
 	}
 
@@ -47,7 +47,7 @@ func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
 		nclient:  nodeRpcClient,
 		clients:  &util.ConcurrentMap{},
 		relayTxn: cfg.RelayTxn,
-	}
+	}, nil
 }
 
 func (h *CfxTxnHandler) SendRawTxn(cfx sdk.ClientOperator, group node.Group, signedTx hexutil.Bytes) (types.Hash, error) {
@@ -119,4 +119,23 @@ func (h *CfxTxnHandler) replicateRawTxnSendingToNodes(cfx sdk.ClientOperator, no
 				Info("Txn handler failed to replicate sending cfx raw transaction")
 		}
 	}
+}
+
+func MustNewCfxTxnHandler(relayer relay.TxnRelayer) *CfxTxnHandler {
+	h, err := NewCfxTxnHandler(relayer)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize transaction handler")
+	}
+	return h
+}
+func (h *CfxTxnHandler) Close() {
+	if h.nclient != nil {
+		h.nclient.Close()
+	}
+	h.clients.Range(func(_, v interface{}) bool {
+		if c, ok := v.(interface{ Close() }); ok {
+			c.Close()
+		}
+		return true
+	})
 }

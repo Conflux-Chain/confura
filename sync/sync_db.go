@@ -63,12 +63,22 @@ type DatabaseSyncer struct {
 
 // MustNewDatabaseSyncer creates an instance of DatabaseSyncer to sync blockchain data.
 func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.CfxStore) *DatabaseSyncer {
+	s, err := NewDatabaseSyncer(cfxClients, db)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize syncer")
+	}
+	return s
+}
+
+func NewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.CfxStore) (*DatabaseSyncer, error) {
 	if len(cfxClients) == 0 {
-		logrus.Fatal("No sdk client provided")
+		return nil, errors.New("no sync client provided")
 	}
 
 	var conf cfxSyncConfig
-	viperutil.MustUnmarshalKey("sync.cfx", &conf)
+	if err := viperutil.UnmarshalKey("sync.cfx", &conf); err != nil {
+		return nil, err
+	}
 
 	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (latestEpochNum uint64, retErr error) {
 		for _, cfx := range cfxClients {
@@ -111,13 +121,15 @@ func MustNewDatabaseSyncer(cfxClients []*sdk.Client, db *mysql.CfxStore) *Databa
 	})
 
 	// Load last sync epoch information
-	syncer.mustLoadLastSyncEpoch()
+	if err := syncer.loadLastSyncEpoch(); err != nil {
+		return nil, err
+	}
 
-	return syncer
+	return syncer, nil
 }
 
 // Sync starts to sync epoch blockchain data.
-func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
+func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) error {
 	logrus.WithField("epochFrom", syncer.epochFrom).Info("DB sync starting to sync epoch data")
 	defer logrus.Info("DB syncer shutdown ok")
 
@@ -127,7 +139,9 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	go syncer.elm.Campaign(ctx)
 	defer syncer.elm.Stop()
 
-	syncer.fastCatchup(ctx)
+	if err := syncer.fastCatchup(ctx); err != nil {
+		return err
+	}
 
 	ticker := time.NewTimer(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
@@ -136,7 +150,7 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	for syncer.elm.Await(ctx) {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-ticker.C:
 			err := syncer.doTicker(ctx, ticker)
 			recovered, unhealthy, unrecovered, failures := healthStatus.OnError(err)
@@ -152,17 +166,22 @@ func (syncer *DatabaseSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 			}
 		}
 	}
+	return nil
 }
 
 // fast catch-up until the latest stable epoch
 // (maximum between the latest finalized and checkpoint epoch)
-func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) {
-	catchUpSyncer := catchup.MustNewCfxSyncer(
+func (syncer *DatabaseSyncer) fastCatchup(ctx context.Context) error {
+	catchUpSyncer, err := catchup.NewCfxSyncer(
 		syncer.cfxs, syncer.db, syncer.elm, syncer.monitor, syncer.epochFrom,
 	)
+	if err != nil {
+		return err
+	}
 	defer catchUpSyncer.Close()
 
 	catchUpSyncer.Sync(ctx)
+	return nil
 }
 
 // Load last sync epoch from database to continue synchronization.

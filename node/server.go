@@ -16,7 +16,15 @@ var (
 
 // NewServer creates node management RPC server
 func NewServer(handler *apiHandler) *rpc.Server {
-	return rpc.MustNewServer("node", map[string]interface{}{
+	s, err := newServer(handler)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize node RPC server")
+	}
+	return s
+}
+
+func newServer(handler *apiHandler) (*rpc.Server, error) {
+	return rpc.NewServer("node", map[string]interface{}{
 		"node": &api{h: handler},
 	}, nil)
 }
@@ -91,13 +99,26 @@ type apiHandler struct {
 }
 
 func MustNewApiHandler(db *mysql.CommonStores, nf nodeFactory, grpConf map[Group]UrlConfig) *apiHandler {
+	h, err := NewApiHandler(db, nf, grpConf)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize node manager")
+	}
+	return h
+}
+
+func NewApiHandler(db *mysql.CommonStores, nf nodeFactory, grpConf map[Group]UrlConfig) (_ *apiHandler, err error) {
 	npool := newNodePool(nf)
+	defer func() {
+		if err != nil {
+			npool.Close()
+		}
+	}()
 
 	if db != nil {
 		// load node route group config from db
 		routeGroups, err := db.LoadNodeRouteGroups()
 		if err != nil {
-			logrus.WithError(err).Fatal("Failed to load node route groups from db")
+			return nil, err
 		}
 
 		// merge node route groups with the pre-defined config
@@ -109,10 +130,7 @@ func MustNewApiHandler(db *mysql.CommonStores, nf nodeFactory, grpConf map[Group
 	// add group nodes to the pool
 	for grp, cfg := range grpConf {
 		if err := npool.add(grp, cfg.Nodes...); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"group":  grp,
-				"config": cfg,
-			}).WithError(err).Fatal("Failed to add group nodes to the pool")
+			return nil, err
 		}
 	}
 
@@ -120,7 +138,7 @@ func MustNewApiHandler(db *mysql.CommonStores, nf nodeFactory, grpConf map[Group
 	if db != nil {
 		handler.dbs = db
 	}
-	return handler
+	return handler, nil
 }
 
 func (h *apiHandler) addGroupNode(grp Group, url string, saveGrp bool) error {

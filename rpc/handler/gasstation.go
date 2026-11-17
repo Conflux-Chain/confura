@@ -2,6 +2,7 @@ package handler
 
 import (
 	"container/list"
+	"context"
 	"math"
 	"math/big"
 	"slices"
@@ -53,6 +54,9 @@ type GasStationConfig struct {
 }
 
 type baseGasStationHandler struct {
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
 	config        *GasStationConfig  // Gas station configuration
 	status        atomic.Value       // Gas station status
 	blockHashList *list.List         // Linked list to store historical block hashes for reorg detection
@@ -60,7 +64,8 @@ type baseGasStationHandler struct {
 }
 
 func newBaseGasStationHandler(config *GasStationConfig) *baseGasStationHandler {
-	return &baseGasStationHandler{
+	ctx, cancel := context.WithCancel(context.Background())
+	return &baseGasStationHandler{ctx: ctx, cancel: cancel,
 		config:        config,
 		blockHashList: list.New(),
 		window:        NewPriorityFeeWindow(config.HistoricalPeekCount),
@@ -92,6 +97,8 @@ func (h *baseGasStationHandler) run(sync func() (bool, error), refresh func() er
 
 	for {
 		select {
+		case <-h.ctx.Done():
+			return
 		case <-syncTicker.C:
 			complete, err := sync()
 			etlog(err)
@@ -496,3 +503,9 @@ func assembleSuggestedGasFees(baseFeePerGas *big.Int, stats *GasStats) *types.Su
 		BaseFeeTrend:               stats.BaseFeeTrend,
 	}
 }
+
+func (h *baseGasStationHandler) start(syncFn func() (bool, error), refresh func() error) {
+	h.wg.Add(1)
+	go func() { defer h.wg.Done(); h.run(syncFn, refresh) }()
+}
+func (h *baseGasStationHandler) Close() { h.cancel(); h.wg.Wait() }

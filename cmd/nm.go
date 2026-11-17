@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/node"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +20,7 @@ var (
 	nmCmd = &cobra.Command{
 		Use:   "nm",
 		Short: "Start node management service, including core space and evm space node managers",
-		Run:   startNodeManagerService,
+		RunE:  startNodeManagerService,
 	}
 )
 
@@ -38,32 +38,42 @@ func init() {
 	rootCmd.AddCommand(nmCmd)
 }
 
-func startNodeManagerService(*cobra.Command, []string) {
+func startNodeManagerService(cmd *cobra.Command, args []string) error {
 	if !nmOpt.cfxEnabled && !nmOpt.ethEnabled {
-		logrus.Fatal("No node manager server specified")
+		return fmt.Errorf("No node manager server specified")
 	}
-
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
+	life, err := util.NewLifecycle(cmd.Context())
+	if err != nil {
+		return err
+	}
+	defer life.Close()
+	ctx, wg := life.Ctx, &life.Wg
+	storeCtx, err := util.InitStoreContext("cfx", "eth")
+	if err != nil {
+		return err
+	}
+	defer func() { life.Shutdown(); storeCtx.Close() }()
 
 	if nmOpt.cfxEnabled {
-		startNativeSpaceNodeServer(ctx, &wg, storeCtx)
+		if err := startNativeSpaceNodeServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	if nmOpt.ethEnabled {
-		startEvmSpaceNodeServer(ctx, &wg, storeCtx)
+		if err := startEvmSpaceNodeServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
-	util.GracefulShutdown(&wg, cancel)
+	life.Wait()
+	return life.Err()
 }
 
-func startNativeSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
-	node.Factory().MustStartServer(ctx, wg, storeCtx.GetCfxCommonStore())
+func startNativeSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) error {
+	return node.Factory().StartServer(ctx, wg, storeCtx.GetCfxCommonStore())
 }
 
-func startEvmSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
-	node.EthFactory().MustStartServer(ctx, wg, storeCtx.GetEthCommonStore())
+func startEvmSpaceNodeServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) error {
+	return node.EthFactory().StartServer(ctx, wg, storeCtx.GetEthCommonStore())
 }

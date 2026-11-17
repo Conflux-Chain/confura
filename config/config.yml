@@ -621,3 +621,8 @@ node:
 #     maxMemory: 104857600
 #     # Upper limit on the number of logs returned per query operation, default 10000.
 #     maxLogs: 10000
+
+# # Service lifecycle limits. All values must be positive.
+# shutdown:
+#   timeout: 30s # Second termination signal or timeout forces a nonzero exit.
+# # rpc.securityConfigTimeout: 10s # Initial and periodic security DB queries.

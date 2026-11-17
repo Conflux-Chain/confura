@@ -55,17 +55,27 @@ type EthSyncer struct {
 
 // MustNewEthSyncer creates an instance of EthSyncer to sync Conflux EVM space chaindata.
 func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.EthStore) *EthSyncer {
+	s, err := NewEthSyncer(ethClients, db)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize syncer")
+	}
+	return s
+}
+
+func NewEthSyncer(ethClients []*web3go.Client, db *mysql.EthStore) (*EthSyncer, error) {
 	if len(ethClients) == 0 {
-		logrus.Fatal("No web3go client provided")
+		return nil, errors.New("no sync client provided")
 	}
 
 	ethChainId, err := ethClients[0].Eth.ChainId()
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get chain ID from eth space")
+		return nil, err
 	}
 
 	var ethConf ethSyncConfig
-	viperutil.MustUnmarshalKey("sync.eth", &ethConf)
+	if err := viperutil.UnmarshalKey("sync.eth", &ethConf); err != nil {
+		return nil, err
+	}
 
 	monitor := monitor.NewMonitor(monitor.NewConfig(), func() (latestBlockNum uint64, retErr error) {
 		for _, ethC := range ethClients {
@@ -110,13 +120,15 @@ func MustNewEthSyncer(ethClients []*web3go.Client, db *mysql.EthStore) *EthSynce
 	})
 
 	// Load last sync block information
-	syncer.mustLoadLastSyncBlock()
+	if err := syncer.loadLastSyncBlock(); err != nil {
+		return nil, err
+	}
 
-	return syncer
+	return syncer, nil
 }
 
 // Sync starts to sync Conflux EVM space blockchain data.
-func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
+func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) error {
 	logrus.WithField("fromBlock", syncer.fromBlock).Info("ETH sync starting to sync block data")
 	defer logrus.Info("ETH syncer shutdown ok")
 
@@ -126,7 +138,9 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	go syncer.elm.Campaign(ctx)
 	defer syncer.elm.Stop()
 
-	syncer.fastCatchup(ctx)
+	if err := syncer.fastCatchup(ctx); err != nil {
+		return err
+	}
 
 	ticker := time.NewTimer(syncer.syncIntervalCatchUp)
 	defer ticker.Stop()
@@ -135,7 +149,7 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 	for syncer.elm.Await(ctx) {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-ticker.C:
 			err := syncer.doTicker(ctx, ticker)
 			recovered, unhealthy, unrecovered, failures := healthStatus.OnError(err)
@@ -151,16 +165,21 @@ func (syncer *EthSyncer) Sync(ctx context.Context, wg *sync.WaitGroup) {
 			}
 		}
 	}
+	return nil
 }
 
 // fast catch-up until the latest safe block
-func (syncer *EthSyncer) fastCatchup(ctx context.Context) {
-	catchUpSyncer := catchup.MustNewEthSyncer(
+func (syncer *EthSyncer) fastCatchup(ctx context.Context) error {
+	catchUpSyncer, err := catchup.NewEthSyncer(
 		syncer.w3cs, syncer.db, syncer.elm, syncer.monitor, syncer.fromBlock,
 	)
+	if err != nil {
+		return err
+	}
 	defer catchUpSyncer.Close()
 
 	catchUpSyncer.Sync(ctx)
+	return nil
 }
 
 func (syncer *EthSyncer) doTicker(ctx context.Context, ticker *time.Timer) error {

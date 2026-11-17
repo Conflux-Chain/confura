@@ -61,6 +61,11 @@ func runCatchUpBenchmark(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	life, err := util.NewLifecycle(cmd.Context())
+	if err != nil {
+		return err
+	}
+	defer life.Close()
 	// Initialize required contexts
 	storeCtx, syncCtx, err := initializeContexts()
 	if err != nil {
@@ -69,7 +74,7 @@ func runCatchUpBenchmark(cmd *cobra.Command, args []string) error {
 	defer storeCtx.Close()
 	defer syncCtx.Close()
 
-	ctx, cancel := context.WithCancel(cmd.Context())
+	ctx, cancel := context.WithCancel(life.Ctx)
 	defer cancel()
 
 	// Initialize the catch-up syncer.
@@ -104,7 +109,11 @@ func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
 		return nil, nil, errors.New("database is not provided")
 	}
 
-	syncCtx := util.MustInitSyncContext(storeCtx)
+	syncCtx, err := util.InitSyncContext(storeCtx)
+	if err != nil {
+		storeCtx.Close()
+		return nil, nil, err
+	}
 	return &storeCtx, &syncCtx, nil
 }
 

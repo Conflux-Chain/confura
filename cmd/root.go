@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/Conflux-Chain/confura/cmd/acl"
 	"github.com/Conflux-Chain/confura/cmd/benchmark"
@@ -74,17 +72,28 @@ func start(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no services started")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	wg := &sync.WaitGroup{}
-
-	storeCtx := util.MustInitStoreContext()
+	life, err := util.NewLifecycle(cmd.Context())
+	if err != nil {
+		return err
+	}
+	defer life.Close()
+	ctx, wg := life.Ctx, &life.Wg
+	storeCtx, err := util.InitStoreContext("cfx", "eth")
+	if err != nil {
+		return err
+	}
 	var syncCtx util.SyncContext
-	defer func() { cancel(); wg.Wait(); syncCtx.Close(); storeCtx.Close() }()
+	defer func() { life.Shutdown(); syncCtx.Close(); storeCtx.Close() }()
 
 	if syncServerEnabled { // start sync
-		syncCtx = util.MustInitSyncContext(storeCtx)
+		syncCtx, err = util.InitSyncContext(storeCtx)
+		if err != nil {
+			return err
+		}
 
-		startSyncServiceAdaptively(ctx, wg, syncCtx)
+		if err := startSyncServiceAdaptively(ctx, wg, syncCtx, life.Fail); err != nil {
+			return err
+		}
 	}
 
 	if rpcServerEnabled { // start RPC
@@ -100,16 +109,22 @@ func start(cmd *cobra.Command, args []string) error {
 	}
 
 	if nodeServerEnabled { // start node management
-		startNativeSpaceNodeServer(ctx, wg, storeCtx)
-		startEvmSpaceNodeServer(ctx, wg, storeCtx)
+		if err := startNativeSpaceNodeServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
+		if err := startEvmSpaceNodeServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	if vfilterServerEnabled { // start virtual filter
-		startEvmSpaceVirtualFilterServer(ctx, wg, storeCtx)
+		if err := startEvmSpaceVirtualFilterServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
-	util.GracefulShutdown(wg, cancel)
-	return nil
+	life.Wait()
+	return life.Err()
 }
 
 // Execute is the command line entrypoint.

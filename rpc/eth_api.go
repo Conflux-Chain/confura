@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	web3Types "github.com/openweb3/web3go/types"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -71,19 +70,19 @@ type ethAPI struct {
 	hardforkBlockNumber web3Types.BlockNumber
 }
 
-func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *ethAPI {
+func newEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) (*ethAPI, error) {
 	client, err := provider.GetClientRandom()
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get eth client randomly")
+		return nil, err
 	}
 
 	chainId, err := client.Eth.ChainId()
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get eth chain id")
+		return nil, err
 	}
 
 	if chainId == nil {
-		logrus.Fatal("chain id on eSpace is nil")
+		return nil, errors.New("chain id on eSpace is nil")
 	}
 
 	var opt EthAPIOption
@@ -96,7 +95,7 @@ func mustNewEthAPI(provider *node.EthClientProvider, option ...EthAPIOption) *et
 		provider:            provider,
 		stateHandler:        handler.NewEthStateHandler(provider),
 		hardforkBlockNumber: util.GetEthHardforkBlockNumber(*chainId),
-	}
+	}, nil
 }
 
 // GetBlockByHash returns the requested block. When fullTx is true all transactions in

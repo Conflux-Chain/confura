@@ -29,19 +29,32 @@ func MustNewNativeSpaceServer(
 	pubSubLimiter *rpcutil.PubSubLimiter,
 	option ...CfxAPIOption,
 ) *rpcutil.Server {
+	s, err := NewNativeSpaceServer(registry, clientProvider, gashandler, exposedModules, pubSubLimiter, option...)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize RPC server")
+	}
+	return s
+}
+
+func NewNativeSpaceServer(
+	registry *rate.Registry,
+	clientProvider *infuraNode.CfxClientProvider,
+	gashandler *handler.CfxGasStationHandler,
+	exposedModules []string,
+	pubSubLimiter *rpcutil.PubSubLimiter,
+	option ...CfxAPIOption,
+) (*rpcutil.Server, error) {
 	// retrieve all available core space rpc apis
 	allApis := nativeSpaceApis(clientProvider, gashandler, registry, option...)
 
 	exposedApis, err := filterExposedApis(allApis, exposedModules)
 	if err != nil {
-		logrus.WithError(err).Fatal(
-			"Failed to new native space RPC server with bad exposed modules",
-		)
+		return nil, err
 	}
 
 	middleware := httpMiddleware("cfx", registry, clientProvider)
 
-	return rpcutil.MustNewServer(nativeSpaceRpcServerName, exposedApis, pubSubLimiter, middleware)
+	return rpcutil.NewServer(nativeSpaceRpcServerName, exposedApis, pubSubLimiter, middleware)
 }
 
 // MustNewEvmSpaceServer new evm space RPC server by specifying router, and exposed modules.
@@ -55,22 +68,35 @@ func MustNewEvmSpaceServer(
 	pubSubLimiter *rpcutil.PubSubLimiter,
 	option ...EthAPIOption,
 ) *rpcutil.Server {
+	s, err := NewEvmSpaceServer(registry, clientProvider, gasHandler, exposedModules, pubSubLimiter, option...)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize RPC server")
+	}
+	return s
+}
+
+func NewEvmSpaceServer(
+	registry *rate.Registry,
+	clientProvider *infuraNode.EthClientProvider,
+	gasHandler *handler.EthGasStationHandler,
+	exposedModules []string,
+	pubSubLimiter *rpcutil.PubSubLimiter,
+	option ...EthAPIOption,
+) (*rpcutil.Server, error) {
 	// retrieve all available evm space rpc apis
 	allApis, err := evmSpaceApis(clientProvider, gasHandler, registry, option...)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to new EVM space RPC server")
+		return nil, err
 	}
 
 	exposedApis, err := filterExposedApis(allApis, exposedModules)
 	if err != nil {
-		logrus.WithError(err).Fatal(
-			"Failed to new EVM space RPC server with bad exposed modules",
-		)
+		return nil, err
 	}
 
 	middleware := httpMiddleware("eth", registry, clientProvider)
 
-	return rpcutil.MustNewServer(evmSpaceRpcServerName, exposedApis, pubSubLimiter, middleware)
+	return rpcutil.NewServer(evmSpaceRpcServerName, exposedApis, pubSubLimiter, middleware)
 }
 
 type CfxBridgeServerConfig struct {
@@ -81,26 +107,49 @@ type CfxBridgeServerConfig struct {
 }
 
 func MustNewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeServerConfig) *rpcutil.Server {
-	allApis, err := nativeSpaceBridgeApis(config)
+	s, err := NewNativeSpaceBridgeServer(registry, config)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server")
+		logrus.WithError(err).Fatal("Failed to initialize RPC server")
+	}
+	return s
+}
+
+func NewNativeSpaceBridgeServer(registry *rate.Registry, config *CfxBridgeServerConfig) (*rpcutil.Server, error) {
+	allApis, cleanup, err := nativeSpaceBridgeApis(config)
+	if err != nil {
+		return nil, err
 	}
 
 	exposedApis, err := filterExposedApis(allApis, config.ExposedModules)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to new CFX bridge RPC server with bad exposed modules")
+		cleanup()
+		return nil, err
 	}
 
 	middleware := httpMiddleware("cfxBridge", registry, nil)
-	return rpcutil.MustNewServer(nativeSpaceBridgeRpcServerName, exposedApis, nil, middleware)
+	srv, err := rpcutil.NewServer(nativeSpaceBridgeRpcServerName, exposedApis, nil, middleware)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	srv.OnClose(cleanup)
+	return srv, nil
 }
 
 // MustNewDebugServer new debug RPC server for internal debugging use.
 func MustNewDebugServer() *rpcutil.Server {
+	s, err := NewDebugServer()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize debug RPC server")
+	}
+	return s
+}
+
+func NewDebugServer() (*rpcutil.Server, error) {
 	servedApis := make(map[string]interface{})
 	for _, api := range debugApis() {
 		servedApis[api.Namespace] = api.Service
 	}
 
-	return rpcutil.MustNewServer(debugRpcServerName, servedApis, nil)
+	return rpcutil.NewServer(debugRpcServerName, servedApis, nil)
 }

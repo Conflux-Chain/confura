@@ -57,6 +57,14 @@ func (p *nodePool) addNodes(grp Group, urls ...string) (added []string, err erro
 
 	m := p.managers[grp]
 	refNodes := make([]refNode, 0, len(urls))
+	var created []Node
+	defer func() {
+		if err != nil {
+			for _, n := range created {
+				n.Close()
+			}
+		}
+	}()
 
 	for i := range urls {
 		nn := rpc.Url2NodeName(urls[i])
@@ -74,6 +82,7 @@ func (p *nodePool) addNodes(grp Group, urls ...string) (added []string, err erro
 			return nil, errors.WithMessagef(err, "failed to new node with url %v", urls[i])
 		}
 
+		created = append(created, n)
 		refNodes = append(refNodes, refNode{Node: n})
 	}
 
@@ -212,4 +221,11 @@ func dedupNodeUrls(urls []string) (dedups []string) {
 	}
 
 	return dedups
+}
+
+// Close is called after management requests have drained.
+func (p *nodePool) Close() {
+	for _, group := range p.groups() {
+		p.del(group, p.get(group)...)
+	}
 }

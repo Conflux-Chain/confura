@@ -34,7 +34,7 @@ type TraceLogSyncer struct {
 	conf traceLogSyncConfig
 
 	epochFrom uint64
-	adapter   poll.Adapter[core.EpochData]
+	adapter   *core.Adapter
 	client    *sdk.Client
 
 	registry           *tracelog.Registry
@@ -42,14 +42,30 @@ type TraceLogSyncer struct {
 	logStore           *mysql.InternalContractLogStore
 }
 
-// MustNewTraceLogSyncer creates a new TraceLogSyncer, panicking on any initialization error.
 func MustNewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) *TraceLogSyncer {
+	s, err := NewTraceLogSyncer(clients, store)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize trace sync")
+	}
+	return s
+}
+
+func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
+	if err := s.Sync(ctx, wg); err != nil {
+		logrus.WithError(err).Fatal("Trace sync failed")
+	}
+}
+
+// NewTraceLogSyncer creates a new TraceLogSyncer and owns its polling adapter.
+func NewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) (_ *TraceLogSyncer, err error) {
 	if len(clients) == 0 {
-		logrus.Fatal("No SDK client provided")
+		return nil, fmt.Errorf("no SDK client provided")
 	}
 
 	var conf cfxSyncConfig
-	viperutil.MustUnmarshalKey("sync.cfx", &conf)
+	if err := viperutil.UnmarshalKey("sync.cfx", &conf); err != nil {
+		return nil, err
+	}
 
 	adapter, err := core.NewAdapterWithConfig(core.AdapterConfig{
 		URL: clients[0].GetNodeURL(),
@@ -59,18 +75,23 @@ func MustNewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) *TraceL
 		},
 	})
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to create RPC adapter")
+		return nil, err
 	}
 
+	defer func() {
+		if err != nil {
+			adapter.Close()
+		}
+	}()
 	registry, err := tracelog.NewRegistry(clients[0])
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to create internal contract registry")
+		return nil, err
 	}
 
 	epochBlockMapStore := mysql.NewCfxTraceSyncEpochBlockMapStore(store)
 	maxEpoch, ok, err := epochBlockMapStore.MaxEpoch()
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get max epoch")
+		return nil, err
 	}
 
 	var epochFrom uint64
@@ -88,13 +109,14 @@ func MustNewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) *TraceL
 		registry:           registry,
 		epochBlockMapStore: epochBlockMapStore,
 		logStore:           mysql.NewInternalContractLogStore(store.DB()),
-	}
+	}, nil
 }
 
-// MustSync starts the synchronization process: first catches up, then follows latest.
-func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
+// Sync starts the synchronization process: first catches up, then follows latest.
+func (s *TraceLogSyncer) Sync(ctx context.Context, wg *gosync.WaitGroup) error {
 	wg.Add(1)
 	defer wg.Done()
+	defer s.adapter.Close()
 
 	// Phase 1: Catchup
 	params := sync.CatchupParamsDB[core.EpochData]{
@@ -110,13 +132,13 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 
 	if ctxutil.IsDone(ctx) {
 		logrus.Info("Trace log catchup sync interrupted")
-		return
+		return nil
 	}
 
 	// Phase 2: Follow latest
-	latestFinalized, err := s.client.GetEpochNumber(types.EpochLatestFinalized)
+	latestFinalized, err := s.client.WithContext(ctx).GetEpochNumber(types.EpochLatestFinalized)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get latest finalized epoch")
+		return err
 	}
 
 	syncParams := sync.LatestParamsDB[core.EpochData]{
@@ -129,13 +151,14 @@ func (s *TraceLogSyncer) MustSync(ctx context.Context, wg *gosync.WaitGroup) {
 	finalizedEpoch := latestFinalized.ToInt().Uint64()
 	syncParams.Reorg, err = loadTraceReorgWindow(s.epochFrom, finalizedEpoch, s.epochBlockMapStore.LoadPivotHashes)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to restore trace reorg window")
+		return err
 	}
 
 	proc := tracelog.NewProcessor(s.registry, s.logStore, s.epochBlockMapStore)
 	if err := sync.StartLatestDB(ctx, wg, syncParams, proc); err != nil {
-		logrus.WithError(err).Fatal("Failed to start latest trace sync")
+		return err
 	}
+	return nil
 }
 
 // loadTraceReorgWindow restores the last committed height. Finality may advance
