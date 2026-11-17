@@ -584,8 +584,9 @@ node:
 # pprof:
 #   # Switch to turn on/off pprof
 #   enabled: false
-#   # The endpoint to start a http server for pprof
-#   httpEndpoint: ":6060"
+#   # HTTP profiling endpoint. The default listens only on loopback.
+#   # Legacy httpEndpoint is supported. If both keys are set, they must match.
+#   endpoint: "127.0.0.1:6060"
 
 # # Near head caching configuration
 # nearhead:

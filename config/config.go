@@ -11,7 +11,10 @@ import (
 	"github.com/Conflux-Chain/confura/util/pprof"
 	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	"github.com/Conflux-Chain/confura/util/rpc/cache"
-	"github.com/Conflux-Chain/go-conflux-util/config"
+	"github.com/Conflux-Chain/go-conflux-util/alert"
+	utillog "github.com/Conflux-Chain/go-conflux-util/log"
+	"github.com/Conflux-Chain/go-conflux-util/metrics"
+	"github.com/Conflux-Chain/go-conflux-util/viper"
 	"github.com/ethereum/go-ethereum/log"
 	slogrus "github.com/samber/slog-logrus/v2"
 	"github.com/sirupsen/logrus"
@@ -23,7 +26,10 @@ const viperEnvPrefix = "infura"
 
 func Init() {
 	// init utilities eg., viper, alert, metrics and logging
-	config.MustInit(viperEnvPrefix)
+	viper.MustInit(viperEnvPrefix)
+	metrics.MustInitFromViper()
+	alert.MustInitFromViper()
+	utillog.MustInitFromViper()
 
 	// init pprof
 	pprof.MustInit()
