@@ -187,6 +187,11 @@ func (cs *confStore) decodeAclAllowLists(cfg conf) (*acl.AllowList, error) {
 // ratelimit config
 
 func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
+	return cs.LoadRateLimitConfigsContext(context.Background())
+}
+
+func (cs *confStore) LoadRateLimitConfigsContext(ctx context.Context) (*rate.Config, error) {
+	cs = newConfStore(cs.db.WithContext(ctx))
 	rlStrategies, csStrategies, err := cs.LoadRateLimitStrategyConfigs()
 	if err != nil {
 		return nil, err

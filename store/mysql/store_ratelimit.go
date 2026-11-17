@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/rate"
@@ -98,4 +99,8 @@ func (rls *RateLimitStore) LoadRateLimitKeyInfos(filter *rate.KeysetFilter) (res
 	}
 
 	return res, nil
+}
+
+func (rls *RateLimitStore) LoadRateLimitKeyInfosContext(ctx context.Context, filter *rate.KeysetFilter) ([]*rate.KeyInfo, error) {
+	return NewRateLimitStore(rls.db.WithContext(ctx)).LoadRateLimitKeyInfos(filter)
 }

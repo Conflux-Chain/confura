@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -64,7 +65,10 @@ func TestContractACLHTTPBatchAndWebSocket(t *testing.T) {
 	s.LimitOptions["rpc_all_qps"] = rate.NewTokenBucketOption(10000, 10000)
 	s.LimitOptions["rpc_all_daily"] = rate.FixedWindowOption{Interval: time.Hour, Quota: 10000}
 	config := &rate.Config{Strategies: map[uint32]*rate.Strategy{1: s}, AllowLists: map[uint32]*acl.AllowList{1: {ID: 1, Name: "default", ContractAddresses: []string{"0x1111111111111111111111111111111111111111"}}}}
-	go r.AutoReload(time.Hour, func() (*rate.Config, error) { return config, nil })
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	t.Cleanup(func() { cancel(); wg.Wait() })
+	require.NoError(t, r.StartReload(ctx, &wg, time.Hour, time.Second, func(context.Context) (*rate.Config, error) { return config, nil }))
 	require.Eventually(t, func() bool {
 		return len(r.Strategies()) == 1 && r.Allow(acl.Context{Context: context.Background(), RpcMethod: "eth_getLogs", ExtractRpcParams: func() ([]interface{}, error) { return []interface{}{wt.FilterQuery{}}, nil }}) != nil
 	}, time.Second, time.Millisecond)

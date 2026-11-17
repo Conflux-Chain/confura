@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc"
 	"github.com/Conflux-Chain/confura/rpc/handler"
+	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/store/redis"
 	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rate"
@@ -33,7 +35,7 @@ var (
 	rpcCmd = &cobra.Command{
 		Use:   "rpc",
 		Short: "Start RPC service, including core space, evm space and CfxBridge RPC servers",
-		Run:   startRpcService,
+		RunE:  startRpcService,
 	}
 )
 
@@ -56,30 +58,37 @@ func init() {
 	rootCmd.AddCommand(rpcCmd)
 }
 
-func startRpcService(*cobra.Command, []string) {
+func startRpcService(*cobra.Command, []string) error {
 	if !rpcOpt.cfxEnabled && !rpcOpt.ethEnabled && !rpcOpt.cfxBridgeEnabled {
-		logrus.Fatal("No RPC server specified")
+		return fmt.Errorf("no RPC server specified")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 
 	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
+	defer func() { cancel(); wg.Wait(); storeCtx.Close() }()
 
 	if rpcOpt.cfxEnabled { // start core space RPC
-		startNativeSpaceRpcServer(ctx, &wg, storeCtx)
+		if err := startNativeSpaceRpcServer(ctx, &wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	if rpcOpt.ethEnabled { // start evm space RPC
-		startEvmSpaceRpcServer(ctx, &wg, storeCtx)
+		if err := startEvmSpaceRpcServer(ctx, &wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	if rpcOpt.cfxBridgeEnabled { // start core space bridge RPC
-		startNativeSpaceBridgeRpcServer(ctx, &wg, storeCtx)
+		if err := startNativeSpaceBridgeRpcServer(ctx, &wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	util.GracefulShutdown(&wg, cancel)
+	return nil
 }
 
 // startNativeSpaceRpcServer starts core space RPC server
@@ -87,7 +96,7 @@ func startNativeSpaceRpcServer(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	storeCtx util.StoreContext,
-) {
+) error {
 	var rateReg *rate.Registry
 
 	router := node.Factory().CreateRouter()
@@ -107,11 +116,11 @@ func startNativeSpaceRpcServer(
 	if storeCtx.CfxDB != nil {
 		option.StoreHandler = handler.NewCfxStoreHandler("db", storeCtx.CfxDB)
 
-		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyInfos)
-		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewCfxValidator)
-
-		// periodically reload rate limit settings from db
-		go rateReg.AutoReload(15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs)
+		var err error
+		rateReg, err = startSecurityRegistry(ctx, wg, storeCtx.CfxDB.CommonStores, acl.NewCfxValidator)
+		if err != nil {
+			return err
+		}
 	}
 
 	// initialize gas station handler
@@ -162,6 +171,7 @@ func startNativeSpaceRpcServer(
 		server := rpc.MustNewDebugServer()
 		go server.MustServeGraceful(ctx, wg, debugEndpoint, rpcutil.ProtocolHttp)
 	}
+	return nil
 }
 
 // startEvmSpaceRpcServer starts evm space RPC server
@@ -169,7 +179,7 @@ func startEvmSpaceRpcServer(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	storeCtx util.StoreContext,
-) {
+) error {
 	var rateReg *rate.Registry
 
 	router := node.EthFactory().CreateRouter()
@@ -196,11 +206,11 @@ func startEvmSpaceRpcServer(
 		maxAttempts := viper.GetInt("requestControl.maxGetLogsSuggestionAttempts")
 		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB, maxAttempts)
 
-		rateKeyLoader := rate.NewKeyLoader(storeCtx.EthDB.LoadRateLimitKeyInfos)
-		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewEthValidator)
-
-		// periodically reload rate limit settings from db
-		go rateReg.AutoReload(15*time.Second, storeCtx.EthDB.LoadRateLimitConfigs)
+		var err error
+		rateReg, err = startSecurityRegistry(ctx, wg, storeCtx.EthDB.CommonStores, acl.NewEthValidator)
+		if err != nil {
+			return err
+		}
 	}
 
 	// initialize RPC server
@@ -228,18 +238,19 @@ func startEvmSpaceRpcServer(
 		server := rpc.MustNewDebugServer()
 		go server.MustServeGraceful(ctx, wg, debugEndpoint, rpcutil.ProtocolHttp)
 	}
+	return nil
 }
 
 // startNativeSpaceBridgeRpcServer starts core space bridge RPC server
-func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) error {
 	// Initialize ratelimit registry
 	var rateReg *rate.Registry
 	if storeCtx.CfxDB != nil {
-		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyInfos)
-		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewCfxValidator)
-
-		// periodically reload rate limit settings from db
-		go rateReg.AutoReload(15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs)
+		var err error
+		rateReg, err = startSecurityRegistry(ctx, wg, storeCtx.CfxDB.CommonStores, acl.NewCfxValidator)
+		if err != nil {
+			return err
+		}
 	}
 
 	var config rpc.CfxBridgeServerConfig
@@ -249,4 +260,25 @@ func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup, st
 
 	server := rpc.MustNewNativeSpaceBridgeServer(rateReg, &config)
 	go server.MustServeGraceful(ctx, wg, config.Endpoint, rpcutil.ProtocolHttp)
+	return nil
+}
+
+func startSecurityRegistry(ctx context.Context, wg *sync.WaitGroup, db *mysql.CommonStores, factory acl.ValidatorFactory) (*rate.Registry, error) {
+	timeout := 10 * time.Second
+	if viper.IsSet("rpc.securityConfigTimeout") {
+		timeout = viper.GetDuration("rpc.securityConfigTimeout")
+	}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("rpc.securityConfigTimeout must be positive")
+	}
+	keys := rate.NewKeyLoader(func(filter *rate.KeysetFilter) ([]*rate.KeyInfo, error) {
+		queryCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return db.LoadRateLimitKeyInfosContext(queryCtx, filter)
+	})
+	registry := rate.NewRegistry(keys, factory)
+	if err := registry.StartReload(ctx, wg, 15*time.Second, timeout, db.LoadRateLimitConfigsContext); err != nil {
+		return nil, err
+	}
+	return registry, nil
 }
