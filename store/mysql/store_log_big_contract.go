@@ -53,6 +53,7 @@ type bigContractLogStore[T store.ChainData] struct {
 	ails *AddressIndexedLogStore[T]
 	// notify channel for new bn partition created
 	bnPartitionNotifyChan chan<- *bnPartition
+	notifyDone            <-chan struct{}
 }
 
 func newBigContractLogStore[T store.ChainData](
@@ -116,7 +117,10 @@ func (bcls *bigContractLogStore[T]) preparePartitions(dataSlice []T, guards ...f
 
 		if newCreated || !migrated {
 			partition.tabler = clTabler
-			bcls.bnPartitionNotifyChan <- &partition
+			select {
+			case <-bcls.notifyDone:
+			case bcls.bnPartitionNotifyChan <- &partition:
+			}
 		}
 
 		contract2BnPartitions[contract.ID] = partition

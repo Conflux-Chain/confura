@@ -45,6 +45,7 @@ type logStore[T store.ChainData] struct {
 	model log
 	// notify channel for new bn partition created
 	bnPartitionNotifyChan chan<- *bnPartition
+	notifyDone            <-chan struct{}
 }
 
 func newLogStore[T store.ChainData](
@@ -64,7 +65,10 @@ func (ls *logStore[T]) preparePartition() (bnPartition, error) {
 	partition, newCreated, err := ls.autoPartition(bnPartitionedLogEntity, &ls.model, bnPartitionedLogVolumeSize)
 	if err == nil && newCreated {
 		partition.tabler = &ls.model
-		ls.bnPartitionNotifyChan <- &partition
+		select {
+		case <-ls.notifyDone:
+		case ls.bnPartitionNotifyChan <- &partition:
+		}
 	}
 
 	return partition, err
