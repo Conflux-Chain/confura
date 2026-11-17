@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	stderrors "errors"
 	"strings"
 	"sync"
 	"time"
@@ -57,7 +58,7 @@ func (g Group) String() string {
 // Router is used to route RPC requests to multiple full nodes.
 type Router interface {
 	// Route returns the full node URL for specified group and key.
-	Route(group Group, key []byte) string
+	Route(ctx context.Context, group Group, key []byte) (string, error)
 }
 
 // NodeProvider provides full node URLs by group.
@@ -77,6 +78,8 @@ func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf ma
 			logrus.WithError(err).Fatal("Failed to parse redis URL")
 		}
 
+		// The TLS dialer in go-redis v8 also needs an explicit dial limit.
+		opt.DialTimeout = routerTimeout()
 		client := redis.NewClient(opt)
 		routers = append(routers, NewRedisRouter(client))
 	}
@@ -138,75 +141,87 @@ func NewChainedRouter(groupConf map[Group]UrlConfig, routers ...Router) Router {
 	}
 }
 
-func (r *chainedRouter) Route(group Group, key []byte) string {
-	for _, r := range r.routers {
-		if val := r.Route(group, key); len(val) > 0 {
-			return val
+func (r *chainedRouter) Route(ctx context.Context, group Group, key []byte) (string, error) {
+	var lastErr error
+	for _, source := range r.routers {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		url, err := source.Route(ctx, group, key)
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if url != "" {
+			return url, nil
 		}
 	}
-
-	// Failover if configured
-	config, ok := r.groupConf[group]
-	if !ok {
-		return ""
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"failover": config.Failover,
-		"key":      string(key),
-	}).Warn("No router handled the route key, failover to chained default")
-
-	return config.Failover
+	if config := r.groupConf[group]; config.Failover != "" {
+		return config.Failover, nil
+	}
+	return "", stderrors.Join(ErrClientUnavailable, lastErr)
 }
 
 // RedisRouter routes RPC requests via redis.
 // It should be used together with RedisRepartitionResolver.
 type RedisRouter struct {
-	client *redis.Client
+	client  *redis.Client
+	timeout time.Duration
 }
 
 func NewRedisRouter(client *redis.Client) *RedisRouter {
 	return &RedisRouter{
-		client: client,
+		client:  client.WithTimeout(routerTimeout()),
+		timeout: routerTimeout(),
 	}
 }
 
-func (r *RedisRouter) Route(group Group, key []byte) string {
+func (r *RedisRouter) Route(ctx context.Context, group Group, key []byte) (string, error) {
 	uintKey := xxhash.Sum64(key)
 	redisKey := redisRepartitionKey(uintKey, string(group))
 
-	node, err := r.client.Get(context.Background(), redisKey).Result()
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+	node, err := r.client.Get(ctx, redisKey).Result()
 	if err == redis.Nil {
-		return ""
+		return "", nil
 	}
 
 	if err != nil {
-		logrus.WithField("key", redisKey).WithError(err).Info("Failed to route key from redis")
-		return ""
+		return "", err
 	}
 
-	return node
+	return node, nil
 }
 
 // NodeRpcRouter routes RPC requests via node management RPC service.
 type NodeRpcRouter struct {
-	client *rpc.Client
+	client  *rpc.Client
+	timeout time.Duration
 }
 
 func NewNodeRpcRouter(client *rpc.Client) *NodeRpcRouter {
 	return &NodeRpcRouter{
-		client: client,
+		client:  client,
+		timeout: routerTimeout(),
 	}
 }
 
-func (r *NodeRpcRouter) Route(group Group, key []byte) string {
+func (r *NodeRpcRouter) Route(ctx context.Context, group Group, key []byte) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
 	var result string
-	if err := r.client.Call(&result, "node_route", group, hexutil.Bytes(key)); err != nil {
-		logrus.WithField("key", string(key)).WithError(err).Info("Failed to route key from node RPC")
-		return ""
+	if err := r.client.CallContext(ctx, &result, "node_route", group, hexutil.Bytes(key)); err != nil {
+		return "", err
 	}
 
-	return result
+	return result, nil
 }
 
 // NodeGRPCRouter routes RPC requests via node management gRPC service.
@@ -226,14 +241,13 @@ func NewNodeGRPCRouter(url string) (*NodeGRPCRouter, error) {
 	}
 
 	return &NodeGRPCRouter{
-		client: pb.NewRouterClient(conn),
-		// hardcoded 1 second timeout is enough for intranet access
-		timeout: time.Second,
+		client:  pb.NewRouterClient(conn),
+		timeout: routerTimeout(),
 	}, nil
 }
 
-func (r *NodeGRPCRouter) Route(group Group, key []byte) string {
-	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
+func (r *NodeGRPCRouter) Route(ctx context.Context, group Group, key []byte) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
 	req := pb.RouteRequest{
@@ -243,11 +257,10 @@ func (r *NodeGRPCRouter) Route(group Group, key []byte) string {
 
 	resp, err := r.client.Route(ctx, &req)
 	if err != nil {
-		logrus.WithField("key", string(key)).WithError(err).Info("Failed to route key from node gRPC")
-		return ""
+		return "", err
 	}
 
-	return resp.GetUrl()
+	return resp.GetUrl(), nil
 }
 
 type localNode string
@@ -287,8 +300,9 @@ func newLocalNodeGroup(urls []string) *localNodeGroup {
 
 // LocalRouter routes RPC requests based on local hash ring.
 type LocalRouter struct {
-	mu     sync.Mutex
-	groups map[Group]*localNodeGroup
+	mu      sync.Mutex
+	groups  map[Group]*localNodeGroup
+	timeout time.Duration
 }
 
 func NewLocalRouter(group2Urls map[Group][]string) *LocalRouter {
@@ -297,23 +311,26 @@ func NewLocalRouter(group2Urls map[Group][]string) *LocalRouter {
 	for k, v := range group2Urls {
 		groups[k] = newLocalNodeGroup(v)
 	}
-	return &LocalRouter{groups: groups}
+	return &LocalRouter{groups: groups, timeout: routerTimeout()}
 }
 
-func (r *LocalRouter) Route(group Group, key []byte) string {
+func (r *LocalRouter) Route(ctx context.Context, group Group, key []byte) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	item, ok := r.groups[group]
 	if !ok {
-		return ""
+		return "", nil
 	}
 
 	if member := item.hashRing.LocateKey(key); member != nil {
-		return member.String()
+		return member.String(), nil
 	}
 
-	return ""
+	return "", nil
 }
 
 // ListNodesByGroup returns all node URLs in a group.
@@ -335,7 +352,8 @@ func (r *LocalRouter) ListNodesByGroup(group Group) (urls []string) {
 
 func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
 	router := &LocalRouter{
-		groups: make(map[Group]*localNodeGroup),
+		groups:  make(map[Group]*localNodeGroup),
+		timeout: routerTimeout(),
 	}
 
 	if err := router.pollOnce(client); err != nil {
@@ -362,7 +380,9 @@ func (r *LocalRouter) poll(client *rpc.Client) {
 func (r *LocalRouter) pollOnce(client *rpc.Client) error {
 	groupNodes := make(map[Group][]string)
 
-	if err := client.Call(&groupNodes, "node_listAll"); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
+	defer cancel()
+	if err := client.CallContext(ctx, &groupNodes, "node_listAll"); err != nil {
 		return errors.WithMessage(err, "failed to list all group nodes")
 	}
 
