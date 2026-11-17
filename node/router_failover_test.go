@@ -34,6 +34,29 @@ func TestManagerEmptyRouteSkipsLocal(t *testing.T) {
 	require.Equal(t, "http://127.0.0.1:19009", url)
 }
 
+func TestUnavailableRoutePreservesErrorIdentity(t *testing.T) {
+	setupNodeTest(t)
+	emptyManager := routerFunc(func(context.Context, Group, []byte) (string, error) {
+		return "", ErrClientUnavailable
+	})
+	for _, chain := range []Router{
+		NewChainedRouter(nil),
+		NewChainedRouter(nil, NewLocalRouter(nil)),
+		NewChainedRouter(nil, emptyManager),
+	} {
+		_, err := chain.Route(context.Background(), GroupCfxArchives, nil)
+		require.True(t, err == ErrClientUnavailable, "pure no-node responses must retain sentinel identity")
+	}
+	outage := errors.New("fixture transport failure")
+	sourceErr := &net.OpError{Op: "read", Net: "tcp", Err: outage}
+	chain := NewChainedRouter(nil, routerFunc(func(context.Context, Group, []byte) (string, error) {
+		return "", sourceErr
+	}))
+	_, err := chain.Route(context.Background(), GroupCfxArchives, nil)
+	require.ErrorIs(t, err, ErrClientUnavailable)
+	require.ErrorIs(t, err, sourceErr)
+}
+
 func nodeRPCFixture(t *testing.T, h *apiHandler, unavailable *atomic.Bool) (*httptest.Server, *gethrpc.Client) {
 	t.Helper()
 	server := providerrpc.NewServer()

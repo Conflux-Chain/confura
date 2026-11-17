@@ -183,6 +183,9 @@ func (r *chainedRouter) Route(ctx context.Context, group Group, key []byte) (str
 	if config := r.groupConf[group]; config.Failover != "" {
 		return config.Failover, nil
 	}
+	if lastErr == nil {
+		return "", ErrClientUnavailable
+	}
 	return "", stderrors.Join(ErrClientUnavailable, lastErr)
 }
 

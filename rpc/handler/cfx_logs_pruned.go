@@ -51,7 +51,7 @@ func (h *CfxPrunedLogsHandler) GetLogs(ctx context.Context, filter types.LogFilt
 	}
 
 	client, err := h.pool.GetClientByIP(ctx, node.GroupCfxArchives)
-	if err == node.ErrClientUnavailable {
+	if errors.Is(err, node.ErrClientUnavailable) {
 		return nil, errQuotaNotEnough
 	}
 
