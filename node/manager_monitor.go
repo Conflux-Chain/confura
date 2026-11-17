@@ -45,20 +45,26 @@ func (m *Manager) ReportEpoch(nodeName string, epoch uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.updateEpoch(nodeName, epoch)
-
-	if len(m.monitorStatuses) == 1 {
-		atomic.StoreUint64(&m.midEpoch, epoch)
+	if _, ok := m.nodes[nodeName]; !ok {
 		return
 	}
+	m.updateEpoch(nodeName, epoch)
 
-	var epochs []uint64
-	for _, ms := range m.monitorStatuses {
-		epochs = append(epochs, ms.epoch)
+	m.updateHealthyEpoch()
+}
+
+// updateHealthyEpoch rebuilds the reference from current members' samples.
+// The caller must hold m.mu.
+func (m *Manager) updateHealthyEpoch() {
+	epochs := make([]uint64, 0, len(m.monitorStatuses))
+	for _, status := range m.monitorStatuses {
+		epochs = append(epochs, status.epoch)
 	}
-
+	if len(epochs) == 0 {
+		atomic.StoreUint64(&m.midEpoch, 0)
+		return
+	}
 	slices.Sort(epochs)
-
 	atomic.StoreUint64(&m.midEpoch, epochs[len(epochs)/2])
 }
 
@@ -70,6 +76,11 @@ func (m *Manager) updateEpoch(nodeName string, epoch uint64) {
 
 // ReportUnhealthy reports unhealthy status of managed node to manager.
 func (m *Manager) ReportUnhealthy(nodeName string, remind bool, reason error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.nodes[nodeName]; !ok {
+		return
+	}
 	m.updateUnhealthy(nodeName)
 
 	logger := logrus.WithFields(logrus.Fields{
@@ -91,9 +102,6 @@ func (m *Manager) ReportUnhealthy(nodeName string, remind bool, reason error) {
 }
 
 func (m *Manager) updateUnhealthy(nodeName string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	status := m.monitorStatuses[nodeName]
 	status.unhealthy = true
 	status.unhealthReportAt = time.Now()
@@ -102,25 +110,16 @@ func (m *Manager) updateUnhealthy(nodeName string) {
 
 // ReportHealthy reports healthy status of managed node to manager.
 func (m *Manager) ReportHealthy(nodeName string) {
-	m.updateHealthy(nodeName)
-
-	// alert
-	logrus.WithField("node", nodeName).Warn("Node became healthy now")
-
-	// add recovered node into hash ring again
-	if n, ok := m.Get(nodeName); ok {
-		m.hashRing.Add(n)
-	} else { // this should not happen, but just in case
-		logrus.WithField("node", nodeName).Error("Node not found in manager")
-	}
-}
-
-func (m *Manager) updateHealthy(nodeName string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
+	n, ok := m.nodes[nodeName]
+	if !ok {
+		return
+	}
 	status := m.monitorStatuses[nodeName]
 	status.unhealthy = false
 	status.unhealthReportAt = time.Time{}
 	m.monitorStatuses[nodeName] = status
+	m.hashRing.Add(n)
+	logrus.WithField("node", nodeName).Warn("Node became healthy now")
 }

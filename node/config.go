@@ -97,6 +97,7 @@ type config struct {
 		}
 	}
 	Router struct {
+		Timeout            time.Duration `default:"1s"`
 		RedisURL           string
 		NodeRPCURL         string
 		NodeRpcUrlProto    string
@@ -135,4 +136,12 @@ func CfxUrlConfig() map[Group]UrlConfig {
 
 func EthUrlConfig() map[Group]UrlConfig {
 	return ethUrlCfg
+}
+
+// routerTimeout bounds each remote routing or snapshot request.
+func routerTimeout() time.Duration {
+	if cfg.Router.Timeout <= 0 {
+		return time.Second
+	}
+	return cfg.Router.Timeout
 }

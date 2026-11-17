@@ -37,8 +37,14 @@ func newNodePool(nf nodeFactory) *nodePool {
 
 // add adds some node(s) into specific pool group
 func (p *nodePool) add(grp Group, urls ...string) error {
+	_, err := p.addNodes(grp, urls...)
+	return err
+}
+
+// addNodes returns only the memberships introduced by this call, for rollback.
+func (p *nodePool) addNodes(grp Group, urls ...string) (added []string, err error) {
 	if len(urls) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	p.mu.Lock()
@@ -65,7 +71,7 @@ func (p *nodePool) add(grp Group, urls ...string) error {
 
 		n, err := p.nf(grp, nn, urls[i])
 		if err != nil {
-			return errors.WithMessagef(err, "failed to new node with url %v", urls[i])
+			return nil, errors.WithMessagef(err, "failed to new node with url %v", urls[i])
 		}
 
 		refNodes = append(refNodes, refNode{Node: n})
@@ -78,9 +84,10 @@ func (p *nodePool) add(grp Group, urls ...string) error {
 		// reference the shared node
 		rn.refCnt++
 		p.nodes[rn.Name()] = rn
+		added = append(added, rn.Url())
 	}
 
-	return nil
+	return added, nil
 }
 
 // del deletes node(s) from specific pool group

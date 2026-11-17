@@ -21,7 +21,9 @@ import (
 
 type subscriptionRouter string
 
-func (r subscriptionRouter) Route(node.Group, []byte) string { return string(r) }
+func (r subscriptionRouter) Route(context.Context, node.Group, []byte) (string, error) {
+	return string(r), nil
+}
 
 type SubscriptionStatusAPI struct{ ready atomic.Bool }
 

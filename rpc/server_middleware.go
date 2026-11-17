@@ -152,7 +152,7 @@ func getEthClientFromProviderWithContext(
 		if authId, ok := handlers.GetAuthIdFromContext(ctx); ok {
 			grp, ok := p.GetRouteGroup(authId)
 			if ok && len(grp) > 0 {
-				client, err := p.GetClient(authId, grp)
+				client, err := p.GetClientContext(ctx, authId, grp)
 				return client, grp, err
 			}
 		}
@@ -175,7 +175,7 @@ func getCfxClientFromProviderWithContext(
 		if authId, ok := handlers.GetAuthIdFromContext(ctx); ok {
 			grp, ok := p.GetRouteGroup(authId)
 			if ok && len(grp) > 0 {
-				client, err := p.GetClient(authId, grp)
+				client, err := p.GetClientContext(ctx, authId, grp)
 				return client, grp, err
 			}
 		}

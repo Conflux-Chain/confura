@@ -138,8 +138,17 @@ func (p *clientProvider[T]) populateCache(token string) (grp Group, ok bool) {
 }
 
 // getClient gets client based on keyword and node group type.
-func (p *clientProvider[T]) getClient(key string, group Group) (res T, err error) {
-	url := p.router.Route(group, []byte(key))
+func (p *clientProvider[T]) getClient(ctx context.Context, key string, group Group) (res T, err error) {
+	if err := ctx.Err(); err != nil {
+		return res, err
+	}
+	url, err := p.router.Route(ctx, group, []byte(key))
+	if ctx.Err() != nil {
+		return res, ctx.Err()
+	}
+	if err != nil {
+		return res, err
+	}
 	if len(url) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"key":   key,
@@ -148,11 +157,14 @@ func (p *clientProvider[T]) getClient(key string, group Group) (res T, err error
 		return res, ErrClientUnavailable
 	}
 
-	return p.getOrRegisterClient(url, group)
+	return p.getOrRegisterClient(ctx, url, group)
 }
 
 // getOrRegisterClient gets or registers RPC client for fullnode proxy.
-func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T, err error) {
+func (p *clientProvider[T]) getOrRegisterClient(ctx context.Context, url string, group Group) (res T, err error) {
+	if err := ctx.Err(); err != nil {
+		return res, err
+	}
 	clients := p.getOrRegisterGroup(group)
 	nodeName := rpcutil.Url2NodeName(url)
 
@@ -164,12 +176,18 @@ func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T,
 	logger.Trace("Route RPC requests")
 
 	client, loaded, err := clients.LoadOrStoreFnErr(nodeName, func(interface{}) (interface{}, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// TODO improvements required
 		// 1. Necessary retry? (but longer timeout). Better to let user side to decide.
 		// 2. Different metrics for different full nodes.
 		return p.factory(group, url)
 	})
 
+	if err := ctx.Err(); err != nil {
+		return res, err
+	}
 	if err != nil {
 		err := errors.WithMessage(err, "bad full node connection")
 		logger.WithError(err).Error("Failed to get full node client from provider")
@@ -186,20 +204,25 @@ func (p *clientProvider[T]) getOrRegisterClient(url string, group Group) (res T,
 
 // GetClient gets client of a specific group (or uses normal HTTP group as default).
 func (p *clientProvider[T]) GetClient(key string, groups ...Group) (T, error) {
+	return p.GetClientContext(context.Background(), key, groups...)
+}
+
+// GetClientContext routes with the caller cancellation and deadline.
+func (p *clientProvider[T]) GetClientContext(ctx context.Context, key string, groups ...Group) (T, error) {
 	if len(groups) > 0 {
-		return p.getClient(key, groups[0])
+		return p.getClient(ctx, key, groups[0])
 	}
 
-	return p.getClient(key, p.defaultGroup)
+	return p.getClient(ctx, key, p.defaultGroup)
 }
 
 // GetClientByIP gets client of a specific group (or uses normal HTTP group as default) by remote IP address.
 func (p *clientProvider[T]) GetClientByIP(ctx context.Context, groups ...Group) (T, error) {
 	if ip, ok := handlers.GetIPAddressFromContext(ctx); ok {
-		return p.GetClient(ip, groups...)
+		return p.GetClientContext(ctx, ip, groups...)
 	}
 
-	return p.GetClient("unknown_ip", groups...)
+	return p.GetClientContext(ctx, "unknown_ip", groups...)
 }
 
 func (p *clientProvider[T]) GetClientRandom() (T, error) {
@@ -216,7 +239,7 @@ func (p *clientProvider[T]) GetClientsByGroup(grp Group) (clients []T, err error
 
 	nodeUrls := np.ListNodesByGroup(grp)
 	for _, url := range nodeUrls {
-		if c, err := p.getOrRegisterClient(string(url), grp); err == nil {
+		if c, err := p.getOrRegisterClient(context.Background(), string(url), grp); err == nil {
 			clients = append(clients, c)
 		} else {
 			return nil, err
