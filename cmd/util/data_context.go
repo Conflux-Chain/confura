@@ -1,6 +1,7 @@
 package util
 
 import (
+	"github.com/sirupsen/logrus"
 	"strings"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -18,21 +19,38 @@ type StoreContext struct {
 }
 
 func MustInitStoreContext() StoreContext {
-	var ctx StoreContext
-
-	// prepare core space db store
-	if config := mysql.MustNewConfigFromViper(); config.Enabled {
-		db := config.MustOpenOrCreate()
-		ctx.CfxDB = mysql.NewCfxStore(db, config, store.StoreConfig())
+	ctx, err := InitStoreContext("cfx", "eth")
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize stores")
 	}
-
-	// prepare evm space db store
-	if ethConfig := mysql.MustNewEthStoreConfigFromViper(); ethConfig.Enabled {
-		db := ethConfig.MustOpenOrCreate()
-		ctx.EthDB = mysql.NewEthStore(db, ethConfig, store.EthStoreConfig())
-	}
-
 	return ctx
+}
+
+func InitStoreContext(networks ...string) (ctx StoreContext, err error) {
+	defer func() {
+		if err != nil {
+			ctx.Close()
+		}
+	}()
+	for _, network := range networks {
+		config, e := mysql.NewConfigFromViper(network)
+		if e != nil {
+			return ctx, e
+		}
+		if !config.Enabled {
+			continue
+		}
+		db, e := config.OpenOrCreate()
+		if e != nil {
+			return ctx, e
+		}
+		if strings.EqualFold(network, "cfx") {
+			ctx.CfxDB = mysql.NewCfxStore(db, config, store.StoreConfig())
+		} else {
+			ctx.EthDB = mysql.NewEthStore(db, config, store.EthStoreConfig())
+		}
+	}
+	return ctx, nil
 }
 
 func (ctx *StoreContext) Close() {
@@ -104,4 +122,20 @@ func (ctx *SyncContext) Close() {
 	for _, client := range ctx.SyncEths {
 		client.Close()
 	}
+}
+
+// OpenManagementStore opens only the selected space and owns no background tasks.
+func OpenManagementStore(network string) (*mysql.CommonStores, error) {
+	config, err := mysql.NewConfigFromViper(network)
+	if err != nil {
+		return nil, err
+	}
+	if !config.Enabled {
+		return nil, errors.Errorf("%s database is unavailable", network)
+	}
+	db, err := config.Open()
+	if err != nil {
+		return nil, err
+	}
+	return mysql.NewCommonStores(db), nil
 }

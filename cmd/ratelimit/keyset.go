@@ -33,25 +33,25 @@ var (
 	addKeyCmd = &cobra.Command{
 		Use:   "addk",
 		Short: "Add rate limit key",
-		Run:   addKey,
+		RunE:  addKey,
 	}
 
 	delKeyCmd = &cobra.Command{
 		Use:   "rmk",
 		Short: "Remove rate limit key",
-		Run:   delKey,
+		RunE:  delKey,
 	}
 
 	listKeysCmd = &cobra.Command{
 		Use:   "lsk",
 		Short: "List rate limit keys",
-		Run:   listKeys,
+		RunE:  listKeys,
 	}
 
 	genKeyCmd = &cobra.Command{
 		Use:   "gk",
 		Short: "Generate random rate limit key",
-		Run:   genKey,
+		RunE:  genKey,
 	}
 )
 
@@ -72,31 +72,22 @@ func init() {
 	hookKeysetCmdFlags(genKeyCmd, false, false, false, true)
 }
 
-func addKey(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
+func addKey(cmd *cobra.Command, args []string) error {
 	err := validateKeysetCmdConfig(true, false, true)
 	if err != nil {
-		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("add key: %w", err)
 	}
 
-	dbs, err := storeCtx.GetCommonStore(keysetCfg.Network)
+	dbs, err := util.OpenManagementStore(keysetCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get mysql store by network")
-		return
+		return fmt.Errorf("add key: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("DB store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
 	strategy, err := dbs.LoadRateLimitStrategy(keysetCfg.Strategy)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to load rate limit strategy")
-		return
+		return fmt.Errorf("add key: %w", err)
 	}
 
 	logger := logrus.WithFields(logrus.Fields{
@@ -109,8 +100,7 @@ func addKey(cmd *cobra.Command, args []string) {
 	if len(keysetCfg.AllowList) > 0 {
 		allowList, err := dbs.LoadAclAllowList(keysetCfg.AllowList)
 		if err != nil {
-			logrus.WithError(err).Info("Failed to load access control allowlist")
-			return
+			return fmt.Errorf("add key: %w", err)
 		}
 
 		acl = *allowList
@@ -120,8 +110,7 @@ func addKey(cmd *cobra.Command, args []string) {
 	if len(limitKey) == 0 { // generate random limit key if not provided
 		limitKey, err = rate.GenerateRandomLimitKey(keysetCfg.LimitType)
 		if err != nil {
-			logrus.WithError(err).Info("Failed to generate random limit key")
-			return
+			return fmt.Errorf("add key: %w", err)
 		}
 	}
 
@@ -136,33 +125,25 @@ func addKey(cmd *cobra.Command, args []string) {
 		strategy.ID, acl.ID, keysetCfg.LimitType, limitKey, keysetCfg.Memo,
 	)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to add rate limit key")
-		return
+		return fmt.Errorf("add key: %w", err)
 	}
 
 	logrus.Info("New rate limit key added")
+	return nil
 }
 
-func delKey(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
+func delKey(cmd *cobra.Command, args []string) error {
 	err := validateKeysetCmdConfig(false, true, false)
 	if err != nil {
-		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("delete key: %w", err)
 	}
 
-	dbs, err := storeCtx.GetCommonStore(keysetCfg.Network)
+	dbs, err := util.OpenManagementStore(keysetCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get mysql store by network")
-		return
+		return fmt.Errorf("delete key: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("DB store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
 	logrus.WithField("limitKey", keysetCfg.LimitKey).
 		Info("Press the Enter Key to delete the rate limit key!")
@@ -170,8 +151,7 @@ func delKey(cmd *cobra.Command, args []string) {
 
 	removed, err := dbs.DeleteRateLimit(keysetCfg.LimitKey)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to delete the rate limit key")
-		return
+		return fmt.Errorf("delete key: %w", err)
 	}
 
 	if removed {
@@ -179,33 +159,25 @@ func delKey(cmd *cobra.Command, args []string) {
 	} else {
 		logrus.WithField("limitKey", keysetCfg.LimitKey).Info("Rate limit key not existed")
 	}
+	return nil
 }
 
-func listKeys(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
+func listKeys(cmd *cobra.Command, args []string) error {
 	err := validateKeysetCmdConfig(true, false, false)
 	if err != nil {
-		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("list keys: %w", err)
 	}
 
-	dbs, err := storeCtx.GetCommonStore(keysetCfg.Network)
+	dbs, err := util.OpenManagementStore(keysetCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get mysql store by network")
-		return
+		return fmt.Errorf("list keys: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("DB store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
 	strategy, err := dbs.LoadRateLimitStrategy(keysetCfg.Strategy)
 	if err != nil {
-		logrus.Info("Invalid rate limit strategy")
-		return
+		return fmt.Errorf("list keys: %w", err)
 	}
 
 	keysets, err := dbs.LoadRateLimitKeyset(&rate.KeysetFilter{
@@ -213,13 +185,12 @@ func listKeys(cmd *cobra.Command, args []string) {
 		Limit: 50,
 	})
 	if err != nil {
-		logrus.WithError(err).Info("Failed to load rate limit keys")
-		return
+		return fmt.Errorf("list keys: %w", err)
 	}
 
 	if len(keysets) == 0 {
 		logrus.Info("No rate limit keys found")
-		return
+		return nil
 	}
 
 	logrus.WithField("total", len(keysets)).Info("Rate limit keys loaded:")
@@ -229,10 +200,9 @@ func listKeys(cmd *cobra.Command, args []string) {
 		if k.AclID > 0 && allowLists[k.AclID] == nil {
 			acl, err := dbs.LoadAclAllowListById(k.AclID)
 			if err != nil {
-				logrus.WithField("aclID", k.AclID).WithError(err).Info("Failed to load allowlist")
-			} else {
-				allowLists[k.AclID] = acl
+				return fmt.Errorf("list keys: %w", err)
 			}
+			allowLists[k.AclID] = acl
 		}
 
 		logrus.WithFields(logrus.Fields{
@@ -243,25 +213,25 @@ func listKeys(cmd *cobra.Command, args []string) {
 			"memo":      k.Memo,
 		}).Info("Key #", i)
 	}
+	return nil
 }
 
-func genKey(cmd *cobra.Command, args []string) {
+func genKey(cmd *cobra.Command, args []string) error {
 	err := validateKeysetCmdConfig(false, false, true)
 	if err != nil {
-		logrus.WithField("config", keysetCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("generate key: %w", err)
 	}
 
 	limitKey, err := rate.GenerateRandomLimitKey(keysetCfg.LimitType)
 	if err != nil {
-		logrus.Info("Failed to generate random limit key")
-		return
+		return fmt.Errorf("generate key: %w", err)
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"limitKey":  limitKey,
 		"limitType": limitTypeMap[keysetCfg.LimitType],
 	}).Info("New random rate limit key generated")
+	return nil
 }
 
 func validateKeysetCmdConfig(validateStrategy, validateLimitKey, validateLimitType bool) error {

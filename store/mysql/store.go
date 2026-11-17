@@ -22,7 +22,7 @@ type CommonStores struct {
 	*VirtualFilterLogStore
 }
 
-func newCommonStores(db *gorm.DB) *CommonStores {
+func NewCommonStores(db *gorm.DB) *CommonStores {
 	return &CommonStores{
 		confStore:             newConfStore(db),
 		UserStore:             newUserStore(db),
@@ -74,7 +74,7 @@ func newMysqlStore[T store.ChainData](
 	return &MysqlStore[T]{
 		epochBlockMapStore: ebms,
 		baseStore:          newBaseStore(db),
-		CommonStores:       newCommonStores(db),
+		CommonStores:       NewCommonStores(db),
 		txStore:            newTxStore[T](db),
 		blockStore:         newBlockStore[T](db),
 		ls:                 newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
@@ -496,3 +496,7 @@ func newSuggestedFilterResultSetTooLargeError(filter *store.LogFilter, resultLog
 
 	return store.NewSuggestedFilterResultSetTooLargeError(suggestedBlockRange)
 }
+
+func (cs *CommonStores) Close() error { return cs.confStore.Close() }
+
+func (ms *MysqlStore[T]) Close() error { return ms.baseStore.Close() }

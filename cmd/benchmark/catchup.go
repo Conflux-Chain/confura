@@ -10,7 +10,6 @@ import (
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -27,7 +26,7 @@ var (
 	catchUpCmd = &cobra.Command{
 		Use:   "catchup",
 		Short: "Start catch-up benchmark testing",
-		Run:   runCatchUpBenchmark,
+		RunE:  runCatchUpBenchmark,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if network := catchUpConfig.Network; !isValidNetwork(network) {
 				return fmt.Errorf("invalid network '%s', allowed values are 'cfx' or 'eth'", network)
@@ -56,12 +55,11 @@ func hookCatchUpCmdFlags(cmd *cobra.Command) {
 }
 
 // runCatchUpBenchmark starts the catch-up benchmarking process.
-func runCatchUpBenchmark(cmd *cobra.Command, args []string) {
+func runCatchUpBenchmark(cmd *cobra.Command, args []string) error {
 	// Initialize required contexts
 	storeCtx, syncCtx, err := initializeContexts()
 	if err != nil {
-		logrus.WithError(err).Info("Failed to initialize contexts")
-		return
+		return fmt.Errorf("initialize benchmark: %w", err)
 	}
 	defer storeCtx.Close()
 	defer syncCtx.Close()
@@ -82,13 +80,18 @@ func runCatchUpBenchmark(cmd *cobra.Command, args []string) {
 
 	// Also report RPC metrics after sync completes.
 	reportRpcMetrics(catchUpSyncer.UseBoost())
+	return nil
 }
 
 // initializeContexts sets up and returns the required store and sync contexts.
 func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
-	storeCtx := util.MustInitStoreContext()
+	storeCtx, err := util.InitStoreContext(catchUpConfig.Network)
+	if err != nil {
+		return nil, nil, err
+	}
 	if network := catchUpConfig.Network; (network == "eth" && storeCtx.EthDB == nil) ||
 		(network == "cfx" && storeCtx.CfxDB == nil) {
+		storeCtx.Close()
 		return nil, nil, errors.New("database is not provided")
 	}
 
