@@ -74,6 +74,12 @@ func (api *api) Route(group Group, key hexutil.Bytes) string {
 	return ""
 }
 
+// nodeGroupStore is the persistence boundary for management writes.
+type nodeGroupStore interface {
+	StoreNodeRouteGroup(*mysql.NodeRouteGroup) error
+	DelNodeRouteGroup(string) error
+}
+
 // apiHandler rpc handler for node api
 type apiHandler struct {
 	mu sync.Mutex
@@ -81,7 +87,7 @@ type apiHandler struct {
 	// node pool
 	pool *nodePool
 	// db store to save node route configs
-	dbs *mysql.CommonStores
+	dbs nodeGroupStore
 }
 
 func MustNewApiHandler(db *mysql.CommonStores, nf nodeFactory, grpConf map[Group]UrlConfig) *apiHandler {
@@ -110,10 +116,11 @@ func MustNewApiHandler(db *mysql.CommonStores, nf nodeFactory, grpConf map[Group
 		}
 	}
 
-	return &apiHandler{
-		dbs:  db,
-		pool: npool,
+	handler := &apiHandler{pool: npool}
+	if db != nil {
+		handler.dbs = db
 	}
+	return handler
 }
 
 func (h *apiHandler) addGroupNode(grp Group, url string, saveGrp bool) error {
@@ -128,7 +135,8 @@ func (h *apiHandler) addGroupNode(grp Group, url string, saveGrp bool) error {
 		return errDbNotAvailableForPersistence
 	}
 
-	if err := h.pool.add(grp, url); err != nil {
+	added, err := h.pool.addNodes(grp, url)
+	if err != nil {
 		return err
 	}
 
@@ -138,7 +146,7 @@ func (h *apiHandler) addGroupNode(grp Group, url string, saveGrp bool) error {
 	}
 
 	if err := h.dbs.StoreNodeRouteGroup(routeGroup); err != nil {
-		h.pool.del(grp, url) // revert in-memory update
+		h.pool.del(grp, added...) // Revert only memberships added by this call.
 		return err
 	}
 
