@@ -49,7 +49,9 @@ func (m *Registry) StartReload(ctx context.Context, wg *sync.WaitGroup, interval
 		if cfg == nil {
 			return fmt.Errorf("security configuration is nil")
 		}
-		m.reloadOnce(cfg, &cs)
+		if err := m.reloadOnce(cfg, &cs); err != nil {
+			return err
+		}
 		cs = cfg.CheckSums
 		return nil
 	}
@@ -75,11 +77,33 @@ func (m *Registry) StartReload(ctx context.Context, wg *sync.WaitGroup, interval
 	return nil
 }
 
-func (m *Registry) reloadOnce(rc *Config, lastCs *ConfigCheckSums) {
-	if rc != nil {
+func (m *Registry) reloadOnce(rc *Config, lastCs *ConfigCheckSums) error {
+	if rc == nil {
+		return fmt.Errorf("security configuration is nil")
+	}
+	for id, s := range rc.Strategies {
+		if s == nil || s.ID != id {
+			return fmt.Errorf("invalid strategy identity %d", id)
+		}
+		for _, opt := range s.LimitOptions {
+			if err := ValidateLimitOption(opt); err != nil {
+				return err
+			}
+		}
+	}
+	for id, al := range rc.AllowLists {
+		if al == nil || al.ID != id {
+			return fmt.Errorf("invalid allowlist identity %d", id)
+		}
+		if err := al.ValidateRules(); err != nil {
+			return err
+		}
+	}
+	{
 		m.reloadRateLimitStrategies(rc, lastCs)
 		m.reloadAclAllowLists(rc, lastCs)
 	}
+	return nil
 }
 
 func (m *Registry) reloadRateLimitStrategies(rc *Config, lastCs *ConfigCheckSums) {

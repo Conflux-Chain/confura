@@ -1,7 +1,6 @@
 package acl
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -192,7 +191,7 @@ func validateAllowListCmdConfig(validateName, validateRules bool) (*acl.AllowLis
 	}
 
 	al := acl.NewAllowList(0, alCfg.Name)
-	if err := json.Unmarshal([]byte(alCfg.Rules), al); err != nil {
+	if err := al.DecodeRules([]byte(alCfg.Rules), true); err != nil {
 		return nil, errors.WithMessage(err, "invalid allowlist rules config json")
 	}
 

@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/acl"
@@ -160,8 +161,7 @@ func (cs *confStore) LoadAclAllowListConfigs() (map[uint32]*acl.AllowList, map[u
 	for _, v := range cfgs {
 		al, err := cs.decodeAclAllowLists(v)
 		if err != nil {
-			logrus.WithField("cfg", v).WithError(err).Warn("Invalid access control allowlist config")
-			continue
+			return nil, nil, errors.WithMessagef(err, "invalid allowlist %q", v.Name)
 		}
 
 		allowLists[v.ID] = al
@@ -173,7 +173,10 @@ func (cs *confStore) LoadAclAllowListConfigs() (map[uint32]*acl.AllowList, map[u
 
 func (cs *confStore) decodeAclAllowLists(cfg conf) (*acl.AllowList, error) {
 	// eg., acl.allowlists.fluent
-	name := cfg.Name[len(AclAllowListConfKeyPrefix):]
+	if !strings.HasPrefix(cfg.Name, AclAllowListConfKeyPrefix) {
+		return nil, errors.New("invalid allowlist namespace")
+	}
+	name := strings.TrimPrefix(cfg.Name, AclAllowListConfKeyPrefix)
 	if len(name) == 0 {
 		return nil, errors.New("allowlist name is too short")
 	}
@@ -181,7 +184,7 @@ func (cs *confStore) decodeAclAllowLists(cfg conf) (*acl.AllowList, error) {
 	data := []byte(cfg.Value)
 	al := acl.NewAllowList(cfg.ID, name)
 
-	if err := json.Unmarshal(data, al); err != nil {
+	if err := al.DecodeRules(data, false); err != nil {
 		return nil, err
 	}
 
@@ -247,8 +250,7 @@ func (cs *confStore) LoadRateLimitStrategyConfigs() (map[uint32]*rate.Strategy, 
 	for _, v := range cfgs {
 		strategy, err := cs.decodeRateLimitStrategy(v)
 		if err != nil {
-			logrus.WithField("cfg", v).WithError(err).Warn("Invalid rate limit strategy config")
-			continue
+			return nil, nil, errors.WithMessagef(err, "invalid strategy %q", v.Name)
 		}
 
 		strategies[v.ID] = strategy
@@ -260,7 +262,10 @@ func (cs *confStore) LoadRateLimitStrategyConfigs() (map[uint32]*rate.Strategy, 
 
 func (cs *confStore) decodeRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
 	// eg., ratelimit.strategy.whitelist
-	name := cfg.Name[len(RateLimitStrategyConfKeyPrefix):]
+	if !strings.HasPrefix(cfg.Name, RateLimitStrategyConfKeyPrefix) {
+		return nil, errors.New("invalid strategy namespace")
+	}
+	name := strings.TrimPrefix(cfg.Name, RateLimitStrategyConfKeyPrefix)
 	if len(name) == 0 {
 		return nil, errors.New("strategy name is too short")
 	}

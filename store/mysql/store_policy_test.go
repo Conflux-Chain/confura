@@ -133,3 +133,24 @@ func TestConfirmedObjectsCannotBeReplaced(t *testing.T) {
 	_, err = NewRateLimitStore(db).DeleteRateLimitChecked(key)
 	require.ErrorIs(t, err, ErrConfigChanged)
 }
+
+func TestInvalidSecurityRecordFailsWholeLoad(t *testing.T) {
+	db := policyTestDB(t, false)
+	cs := newConfStore(db)
+	require.NoError(t, cs.StoreConfig(RateLimitStrategyConfKeyPrefix+"default", "{}"))
+	require.NoError(t, cs.StoreConfig(AclAllowListConfKeyPrefix+"default", `{"ID":999,"Name":"other","Origins":["https://example.com"]}`))
+	cfg, err := cs.LoadRateLimitConfigs()
+	require.NoError(t, err)
+	for id, al := range cfg.AllowLists {
+		require.Equal(t, id, al.ID)
+		require.Equal(t, "default", al.Name)
+	}
+	for _, prefix := range []string{RateLimitStrategyConfKeyPrefix, AclAllowListConfKeyPrefix} {
+		require.NoError(t, cs.StoreConfig(prefix+"invalid", "null"))
+		cfg, err = cs.LoadRateLimitConfigs()
+		require.Error(t, err)
+		require.Nil(t, cfg)
+		_, err = cs.DeleteConfig(prefix + "invalid")
+		require.NoError(t, err)
+	}
+}

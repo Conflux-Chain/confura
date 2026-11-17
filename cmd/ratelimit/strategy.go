@@ -1,7 +1,6 @@
 package ratelimit
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
@@ -193,7 +192,7 @@ func validateStrategyCmdConfig(validateName, validateRules bool) (*rate.Strategy
 	}
 
 	stg := rate.NewStrategy(0, stratCfg.Name)
-	if err := json.Unmarshal([]byte(stratCfg.Rules), stg); err != nil {
+	if err := stg.DecodeRules([]byte(stratCfg.Rules), true); err != nil {
 		return nil, errors.WithMessage(err, "invalid strategy rules config json")
 	}
 

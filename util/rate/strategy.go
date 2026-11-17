@@ -2,6 +2,9 @@ package rate
 
 import (
 	"encoding/json"
+	"fmt"
+	"github.com/Conflux-Chain/confura/util"
+	"math"
 	"time"
 
 	"github.com/pkg/errors"
@@ -58,20 +61,78 @@ func NewStrategy(id uint32, name string) *Strategy {
 
 // UnmarshalJSON implements `json.Unmarshaler`
 func (s *Strategy) UnmarshalJSON(data []byte) error {
-	tmpRules := make(map[string]*LimitRule)
-	if err := json.Unmarshal(data, &tmpRules); err != nil {
-		return errors.WithMessage(err, "malformed json format")
-	}
+	return s.DecodeRules(data, false)
+}
 
-	options := make(map[string]interface{}, len(tmpRules))
-	for resource, rule := range tmpRules {
-		if rule == nil {
-			return errors.New("null rate limit rule")
+// DecodeRules uses strict field validation for new administrative input. Stored
+// configurations retain compatibility with extra fields, but never invalid values.
+func (s *Strategy) DecodeRules(data []byte, strict bool) error {
+	var rules map[string]json.RawMessage
+	if err := util.DecodeJSONObject(data, &rules, strict); err != nil {
+		return err
+	}
+	options := make(map[string]interface{}, len(rules))
+	for resource, raw := range rules {
+		var rule struct {
+			Algo   LimitAlgoType
+			Option json.RawMessage
 		}
-		options[resource] = rule.Option
+		if err := util.DecodeJSONObject(raw, &rule, strict); err != nil {
+			return fmt.Errorf("rule %q: %w", resource, err)
+		}
+		var opt interface{}
+		switch rule.Algo {
+		case LimitAlgoFixedWindow:
+			var value struct {
+				Interval string
+				Quota    int
+			}
+			if err := util.DecodeJSONObject(rule.Option, &value, strict); err != nil {
+				return err
+			}
+			interval, err := time.ParseDuration(value.Interval)
+			if err != nil {
+				return err
+			}
+			opt = FixedWindowOption{Interval: interval, Quota: value.Quota}
+		case LimitAlgoTokenBucket:
+			var value TokenBucketOption
+			if err := util.DecodeJSONObject(rule.Option, &value, strict); err != nil {
+				return err
+			}
+			opt = value
+		default:
+			return errors.New("invalid rate limit algorithm")
+		}
+		if err := ValidateLimitOption(opt); err != nil {
+			return fmt.Errorf("rule %q: %w", resource, err)
+		}
+		options[resource] = opt
 	}
 	s.LimitOptions = options
+	return nil
+}
 
+// ValidateLimitOption does not construct a limiter or start background work.
+func ValidateLimitOption(option interface{}) error {
+	switch opt := option.(type) {
+	case FixedWindowOption:
+		if opt.Interval <= 0 || opt.Quota <= 0 {
+			return errors.New("fixed window interval and quota must be positive")
+		}
+	case TokenBucketOption:
+		if opt.Rate <= 0 || math.IsNaN(float64(opt.Rate)) || math.IsInf(float64(opt.Rate), 0) {
+			return errors.New("token bucket rate must be positive and finite")
+		}
+		if opt.Burst <= 0 {
+			return errors.New("token bucket burst must be positive")
+		}
+		if float64(opt.Burst)/float64(opt.Rate) >= float64(math.MaxInt64/int64(time.Second)) {
+			return errors.New("token bucket refill interval is too large")
+		}
+	default:
+		return errors.New("invalid limit option")
+	}
 	return nil
 }
 
