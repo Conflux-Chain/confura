@@ -67,6 +67,7 @@ func (m *Manager) Remove(nodeNames ...string) {
 			m.hashRing.Remove(nn)
 		}
 	}
+	m.updateHealthyEpoch()
 }
 
 // Get gets monitored fullnode from url

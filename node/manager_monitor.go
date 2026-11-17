@@ -50,18 +50,21 @@ func (m *Manager) ReportEpoch(nodeName string, epoch uint64) {
 	}
 	m.updateEpoch(nodeName, epoch)
 
-	if len(m.monitorStatuses) == 1 {
-		atomic.StoreUint64(&m.midEpoch, epoch)
+	m.updateHealthyEpoch()
+}
+
+// updateHealthyEpoch rebuilds the reference from current members' samples.
+// The caller must hold m.mu.
+func (m *Manager) updateHealthyEpoch() {
+	epochs := make([]uint64, 0, len(m.monitorStatuses))
+	for _, status := range m.monitorStatuses {
+		epochs = append(epochs, status.epoch)
+	}
+	if len(epochs) == 0 {
+		atomic.StoreUint64(&m.midEpoch, 0)
 		return
 	}
-
-	var epochs []uint64
-	for _, ms := range m.monitorStatuses {
-		epochs = append(epochs, ms.epoch)
-	}
-
 	slices.Sort(epochs)
-
 	atomic.StoreUint64(&m.midEpoch, epochs[len(epochs)/2])
 }
 
