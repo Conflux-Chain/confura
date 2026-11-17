@@ -2,12 +2,15 @@ package node
 
 import (
 	"context"
+	"crypto/tls"
 	stderrors "errors"
 	"io"
 	"net"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pb "github.com/Conflux-Chain/confura/node/router/proto"
@@ -238,7 +241,7 @@ func (r *NodeRpcRouter) Route(ctx context.Context, group Group, key []byte) (str
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	var result string
-	if err := r.client.CallContext(ctx, &result, "node_route", group, hexutil.Bytes(key)); err != nil {
+	if err := callNodeManager(ctx, r.client, &result, "node_route", group, hexutil.Bytes(key)); err != nil {
 		return "", err
 	}
 
@@ -412,7 +415,7 @@ func (r *LocalRouter) pollOnce(client *rpc.Client) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
 	defer cancel()
-	if err := client.CallContext(ctx, &groupNodes, "node_listAll"); err != nil {
+	if err := callNodeManager(ctx, client, &groupNodes, "node_listAll"); err != nil {
 		return errors.WithMessage(err, "failed to list all group nodes")
 	}
 
@@ -431,9 +434,36 @@ func (r *LocalRouter) update(groupNodes map[Group][]string) {
 	r.groups = groups
 }
 
-// isRouterUnavailable distinguishes control-plane outages from rejected or
-// malformed requests. Only outages permit using a less authoritative source.
+// nodeManagerTLSError marks a failed management connection, preserving its cause.
+// The full nodes can still be available when the manager's TLS handshake fails.
+type nodeManagerTLSError struct{ cause error }
+
+func (e *nodeManagerTLSError) Error() string { return e.cause.Error() }
+func (e *nodeManagerTLSError) Unwrap() error { return e.cause }
+
+func callNodeManager(ctx context.Context, client *rpc.Client, result any, method string, args ...any) error {
+	var handshakeFailure atomic.Pointer[nodeManagerTLSError]
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
+			if err != nil {
+				handshakeFailure.Store(&nodeManagerTLSError{cause: err})
+			}
+		},
+	})
+	err := client.CallContext(ctx, result, method, args...)
+	if failure := handshakeFailure.Load(); err != nil && failure != nil && errors.Is(err, failure.cause) {
+		return &nodeManagerTLSError{cause: err}
+	}
+	return err
+}
+
+// isRouterUnavailable permits fallback on failed management connections while
+// retaining terminal permission, business, and protocol responses.
 func isRouterUnavailable(err error) bool {
+	var managerTLS *nodeManagerTLSError
+	if errors.As(err, &managerTLS) {
+		return true
+	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, rpc.ErrClientQuit) {
 		return true
 	}
