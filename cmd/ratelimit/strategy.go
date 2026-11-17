@@ -125,12 +125,21 @@ func delStrategy(cmd *cobra.Command, args []string) error {
 
 	defer dbs.Close()
 
+	name := mysql.RateLimitStrategyConfKeyPrefix + stratCfg.Name
+	snapshot, err := dbs.LoadConfigSnapshot(name)
+	if err != nil {
+		return err
+	}
+	if snapshot == nil {
+		cmd.Println("Configuration does not exist")
+		return nil
+	}
+
 	logrus.WithField("strategy", stratCfg.Name).
 		Info("Press the Enter Key to delete the rate limit strategy!")
 	fmt.Scanln() // wait for Enter Key
 
-	name := mysql.RateLimitStrategyConfKeyPrefix + stratCfg.Name
-	removed, err := dbs.DeleteConfig(name)
+	removed, err := dbs.DeleteConfigChecked(name, snapshot)
 	if err != nil {
 		return fmt.Errorf("delete strategy: %w", err)
 	}

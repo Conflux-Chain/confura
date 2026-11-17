@@ -83,8 +83,7 @@ func (cs *confStore) StoreConfig(confName string, confVal interface{}) error {
 }
 
 func (cs *confStore) DeleteConfig(confName string) (bool, error) {
-	res := cs.db.Delete(&conf{}, "name = ?", confName)
-	return res.RowsAffected > 0, res.Error
+	return cs.DeleteConfigChecked(confName, nil)
 }
 
 // reorg config
@@ -122,12 +121,17 @@ func incrementReorgVersion(dbTx *gorm.DB, name string) error {
 
 // access control config
 func (cs *confStore) LoadAclAllowList(name string) (*acl.AllowList, error) {
+	value, _, err := cs.LoadAclAllowListSnapshot(name)
+	return value, err
+}
+
+func (cs *confStore) LoadAclAllowListSnapshot(name string) (*acl.AllowList, *ConfigSnapshot, error) {
 	var cfg conf
 	if err := cs.db.Where("name = ?", AclAllowListConfKeyPrefix+name).First(&cfg).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	return cs.decodeAclAllowLists(cfg)
+	value, err := cs.decodeAclAllowLists(cfg)
+	return value, snapshotConfig(cfg), err
 }
 
 func (cs *confStore) LoadAclAllowListById(aclID uint32) (*acl.AllowList, error) {
@@ -213,12 +217,17 @@ func (cs *confStore) LoadRateLimitConfigsContext(ctx context.Context) (*rate.Con
 }
 
 func (cs *confStore) LoadRateLimitStrategy(name string) (*rate.Strategy, error) {
+	value, _, err := cs.LoadRateLimitStrategySnapshot(name)
+	return value, err
+}
+
+func (cs *confStore) LoadRateLimitStrategySnapshot(name string) (*rate.Strategy, *ConfigSnapshot, error) {
 	var cfg conf
 	if err := cs.db.Where("name = ?", RateLimitStrategyConfKeyPrefix+name).First(&cfg).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	return cs.decodeRateLimitStrategy(cfg)
+	value, err := cs.decodeRateLimitStrategy(cfg)
+	return value, snapshotConfig(cfg), err
 }
 
 func (cs *confStore) LoadRateLimitStrategyConfigs() (map[uint32]*rate.Strategy, map[uint32][md5.Size]byte, error) {

@@ -125,12 +125,21 @@ func delAllowList(cmd *cobra.Command, args []string) error {
 
 	defer dbs.Close()
 
+	name := mysql.AclAllowListConfKeyPrefix + alCfg.Name
+	snapshot, err := dbs.LoadConfigSnapshot(name)
+	if err != nil {
+		return err
+	}
+	if snapshot == nil {
+		cmd.Println("Configuration does not exist")
+		return nil
+	}
+
 	logrus.WithField("allowList", alCfg.Name).
 		Info("Press the Enter Key to delete the allowlist!")
 	fmt.Scanln() // wait for Enter Key
 
-	name := mysql.AclAllowListConfKeyPrefix + alCfg.Name
-	removed, err := dbs.DeleteConfig(name)
+	removed, err := dbs.DeleteConfigChecked(name, snapshot)
 	if err != nil {
 		return fmt.Errorf("delete allowlist: %w", err)
 	}

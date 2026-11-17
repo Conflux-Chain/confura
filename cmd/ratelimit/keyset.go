@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
+	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rate"
 	"github.com/pkg/errors"
@@ -85,7 +86,7 @@ func addKey(cmd *cobra.Command, args []string) error {
 
 	defer dbs.Close()
 
-	strategy, err := dbs.LoadRateLimitStrategy(keysetCfg.Strategy)
+	strategy, strategySnapshot, err := dbs.LoadRateLimitStrategySnapshot(keysetCfg.Strategy)
 	if err != nil {
 		return fmt.Errorf("add key: %w", err)
 	}
@@ -97,13 +98,16 @@ func addKey(cmd *cobra.Command, args []string) error {
 	})
 
 	var acl acl.AllowList
+	var aclSnapshot *mysql.ConfigSnapshot
 	if len(keysetCfg.AllowList) > 0 {
-		allowList, err := dbs.LoadAclAllowList(keysetCfg.AllowList)
+		allowList, snapshot, err := dbs.LoadAclAllowListSnapshot(keysetCfg.AllowList)
 		if err != nil {
 			return fmt.Errorf("add key: %w", err)
 		}
 
 		acl = *allowList
+		acl.ID = snapshot.ID
+		aclSnapshot = snapshot
 	}
 
 	limitKey := strings.TrimSpace(keysetCfg.LimitKey)
@@ -122,7 +126,7 @@ func addKey(cmd *cobra.Command, args []string) error {
 	fmt.Scanln() // wait for Enter Key
 
 	err = dbs.RateLimitStore.AddRateLimit(
-		strategy.ID, acl.ID, keysetCfg.LimitType, limitKey, keysetCfg.Memo,
+		strategySnapshot.ID, acl.ID, keysetCfg.LimitType, limitKey, keysetCfg.Memo, strategySnapshot, aclSnapshot,
 	)
 	if err != nil {
 		return fmt.Errorf("add key: %w", err)

@@ -41,6 +41,7 @@ func (rls *RateLimitStore) AddRateLimit(
 	limitType rate.LimitType,
 	limitKey string,
 	memo string,
+	expected ...*ConfigSnapshot,
 ) error {
 	ratelimit := &RateLimit{
 		SID:       sid,
@@ -50,7 +51,7 @@ func (rls *RateLimitStore) AddRateLimit(
 		Memo:      memo,
 	}
 
-	return rls.db.Create(ratelimit).Error
+	return rls.addRateLimitChecked(ratelimit, expected)
 }
 
 func (rls *RateLimitStore) DeleteRateLimit(limitKey string) (bool, error) {
