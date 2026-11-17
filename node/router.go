@@ -390,44 +390,13 @@ func (r *LocalRouter) pollOnce(client *rpc.Client) error {
 	return nil
 }
 
+// update publishes a successful full snapshot, including removed or empty groups.
 func (r *LocalRouter) update(groupNodes map[Group][]string) {
+	groups := make(map[Group]*localNodeGroup, len(groupNodes))
+	for group, urls := range groupNodes {
+		groups[group] = newLocalNodeGroup(urls)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	for grp, urls := range groupNodes {
-		if _, ok := r.groups[grp]; !ok { // create new local node group
-			r.groups[grp] = newLocalNodeGroup(urls)
-			continue
-		}
-
-		fnNodes, hashRing := r.groups[grp].nodes, r.groups[grp].hashRing
-
-		// detect new added
-		for _, v := range urls {
-			nodeName := rpcutil.Url2NodeName(v)
-			if _, ok := fnNodes[nodeName]; !ok {
-				fnNodes[nodeName] = localNode(v)
-				hashRing.Add(localNode(v))
-			}
-		}
-
-		// detect removed
-		nodes := make(map[string]bool)
-		for _, v := range urls {
-			nodes[rpcutil.Url2NodeName(v)] = true
-		}
-
-		var removed []string
-		for name := range fnNodes {
-			if !nodes[name] {
-				removed = append(removed, name)
-			}
-		}
-
-		for _, v := range removed {
-			node := fnNodes[v]
-			delete(fnNodes, v)
-			hashRing.Remove(node.String())
-		}
-	}
+	r.groups = groups
 }
