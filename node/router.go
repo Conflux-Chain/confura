@@ -3,6 +3,9 @@ package node
 import (
 	"context"
 	stderrors "errors"
+	"io"
+	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +20,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 // Group allows to manage full nodes in multiple groups.
@@ -57,7 +62,8 @@ func (g Group) String() string {
 
 // Router is used to route RPC requests to multiple full nodes.
 type Router interface {
-	// Route returns the full node URL for specified group and key.
+	// Route returns a URL, or an empty cache miss. A manager with no available
+	// node returns ErrClientUnavailable; transport and protocol errors are retained.
 	Route(ctx context.Context, group Group, key []byte) (string, error)
 }
 
@@ -69,6 +75,10 @@ type NodeProvider interface {
 // MustNewRouter creates an instance of Router.
 func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf map[Group]UrlConfig) Router {
 	var routers []Router
+	group2Urls := make(map[Group][]string, len(groupConf))
+	for group, config := range groupConf {
+		group2Urls[group] = config.Nodes
+	}
 
 	// Add redis router if configured
 	if len(redisURL) > 0 {
@@ -110,18 +120,19 @@ func MustNewRouter(redisURL string, nodeRPCURL, nodeGRpcUrl string, groupConf ma
 		// Also add local router in case node rpc temporary unavailable
 		localRouter, err := NewLocalRouterFromNodeRPC(client)
 		if err != nil {
-			logrus.WithError(err).Fatal("Failed to new local router with node rpc")
+			if !isRouterUnavailable(err) {
+				logrus.WithError(err).Fatal("Failed to load local routes from node RPC")
+			}
+			// Presets are used only before the first successful full snapshot.
+			localRouter.update(group2Urls)
+			go localRouter.poll(client)
+			logrus.WithError(err).Warn("Node manager unavailable; starting with configured local routes")
 		}
 		routers = append(routers, localRouter)
 	}
 
 	// If redis and node rpc not configured, add local router for failover.
 	if len(routers) == 0 && len(groupConf) > 0 {
-		group2Urls := make(map[Group][]string)
-		for k, v := range groupConf {
-			group2Urls[k] = v.Nodes
-		}
-
 		routers = append(routers, NewLocalRouter(group2Urls))
 	}
 
@@ -151,7 +162,14 @@ func (r *chainedRouter) Route(ctx context.Context, group Group, key []byte) (str
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
+		if errors.Is(err, ErrClientUnavailable) {
+			lastErr = nil
+			break
+		}
 		if err != nil {
+			if !isRouterUnavailable(err) {
+				return "", err
+			}
 			lastErr = err
 			continue
 		}
@@ -221,6 +239,9 @@ func (r *NodeRpcRouter) Route(ctx context.Context, group Group, key []byte) (str
 		return "", err
 	}
 
+	if result == "" {
+		return "", ErrClientUnavailable
+	}
 	return result, nil
 }
 
@@ -257,9 +278,15 @@ func (r *NodeGRPCRouter) Route(ctx context.Context, group Group, key []byte) (st
 
 	resp, err := r.client.Route(ctx, &req)
 	if err != nil {
+		// The existing gRPC service reports unknown groups as InvalidArgument.
+		if status.Code(err) == codes.InvalidArgument && status.Convert(err).Message() == "Invalid group ["+string(group)+"]" {
+			return "", ErrClientUnavailable
+		}
 		return "", err
 	}
-
+	if resp.GetUrl() == "" {
+		return "", ErrClientUnavailable
+	}
 	return resp.GetUrl(), nil
 }
 
@@ -399,4 +426,33 @@ func (r *LocalRouter) update(groupNodes map[Group][]string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.groups = groups
+}
+
+// isRouterUnavailable distinguishes control-plane outages from rejected or
+// malformed requests. Only outages permit using a less authoritative source.
+func isRouterUnavailable(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, rpc.ErrClientQuit) {
+		return true
+	}
+	switch status.Code(err) {
+	case codes.Unavailable, codes.DeadlineExceeded:
+		return true
+	}
+	var httpErr rpc.HTTPError
+	if errors.As(err, &httpErr) {
+		switch httpErr.StatusCode {
+		case 408, 502, 503, 504:
+			return true
+		default:
+			return false
+		}
+	}
+	// url.Error also implements net.Error for failures such as bad certificates.
+	// Inspect its cause before deciding that the failure is a network outage.
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return isRouterUnavailable(urlErr.Err)
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }
