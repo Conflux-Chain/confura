@@ -92,7 +92,7 @@ func (fs *ethFilterSystem) uninstallFilter(ctx context.Context, id rpc.ID) (bool
 	return true, nil
 }
 
-// implement `filterWorkerObserver` interface
+// implement `pollingObserver` interface
 
 func (fs *ethFilterSystem) onPolled(ctx context.Context, nodeName string, fid rpc.ID, changes filterChanges) error {
 	// convert to virtual filter log

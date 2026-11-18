@@ -107,7 +107,7 @@ type DlockLeaderManager struct {
 
 // NewDlockLeaderManager creates a new `LeaderManager` with the provided configuration and election key.
 func NewDlockLeaderManager(db *gorm.DB, conf Config, elecKey string) *DlockLeaderManager {
-	conf.ID += "#" + uuid.NewString()[:8] // append a unique suffix to the `Id`
+	conf.ID += "#" + uuid.NewString()[:8] // append a unique suffix to the `ID`
 	return &DlockLeaderManager{
 		Config:      conf,
 		lockMan:     newMysqlLockManager(db),
