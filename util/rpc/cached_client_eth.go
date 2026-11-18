@@ -208,7 +208,9 @@ func (w3c Web3goClient) NodeName() string {
 }
 
 func (w3c Web3goClient) Close() {
-	w3c.nearhead.Close()
+	if w3c.nearhead != nil {
+		w3c.nearhead.Close()
+	}
 	w3c.Client.Close()
 }
 
