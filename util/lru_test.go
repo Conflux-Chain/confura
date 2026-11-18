@@ -53,6 +53,28 @@ func TestExpiration(t *testing.T) {
 	}
 }
 
+func TestExpirationAtDeadline(t *testing.T) {
+	mt := &mockTime{currentTime: time.Unix(100, 0)}
+	cache := util.NewExpirableLruCache(5, time.Second, mt.Now)
+	cache.Add("key", "old")
+	mt.Add(time.Second - time.Nanosecond)
+	if value, found := cache.Get("key"); !found || value != "old" {
+		t.Fatal("entry must remain valid before its deadline")
+	}
+	mt.Add(time.Nanosecond)
+	if _, expired, found := cache.GetWithoutExp("key"); !found || !expired {
+		t.Fatal("entry must be expired at its deadline")
+	}
+	value, err := cache.GetOrUpdate("key", func() (interface{}, error) { return "new", nil })
+	if err != nil || value != "new" {
+		t.Fatalf("expected refreshed value, got %v, %v", value, err)
+	}
+	mt.Add(time.Second)
+	if value, found := cache.Get("key"); found || value != nil {
+		t.Fatal("Get must evict an entry at its deadline")
+	}
+}
+
 // TestGetOrUpdate tests the GetOrUpdate method.
 func TestGetOrUpdate(t *testing.T) {
 	mt := &mockTime{currentTime: time.Now()}
