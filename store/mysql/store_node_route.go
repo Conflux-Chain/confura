@@ -42,6 +42,18 @@ func (nrs *NodeRouteStore) DeleteNodeRoute(routeKey string) (bool, error) {
 	return res.RowsAffected > 0, res.Error
 }
 
+func (nrs *NodeRouteStore) DeleteNodeRouteChecked(expected *NodeRoute) (bool, error) {
+	res := nrs.db.Where("id = ? AND route_key = ? AND `group` = ? AND updated_at = ?",
+		expected.ID, expected.RouteKey, expected.Group, expected.UpdatedAt).Delete(&NodeRoute{})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return false, ErrConfigChanged
+	}
+	return true, nil
+}
+
 func (nrs *NodeRouteStore) FindNodeRoute(routeKey string) (*NodeRoute, error) {
 	var res NodeRoute
 

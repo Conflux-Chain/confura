@@ -1,11 +1,34 @@
 package util
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/sirupsen/logrus"
 )
+
+// DecodeJSONObject rejects null and trailing input. Strict mode also rejects
+// unknown fields in ordinary structs; custom unmarshaling must validate itself.
+func DecodeJSONObject(data []byte, dst interface{}, strict bool) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || data[0] != '{' {
+		return fmt.Errorf("expected a JSON object")
+	}
+	d := json.NewDecoder(bytes.NewReader(data))
+	if strict {
+		d.DisallowUnknownFields()
+	}
+	if err := d.Decode(dst); err != nil {
+		return err
+	}
+	if err := d.Decode(new(interface{})); err != io.EOF {
+		return fmt.Errorf("unexpected trailing JSON input")
+	}
+	return nil
+}
 
 func MustMarshalJson(v interface{}) []byte {
 	if IsInterfaceValNil(v) {

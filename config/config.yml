@@ -584,8 +584,9 @@ node:
 # pprof:
 #   # Switch to turn on/off pprof
 #   enabled: false
-#   # The endpoint to start a http server for pprof
-#   httpEndpoint: ":6060"
+#   # HTTP profiling endpoint. The default listens only on loopback.
+#   # Legacy httpEndpoint is supported. If both keys are set, they must match.
+#   endpoint: "127.0.0.1:6060"
 
 # # Near head caching configuration
 # nearhead:
@@ -620,3 +621,8 @@ node:
 #     maxMemory: 104857600
 #     # Upper limit on the number of logs returned per query operation, default 10000.
 #     maxLogs: 10000
+
+# # Service lifecycle limits. All values must be positive.
+# shutdown:
+#   timeout: 30s # Second termination signal or timeout forces a nonzero exit.
+# # rpc.securityConfigTimeout: 10s # Initial and periodic security DB queries.

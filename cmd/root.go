@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/Conflux-Chain/confura/cmd/acl"
 	"github.com/Conflux-Chain/confura/cmd/benchmark"
@@ -13,7 +11,6 @@ import (
 	"github.com/Conflux-Chain/confura/cmd/test"
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/config"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +24,7 @@ var (
 	rootCmd = &cobra.Command{
 		Use:   "confura",
 		Short: "Ethereum Infura like Public RPC Service on Conflux Network.",
-		Run:   start,
+		RunE:  start,
 	}
 )
 
@@ -64,46 +61,70 @@ func init() {
 	rootCmd.AddCommand(benchmark.Cmd)
 }
 
-func start(cmd *cobra.Command, args []string) {
+func start(cmd *cobra.Command, args []string) error {
 	// dump version
 	if flagVersion {
 		config.DumpVersionInfo()
-		return
+		return nil
 	}
 
 	if !nodeServerEnabled && !rpcServerEnabled && !syncServerEnabled && !vfilterServerEnabled {
-		logrus.Fatal("No services started")
+		return fmt.Errorf("no services started")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	wg := &sync.WaitGroup{}
-
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
+	life, err := util.NewLifecycle(cmd.Context())
+	if err != nil {
+		return err
+	}
+	defer life.Close()
+	ctx, wg := life.Ctx, &life.Wg
+	storeCtx, err := util.InitStoreContext("cfx", "eth")
+	if err != nil {
+		return err
+	}
+	var syncCtx util.SyncContext
+	defer func() { life.Shutdown(); syncCtx.Close(); storeCtx.Close() }()
 
 	if syncServerEnabled { // start sync
-		syncCtx := util.MustInitSyncContext(storeCtx)
-		defer syncCtx.Close()
+		syncCtx, err = util.InitSyncContext(storeCtx)
+		if err != nil {
+			return err
+		}
 
-		startSyncServiceAdaptively(ctx, wg, syncCtx)
+		if err := startSyncServiceAdaptively(ctx, wg, syncCtx, life.Fail); err != nil {
+			return err
+		}
 	}
 
 	if rpcServerEnabled { // start RPC
-		startNativeSpaceRpcServer(ctx, wg, storeCtx)
-		startEvmSpaceRpcServer(ctx, wg, storeCtx)
-		startNativeSpaceBridgeRpcServer(ctx, wg, storeCtx)
+		if err := startNativeSpaceRpcServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
+		if err := startEvmSpaceRpcServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
+		if err := startNativeSpaceBridgeRpcServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	if nodeServerEnabled { // start node management
-		startNativeSpaceNodeServer(ctx, wg, storeCtx)
-		startEvmSpaceNodeServer(ctx, wg, storeCtx)
+		if err := startNativeSpaceNodeServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
+		if err := startEvmSpaceNodeServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	if vfilterServerEnabled { // start virtual filter
-		startEvmSpaceVirtualFilterServer(ctx, wg, storeCtx)
+		if err := startEvmSpaceVirtualFilterServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
-	util.GracefulShutdown(wg, cancel)
+	life.Wait()
+	return life.Err()
 }
 
 // Execute is the command line entrypoint.

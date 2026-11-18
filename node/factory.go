@@ -6,6 +6,7 @@ import (
 
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/util/rpc"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -67,17 +68,53 @@ func newFactory(nf nodeFactory, rpcSrvEndpoint, gRpcSrvEndpoint string, groupCon
 
 // MustStartServer starts node manager RPC server
 func (f *factory) MustStartServer(ctx context.Context, wg *sync.WaitGroup, db *mysql.CommonStores) {
-	handler := MustNewApiHandler(db, f.nodeFactory, f.groupConf)
+	if err := f.StartServer(ctx, wg, db); err != nil {
+		logrus.WithError(err).Fatal("Failed to start node manager")
+	}
+}
 
-	// start RPC server
-	rpcServer := NewServer(handler)
-	go rpcServer.MustServeGraceful(ctx, wg, f.rpcSrvEndpoint, rpc.ProtocolHttp)
-
-	// start gRPC server
-	go MustServeGRPC(ctx, wg, f.gRpcSrvEndpoint, handler)
+func (f *factory) StartServer(ctx context.Context, wg *sync.WaitGroup, db *mysql.CommonStores) error {
+	handler, err := NewApiHandler(db, f.nodeFactory, f.groupConf)
+	if err != nil {
+		return err
+	}
+	child, cancel := context.WithCancel(ctx)
+	var inner sync.WaitGroup
+	rpcServer, err := newServer(handler)
+	if err != nil {
+		cancel()
+		handler.pool.Close()
+		return err
+	}
+	// Register cleanup before startup. On failure the caller can start its
+	// shutdown deadline before waiting for requests or monitored nodes.
+	startupDone := make(chan struct{})
+	defer close(startupDone)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer cancel()
+		<-startupDone
+		<-child.Done()
+		rpcServer.Close()
+		inner.Wait()
+		handler.pool.Close()
+	}()
+	if err = rpcServer.Start(child, &inner, f.rpcSrvEndpoint, rpc.ProtocolHttp); err == nil {
+		err = StartGRPC(child, &inner, f.gRpcSrvEndpoint, handler)
+	}
+	if err != nil {
+		cancel()
+		return err
+	}
+	return nil
 }
 
 // CreateRouter creates node router
 func (f *factory) CreateRouter() Router {
 	return MustNewRouter(cfg.Router.RedisURL, f.nodeRpcUrl, f.nodeGRpcUrl, f.groupConf)
+}
+
+func (f *factory) NewRouter() (Router, error) {
+	return NewRouter(cfg.Router.RedisURL, f.nodeRpcUrl, f.nodeGRpcUrl, f.groupConf)
 }

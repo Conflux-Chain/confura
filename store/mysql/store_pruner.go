@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -11,6 +12,11 @@ import (
 
 // storePruner observes bn partition changes and prunes log partitions.
 type storePruner struct {
+	ctx                context.Context
+	cancel             context.CancelFunc
+	wg                 sync.WaitGroup
+	mu                 sync.Mutex
+	stopped, scheduled bool
 	// block number range partitioned store
 	partitionedStore *bnPartitionedStore
 	// channel to observe new entity bnPartition
@@ -21,19 +27,28 @@ type storePruner struct {
 }
 
 func newStorePruner(db *gorm.DB) *storePruner {
+	ctx, cancel := context.WithCancel(context.Background())
 	pruner := &storePruner{
+		ctx: ctx, cancel: cancel,
 		newBnPartitionObsChan: make(chan *bnPartition, 1),
-		partitionedStore:      newBnPartitionedStore(db),
+		partitionedStore:      newBnPartitionedStore(db.WithContext(ctx)),
 	}
 
-	go pruner.observe()
+	pruner.wg.Add(1)
+	go func() { defer pruner.wg.Done(); pruner.observe() }()
 	return pruner
 }
 
 // observe observes bn partition changes and updates the mapset of entity which will
 // be tracked by the pruner.
 func (sp *storePruner) observe() {
-	for partition := range sp.newBnPartitionObsChan {
+	for {
+		var partition *bnPartition
+		select {
+		case <-sp.ctx.Done():
+			return
+		case partition = <-sp.newBnPartitionObsChan:
+		}
 		if partition.tabler != nil {
 			logrus.WithField("entity", partition.Entity).Debug("New bn partition observed, added to pruner tracking set")
 			sp.bnPartitionObsEntitySet.Store(partition.Entity, partition.tabler)
@@ -44,10 +59,34 @@ func (sp *storePruner) observe() {
 // schedulePrune periodically monitors and removes extra more than the max specified number of
 // archive bn partitions. Be noted this function will block caller thread.
 func (sp *storePruner) schedulePrune(config *Config) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if sp.stopped || sp.scheduled {
+		return
+	}
+	sp.scheduled = true
+	sp.wg.Add(1)
+	go func() { defer sp.wg.Done(); sp.pruneLoop(config) }()
+}
+
+func (sp *storePruner) Close() {
+	sp.mu.Lock()
+	sp.stopped = true
+	sp.cancel()
+	sp.mu.Unlock()
+	sp.wg.Wait()
+}
+
+func (sp *storePruner) pruneLoop(config *Config) {
 	ticker := time.NewTicker(time.Minute * 5)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-sp.ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		sp.bnPartitionObsEntitySet.Range(func(key, value interface{}) bool {
 			entity := key.(string)
 			tabler := value.(schema.Tabler)

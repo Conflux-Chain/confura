@@ -30,22 +30,24 @@ type CfxGasStationHandler struct {
 	fromEpoch      uint64                  // Start epoch number to sync from
 }
 
-func MustNewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) *CfxGasStationHandler {
+func NewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) (*CfxGasStationHandler, error) {
 	var cfg GasStationConfig
-	viper.MustUnmarshalKey("gasStation", &cfg)
+	if err := viper.UnmarshalKey("gasStation", &cfg); err != nil {
+		return nil, err
+	}
 
 	if !cfg.Enabled {
-		return nil
+		return nil, nil
 	}
 
 	// Get all clients in the http group.
 	clients, err := cp.GetClientsByGroup(node.GroupCfxHttp)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get fullnode cluster")
+		return nil, err
 	}
 
 	if len(clients) == 0 {
-		logrus.Fatal("No full node client available")
+		return nil, errors.New("no full node client available")
 	}
 
 	// Select a random client as the main client.
@@ -53,7 +55,7 @@ func MustNewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) *CfxGasSta
 	// Get the latest epoch number with the main client.
 	latestEpoch, err := clients[cliIndex].GetEpochNumber(cfxtypes.EpochLatestState)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get latest epoch number")
+		return nil, err
 	}
 
 	fromEpoch := latestEpoch.ToInt().Uint64() - uint64(cfg.HistoricalPeekCount)
@@ -65,8 +67,8 @@ func MustNewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) *CfxGasSta
 		fromEpoch:             fromEpoch,
 	}
 
-	go h.run(h.sync, h.refreshClusterNodes)
-	return h
+	h.start(h.sync, h.refreshClusterNodes)
+	return h, nil
 }
 
 // sync synchronizes historical data from the full node cluster.
@@ -347,4 +349,12 @@ func (h *CfxGasStationHandler) Suggest(cfx sdk.ClientOperator) (*types.Suggested
 	}
 
 	return assembleSuggestedGasFees(baseFeePerGas, &stats), nil
+}
+
+func MustNewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) *CfxGasStationHandler {
+	h, err := NewCfxGasStationHandlerFromViper(cp)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize gas station")
+	}
+	return h
 }

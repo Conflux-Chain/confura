@@ -89,11 +89,18 @@ func init() {
 	}
 }
 
-func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
+func NewEpochValidator(conf *EVConfig) (*EpochValidator, error) {
 	// Prepare fullnode client instance
-	cfx := rpc.MustNewCfxClient(conf.FullnodeRpcEndpoint)
+	cfx, err := rpc.NewCfxClient(conf.FullnodeRpcEndpoint)
+	if err != nil {
+		return nil, err
+	}
 	// Prepare infura rpc service client instance
-	infura := rpc.MustNewCfxClient(conf.InfuraRpcEndpoint)
+	infura, err := rpc.NewCfxClient(conf.InfuraRpcEndpoint)
+	if err != nil {
+		cfx.Close()
+		return nil, err
+	}
 
 	validator := &EpochValidator{
 		cfx:    cfx,
@@ -127,7 +134,7 @@ func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
 		Info("Test validation configurations loaded.")
 
 	if conf.EpochScanFrom != math.MaxUint64 {
-		return validator
+		return validator, nil
 	}
 
 	conf.EpochScanFrom = 1 // default scan from epoch #1
@@ -138,7 +145,7 @@ func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
 		logrus.WithError(err).Debugf(
 			"Epoch validator failed to load last validated epoch from file %v", validEpochFromNoFilePath,
 		)
-		return validator
+		return validator, nil
 	}
 
 	datStr := strings.TrimSpace(string(dat))
@@ -154,7 +161,15 @@ func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
 		)
 	}
 
-	return validator
+	return validator, nil
+}
+
+func MustNewEpochValidator(conf *EVConfig) *EpochValidator {
+	v, err := NewEpochValidator(conf)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize validator")
+	}
+	return v
 }
 
 func (validator *EpochValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
@@ -164,6 +179,10 @@ func (validator *EpochValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 
 	wg.Add(1)
 	defer wg.Done()
+	var samples sync.WaitGroup
+	defer samples.Wait()
+	validator.cfx = rpc.CfxWithContext(ctx, validator.cfx)
+	validator.infura = rpc.CfxWithContext(ctx, validator.infura)
 
 	logger := logrus.WithFields(logrus.Fields{
 		"fullNodeUrl": validator.cfx.GetNodeURL(),
@@ -191,7 +210,9 @@ func (validator *EpochValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
 			logrus.Info("Epoch validator shutdown ok")
 			return
 		case <-samplingTicker.C:
-			go func() { // randomly pick some nearhead epoch for validation test
+			samples.Add(1)
+			go func() {
+				defer samples.Done() // randomly pick some nearhead epoch for validation test
 				if err := validator.doSampling(); err != nil {
 					logger.WithError(err).Error("Epoch validator failed to do sampling for epoch validation")
 				}

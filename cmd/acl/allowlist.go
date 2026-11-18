@@ -1,7 +1,6 @@
 package acl
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -27,23 +26,26 @@ var (
 	addAllowListCmd = &cobra.Command{
 		Use:   "addal",
 		Short: "Add or update access control allow list",
-		Run:   addAllowList,
+		RunE:  addAllowList,
 	}
 
 	removeAllowListCmd = &cobra.Command{
 		Use:   "rmal",
 		Short: "Remove access control allow list",
-		Run:   delAllowList,
+		RunE:  delAllowList,
 	}
 
 	listAllowListCmd = &cobra.Command{
 		Use:   "lsal",
 		Short: "List access controls allow lists",
-		Run:   listAllowLists,
+		RunE:  listAllowLists,
 	}
 )
 
 func init() {
+	util.AddConfirmationFlag(addAllowListCmd)
+	util.AddConfirmationFlag(removeAllowListCmd)
+
 	Cmd.AddCommand(addAllowListCmd)
 	hookAllowListCmdFlags(addAllowListCmd, true, true)
 
@@ -77,82 +79,72 @@ func hookAllowListCmdFlags(cmd *cobra.Command, hookName, hookRules bool) {
 	}
 }
 
-func addAllowList(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
+func addAllowList(cmd *cobra.Command, args []string) error {
 	allowList, err := validateAllowListCmdConfig(true, true)
 	if err != nil {
-		logrus.WithField("config", alCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("add allowlist: %w", err)
 	}
 
-	dbs, err := storeCtx.GetCommonStore(alCfg.Network)
+	dbs, err := util.OpenManagementStore(alCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get mysql store by network")
-		return
+		return fmt.Errorf("add allowlist: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("DB store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
 	name := mysql.AclAllowListConfKeyPrefix + allowList.Name
-	cfgmap, err := dbs.LoadConfig(name)
+	snapshot, err := dbs.LoadConfigSnapshot(name)
 	if err != nil {
-		logrus.WithField("allowList", allowList.Name).
-			WithError(err).
-			Info("Failed to load allowlist config")
-		return
+		return fmt.Errorf("add allowlist: %w", err)
 	}
 
 	op := "add a new allowlist"
-	if len(cfgmap) > 0 {
+	if snapshot != nil {
 		op = "update an existed allowlist"
 	}
 
-	logrus.WithField("allowlist", *allowList).Info("Press the Enter Key to ", op)
-	fmt.Scanln() // wait for Enter Key
+	if err := util.ConfirmWrite(cmd, alCfg.Network, op, allowList); err != nil {
+		return err
+	}
 
-	if err := dbs.StoreConfig(name, alCfg.Rules); err != nil {
-		logrus.WithError(err).Info("Failed to ", op)
-		return
+	if err := dbs.StoreConfigIfUnchanged(name, alCfg.Rules, snapshot); err != nil {
+		return fmt.Errorf("add allowlist: %w", err)
 	}
 
 	logrus.WithField("allowlist", allowList.Name).Info("Succeeded to ", op)
+	return nil
 }
 
-func delAllowList(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
+func delAllowList(cmd *cobra.Command, args []string) error {
 	_, err := validateAllowListCmdConfig(true, false)
 	if err != nil {
-		logrus.WithField("config", alCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("delete allowlist: %w", err)
 	}
 
-	dbs, err := storeCtx.GetCommonStore(alCfg.Network)
+	dbs, err := util.OpenManagementStore(alCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get mysql store by network")
-		return
+		return fmt.Errorf("delete allowlist: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("DB store is unavailable")
-		return
-	}
-
-	logrus.WithField("allowList", alCfg.Name).
-		Info("Press the Enter Key to delete the allowlist!")
-	fmt.Scanln() // wait for Enter Key
+	defer dbs.Close()
 
 	name := mysql.AclAllowListConfKeyPrefix + alCfg.Name
-	removed, err := dbs.DeleteConfig(name)
+	snapshot, err := dbs.LoadConfigSnapshot(name)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to delete the allow list")
-		return
+		return err
+	}
+	if snapshot == nil {
+		cmd.Println("Configuration does not exist")
+		return nil
+	}
+
+	if err := util.ConfirmWrite(cmd, alCfg.Network, "delete configuration", snapshot); err != nil {
+		return err
+	}
+
+	removed, err := dbs.DeleteConfigChecked(name, snapshot)
+	if err != nil {
+		return fmt.Errorf("delete allowlist: %w", err)
 	}
 
 	if removed {
@@ -160,32 +152,25 @@ func delAllowList(cmd *cobra.Command, args []string) {
 	} else {
 		logrus.WithField("allowList", alCfg.Name).Info("Access control allowlist not existed")
 	}
+	return nil
 }
 
-func listAllowLists(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
-	dbs, err := storeCtx.GetCommonStore(alCfg.Network)
+func listAllowLists(cmd *cobra.Command, args []string) error {
+	dbs, err := util.OpenManagementStore(alCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get mysql store by network")
-		return
+		return fmt.Errorf("list allowlists: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("DB store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
 	allowLists, _, err := dbs.LoadAclAllowListConfigs()
 	if err != nil {
-		logrus.WithError(err).Info("Failed to load access control allowlist config")
-		return
+		return fmt.Errorf("list allowlists: %w", err)
 	}
 
 	if len(allowLists) == 0 {
 		logrus.Info("No allowlist found")
-		return
+		return nil
 	}
 
 	logrus.WithField("total", len(allowLists)).Info("Access control allowlists loaded:")
@@ -193,6 +178,7 @@ func listAllowLists(cmd *cobra.Command, args []string) {
 	for i, al := range allowLists {
 		logrus.WithField("allowList", *al).Info("Allowlist #", i)
 	}
+	return nil
 }
 
 func validateAllowListCmdConfig(validateName, validateRules bool) (*acl.AllowList, error) {
@@ -205,7 +191,7 @@ func validateAllowListCmdConfig(validateName, validateRules bool) (*acl.AllowLis
 	}
 
 	al := acl.NewAllowList(0, alCfg.Name)
-	if err := json.Unmarshal([]byte(alCfg.Rules), al); err != nil {
+	if err := al.DecodeRules([]byte(alCfg.Rules), true); err != nil {
 		return nil, errors.WithMessage(err, "invalid allowlist rules config json")
 	}
 

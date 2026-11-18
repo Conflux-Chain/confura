@@ -32,7 +32,7 @@ type VFValidConfig struct {
 // VFValidator virtual filter validator base to poll filter changes from fullnode and infura
 // endpoints, and then compares the filter change to validate if the poll results comply to
 // fullnode.
-type VFValidator struct{}
+type VFValidator struct{ tasks *validatorTasks }
 
 type vfFunc func() *vfValidationContext
 
@@ -84,7 +84,7 @@ func (validator *VFValidator) doValidate(fnFilter, infuraFilter vfFunc, watch wa
 		return nil
 	}
 
-	go watch(calibrate, validate, reset)
+	validator.tasks.start(func() { watch(calibrate, validate, reset) })
 }
 
 func (validator *VFValidator) validateWithContext(fnCtx, infuraCtx *vfValidationContext) error {
@@ -175,30 +175,44 @@ type EthVFValidator struct {
 	fn     *node.Web3goClient // fullnode client instance
 }
 
+func NewEthVFValidator(conf *VFValidConfig) (*EthVFValidator, error) {
+	client, err := rpcutil.NewEthClient(conf.FullnodeRpcEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	infura, err := rpcutil.NewEthClient(conf.InfuraRpcEndpoint)
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+	return &EthVFValidator{VFValidator: VFValidator{tasks: newValidatorTasks()}, fn: &node.Web3goClient{Client: client, URL: conf.FullnodeRpcEndpoint}, infura: &node.Web3goClient{Client: infura, URL: conf.InfuraRpcEndpoint}}, nil
+}
+
 func MustNewEthVFValidator(conf *VFValidConfig) *EthVFValidator {
-	// Prepare fullnode client instance
-	fn := &node.Web3goClient{
-		URL:    conf.FullnodeRpcEndpoint,
-		Client: rpcutil.MustNewEthClient(conf.FullnodeRpcEndpoint),
+	v, err := NewEthVFValidator(conf)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize validator")
 	}
-
-	// Prepare infura rpc service client instance
-	infura := &node.Web3goClient{
-		URL:    conf.InfuraRpcEndpoint,
-		Client: rpcutil.MustNewEthClient(conf.InfuraRpcEndpoint),
-	}
-
-	return &EthVFValidator{fn: fn, infura: infura}
+	return v
 }
 
 func (validator *EthVFValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
-	validator.validateFilterChanges()
+	validator.tasks.run(ctx, wg, func() {
+
+		validator.validateFilterChanges()
+
+	})
 }
 
 func (validator *EthVFValidator) Destroy() {
-	// Close client instance
-	validator.fn.Close()
-	validator.infura.Close()
+	validator.tasks.destroyOnce.Do(func() {
+		validator.tasks.stop()
+
+		// Close client instance
+		validator.fn.Close()
+		validator.infura.Close()
+
+	})
 }
 
 func (validator *EthVFValidator) validateFilterChanges() {
@@ -208,7 +222,7 @@ func (validator *EthVFValidator) validateFilterChanges() {
 	fnFilter := func() *vfValidationContext { // fullnode
 		fnCh = make(chan []types.Log, vfValidChBufferSize)
 		fnCtx = newVFValidationContext(fnCh)
-		go validator.pollFilterChangesWithContext(validator.fn, fnCtx)
+		validator.tasks.start(func() { validator.pollFilterChangesWithContext(validator.fn, fnCtx) })
 
 		return fnCtx
 	}
@@ -216,7 +230,7 @@ func (validator *EthVFValidator) validateFilterChanges() {
 	infuraFilter := func() *vfValidationContext { // infura
 		infuraCh = make(chan []types.Log, vfValidChBufferSize)
 		infuraCtx = newVFValidationContext(infuraCh)
-		go validator.pollFilterChangesWithContext(validator.infura, infuraCtx)
+		validator.tasks.start(func() { validator.pollFilterChangesWithContext(validator.infura, infuraCtx) })
 
 		return infuraCtx
 	}
@@ -230,6 +244,8 @@ func (validator *EthVFValidator) validateFilterChanges() {
 			var valErr error // validation error
 
 			select {
+			case <-validator.tasks.ctx.Done():
+				return
 			case fnlogs := <-fnCh:
 				for i := range fnlogs {
 					fnCtx.rBuf.Enqueue(&fnlogs[i])
@@ -259,33 +275,53 @@ func (validator *EthVFValidator) pollFilterChangesWithContext(w3c *node.Web3goCl
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
-	for {
-		fid, err := w3c.Filter.NewLogFilter(&types.FilterQuery{})
+	for validator.tasks.ctx.Err() == nil {
+		fid, err := w3c.WithContext(validator.tasks.ctx).Filter.NewLogFilter(&types.FilterQuery{})
+		if err == nil && fid == nil {
+			err = errors.New("node returned a null filter ID")
+		}
 		if err != nil {
 			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to new log filter")
-			time.Sleep(time.Second * 1)
+			if !validator.tasks.waitRetry(time.Second) {
+				return
+			}
 			continue
 		}
 
 		vfCtx.setStatus(true)
 
-		for range ticker.C {
-			if !vfCtx.getStatus() {
-				break
-			}
+		func() {
+			defer func() {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				_, _ = w3c.WithContext(cleanupCtx).Filter.UninstallFilter(*fid)
+			}()
+			for {
+				select {
+				case <-validator.tasks.ctx.Done():
+					return
+				case <-ticker.C:
+				}
+				if !vfCtx.getStatus() {
+					break
+				}
 
-			fc, err := w3c.Filter.GetFilterChanges(*fid)
-			if err == nil {
-				vfCtx.notify(fc.Logs)
-				continue
-			}
+				fc, err := w3c.WithContext(validator.tasks.ctx).Filter.GetFilterChanges(*fid)
+				if err == nil && fc != nil {
+					vfCtx.notify(fc.Logs)
+					continue
+				}
 
-			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to poll changes")
+				logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to poll changes")
 
-			if vfCtx.setStatus(false) {
-				vfCtx.errCh <- err
+				if vfCtx.setStatus(false) {
+					select {
+					case vfCtx.errCh <- err:
+					default:
+					}
+				}
 			}
-		}
+		}()
 	}
 }
 
@@ -295,24 +331,44 @@ type CfxVFValidator struct {
 	fn     *sdk.Client // fullnode client instance
 }
 
+func NewCfxVFValidator(conf *VFValidConfig) (*CfxVFValidator, error) {
+	client, err := rpcutil.NewCfxClient(conf.FullnodeRpcEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	infura, err := rpcutil.NewCfxClient(conf.InfuraRpcEndpoint)
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+	return &CfxVFValidator{VFValidator: VFValidator{tasks: newValidatorTasks()}, fn: client, infura: infura}, nil
+}
+
 func MustNewCfxVFValidator(conf *VFValidConfig) *CfxVFValidator {
-	// Prepare fullnode client instance
-	fn := rpcutil.MustNewCfxClient(conf.FullnodeRpcEndpoint)
-
-	// Prepare infura rpc service client instance
-	infura := rpcutil.MustNewCfxClient(conf.InfuraRpcEndpoint)
-
-	return &CfxVFValidator{fn: fn, infura: infura}
+	v, err := NewCfxVFValidator(conf)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize validator")
+	}
+	return v
 }
 
 func (validator *CfxVFValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
-	validator.validateFilterChanges()
+	validator.tasks.run(ctx, wg, func() {
+
+		validator.validateFilterChanges()
+
+	})
 }
 
 func (validator *CfxVFValidator) Destroy() {
-	// Close client instance
-	validator.fn.Close()
-	validator.infura.Close()
+	validator.tasks.destroyOnce.Do(func() {
+		validator.tasks.stop()
+
+		// Close client instance
+		validator.fn.Close()
+		validator.infura.Close()
+
+	})
 }
 
 func (validator *CfxVFValidator) validateFilterChanges() {
@@ -322,7 +378,7 @@ func (validator *CfxVFValidator) validateFilterChanges() {
 	fnFilter := func() *vfValidationContext { // fullnode
 		fnCh = make(chan []*cfxtypes.SubscriptionLog, vfValidChBufferSize)
 		fnCtx = newVFValidationContext(fnCh)
-		go validator.pollFilterChangesWithContext(validator.fn, fnCtx)
+		validator.tasks.start(func() { validator.pollFilterChangesWithContext(validator.fn, fnCtx) })
 
 		return fnCtx
 	}
@@ -330,7 +386,7 @@ func (validator *CfxVFValidator) validateFilterChanges() {
 	infuraFilter := func() *vfValidationContext { // infura
 		infuraCh = make(chan []*cfxtypes.SubscriptionLog, vfValidChBufferSize)
 		infuraCtx = newVFValidationContext(infuraCh)
-		go validator.pollFilterChangesWithContext(validator.infura, infuraCtx)
+		validator.tasks.start(func() { validator.pollFilterChangesWithContext(validator.infura, infuraCtx) })
 
 		return infuraCtx
 	}
@@ -344,6 +400,8 @@ func (validator *CfxVFValidator) validateFilterChanges() {
 			var valErr error // validation error
 
 			select {
+			case <-validator.tasks.ctx.Done():
+				return
 			case fnlogs := <-fnCh:
 				for i := range fnlogs {
 					fnCtx.rBuf.Enqueue(&fnlogs[i])
@@ -373,33 +431,53 @@ func (validator *CfxVFValidator) pollFilterChangesWithContext(client *sdk.Client
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
-	for {
-		fid, err := client.Filter().NewFilter(cfxtypes.LogFilter{})
+	for validator.tasks.ctx.Err() == nil {
+		fid, err := client.WithContext(validator.tasks.ctx).Filter().NewFilter(cfxtypes.LogFilter{})
+		if err == nil && fid == nil {
+			err = errors.New("node returned a null filter ID")
+		}
 		if err != nil {
 			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to new log filter")
-			time.Sleep(time.Second * 1)
+			if !validator.tasks.waitRetry(time.Second) {
+				return
+			}
 			continue
 		}
 
 		vfCtx.setStatus(true)
 
-		for range ticker.C {
-			if !vfCtx.getStatus() {
-				break
-			}
+		func() {
+			defer func() {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				_, _ = client.WithContext(cleanupCtx).Filter().UninstallFilter(*fid)
+			}()
+			for {
+				select {
+				case <-validator.tasks.ctx.Done():
+					return
+				case <-ticker.C:
+				}
+				if !vfCtx.getStatus() {
+					break
+				}
 
-			fc, err := client.Filter().GetFilterChanges(*fid)
-			if err == nil {
-				vfCtx.notify(fc.Logs)
-				continue
-			}
+				fc, err := client.WithContext(validator.tasks.ctx).Filter().GetFilterChanges(*fid)
+				if err == nil && fc != nil {
+					vfCtx.notify(fc.Logs)
+					continue
+				}
 
-			logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to poll changes")
+				logger.WithField("fid", fid).WithError(err).Error("Virtual filter validator failed to poll changes")
 
-			if vfCtx.setStatus(false) {
-				vfCtx.errCh <- err
+				if vfCtx.setStatus(false) {
+					select {
+					case vfCtx.errCh <- err:
+					default:
+					}
+				}
 			}
-		}
+		}()
 	}
 }
 
@@ -480,7 +558,10 @@ func (ctx *vfValidationContext) notify(result interface{}) bool {
 	case 0: // sub.channel<-
 		return true
 	case 1: // never blocking for queue overflow
-		ctx.errCh <- errors.New("buffer queue overflow")
+		select {
+		case ctx.errCh <- errors.New("buffer queue overflow"):
+		default:
+		}
 		return false
 	}
 

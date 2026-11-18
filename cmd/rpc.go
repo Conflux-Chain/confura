@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/Conflux-Chain/confura/node"
 	"github.com/Conflux-Chain/confura/rpc"
 	"github.com/Conflux-Chain/confura/rpc/handler"
+	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/store/redis"
 	"github.com/Conflux-Chain/confura/util/acl"
 	"github.com/Conflux-Chain/confura/util/rate"
@@ -33,7 +35,7 @@ var (
 	rpcCmd = &cobra.Command{
 		Use:   "rpc",
 		Short: "Start RPC service, including core space, evm space and CfxBridge RPC servers",
-		Run:   startRpcService,
+		RunE:  startRpcService,
 	}
 )
 
@@ -56,30 +58,43 @@ func init() {
 	rootCmd.AddCommand(rpcCmd)
 }
 
-func startRpcService(*cobra.Command, []string) {
+func startRpcService(cmd *cobra.Command, args []string) error {
 	if !rpcOpt.cfxEnabled && !rpcOpt.ethEnabled && !rpcOpt.cfxBridgeEnabled {
-		logrus.Fatal("No RPC server specified")
+		return fmt.Errorf("no RPC server specified")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
+	life, err := util.NewLifecycle(cmd.Context())
+	if err != nil {
+		return err
+	}
+	defer life.Close()
+	ctx, wg := life.Ctx, &life.Wg
+	storeCtx, err := util.InitStoreContext("cfx", "eth")
+	if err != nil {
+		return err
+	}
+	defer func() { life.Shutdown(); storeCtx.Close() }()
 
 	if rpcOpt.cfxEnabled { // start core space RPC
-		startNativeSpaceRpcServer(ctx, &wg, storeCtx)
+		if err := startNativeSpaceRpcServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	if rpcOpt.ethEnabled { // start evm space RPC
-		startEvmSpaceRpcServer(ctx, &wg, storeCtx)
+		if err := startEvmSpaceRpcServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
 	if rpcOpt.cfxBridgeEnabled { // start core space bridge RPC
-		startNativeSpaceBridgeRpcServer(ctx, &wg, storeCtx)
+		if err := startNativeSpaceBridgeRpcServer(ctx, wg, storeCtx); err != nil {
+			return err
+		}
 	}
 
-	util.GracefulShutdown(&wg, cancel)
+	life.Wait()
+	return life.Err()
 }
 
 // startNativeSpaceRpcServer starts core space RPC server
@@ -87,18 +102,41 @@ func startNativeSpaceRpcServer(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	storeCtx util.StoreContext,
-) {
+) error {
+	var cleanup []func()
+	transferred := false
+	defer func() {
+		if !transferred {
+			for i := len(cleanup) - 1; i >= 0; i-- {
+				cleanup[i]()
+			}
+		}
+	}()
+
 	var rateReg *rate.Registry
 
-	router := node.Factory().CreateRouter()
-	clientProvider := node.NewCfxClientProvider(storeCtx.GetCfxCommonStore(), router)
-	relayer := relay.MustNewTxnRelayerFromViper()
-
-	option := rpc.CfxAPIOption{
-		TxnHandler: handler.MustNewCfxTxnHandler(relayer),
+	router, err := node.Factory().NewRouter()
+	if err != nil {
+		return err
 	}
+	clientProvider := node.NewCfxClientProvider(storeCtx.GetCfxCommonStore(), router)
+	cleanup = append(cleanup, clientProvider.Close)
+	relayer, err := relay.NewTxnRelayerFromViper(false)
+	if err != nil {
+		return err
+	}
+	cleanup = append(cleanup, relayer.Close)
+	txnHandler, err := handler.NewCfxTxnHandler(relayer)
+	if err != nil {
+		return err
+	}
+	cleanup = append(cleanup, txnHandler.Close)
+	option := rpc.CfxAPIOption{TxnHandler: txnHandler}
 
-	if vfc, ok := vfclient.MustNewCfxClientFromViper(); ok {
+	if vfc, ok, err := vfclient.NewCfxClientFromViper(); err != nil {
+		return err
+	} else if ok {
+		cleanup = append(cleanup, vfc.Close)
 		option.VirtualFilterClient = vfc
 		logrus.Info("Virtual filter client enabled")
 	}
@@ -107,25 +145,36 @@ func startNativeSpaceRpcServer(
 	if storeCtx.CfxDB != nil {
 		option.StoreHandler = handler.NewCfxStoreHandler("db", storeCtx.CfxDB)
 
-		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyInfos)
-		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewCfxValidator)
-
-		// periodically reload rate limit settings from db
-		go rateReg.AutoReload(15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs)
+		var err error
+		rateReg, err = startSecurityRegistry(ctx, wg, storeCtx.CfxDB.CommonStores, acl.NewCfxValidator)
+		if err != nil {
+			return err
+		}
 	}
 
 	// initialize gas station handler
-	gasHandler := handler.MustNewCfxGasStationHandlerFromViper(clientProvider)
+	gasHandler, err := handler.NewCfxGasStationHandlerFromViper(clientProvider)
+	if err != nil {
+		return err
+	}
+	if gasHandler != nil {
+		cleanup = append(cleanup, gasHandler.Close)
+	}
 
 	if storeCtx.CfxDB != nil {
 		// initialize pruned logs handler
 		var prunedHandler *handler.CfxPrunedLogsHandler
 
 		if redisUrl := viper.GetString("rpc.throttling.redisUrl"); len(redisUrl) > 0 {
+			redisClient, err := redis.NewRedisClient(ctx, redisUrl)
+			if err != nil {
+				return err
+			}
+			cleanup = append(cleanup, func() { _ = redisClient.Close() })
 			prunedHandler = handler.NewCfxPrunedLogsHandler(
 				clientProvider,
 				storeCtx.CfxDB.UserStore,
-				redis.MustNewRedisClient(redisUrl),
+				redisClient,
 			)
 		}
 
@@ -134,12 +183,15 @@ func startNativeSpaceRpcServer(
 		option.LogApiHandler = handler.NewCfxLogsApiHandler(storeCtx.CfxDB, prunedHandler, maxAttempts)
 
 		// initialize internal contract logs api handler
-		option.InternalContractLogApiHandler = handler.MustNewCfxInternalContractLogsApiHandler(storeCtx.CfxDB, clientProvider)
+		option.InternalContractLogApiHandler, err = handler.NewCfxInternalContractLogsHandlerFromStore(storeCtx.CfxDB, clientProvider)
+		if err != nil {
+			return err
+		}
 	}
 
 	// initialize RPC server
 	exposedModules := viper.GetStringSlice("rpc.exposedModules")
-	server := rpc.MustNewNativeSpaceServer(
+	server, err := rpc.NewNativeSpaceServer(
 		rateReg,
 		clientProvider,
 		gasHandler,
@@ -148,20 +200,39 @@ func startNativeSpaceRpcServer(
 		option,
 	)
 
+	if err != nil {
+		return err
+	}
+	server.OnClose(cleanup...)
+	transferred = true
+
 	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("rpc.endpoint")
-	go server.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
+	if err := server.Start(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp); err != nil {
+		server.Close()
+		return err
+	}
 
 	// serve Websocket endpoint
 	if wsEndpoint := viper.GetString("rpc.wsEndpoint"); len(wsEndpoint) > 0 {
-		go server.MustServeGraceful(ctx, wg, wsEndpoint, rpcutil.ProtocolWS)
+		if err := server.Start(ctx, wg, wsEndpoint, rpcutil.ProtocolWS); err != nil {
+			// The registered HTTP task owns cleanup after the caller cancels startup.
+			return err
+		}
 	}
 
 	// serve debug endpoint
 	if debugEndpoint := viper.GetString("rpc.debugEndpoint"); len(debugEndpoint) > 0 {
-		server := rpc.MustNewDebugServer()
-		go server.MustServeGraceful(ctx, wg, debugEndpoint, rpcutil.ProtocolHttp)
+		server, err := rpc.NewDebugServer()
+		if err != nil {
+			return err
+		}
+		if err := server.Start(ctx, wg, debugEndpoint, rpcutil.ProtocolHttp); err != nil {
+			server.Close()
+			return err
+		}
 	}
+	return nil
 }
 
 // startEvmSpaceRpcServer starts evm space RPC server
@@ -169,25 +240,60 @@ func startEvmSpaceRpcServer(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	storeCtx util.StoreContext,
-) {
+) error {
+	var cleanup []func()
+	transferred := false
+	defer func() {
+		if !transferred {
+			for i := len(cleanup) - 1; i >= 0; i-- {
+				cleanup[i]()
+			}
+		}
+	}()
+
 	var rateReg *rate.Registry
 
-	router := node.EthFactory().CreateRouter()
-	dataCache := rpcutil.MustNewEthDataCacheClientFromViper()
-	clientProvider := node.NewEthClientProvider(dataCache, storeCtx.GetEthCommonStore(), router)
-	relayer := relay.MustNewEthTxnRelayerFromViper()
-
-	option := rpc.EthAPIOption{
-		TxnHandler: handler.MustNewEthTxnHandler(relayer),
+	router, err := node.EthFactory().NewRouter()
+	if err != nil {
+		return err
 	}
+	dataCache, err := rpcutil.NewEthDataCacheClientFromViper()
+	if err != nil {
+		if closer, ok := router.(interface{ Close() }); ok {
+			closer.Close()
+		}
+		return err
+	}
+	clientProvider := node.NewEthClientProvider(dataCache, storeCtx.GetEthCommonStore(), router)
+	cleanup = append(cleanup, clientProvider.Close)
+	relayer, err := relay.NewTxnRelayerFromViper(true)
+	if err != nil {
+		return err
+	}
+	cleanup = append(cleanup, relayer.Close)
+	txnHandler, err := handler.NewEthTxnHandler(relayer)
+	if err != nil {
+		return err
+	}
+	cleanup = append(cleanup, txnHandler.Close)
+	option := rpc.EthAPIOption{TxnHandler: txnHandler}
 
-	if vfc, ok := vfclient.MustNewEthClientFromViper(); ok {
+	if vfc, ok, err := vfclient.NewEthClientFromViper(); err != nil {
+		return err
+	} else if ok {
+		cleanup = append(cleanup, vfc.Close)
 		option.VirtualFilterClient = vfc
 		logrus.Info("Virtual filter client enabled")
 	}
 
 	// initialize gas station handler
-	gasHandler := handler.MustNewEthGasStationHandlerFromViper(clientProvider)
+	gasHandler, err := handler.NewEthGasStationHandlerFromViper(clientProvider)
+	if err != nil {
+		return err
+	}
+	if gasHandler != nil {
+		cleanup = append(cleanup, gasHandler.Close)
+	}
 
 	if storeCtx.EthDB != nil {
 		// initialize store handler
@@ -196,16 +302,16 @@ func startEvmSpaceRpcServer(
 		maxAttempts := viper.GetInt("requestControl.maxGetLogsSuggestionAttempts")
 		option.LogApiHandler = handler.NewEthLogsApiHandler(storeCtx.EthDB, maxAttempts)
 
-		rateKeyLoader := rate.NewKeyLoader(storeCtx.EthDB.LoadRateLimitKeyInfos)
-		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewEthValidator)
-
-		// periodically reload rate limit settings from db
-		go rateReg.AutoReload(15*time.Second, storeCtx.EthDB.LoadRateLimitConfigs)
+		var err error
+		rateReg, err = startSecurityRegistry(ctx, wg, storeCtx.EthDB.CommonStores, acl.NewEthValidator)
+		if err != nil {
+			return err
+		}
 	}
 
 	// initialize RPC server
 	exposedModules := viper.GetStringSlice("ethrpc.exposedModules")
-	server := rpc.MustNewEvmSpaceServer(
+	server, err := rpc.NewEvmSpaceServer(
 		rateReg,
 		clientProvider,
 		gasHandler,
@@ -214,39 +320,90 @@ func startEvmSpaceRpcServer(
 		option,
 	)
 
+	if err != nil {
+		return err
+	}
+	server.OnClose(cleanup...)
+	transferred = true
+
 	// serve HTTP endpoint
 	httpEndpoint := viper.GetString("ethrpc.endpoint")
-	go server.MustServeGraceful(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp)
+	if err := server.Start(ctx, wg, httpEndpoint, rpcutil.ProtocolHttp); err != nil {
+		server.Close()
+		return err
+	}
 
 	// serve Websocket endpoint
 	if wsEndpoint := viper.GetString("ethrpc.wsEndpoint"); len(wsEndpoint) > 0 {
-		go server.MustServeGraceful(ctx, wg, wsEndpoint, rpcutil.ProtocolWS)
+		if err := server.Start(ctx, wg, wsEndpoint, rpcutil.ProtocolWS); err != nil {
+			// The registered HTTP task owns cleanup after the caller cancels startup.
+			return err
+		}
 	}
 
 	// serve debug endpoint
 	if debugEndpoint := viper.GetString("ethrpc.debugEndpoint"); len(debugEndpoint) > 0 {
-		server := rpc.MustNewDebugServer()
-		go server.MustServeGraceful(ctx, wg, debugEndpoint, rpcutil.ProtocolHttp)
+		server, err := rpc.NewDebugServer()
+		if err != nil {
+			return err
+		}
+		if err := server.Start(ctx, wg, debugEndpoint, rpcutil.ProtocolHttp); err != nil {
+			server.Close()
+			return err
+		}
 	}
+	return nil
 }
 
 // startNativeSpaceBridgeRpcServer starts core space bridge RPC server
-func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) {
+func startNativeSpaceBridgeRpcServer(ctx context.Context, wg *sync.WaitGroup, storeCtx util.StoreContext) error {
 	// Initialize ratelimit registry
 	var rateReg *rate.Registry
 	if storeCtx.CfxDB != nil {
-		rateKeyLoader := rate.NewKeyLoader(storeCtx.CfxDB.LoadRateLimitKeyInfos)
-		rateReg = rate.NewRegistry(rateKeyLoader, acl.NewCfxValidator)
-
-		// periodically reload rate limit settings from db
-		go rateReg.AutoReload(15*time.Second, storeCtx.CfxDB.LoadRateLimitConfigs)
+		var err error
+		rateReg, err = startSecurityRegistry(ctx, wg, storeCtx.CfxDB.CommonStores, acl.NewCfxValidator)
+		if err != nil {
+			return err
+		}
 	}
 
 	var config rpc.CfxBridgeServerConfig
 
-	viperutil.MustUnmarshalKey("rpc.cfxBridge", &config)
+	if err := viperutil.UnmarshalKey("rpc.cfxBridge", &config); err != nil {
+		return err
+	}
 	logrus.WithField("config", config).Info("Start to run cfx bridge rpc server")
 
-	server := rpc.MustNewNativeSpaceBridgeServer(rateReg, &config)
-	go server.MustServeGraceful(ctx, wg, config.Endpoint, rpcutil.ProtocolHttp)
+	server, err := rpc.NewNativeSpaceBridgeServer(rateReg, &config)
+	if err != nil {
+		return err
+	}
+	if err := server.Start(ctx, wg, config.Endpoint, rpcutil.ProtocolHttp); err != nil {
+		server.Close()
+		return err
+	}
+	return nil
+}
+
+func startSecurityRegistry(ctx context.Context, wg *sync.WaitGroup, db *mysql.CommonStores, factory acl.ValidatorFactory) (*rate.Registry, error) {
+	timeout := 10 * time.Second
+	if viper.IsSet("rpc.securityConfigTimeout") {
+		timeout = viper.GetDuration("rpc.securityConfigTimeout")
+	}
+	if timeout <= 0 {
+		return nil, fmt.Errorf("rpc.securityConfigTimeout must be positive")
+	}
+	keys := rate.NewKeyLoader(func(filter *rate.KeysetFilter) ([]*rate.KeyInfo, error) {
+		queryCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return db.LoadRateLimitKeyInfosContext(queryCtx, filter)
+	})
+	registry := rate.NewRegistry(keys, factory)
+	if err := registry.StartReload(ctx, wg, 15*time.Second, timeout, db.LoadRateLimitConfigsContext); err != nil {
+		registry.Close()
+		return nil, err
+	}
+	wg.Add(1)
+	go func() { defer wg.Done(); <-ctx.Done(); registry.Close() }()
+	return registry, nil
 }

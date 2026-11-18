@@ -24,9 +24,11 @@ type EthTxnHandler struct {
 	relayTxn bool                // whether to relay to other group nodes while sending txn
 }
 
-func MustNewEthTxnHandler(relayer relay.TxnRelayer) *EthTxnHandler {
+func NewEthTxnHandler(relayer relay.TxnRelayer) (*EthTxnHandler, error) {
 	cfg := struct{ RelayTxn bool }{}
-	viper.MustUnmarshalKey("relay", &cfg)
+	if err := viper.UnmarshalKey("relay", &cfg); err != nil {
+		return nil, err
+	}
 
 	var nodeRpcClient *rpc.Client
 	if nodeRpcUrl := node.Config().Router.EthNodeRPCURL; len(nodeRpcUrl) > 0 {
@@ -34,9 +36,7 @@ func MustNewEthTxnHandler(relayer relay.TxnRelayer) *EthTxnHandler {
 
 		nodeRpcClient, err = rpc.DialHTTP(nodeRpcUrl)
 		if err != nil {
-			logrus.WithField("nodeRpcUrl", nodeRpcUrl).
-				WithError(err).
-				Fatal("Txn handler failed to create node RPC client")
+			return nil, err
 		}
 	}
 
@@ -45,7 +45,7 @@ func MustNewEthTxnHandler(relayer relay.TxnRelayer) *EthTxnHandler {
 		nclient:  nodeRpcClient,
 		clients:  &util.ConcurrentMap{},
 		relayTxn: cfg.RelayTxn,
-	}
+	}, nil
 }
 
 func (h *EthTxnHandler) SendRawTxn(w3c *node.Web3goClient, group node.Group, signedTx hexutil.Bytes) (common.Hash, error) {
@@ -117,4 +117,23 @@ func (h *EthTxnHandler) replicateRawTxnSendingToNodes(w3c *node.Web3goClient, no
 				Info("Txn handler failed to replicate sending evm raw transaction")
 		}
 	}
+}
+
+func MustNewEthTxnHandler(relayer relay.TxnRelayer) *EthTxnHandler {
+	h, err := NewEthTxnHandler(relayer)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize transaction handler")
+	}
+	return h
+}
+func (h *EthTxnHandler) Close() {
+	if h.nclient != nil {
+		h.nclient.Close()
+	}
+	h.clients.Range(func(_, v interface{}) bool {
+		if c, ok := v.(interface{ Close() }); ok {
+			c.Close()
+		}
+		return true
+	})
 }

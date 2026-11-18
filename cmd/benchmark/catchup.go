@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/sync/catchup"
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
 	"github.com/Conflux-Chain/confura/util/metrics"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -27,7 +27,7 @@ var (
 	catchUpCmd = &cobra.Command{
 		Use:   "catchup",
 		Short: "Start catch-up benchmark testing",
-		Run:   runCatchUpBenchmark,
+		RunE:  runCatchUpBenchmark,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if network := catchUpConfig.Network; !isValidNetwork(network) {
 				return fmt.Errorf("invalid network '%s', allowed values are 'cfx' or 'eth'", network)
@@ -51,63 +51,84 @@ func hookCatchUpCmdFlags(cmd *cobra.Command) {
 		&catchUpConfig.Start, "start", "s", 0, "start epoch or block number to sync from",
 	)
 	cmd.Flags().Uint64VarP(
-		&catchUpConfig.Count, "count", "c", 10_000, "number of epochs or blocks to sync",
+		&catchUpConfig.Count, "count", "c", 10_000, "number of epochs or blocks to sync (0 means 1)",
 	)
 }
 
 // runCatchUpBenchmark starts the catch-up benchmarking process.
-func runCatchUpBenchmark(cmd *cobra.Command, args []string) {
+func runCatchUpBenchmark(cmd *cobra.Command, args []string) error {
+	end, err := catchUpRangeEnd(catchUpConfig.Start, catchUpConfig.Count)
+	if err != nil {
+		return err
+	}
+	life, err := util.NewLifecycle(cmd.Context())
+	if err != nil {
+		return err
+	}
+	defer life.Close()
 	// Initialize required contexts
 	storeCtx, syncCtx, err := initializeContexts()
 	if err != nil {
-		logrus.WithError(err).Info("Failed to initialize contexts")
-		return
+		return fmt.Errorf("initialize benchmark: %w", err)
 	}
 	defer storeCtx.Close()
 	defer syncCtx.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(life.Ctx)
 	defer cancel()
 
 	// Initialize the catch-up syncer.
-	catchUpSyncer := createCatchUpSyncer(syncCtx, storeCtx)
+	catchUpSyncer, err := createCatchUpSyncer(syncCtx, storeCtx)
+	if err != nil {
+		return err
+	}
 	defer catchUpSyncer.Close()
 
 	// Determine sync range
 	start := catchUpConfig.Start
-	end := catchUpConfig.Start + max(catchUpConfig.Count, 1) - 1
 
 	// Start the catch-up sync process
-	catchUpSyncer.SyncOnce(ctx, start, end)
+	if err := catchUpSyncer.SyncOnce(ctx, start, end); err != nil {
+		return err
+	}
 
 	// Also report RPC metrics after sync completes.
 	reportRpcMetrics(catchUpSyncer.UseBoost())
+	return nil
 }
 
 // initializeContexts sets up and returns the required store and sync contexts.
 func initializeContexts() (*util.StoreContext, *util.SyncContext, error) {
-	storeCtx := util.MustInitStoreContext()
+	storeCtx, err := util.InitStoreContext(catchUpConfig.Network)
+	if err != nil {
+		return nil, nil, err
+	}
 	if network := catchUpConfig.Network; (network == "eth" && storeCtx.EthDB == nil) ||
 		(network == "cfx" && storeCtx.CfxDB == nil) {
+		storeCtx.Close()
 		return nil, nil, errors.New("database is not provided")
 	}
 
-	syncCtx := util.MustInitSyncContext(storeCtx)
+	syncCtx, err := util.InitSyncContext(storeCtx)
+	if err != nil {
+		storeCtx.Close()
+		return nil, nil, err
+	}
 	return &storeCtx, &syncCtx, nil
 }
 
 type catchupSyncer interface {
 	UseBoost() bool
-	SyncOnce(context.Context, uint64, uint64)
+	SyncOnce(context.Context, uint64, uint64) error
 	Close() error
 }
 
 // createCatchUpSyncer initializes the catch-up syncer with the necessary dependencies.
-func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext) catchupSyncer {
+func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext) (catchupSyncer, error) {
 	viper.Set("sync.catchup.benchmark", true)
 
 	if catchUpConfig.Network == "eth" {
-		return catchup.MustNewEthSyncer(
+		return catchup.NewEthSyncer(
 			syncCtx.SyncEths,
 			storeCtx.EthDB,
 			election.NewNoopLeaderManager(),
@@ -116,7 +137,7 @@ func createCatchUpSyncer(syncCtx *util.SyncContext, storeCtx *util.StoreContext)
 		)
 	}
 
-	return catchup.MustNewCfxSyncer(
+	return catchup.NewCfxSyncer(
 		syncCtx.SyncCfxs,
 		storeCtx.CfxDB,
 		election.NewNoopLeaderManager(),
@@ -198,4 +219,12 @@ func reportClassicMetrics() {
 	fmt.Printf(" success ratio: %v\n", queryRateGaugue.Value())
 
 	fmt.Println("// --------------------------------------------")
+}
+
+func catchUpRangeEnd(start, count uint64) (uint64, error) {
+	count = max(count, 1)
+	if count-1 > math.MaxUint64-start {
+		return 0, fmt.Errorf("catch-up range overflows uint64")
+	}
+	return start + count - 1, nil
 }

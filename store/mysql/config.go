@@ -4,6 +4,7 @@ import (
 	"fmt"
 	stdLog "log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -63,33 +64,42 @@ type Config struct {
 	MaxBnRangedArchiveLogPartitions uint32 `default:"5"`
 }
 
-func mustNewConfigFromViper(key string) *Config {
+func NewConfigFromViper(network string) (*Config, error) {
+	key := "store.mysql"
+	switch strings.ToLower(network) {
+	case "cfx":
+	case "eth":
+		key = "ethstore.mysql"
+	default:
+		return nil, fmt.Errorf("invalid network space %q", network)
+	}
+	return configFromViperKey(key)
+}
+
+func configFromViperKey(key string) (*Config, error) {
 	var cfg Config
-	viper.MustUnmarshalKey(key, &cfg)
-
+	if err := viper.UnmarshalKey(key, &cfg); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", key, err)
+	}
 	if cfg.GetLogsRangeScan.Enabled && cfg.GetLogsRangeScan.MinAddresses <= 0 {
-		logrus.Fatal("getLogsRangeScan.minAddresses must be positive")
+		return nil, fmt.Errorf("getLogsRangeScan.minAddresses must be positive")
 	}
-
-	if !cfg.Enabled {
-		return &Config{}
+	if cfg.Enabled && cfg.Dsn != "" {
+		dsn, err := gosql.ParseDSN(cfg.Dsn)
+		if err != nil {
+			return nil, fmt.Errorf("invalid database DSN")
+		}
+		cfg.Host, cfg.Username, cfg.Password, cfg.Database = dsn.Addr, dsn.User, dsn.Passwd, dsn.DBName
 	}
+	return &cfg, nil
+}
 
-	if len(cfg.Dsn) == 0 {
-		return &cfg
-	}
-
-	dsnCfg, err := gosql.ParseDSN(cfg.Dsn)
+func mustNewConfigFromViper(key string) *Config {
+	cfg, err := configFromViperKey(key)
 	if err != nil {
-		logrus.WithError(err).WithField("dsn", cfg.Dsn).Fatal("Failed to parse db DSN")
+		logrus.WithError(err).Fatal("Invalid database configuration")
 	}
-
-	cfg.Host = dsnCfg.Addr
-	cfg.Username = dsnCfg.User
-	cfg.Password = dsnCfg.Passwd
-	cfg.Database = dsnCfg.DBName
-
-	return &cfg
+	return cfg
 }
 
 // MustNewConfigFromViper creates an instance of Config from Viper or panic on error.
@@ -103,56 +113,71 @@ func MustNewEthStoreConfigFromViper() *Config {
 
 // MustOpenOrCreate creates an instance of gorm database or exits on any error.
 func (config *Config) MustOpenOrCreate() *gorm.DB {
-	newCreated := config.mustCreateDatabaseIfAbsent()
-
-	db := config.mustNewDB(config.Database)
-
-	// Very naive check on database tables are ready or not.
-	// If no database tables are found, we regard the database as a new created one.
-	if !newCreated {
-		var tables []string
-		if err := db.Raw("SHOW TABLES").Scan(&tables).Error; err != nil {
-			logrus.WithField("database", config.Database).WithError(err).Fatal("Failed to query database tables")
-		}
-
-		newCreated = (len(tables) == 0)
+	db, err := config.OpenOrCreate()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize MySQL database")
 	}
-
-	if newCreated {
-		if err := db.Migrator().CreateTable(allModels...); err != nil {
-			logrus.WithError(err).Fatal("Failed to create tables")
-		}
-
-		// Initialize the address indexed log tables
-		ls := NewAddressIndexedLogStore[store.ChainData](db, NewContractStore(db), NewTopicStore(db), config.AddressIndexedLogPartitions)
-		if _, err := ls.CreatePartitionedTables(); err != nil {
-			logrus.WithError(err).
-				WithField("partitions", config.AddressIndexedLogPartitions).
-				Fatal("Failed to create address indexed log tables")
-		}
-
-		// Initialize the topic indexed log tables
-		tls := NewTopicIndexedLogStore[store.ChainData](db, NewTopicStore(db), config.TopicIndexedLogPartitions)
-		if _, err := tls.CreatePartitionedTables(); err != nil {
-			logrus.WithError(err).
-				WithField("partitions", config.TopicIndexedLogPartitions).
-				Fatal("Failed to create topic indexed log tables")
-		}
-	}
-
-	if sqlDb, err := db.DB(); err != nil {
-		logrus.WithError(err).Fatal("Failed to init mysql db")
-	} else {
-		sqlDb.SetConnMaxLifetime(config.ConnMaxLifetime)
-		sqlDb.SetMaxOpenConns(config.MaxOpenConns)
-		sqlDb.SetMaxIdleConns(config.MaxIdleConns)
-	}
-
-	logrus.Info("MySQL database initialized")
 	return db
 }
 
-func (config *Config) mustNewDB(database string) *gorm.DB {
+// Open opens an existing database. Management commands must not create unrelated
+// databases or initialize chain-data tables.
+func (config *Config) Open() (*gorm.DB, error) {
+	db, err := config.newDB(config.Database)
+	if err != nil {
+		return nil, err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetConnMaxLifetime(config.ConnMaxLifetime)
+	sqlDB.SetMaxOpenConns(config.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(config.MaxIdleConns)
+	return db, nil
+}
+
+func (config *Config) OpenOrCreate() (db *gorm.DB, err error) {
+	created, err := config.createDatabaseIfAbsent()
+	if err != nil {
+		return nil, err
+	}
+	db, err = config.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			if sqlDB, e := db.DB(); e == nil {
+				sqlDB.Close()
+			}
+		}
+	}()
+	if !created {
+		var tables []string
+		if err = db.Raw("SHOW TABLES").Scan(&tables).Error; err != nil {
+			return db, err
+		}
+		created = len(tables) == 0
+	}
+	if created {
+		if err = db.Migrator().CreateTable(allModels...); err != nil {
+			return db, err
+		}
+		ls := NewAddressIndexedLogStore[store.ChainData](db, NewContractStore(db), NewTopicStore(db), config.AddressIndexedLogPartitions)
+		if _, err = ls.CreatePartitionedTables(); err != nil {
+			return db, err
+		}
+		tls := NewTopicIndexedLogStore[store.ChainData](db, NewTopicStore(db), config.TopicIndexedLogPartitions)
+		if _, err = tls.CreatePartitionedTables(); err != nil {
+			return db, err
+		}
+	}
+	logrus.Info("MySQL database initialized")
+	return db, nil
+}
+
+func (config *Config) newDB(database string) (*gorm.DB, error) {
 	logrusLogLevel := logrus.GetLevel()
 	gLogLevel := gormLogger.Warn
 
@@ -176,47 +201,54 @@ func (config *Config) mustNewDB(database string) *gorm.DB {
 		},
 	)
 
-	// refer to https://github.com/go-sql-driver/mysql#dsn-data-source-name
-	dsn := fmt.Sprintf("%v:%v@tcp(%v)/%v?parseTime=true", config.Username, config.Password, config.Host, database)
-	if database == config.Database && len(config.Dsn) > 0 {
-		dsn = config.Dsn
+	var dsn *gosql.Config
+	if config.Dsn != "" {
+		var err error
+		dsn, err = gosql.ParseDSN(config.Dsn)
+		if err != nil {
+			return nil, fmt.Errorf("invalid database DSN")
+		}
+	} else {
+		dsn = gosql.NewConfig()
+		dsn.Net, dsn.Addr, dsn.User, dsn.Passwd, dsn.ParseTime = "tcp", config.Host, config.Username, config.Password, true
 	}
+	dsn.DBName = database
 
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(mysql.Open(dsn.FormatDSN()), &gorm.Config{
 		Logger:          gLogger,
 		CreateBatchSize: config.CreateBatchSize,
 	})
 
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to open mysql")
+		return nil, fmt.Errorf("open MySQL database: %w", err)
 	}
 
-	return db
+	return db, nil
 }
 
-func (config *Config) mustCreateDatabaseIfAbsent() bool {
-	db := config.mustNewDB("")
-	if mysqlDb, err := db.DB(); err != nil {
-		return false
-	} else {
-		defer mysqlDb.Close()
+func (config *Config) createDatabaseIfAbsent() (bool, error) {
+	if config.Database == "" {
+		return false, fmt.Errorf("database name must not be empty")
 	}
-
-	rows, err := db.Raw(fmt.Sprintf("SHOW DATABASES LIKE '%v'", config.Database)).Rows()
+	db, err := config.newDB("")
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to query databases")
+		return false, err
 	}
-	defer rows.Close()
-
-	if rows.Next() {
-		return false
+	sqlDB, err := db.DB()
+	if err != nil {
+		return false, err
 	}
-
-	if err = db.Exec("CREATE DATABASE IF NOT EXISTS " + config.Database).Error; err != nil {
-		logrus.WithError(err).Fatal("Failed to create database")
+	defer sqlDB.Close()
+	var count int64
+	if err := db.Raw("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?", config.Database).Scan(&count).Error; err != nil {
+		return false, err
 	}
-
-	logrus.Info("Create database for the first time")
-
-	return true
+	if count != 0 {
+		return false, nil
+	}
+	name := "`" + strings.ReplaceAll(config.Database, "`", "``") + "`"
+	if err := db.Exec("CREATE DATABASE IF NOT EXISTS " + name).Error; err != nil {
+		return false, err
+	}
+	return true, nil
 }

@@ -115,7 +115,7 @@ func TestManagerRoutingAvailabilityMatrix(t *testing.T) {
 				remote = grpcManagerFixture(t, h, &outage)
 			}
 			local := NewLocalRouter(nil)
-			require.NoError(t, local.pollOnce(client))
+			require.NoError(t, local.pollOnce(context.Background(), client))
 			var lowerCalls atomic.Int32
 			lower := routerFunc(func(context.Context, Group, []byte) (string, error) { lowerCalls.Add(1); return "", nil })
 			conf := map[Group]UrlConfig{GroupEthHttp: {Failover: failover}}
@@ -134,14 +134,14 @@ func TestManagerRoutingAvailabilityMatrix(t *testing.T) {
 			_, err := NewChainedRouter(nil, remote, local).Route(context.Background(), GroupEthHttp, nil)
 			require.ErrorIs(t, err, ErrClientUnavailable)
 			outage.Store(true)
-			require.Error(t, local.pollOnce(client))
+			require.Error(t, local.pollOnce(context.Background(), client))
 			route(managed)
 			outage.Store(false)
 			route(failover)
 			manager.ReportHealthy(rpcutil.Url2NodeName(managed))
 			route(managed)
 			h.pool.del(GroupEthHttp, managed)
-			require.NoError(t, local.pollOnce(client))
+			require.NoError(t, local.pollOnce(context.Background(), client))
 			require.Empty(t, local.ListNodesByGroup(GroupEthHttp))
 			route(failover) // Unknown group has the same meaning in both protocols.
 			outage.Store(true)
@@ -185,7 +185,7 @@ func TestStartupOutageUsesPresetsUntilSuccessfulSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, preset, selected)
 	outage.Store(false)
-	require.NoError(t, local.pollOnce(client)) // First authoritative snapshot is empty.
+	require.NoError(t, local.pollOnce(context.Background(), client)) // First authoritative snapshot is empty.
 	require.Empty(t, local.ListNodesByGroup(GroupEthHttp))
 	outage.Store(true)
 	selected, err = chain.Route(context.Background(), GroupEthHttp, nil)
@@ -222,9 +222,9 @@ func TestManagerShutdownKeepsFullnodeServing(t *testing.T) {
 	defer h.pool.del(GroupEthHttp, fullnode.URL)
 	srv, client := nodeRPCFixture(t, h, nil)
 	local := NewLocalRouter(nil)
-	require.NoError(t, local.pollOnce(client))
+	require.NoError(t, local.pollOnce(context.Background(), client))
 	srv.Close()
-	require.Error(t, local.pollOnce(client))
+	require.Error(t, local.pollOnce(context.Background(), client))
 	provider := NewEthClientProvider(nil, nil, NewChainedRouter(nil, NewNodeRpcRouter(client), local))
 	selected, err := provider.GetClientContext(context.Background(), "fixture-user")
 	require.NoError(t, err)

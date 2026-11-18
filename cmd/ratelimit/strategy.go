@@ -1,7 +1,6 @@
 package ratelimit
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
@@ -24,23 +23,26 @@ var (
 	addStrategyCmd = &cobra.Command{
 		Use:   "adds",
 		Short: "Add or update rate limit strategy",
-		Run:   addStrategy,
+		RunE:  addStrategy,
 	}
 
 	removeStrategyCmd = &cobra.Command{
 		Use:   "rms",
 		Short: "Remove rate limit strategy",
-		Run:   delStrategy,
+		RunE:  delStrategy,
 	}
 
 	listStrategiesCmd = &cobra.Command{
 		Use:   "lss",
 		Short: "List rate limit strategies",
-		Run:   listStrategies,
+		RunE:  listStrategies,
 	}
 )
 
 func init() {
+	util.AddConfirmationFlag(addStrategyCmd)
+	util.AddConfirmationFlag(removeStrategyCmd)
+
 	Cmd.AddCommand(addStrategyCmd)
 	hookStrategyCmdFlags(addStrategyCmd, true, true)
 
@@ -74,85 +76,72 @@ func hookStrategyCmdFlags(stratCmd *cobra.Command, hookName, hookRules bool) {
 	}
 }
 
-func addStrategy(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
+func addStrategy(cmd *cobra.Command, args []string) error {
 	strategy, err := validateStrategyCmdConfig(true, true)
 	if err != nil {
-		logrus.WithField("config", stratCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("add strategy: %w", err)
 	}
 
-	dbs, err := storeCtx.GetCommonStore(stratCfg.Network)
+	dbs, err := util.OpenManagementStore(stratCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get mysql store by network")
-		return
+		return fmt.Errorf("add strategy: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("DB store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
 	name := mysql.RateLimitStrategyConfKeyPrefix + stratCfg.Name
-	cfgmap, err := dbs.LoadConfig(name)
+	snapshot, err := dbs.LoadConfigSnapshot(name)
 	if err != nil {
-		logrus.WithField("strategy", stratCfg.Name).
-			WithError(err).
-			Info("Failed to load rate limit config")
-		return
+		return fmt.Errorf("add strategy: %w", err)
 	}
 
 	op := "add a new rate limit strategy"
-	if len(cfgmap) > 0 {
+	if snapshot != nil {
 		op = "update an existed rate limit strategy"
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"name":  strategy.Name,
-		"rules": strategy.LimitOptions,
-	}).Info("Press the Enter Key to ", op)
-	fmt.Scanln() // wait for Enter Key
+	if err := util.ConfirmWrite(cmd, stratCfg.Network, op, strategy); err != nil {
+		return err
+	}
 
-	if err := dbs.StoreConfig(name, stratCfg.Rules); err != nil {
-		logrus.WithError(err).Info("Failed to ", op)
-		return
+	if err := dbs.StoreConfigIfUnchanged(name, stratCfg.Rules, snapshot); err != nil {
+		return fmt.Errorf("add strategy: %w", err)
 	}
 
 	logrus.WithField("strategy", strategy.Name).Info("Succeeded to ", op)
+	return nil
 }
 
-func delStrategy(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
+func delStrategy(cmd *cobra.Command, args []string) error {
 	_, err := validateStrategyCmdConfig(true, false)
 	if err != nil {
-		logrus.WithField("config", stratCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("delete strategy: %w", err)
 	}
 
-	dbs, err := storeCtx.GetCommonStore(stratCfg.Network)
+	dbs, err := util.OpenManagementStore(stratCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get mysql store by network")
-		return
+		return fmt.Errorf("delete strategy: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("DB store is unavailable")
-		return
-	}
-
-	logrus.WithField("strategy", stratCfg.Name).
-		Info("Press the Enter Key to delete the rate limit strategy!")
-	fmt.Scanln() // wait for Enter Key
+	defer dbs.Close()
 
 	name := mysql.RateLimitStrategyConfKeyPrefix + stratCfg.Name
-	removed, err := dbs.DeleteConfig(name)
+	snapshot, err := dbs.LoadConfigSnapshot(name)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to delete the rate limit strategy")
-		return
+		return err
+	}
+	if snapshot == nil {
+		cmd.Println("Configuration does not exist")
+		return nil
+	}
+
+	if err := util.ConfirmWrite(cmd, stratCfg.Network, "delete configuration", snapshot); err != nil {
+		return err
+	}
+
+	removed, err := dbs.DeleteConfigChecked(name, snapshot)
+	if err != nil {
+		return fmt.Errorf("delete strategy: %w", err)
 	}
 
 	if removed {
@@ -160,32 +149,25 @@ func delStrategy(cmd *cobra.Command, args []string) {
 	} else {
 		logrus.WithField("strategy", stratCfg.Name).Info("Rate limit strategy not existed")
 	}
+	return nil
 }
 
-func listStrategies(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
-	dbs, err := storeCtx.GetCommonStore(stratCfg.Network)
+func listStrategies(cmd *cobra.Command, args []string) error {
+	dbs, err := util.OpenManagementStore(stratCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get mysql store by network")
-		return
+		return fmt.Errorf("list strategies: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("DB store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
 	strategies, _, err := dbs.LoadRateLimitStrategyConfigs()
 	if err != nil {
-		logrus.WithError(err).Info("Failed to load rate limit strategies")
-		return
+		return fmt.Errorf("list strategies: %w", err)
 	}
 
 	if len(strategies) == 0 {
 		logrus.Info("No rate limit strategies found")
-		return
+		return nil
 	}
 
 	logrus.WithField("total", len(strategies)).Info("Rate limit strategies loaded:")
@@ -197,6 +179,7 @@ func listStrategies(cmd *cobra.Command, args []string) {
 			"rules": s.LimitOptions,
 		}).Info("Strategy #", i)
 	}
+	return nil
 }
 
 func validateStrategyCmdConfig(validateName, validateRules bool) (*rate.Strategy, error) {
@@ -209,7 +192,7 @@ func validateStrategyCmdConfig(validateName, validateRules bool) (*rate.Strategy
 	}
 
 	stg := rate.NewStrategy(0, stratCfg.Name)
-	if err := json.Unmarshal([]byte(stratCfg.Rules), stg); err != nil {
+	if err := stg.DecodeRules([]byte(stratCfg.Rules), true); err != nil {
 		return nil, errors.WithMessage(err, "invalid strategy rules config json")
 	}
 

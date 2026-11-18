@@ -49,7 +49,7 @@ func newIntegrationDB(t *testing.T) (*gorm.DB, *Config) {
 func newIntegrationStore(t *testing.T, all bool) (*MysqlStore[*store.EthData], *gorm.DB) {
 	db, cfg := newIntegrationDB(t)
 	ms := NewMysqlStore[*store.EthData](db, cfg, integrationFilter{all})
-	t.Cleanup(func() { close(ms.pruner.newBnPartitionObsChan) })
+	t.Cleanup(func() { ms.pruner.Close() })
 	_, err := ms.ails.CreatePartitionedTables()
 	require.NoError(t, err)
 	_, err = ms.tils.CreatePartitionedTables()

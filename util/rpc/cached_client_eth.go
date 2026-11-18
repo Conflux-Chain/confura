@@ -113,17 +113,21 @@ func NewEthNearHeadCacheFromViper(url string) (*EthNearHeadCache, error) {
 }
 
 func MustNewEthDataCacheClientFromViper() cacheRpc.Interface {
+	client, err := NewEthDataCacheClientFromViper()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to create ETH data cache client")
+	}
+	return client
+}
+
+func NewEthDataCacheClientFromViper() (cacheRpc.Interface, error) {
 	url := viper.GetString("requestControl.ethCache.dataCacheRpcUrlProto")
 	if len(url) == 0 {
 		logrus.Info("ETH data cache client URL not configured, use noop client.")
-		return cacheRpc.NotFoundImpl
+		return cacheRpc.NotFoundImpl, nil
 	}
 
-	client, err := cacheRpc.NewClientProto(url, ethClientCfg.RequestTimeout)
-	if err != nil {
-		logrus.WithField("url", url).WithError(err).Fatal("Failed to create ETH data cache client")
-	}
-	return client
+	return cacheRpc.NewClientProto(url, ethClientCfg.RequestTimeout)
 }
 
 type ethBlockTagResolver struct {
@@ -204,7 +208,9 @@ func (w3c Web3goClient) NodeName() string {
 }
 
 func (w3c Web3goClient) Close() {
-	w3c.nearhead.Close()
+	if w3c.nearhead != nil {
+		w3c.nearhead.Close()
+	}
 	w3c.Client.Close()
 }
 

@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/Conflux-Chain/confura/cmd/util"
 	cisync "github.com/Conflux-Chain/confura/sync"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +21,7 @@ var (
 	syncCmd = &cobra.Command{
 		Use:   "sync",
 		Short: "Start sync service, including DB/ETH sync, as well as fast catchup",
-		Run:   startSyncService,
+		RunE:  startSyncService,
 	}
 )
 
@@ -44,75 +44,101 @@ func init() {
 	rootCmd.AddCommand(syncCmd)
 }
 
-func startSyncService(*cobra.Command, []string) {
+func startSyncService(cmd *cobra.Command, args []string) error {
 	if !syncOpt.dbSyncEnabled && !syncOpt.ethSyncEnabled && !syncOpt.traceSyncEnabled {
-		logrus.Fatal("No Sync server specified")
+		return fmt.Errorf("No Sync server specified")
+	}
+	life, err := util.NewLifecycle(cmd.Context())
+	if err != nil {
+		return err
+	}
+	defer life.Close()
+	ctx, wg := life.Ctx, &life.Wg
+	storeCtx, err := util.InitStoreContext("cfx", "eth")
+	if err != nil {
+		return err
+	}
+	var syncCtx util.SyncContext
+	defer func() { life.Shutdown(); syncCtx.Close(); storeCtx.Close() }()
+	syncCtx, err = util.InitSyncContext(storeCtx)
+	if err != nil {
+		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
-	syncCtx := util.MustInitSyncContext(storeCtx)
-	defer syncCtx.Close()
-
 	if syncOpt.dbSyncEnabled { // start DB sync
-		startSyncCfxDatabase(ctx, &wg, syncCtx)
+		if err := startSyncCfxDatabase(ctx, wg, syncCtx, life.Fail); err != nil {
+			return err
+		}
 	}
 
 	if syncOpt.ethSyncEnabled { // start ETH sync
-		startSyncEthDatabase(ctx, &wg, syncCtx)
+		if err := startSyncEthDatabase(ctx, wg, syncCtx, life.Fail); err != nil {
+			return err
+		}
 	}
 
 	if syncOpt.traceSyncEnabled { // start trace log sync
-		startSyncTraceLog(ctx, &wg, syncCtx)
+		if err := startSyncTraceLog(ctx, wg, syncCtx, life.Fail); err != nil {
+			return err
+		}
 	}
 
-	util.GracefulShutdown(&wg, cancel)
+	life.Wait()
+	return life.Err()
 }
 
-// startSyncServiceAdaptively adaptively starts kinds of sync server per to store instances.
-func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
-	if syncCtx.CfxDB == nil && syncCtx.EthDB == nil {
-		logrus.Fatal("No data sync configured")
+// startSyncServiceAdaptively starts only spaces with configured stores.
+func startSyncServiceAdaptively(ctx context.Context, wg *sync.WaitGroup, sc util.SyncContext, fail func(error)) error {
+	if sc.CfxDB == nil && sc.EthDB == nil {
+		return fmt.Errorf("no data sync configured")
 	}
-
-	if syncCtx.CfxDB != nil { // start DB sync
-		startSyncCfxDatabase(ctx, wg, syncCtx)
+	if sc.CfxDB != nil {
+		if err := startSyncCfxDatabase(ctx, wg, sc, fail); err != nil {
+			return err
+		}
 	}
-
-	if syncCtx.EthDB != nil { // start ETH sync
-		startSyncEthDatabase(ctx, wg, syncCtx)
+	if sc.EthDB != nil {
+		if err := startSyncEthDatabase(ctx, wg, sc, fail); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) *cisync.DatabaseSyncer {
-	logrus.Info("Start to sync core space blockchain data into database")
-
-	syncer := cisync.MustNewDatabaseSyncer(syncCtx.SyncCfxs, syncCtx.CfxDB)
-	go syncer.Sync(ctx, wg)
-
-	// start core space db prune
-	go syncCtx.CfxDB.Prune()
-
-	return syncer
+func startSyncCfxDatabase(ctx context.Context, wg *sync.WaitGroup, sc util.SyncContext, fail func(error)) error {
+	if sc.CfxDB == nil {
+		return fmt.Errorf("cfx database is required for sync")
+	}
+	s, err := cisync.NewDatabaseSyncer(sc.SyncCfxs, sc.CfxDB)
+	if err != nil {
+		return err
+	}
+	util.RunTracked(ctx, wg, func(ctx context.Context, inner *sync.WaitGroup) { fail(s.Sync(ctx, inner)) })
+	sc.CfxDB.Prune()
+	return nil
 }
 
-func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
-	logrus.Info("Start to sync evm space blockchain data into database")
-
-	ethSyncer := cisync.MustNewEthSyncer(syncCtx.SyncEths, syncCtx.EthDB)
-	go ethSyncer.Sync(ctx, wg)
-
-	// start evm space db prune
-	go syncCtx.EthDB.Prune()
+func startSyncEthDatabase(ctx context.Context, wg *sync.WaitGroup, sc util.SyncContext, fail func(error)) error {
+	if sc.EthDB == nil {
+		return fmt.Errorf("eth database is required for sync")
+	}
+	s, err := cisync.NewEthSyncer(sc.SyncEths, sc.EthDB)
+	if err != nil {
+		return err
+	}
+	util.RunTracked(ctx, wg, func(ctx context.Context, inner *sync.WaitGroup) { fail(s.Sync(ctx, inner)) })
+	sc.EthDB.Prune()
+	return nil
 }
 
-func startSyncTraceLog(ctx context.Context, wg *sync.WaitGroup, syncCtx util.SyncContext) {
-	logrus.Info("Start to sync trace log into database")
-
-	traceLogSyncer := cisync.MustNewTraceLogSyncer(syncCtx.SyncCfxs, syncCtx.CfxDB)
-	go traceLogSyncer.MustSync(ctx, wg)
+func startSyncTraceLog(ctx context.Context, wg *sync.WaitGroup, sc util.SyncContext, fail func(error)) error {
+	if sc.CfxDB == nil {
+		return fmt.Errorf("cfx database is required for trace sync")
+	}
+	s, err := cisync.NewTraceLogSyncer(sc.SyncCfxs, sc.CfxDB)
+	if err != nil {
+		return err
+	}
+	util.RunTracked(ctx, wg, func(ctx context.Context, inner *sync.WaitGroup) { fail(s.Sync(ctx, inner)) })
+	return nil
 }

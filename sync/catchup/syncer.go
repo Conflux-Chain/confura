@@ -10,6 +10,7 @@ import (
 	"github.com/Conflux-Chain/confura/store/mysql"
 	"github.com/Conflux-Chain/confura/sync/election"
 	"github.com/Conflux-Chain/confura/sync/monitor"
+	rpcutil "github.com/Conflux-Chain/confura/util/rpc"
 	viperutil "github.com/Conflux-Chain/confura/util/viper"
 	sdk "github.com/Conflux-Chain/go-conflux-sdk"
 	"github.com/openweb3/web3go"
@@ -37,15 +38,28 @@ type Syncer[T store.ChainData] struct {
 	filter store.ChainDataFilter
 }
 
-func MustNewCfxSyncer(
+func MustNewCfxSyncer(clients []*sdk.Client, dbs *mysql.CfxStore, elm election.LeaderManager, monitor *monitor.Monitor, epochFrom uint64) *Syncer[*store.EpochData] {
+	s, err := NewCfxSyncer(clients, dbs, elm, monitor, epochFrom)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize catch-up syncer")
+	}
+	return s
+}
+
+func NewCfxSyncer(
 	clients []*sdk.Client,
 	dbs *mysql.CfxStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
-) *Syncer[*store.EpochData] {
+) (*Syncer[*store.EpochData], error) {
 	var conf config
-	viperutil.MustUnmarshalKey("sync.catchup", &conf)
+	if err := viperutil.UnmarshalKey("sync.catchup", &conf); err != nil {
+		return nil, err
+	}
+	if err := conf.validate(); err != nil {
+		return nil, err
+	}
 
 	var rpcClients []IRpcClient[*store.EpochData]
 	for _, cfx := range clients {
@@ -55,7 +69,14 @@ func MustNewCfxSyncer(
 	var workers []*worker[*store.EpochData]
 	for i, nodeUrl := range conf.NodePool.Cfx { // initialize workers
 		name := fmt.Sprintf("CUWorker#%v", i)
-		worker := mustNewWorker(name, MustNewCoreRpcClient(nodeUrl), conf.WorkerChanSize)
+		client, err := rpcutil.NewCfxClient(nodeUrl)
+		if err != nil {
+			for _, w := range workers {
+				w.Close()
+			}
+			return nil, err
+		}
+		worker := mustNewWorker(name, NewCoreRpcClient(client), conf.WorkerChanSize)
 		workers = append(workers, worker)
 	}
 
@@ -63,20 +84,36 @@ func MustNewCfxSyncer(
 		conf, rpcClients, workers, dbs.MysqlStore, elm, monitor, epochFrom, store.StoreConfig(),
 	)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to initialize CFX catch-up syncer")
+		for _, w := range workers {
+			w.Close()
+		}
+		return nil, err
 	}
-	return syncer
+	return syncer, nil
 }
 
-func MustNewEthSyncer(
+func MustNewEthSyncer(clients []*web3go.Client, dbs *mysql.EthStore, elm election.LeaderManager, monitor *monitor.Monitor, epochFrom uint64) *Syncer[*store.EthData] {
+	s, err := NewEthSyncer(clients, dbs, elm, monitor, epochFrom)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize catch-up syncer")
+	}
+	return s
+}
+
+func NewEthSyncer(
 	clients []*web3go.Client,
 	dbs *mysql.EthStore,
 	elm election.LeaderManager,
 	monitor *monitor.Monitor,
 	epochFrom uint64,
-) *Syncer[*store.EthData] {
+) (*Syncer[*store.EthData], error) {
 	var conf config
-	viperutil.MustUnmarshalKey("sync.catchup", &conf)
+	if err := viperutil.UnmarshalKey("sync.catchup", &conf); err != nil {
+		return nil, err
+	}
+	if err := conf.validate(); err != nil {
+		return nil, err
+	}
 
 	var rpcClients []IRpcClient[*store.EthData]
 	for _, w3c := range clients {
@@ -86,7 +123,14 @@ func MustNewEthSyncer(
 	var workers []*worker[*store.EthData]
 	for i, nodeUrl := range conf.NodePool.Eth { // initialize workers
 		name := fmt.Sprintf("CUWorker#%v", i)
-		worker := mustNewWorker(name, MustNewEvmRpcClient(nodeUrl), conf.WorkerChanSize)
+		client, err := rpcutil.NewEthClient(nodeUrl)
+		if err != nil {
+			for _, w := range workers {
+				w.Close()
+			}
+			return nil, err
+		}
+		worker := mustNewWorker(name, NewEvmRpcClient(client), conf.WorkerChanSize)
 		workers = append(workers, worker)
 	}
 
@@ -94,9 +138,12 @@ func MustNewEthSyncer(
 		conf, rpcClients, workers, dbs.MysqlStore, elm, monitor, epochFrom, store.EthStoreConfig(),
 	)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to initialize ETH catch-up syncer")
+		for _, w := range workers {
+			w.Close()
+		}
+		return nil, err
 	}
-	return syncer
+	return syncer, nil
 }
 
 func newSyncer[T store.ChainData](
@@ -162,10 +209,14 @@ func (s *Syncer[T]) Sync(ctx context.Context) {
 		Debug("Catch-up syncer starting to catch up latest epoch")
 
 	for s.elm.Await(ctx) {
-		start, end, err := s.nextSyncRange()
+		start, end, err := s.nextSyncRange(ctx)
 		if err != nil {
 			logrus.WithError(err).Info("Catch-up syncer failed to get next sync range")
-			time.Sleep(1 * time.Second)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
 			continue
 		}
 
@@ -173,11 +224,27 @@ func (s *Syncer[T]) Sync(ctx context.Context) {
 			break
 		}
 
-		s.SyncOnce(ctx, start, end)
+		if err := s.SyncOnce(ctx, start, end); err != nil {
+			logrus.WithError(err).Info("Catch-up attempt failed; retrying")
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+		}
 	}
 }
 
-func (s *Syncer[T]) SyncOnce(ctx context.Context, start, end uint64) {
+func (s *Syncer[T]) SyncOnce(ctx context.Context, start, end uint64) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if start > end {
+		return errors.New("invalid catch-up range")
+	}
+	if len(s.workers) == 0 {
+		return errors.New("catch-up requires at least one worker")
+	}
 	ctx = election.WithLeadership(ctx, s.elm)
 	var bmarker *benchmarker
 	if s.Benchmark {
@@ -185,7 +252,9 @@ func (s *Syncer[T]) SyncOnce(ctx context.Context, start, end uint64) {
 
 		bmarker.markStart()
 		defer func() {
-			bmarker.report(start, end)
+			if err == nil {
+				bmarker.report(start, end)
+			}
 		}()
 	}
 
@@ -198,51 +267,42 @@ func (s *Syncer[T]) SyncOnce(ctx context.Context, start, end uint64) {
 	}
 
 	if s.UseBoost() {
-		newBoostSyncer(s).doSync(ctx, bmarker, start, end)
+		return newBoostSyncer(s).doSync(ctx, bmarker, start, end)
 	} else {
-		s.doSync(ctx, bmarker, start, end)
+		return s.doSync(ctx, bmarker, start, end)
 	}
 }
 
-func (s *Syncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) {
-	// The previous attempt has joined all producers before a new one starts.
+func (s *Syncer[T]) doSync(ctx context.Context, bmarker *benchmarker, start, end uint64) error {
 	for _, w := range s.workers {
 		w.resultChan = make(chan T, cap(w.resultChan))
 	}
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer cancel()
-
-		err := s.fetchResult(ctx, start, end, bmarker)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			if errors.Is(err, store.ErrLeaderRenewal) {
-				logrus.WithFields(logrus.Fields{
-					"start":          start,
-					"end":            end,
-					"leaderIdentity": s.elm.Identity(),
-				}).Info("Catch-up syncer failed to renew leadership on persisting epoch data")
-			} else {
-				logrus.WithFields(logrus.Fields{
-					"start": start,
-					"end":   end,
-				}).WithError(err).Error("Catch-up syncer failed to fetch result")
-			}
-		}
-	}()
-
+	defer cancel()
+	workerErrors := make(chan error, len(s.workers))
 	for i, w := range s.workers {
-		wstart := start + uint64(i)
-		stepN := uint64(len(s.workers))
-
+		if uint64(i) > end-start {
+			break
+		}
 		wg.Add(1)
-		go w.Sync(ctx, &wg, wstart, end, stepN)
+		go func(w *worker[T], first uint64) {
+			defer wg.Done()
+			if err := w.sync(ctx, first, end, uint64(len(s.workers)), s.Benchmark); err != nil && !errors.Is(err, context.Canceled) {
+				workerErrors <- err
+				cancel()
+			}
+		}(w, start+uint64(i))
 	}
-
+	err := s.fetchResult(ctx, start, end, bmarker)
+	cancel()
 	wg.Wait()
+	select {
+	case workerErr := <-workerErrors:
+		return workerErr
+	default:
+		return err
+	}
 }
 
 func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker *benchmarker) error {
@@ -265,9 +325,7 @@ func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker 
 					return errors.Errorf("unexpected epoch collected, expected %v", eno)
 				}
 				// collect epoch data
-				eno++
 
-				s.monitor.Update(eno)
 			}
 
 			epochDbRows, storeDbRows := state.update(s.filter, data)
@@ -291,6 +349,11 @@ func (s *Syncer[T]) fetchResult(ctx context.Context, start, end uint64, bmarker 
 
 				state.reset()
 			}
+			if eno == end {
+				return s.persist(ctx, &state, bmarker)
+			}
+			eno++
+			s.monitor.Update(eno)
 		}
 	}
 
@@ -346,21 +409,24 @@ func (s *Syncer[T]) persist(ctx context.Context, state *persistState[T], bmarker
 
 // nextSyncRange gets the sync range by loading max epoch number from the database as the start
 // and fetching the maximum epoch of the latest finalized or the latest checkpoint epoch as the end
-func (s *Syncer[T]) nextSyncRange() (uint64, uint64, error) {
+func (s *Syncer[T]) nextSyncRange(ctx context.Context) (uint64, uint64, error) {
 	start, ok, err := s.db.MaxEpoch()
 	if err != nil {
 		return 0, 0, errors.WithMessage(err, "failed to get max epoch from epoch to block mapping")
 	}
 
 	if ok {
+		if start == ^uint64(0) {
+			return 1, 0, nil
+		}
 		start++
 	} else {
 		start = s.epochFrom
 	}
 
-	var retErr error
+	retErr := errors.New("no status clients configured")
 	for _, cli := range s.rpcClients {
-		status, err := cli.GetFinalizationStatus(context.Background())
+		status, err := cli.GetFinalizationStatus(ctx)
 		if err == nil {
 			end := max(status.LatestFinalized, status.LatestCheckpoint)
 			return start, uint64(end), nil

@@ -4,9 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/Conflux-Chain/confura/cmd/util"
 	"github.com/Conflux-Chain/confura/test"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +15,7 @@ var (
 	ethTestCmd = &cobra.Command{
 		Use:   "eth",
 		Short: "validate if epoch data from evm space JSON-RPC proxy complies with fullnode",
-		Run:   startEthTest,
+		RunE:  startEthTest,
 	}
 )
 
@@ -57,15 +55,12 @@ func init() {
 	Cmd.AddCommand(ethTestCmd)
 }
 
-func startEthTest(cmd *cobra.Command, args []string) {
-	if len(ethValidConf.FullnodeRpcEndpoint) == 0 || len(ethValidConf.InfuraRpcEndpoint) == 0 {
-		logrus.Fatal("Fullnode && infura rpc endpoint must be configured for ETH data test/validation")
+func startEthTest(cmd *cobra.Command, args []string) error {
+	if err := validateEndpoints(false, ethValidConf.FullnodeRpcEndpoint, ethValidConf.InfuraRpcEndpoint); err != nil {
+		return err
 	}
-
-	logrus.Info("Starting ETH data validator...")
-
-	validator := test.MustNewEthValidator(&ethValidConf)
-	defer validator.Destroy()
-
-	util.StartAndGracefulShutdown(validator.Run)
+	if err := validateIntervals(ethValidConf.ScanInterval, ethValidConf.SamplingInterval); err != nil {
+		return err
+	}
+	return runValidator(cmd, func() (test.TestValidator, error) { return test.NewEthValidator(&ethValidConf) })
 }

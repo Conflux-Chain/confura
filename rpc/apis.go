@@ -113,12 +113,16 @@ func evmSpaceApis(
 	gashandler *handler.EthGasStationHandler,
 	registry *rate.Registry,
 	option ...EthAPIOption) ([]API, error) {
+	api, err := newEthAPI(clientProvider, option...)
+	if err != nil {
+		return nil, err
+	}
 	stateHandler := handler.NewEthStateHandler(clientProvider)
 	return []API{
 		{
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   mustNewEthAPI(clientProvider, option...),
+			Service:   api,
 			Public:    true,
 		}, {
 			Namespace: "web3",
@@ -164,29 +168,42 @@ func evmSpaceApis(
 }
 
 // nativeSpaceBridgeApis adapts evm space RPCs to core space RPCs.
-func nativeSpaceBridgeApis(config *CfxBridgeServerConfig) ([]API, error) {
+func nativeSpaceBridgeApis(config *CfxBridgeServerConfig) ([]API, func(), error) {
 	ethNodeURL, cfxNodeURL := config.EthNode, config.CfxNode
 	eth, err := rpc.NewEthClient(ethNodeURL)
 	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to connect to eth space")
+		return nil, nil, errors.WithMessage(err, "Failed to connect to eth space")
 	}
 
+	success := false
+	var cfx *sdk.Client
+	cleanup := func() {
+		eth.Close()
+		if cfx != nil {
+			cfx.Close()
+		}
+	}
+	defer func() {
+		if !success {
+			cleanup()
+		}
+	}()
 	ethChainId, err := eth.Eth.ChainId()
 	if err != nil {
-		return nil, errors.WithMessage(err, "Failed to get chain ID from eth space")
+		return nil, nil, errors.WithMessage(err, "Failed to get chain ID from eth space")
 	}
 	rpc.HookMiddlewares(eth.Provider(), ethNodeURL, "eth")
 
-	var cfx *sdk.Client
 	if len(cfxNodeURL) > 0 { // optional
 		cfx, err = rpc.NewCfxClient(cfxNodeURL)
 		if err != nil {
-			return nil, errors.WithMessage(err, "Failed to connect to cfx space")
+			return nil, nil, errors.WithMessage(err, "Failed to connect to cfx space")
 		}
 
 		rpc.HookMiddlewares(cfx.Provider(), cfxNodeURL, "cfx")
 	}
 
+	success = true
 	// Hook an event handler to reidrect HTTP headers for the sdk client request
 	// because we could use `Confura` RPC service as our client endpoint for `cfxBridge`.
 	rpc.HookRedirectHttpHeader()
@@ -208,7 +225,7 @@ func nativeSpaceBridgeApis(config *CfxBridgeServerConfig) ([]API, error) {
 			Service:   cfxbridge.NewTxpoolAPI(eth),
 			Public:    true,
 		},
-	}, nil
+	}, cleanup, nil
 }
 
 // debugApis returns the collection of non-standard RPC methods for run time diagnostics and debug.

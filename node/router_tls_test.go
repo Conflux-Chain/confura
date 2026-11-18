@@ -121,15 +121,15 @@ func TestManagerTLSSnapshotRecovery(t *testing.T) {
 	rejected.Store(true)
 	const preset = "http://127.0.0.1:19001"
 	local := NewLocalRouter(map[Group][]string{GroupEthHttp: {preset}})
-	err := local.pollOnce(client)
+	err := local.pollOnce(context.Background(), client)
 	require.Error(t, err)
 	require.True(t, isRouterUnavailable(err))
 	require.Equal(t, []string{preset}, local.ListNodesByGroup(GroupEthHttp))
 	rejected.Store(false)
-	require.NoError(t, local.pollOnce(client))
+	require.NoError(t, local.pollOnce(context.Background(), client))
 	require.Empty(t, local.ListNodesByGroup(GroupEthHttp))
 	rejected.Store(true)
-	require.Error(t, local.pollOnce(client))
+	require.Error(t, local.pollOnce(context.Background(), client))
 	require.Empty(t, local.ListNodesByGroup(GroupEthHttp))
 }
 
@@ -147,7 +147,7 @@ func TestManagerTLSStartupUsesPresets(t *testing.T) {
 	require.Equal(t, preset, url)
 	local := locateNodeProvider(chain).(*LocalRouter)
 	// A trusted connection gets the recovered manager's authoritative empty snapshot.
-	require.NoError(t, local.pollOnce(tlsManagerClient(t, srv, "")))
+	require.NoError(t, local.pollOnce(context.Background(), tlsManagerClient(t, srv, "")))
 	url, err = chain.Route(context.Background(), GroupEthHttp, nil)
 	require.NoError(t, err)
 	require.Equal(t, failover, url, "a later TLS failure must not revive cleared presets")

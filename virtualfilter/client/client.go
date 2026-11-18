@@ -29,12 +29,14 @@ type EthClient struct {
 	p interfaces.Provider
 }
 
-func MustNewEthClientFromViper() (*EthClient, bool) {
+func NewEthClientFromViper() (*EthClient, bool, error) {
 	var conf clientConfig
-	viper.MustUnmarshalKey("ethVirtualFilters.client", &conf)
+	if err := viper.UnmarshalKey("ethVirtualFilters.client", &conf); err != nil {
+		return nil, false, err
+	}
 
 	if !conf.Enabled {
-		return nil, false
+		return nil, false, nil
 	}
 
 	option := providers.Option{
@@ -45,12 +47,10 @@ func MustNewEthClientFromViper() (*EthClient, bool) {
 
 	p, err := providers.NewProviderWithOption(conf.ServiceRpcUrl, option)
 	if err != nil {
-		logrus.WithError(err).
-			WithField("serviceRpcUrl", conf.ServiceRpcUrl).
-			Fatal("Failed to create RPC provider for virtual filter client")
+		return nil, false, err
 	}
 
-	return &EthClient{p: p}, true
+	return &EthClient{p: p}, true, nil
 }
 
 func (client *EthClient) NewFilter(delFnUrl string, fq *ethtypes.FilterQuery) (val *rpc.ID, err error) {
@@ -88,12 +88,14 @@ type CfxClient struct {
 	p interfaces.Provider
 }
 
-func MustNewCfxClientFromViper() (*CfxClient, bool) {
+func NewCfxClientFromViper() (*CfxClient, bool, error) {
 	var conf clientConfig
-	viper.MustUnmarshalKey("virtualFilters.client", &conf)
+	if err := viper.UnmarshalKey("virtualFilters.client", &conf); err != nil {
+		return nil, false, err
+	}
 
 	if !conf.Enabled {
-		return nil, false
+		return nil, false, nil
 	}
 
 	option := providers.Option{
@@ -104,12 +106,10 @@ func MustNewCfxClientFromViper() (*CfxClient, bool) {
 
 	p, err := providers.NewProviderWithOption(conf.ServiceRpcUrl, option)
 	if err != nil {
-		logrus.WithError(err).
-			WithField("serviceRpcUrl", conf.ServiceRpcUrl).
-			Fatal("Failed to create RPC provider for virtual filter client")
+		return nil, false, err
 	}
 
-	return &CfxClient{p: p}, true
+	return &CfxClient{p: p}, true, nil
 }
 
 func (client *CfxClient) NewFilter(delFnUrl string, filterCrit *cfxtypes.LogFilter) (val *rpc.ID, err error) {
@@ -141,3 +141,21 @@ func (client *CfxClient) UninstallFilter(filterID rpc.ID) (val bool, err error) 
 	err = client.p.CallContext(context.Background(), &val, "cfx_uninstallFilter", filterID)
 	return
 }
+
+func MustNewCfxClientFromViper() (*CfxClient, bool) {
+	c, ok, err := NewCfxClientFromViper()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize virtual filter client")
+	}
+	return c, ok
+}
+func (c *CfxClient) Close() { c.p.Close() }
+
+func MustNewEthClientFromViper() (*EthClient, bool) {
+	c, ok, err := NewEthClientFromViper()
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize virtual filter client")
+	}
+	return c, ok
+}
+func (c *EthClient) Close() { c.p.Close() }

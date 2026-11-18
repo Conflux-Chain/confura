@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/acl"
@@ -83,8 +84,7 @@ func (cs *confStore) StoreConfig(confName string, confVal interface{}) error {
 }
 
 func (cs *confStore) DeleteConfig(confName string) (bool, error) {
-	res := cs.db.Delete(&conf{}, "name = ?", confName)
-	return res.RowsAffected > 0, res.Error
+	return cs.DeleteConfigChecked(confName, nil)
 }
 
 // reorg config
@@ -122,12 +122,17 @@ func incrementReorgVersion(dbTx *gorm.DB, name string) error {
 
 // access control config
 func (cs *confStore) LoadAclAllowList(name string) (*acl.AllowList, error) {
+	value, _, err := cs.LoadAclAllowListSnapshot(name)
+	return value, err
+}
+
+func (cs *confStore) LoadAclAllowListSnapshot(name string) (*acl.AllowList, *ConfigSnapshot, error) {
 	var cfg conf
 	if err := cs.db.Where("name = ?", AclAllowListConfKeyPrefix+name).First(&cfg).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	return cs.decodeAclAllowLists(cfg)
+	value, err := cs.decodeAclAllowLists(cfg)
+	return value, snapshotConfig(cfg), err
 }
 
 func (cs *confStore) LoadAclAllowListById(aclID uint32) (*acl.AllowList, error) {
@@ -156,8 +161,7 @@ func (cs *confStore) LoadAclAllowListConfigs() (map[uint32]*acl.AllowList, map[u
 	for _, v := range cfgs {
 		al, err := cs.decodeAclAllowLists(v)
 		if err != nil {
-			logrus.WithField("cfg", v).WithError(err).Warn("Invalid access control allowlist config")
-			continue
+			return nil, nil, errors.WithMessagef(err, "invalid allowlist %q", v.Name)
 		}
 
 		allowLists[v.ID] = al
@@ -169,7 +173,10 @@ func (cs *confStore) LoadAclAllowListConfigs() (map[uint32]*acl.AllowList, map[u
 
 func (cs *confStore) decodeAclAllowLists(cfg conf) (*acl.AllowList, error) {
 	// eg., acl.allowlists.fluent
-	name := cfg.Name[len(AclAllowListConfKeyPrefix):]
+	if !strings.HasPrefix(cfg.Name, AclAllowListConfKeyPrefix) {
+		return nil, errors.New("invalid allowlist namespace")
+	}
+	name := strings.TrimPrefix(cfg.Name, AclAllowListConfKeyPrefix)
 	if len(name) == 0 {
 		return nil, errors.New("allowlist name is too short")
 	}
@@ -177,7 +184,7 @@ func (cs *confStore) decodeAclAllowLists(cfg conf) (*acl.AllowList, error) {
 	data := []byte(cfg.Value)
 	al := acl.NewAllowList(cfg.ID, name)
 
-	if err := json.Unmarshal(data, al); err != nil {
+	if err := al.DecodeRules(data, false); err != nil {
 		return nil, err
 	}
 
@@ -187,6 +194,11 @@ func (cs *confStore) decodeAclAllowLists(cfg conf) (*acl.AllowList, error) {
 // ratelimit config
 
 func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
+	return cs.LoadRateLimitConfigsContext(context.Background())
+}
+
+func (cs *confStore) LoadRateLimitConfigsContext(ctx context.Context) (*rate.Config, error) {
+	cs = newConfStore(cs.db.WithContext(ctx))
 	rlStrategies, csStrategies, err := cs.LoadRateLimitStrategyConfigs()
 	if err != nil {
 		return nil, err
@@ -208,12 +220,17 @@ func (cs *confStore) LoadRateLimitConfigs() (*rate.Config, error) {
 }
 
 func (cs *confStore) LoadRateLimitStrategy(name string) (*rate.Strategy, error) {
+	value, _, err := cs.LoadRateLimitStrategySnapshot(name)
+	return value, err
+}
+
+func (cs *confStore) LoadRateLimitStrategySnapshot(name string) (*rate.Strategy, *ConfigSnapshot, error) {
 	var cfg conf
 	if err := cs.db.Where("name = ?", RateLimitStrategyConfKeyPrefix+name).First(&cfg).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	return cs.decodeRateLimitStrategy(cfg)
+	value, err := cs.decodeRateLimitStrategy(cfg)
+	return value, snapshotConfig(cfg), err
 }
 
 func (cs *confStore) LoadRateLimitStrategyConfigs() (map[uint32]*rate.Strategy, map[uint32][md5.Size]byte, error) {
@@ -233,8 +250,7 @@ func (cs *confStore) LoadRateLimitStrategyConfigs() (map[uint32]*rate.Strategy, 
 	for _, v := range cfgs {
 		strategy, err := cs.decodeRateLimitStrategy(v)
 		if err != nil {
-			logrus.WithField("cfg", v).WithError(err).Warn("Invalid rate limit strategy config")
-			continue
+			return nil, nil, errors.WithMessagef(err, "invalid strategy %q", v.Name)
 		}
 
 		strategies[v.ID] = strategy
@@ -246,7 +262,10 @@ func (cs *confStore) LoadRateLimitStrategyConfigs() (map[uint32]*rate.Strategy, 
 
 func (cs *confStore) decodeRateLimitStrategy(cfg conf) (*rate.Strategy, error) {
 	// eg., ratelimit.strategy.whitelist
-	name := cfg.Name[len(RateLimitStrategyConfKeyPrefix):]
+	if !strings.HasPrefix(cfg.Name, RateLimitStrategyConfKeyPrefix) {
+		return nil, errors.New("invalid strategy namespace")
+	}
+	name := strings.TrimPrefix(cfg.Name, RateLimitStrategyConfKeyPrefix)
 	if len(name) == 0 {
 		return nil, errors.New("strategy name is too short")
 	}

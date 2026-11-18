@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/confura/store"
@@ -22,7 +23,7 @@ type CommonStores struct {
 	*VirtualFilterLogStore
 }
 
-func newCommonStores(db *gorm.DB) *CommonStores {
+func NewCommonStores(db *gorm.DB) *CommonStores {
 	return &CommonStores{
 		confStore:             newConfStore(db),
 		UserStore:             newUserStore(db),
@@ -52,11 +53,16 @@ type MysqlStore[T store.ChainData] struct {
 	// chain data filter
 	filter store.ChainDataFilter
 	// store pruner
-	pruner *storePruner
+	pruner     *storePruner
+	ownsPruner bool
+	closeOnce  sync.Once
+	closeErr   error
 }
 
 func NewMysqlStore[T store.ChainData](db *gorm.DB, config *Config, filter store.ChainDataFilter) *MysqlStore[T] {
-	return newMysqlStore[T](db, config, filter, newStorePruner(db))
+	ms := newMysqlStore[T](db, config, filter, newStorePruner(db))
+	ms.ownsPruner = true
+	return ms
 }
 
 func newMysqlStore[T store.ChainData](
@@ -71,10 +77,10 @@ func newMysqlStore[T store.ChainData](
 	ails := NewAddressIndexedLogStore[T](db, cs, ts, config.AddressIndexedLogPartitions)
 	tils := NewTopicIndexedLogStore[T](db, ts, config.TopicIndexedLogPartitions)
 
-	return &MysqlStore[T]{
+	ms := &MysqlStore[T]{
 		epochBlockMapStore: ebms,
 		baseStore:          newBaseStore(db),
-		CommonStores:       newCommonStores(db),
+		CommonStores:       NewCommonStores(db),
 		txStore:            newTxStore[T](db),
 		blockStore:         newBlockStore[T](db),
 		ls:                 newLogStore(db, cs, ebms, pruner.newBnPartitionObsChan),
@@ -88,6 +94,8 @@ func newMysqlStore[T store.ChainData](
 		filter:             filter,
 		pruner:             pruner,
 	}
+	ms.ls.notifyDone, ms.bcls.notifyDone, ms.btls.notifyDone = pruner.ctx.Done(), pruner.ctx.Done(), pruner.ctx.Done()
+	return ms
 }
 
 // Clone creates a new store with a deep copy of the underlying gorm db instance,
@@ -465,7 +473,7 @@ func (ms *MysqlStore[T]) resolveTopicLogID(ctx context.Context, topic string) (u
 
 // Prune prune data from db store.
 func (ms *MysqlStore[T]) Prune() {
-	go ms.pruner.schedulePrune(ms.config)
+	ms.pruner.schedulePrune(ms.config)
 }
 
 // SetTxnBatchSize sets the transaction batch size for db insertion.
@@ -495,4 +503,17 @@ func newSuggestedFilterResultSetTooLargeError(filter *store.LogFilter, resultLog
 	}
 
 	return store.NewSuggestedFilterResultSetTooLargeError(suggestedBlockRange)
+}
+
+func (cs *CommonStores) Close() error { return cs.confStore.Close() }
+
+// Close must follow the join of all writers. Clones own only their connections.
+func (ms *MysqlStore[T]) Close() error {
+	ms.closeOnce.Do(func() {
+		if ms.ownsPruner {
+			ms.pruner.Close()
+		}
+		ms.closeErr = ms.baseStore.Close()
+	})
+	return ms.closeErr
 }

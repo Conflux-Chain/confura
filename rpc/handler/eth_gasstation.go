@@ -26,22 +26,24 @@ type EthGasStationHandler struct {
 	fromBlock      uint64                  // Start block number to sync from
 }
 
-func MustNewEthGasStationHandlerFromViper(cp *node.EthClientProvider) *EthGasStationHandler {
+func NewEthGasStationHandlerFromViper(cp *node.EthClientProvider) (*EthGasStationHandler, error) {
 	var cfg GasStationConfig
-	viper.MustUnmarshalKey("gasStation", &cfg)
+	if err := viper.UnmarshalKey("gasStation", &cfg); err != nil {
+		return nil, err
+	}
 
 	if !cfg.Enabled {
-		return nil
+		return nil, nil
 	}
 
 	// Get all clients in the http group.
 	clients, err := cp.GetClientsByGroup(node.GroupEthHttp)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get fullnode cluster")
+		return nil, err
 	}
 
 	if len(clients) == 0 {
-		logrus.Fatal("No full node client available")
+		return nil, errors.New("no full node client available")
 	}
 
 	// Select a random client as the main client.
@@ -49,7 +51,7 @@ func MustNewEthGasStationHandlerFromViper(cp *node.EthClientProvider) *EthGasSta
 	// Get the latest block number with the main client.
 	latestBlockNumber, err := clients[cliIndex].Eth.BlockNumber()
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to get latest block number")
+		return nil, err
 	}
 
 	fromBlock := latestBlockNumber.Uint64() - uint64(cfg.HistoricalPeekCount)
@@ -61,8 +63,8 @@ func MustNewEthGasStationHandlerFromViper(cp *node.EthClientProvider) *EthGasSta
 		fromBlock:             fromBlock,
 	}
 
-	go h.run(h.sync, h.refreshClusterNodes)
-	return h
+	h.start(h.sync, h.refreshClusterNodes)
+	return h, nil
 }
 
 // sync synchronizes historical data from the full node cluster.
@@ -267,4 +269,12 @@ func (h *EthGasStationHandler) Suggest(eth *node.Web3goClient) (*types.Suggested
 	}
 
 	return assembleSuggestedGasFees(baseFeePerGas, &stats), nil
+}
+
+func MustNewEthGasStationHandlerFromViper(cp *node.EthClientProvider) *EthGasStationHandler {
+	h, err := NewEthGasStationHandlerFromViper(cp)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize gas station")
+	}
+	return h
 }

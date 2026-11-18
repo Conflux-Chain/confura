@@ -24,23 +24,26 @@ var (
 	addRouteCmd = &cobra.Command{
 		Use:   "add",
 		Short: "Add new route",
-		Run:   addRoute,
+		RunE:  addRoute,
 	}
 
 	delRouteCmd = &cobra.Command{
 		Use:   "rm",
 		Short: "Remove existing route",
-		Run:   delRoute,
+		RunE:  delRoute,
 	}
 
 	listRoutesCmd = &cobra.Command{
 		Use:   "ls",
 		Short: "List all available routes",
-		Run:   listRoutes,
+		RunE:  listRoutes,
 	}
 )
 
 func init() {
+	util.AddConfirmationFlag(addRouteCmd)
+	util.AddConfirmationFlag(delRouteCmd)
+
 	Cmd.AddCommand(addRouteCmd)
 	hookRouteCmdFlags(addRouteCmd, true, true)
 
@@ -51,31 +54,22 @@ func init() {
 	hookRouteCmdFlags(listRoutesCmd, false, false)
 }
 
-func addRoute(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
+func addRoute(cmd *cobra.Command, args []string) error {
 	err := validateRouteCmdConfig(true, true)
 	if err != nil {
-		logrus.WithField("config", routeCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("add route: %w", err)
 	}
 
-	dbs, err := storeCtx.GetCommonStore(routeCfg.Network)
+	dbs, err := util.OpenManagementStore(routeCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get MySQL store by network")
-		return
+		return fmt.Errorf("add route: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("Mysql store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
 	routeGroups, err := dbs.LoadNodeRouteGroups(routeCfg.Group)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to load node route group")
-		return
+		return fmt.Errorf("add route: %w", err)
 	}
 
 	if _, ok := routeGroups[routeCfg.Group]; !ok {
@@ -86,49 +80,45 @@ func addRoute(cmd *cobra.Command, args []string) {
 			))
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"routeKey":   routeCfg.Key,
-		"routeGroup": routeGroups[routeCfg.Group],
-	}).Info("Press the Enter Key to add new node route")
-
-	fmt.Scanln() // wait for Enter Key
+	if err := util.ConfirmWrite(cmd, routeCfg.Network, "add node route", routeCfg); err != nil {
+		return err
+	}
 
 	if err := dbs.AddNodeRoute(routeCfg.Key, routeCfg.Group); err != nil {
-		logrus.WithError(err).Info("Failed to add new node route")
-		return
+		return fmt.Errorf("add route: %w", err)
 	}
 
 	logrus.Info("New node route added")
+	return nil
 }
 
-func delRoute(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
+func delRoute(cmd *cobra.Command, args []string) error {
 	err := validateRouteCmdConfig(true, false)
 	if err != nil {
-		logrus.WithField("config", routeCfg).WithError(err).Info("Invalid command config")
-		return
+		return fmt.Errorf("delete route: %w", err)
 	}
 
-	dbs, err := storeCtx.GetCommonStore(routeCfg.Network)
+	dbs, err := util.OpenManagementStore(routeCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get MySQL store by network")
-		return
+		return fmt.Errorf("delete route: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("Mysql store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
-	logrus.WithField("routeKey", routeCfg.Key).Info("Press Enter Key to delete the node route!")
-	fmt.Scanln() // wait for Enter Key
-
-	removed, err := dbs.DeleteNodeRoute(routeCfg.Key)
+	route, err := dbs.FindNodeRoute(routeCfg.Key)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to delete the node route")
-		return
+		return err
+	}
+	if route == nil {
+		cmd.Println("Node route does not exist")
+		return nil
+	}
+	if err := util.ConfirmWrite(cmd, routeCfg.Network, "delete node route", route); err != nil {
+		return err
+	}
+	removed, err := dbs.DeleteNodeRouteChecked(route)
+	if err != nil {
+		return fmt.Errorf("delete route: %w", err)
 	}
 
 	if removed {
@@ -136,32 +126,25 @@ func delRoute(cmd *cobra.Command, args []string) {
 	} else {
 		logrus.Info("Node route does not exist")
 	}
+	return nil
 }
 
-func listRoutes(cmd *cobra.Command, args []string) {
-	storeCtx := util.MustInitStoreContext()
-	defer storeCtx.Close()
-
-	dbs, err := storeCtx.GetCommonStore(routeCfg.Network)
+func listRoutes(cmd *cobra.Command, args []string) error {
+	dbs, err := util.OpenManagementStore(routeCfg.Network)
 	if err != nil {
-		logrus.WithError(err).Info("Failed to get MySQL store by network")
-		return
+		return fmt.Errorf("list routes: %w", err)
 	}
 
-	if dbs == nil {
-		logrus.Info("Mysql store is unavailable")
-		return
-	}
+	defer dbs.Close()
 
 	nodeRoutes, err := dbs.LoadNodeRoutes(mysql.NodeRouteFilter{})
 	if err != nil {
-		logrus.WithError(err).Info("Failed to load all available node routes")
-		return
+		return fmt.Errorf("list routes: %w", err)
 	}
 
 	if len(nodeRoutes) == 0 {
 		logrus.Info("No node route found")
-		return
+		return nil
 	}
 
 	logrus.WithField("total", len(nodeRoutes)).Info("Node routes loaded:")
@@ -173,6 +156,7 @@ func listRoutes(cmd *cobra.Command, args []string) {
 			"routeGroup": route.Group,
 		}).Info("Route #", i)
 	}
+	return nil
 }
 
 func validateRouteCmdConfig(validateKey, validateGroup bool) error {

@@ -41,7 +41,7 @@ type PSVConfig struct {
 // PubSubValidator subscribes to fullnode and infura websocket endpoints to receive epoch data
 // of type logs/newHeads/epochs, and then compares the epoch data to validate if the infura
 // pubsub results comply to fullnode.
-type PubSubValidator struct{}
+type PubSubValidator struct{ tasks *validatorTasks }
 
 type pubsubFunc func() *pubsubValidationContext
 type watchFunc func(calibrate, validate, reset func() error)
@@ -94,7 +94,7 @@ func (validator *PubSubValidator) doValidate(fnPubSub, infuraPubSub pubsubFunc, 
 		return nil
 	}
 
-	go watch(calibrate, validate, reset)
+	validator.tasks.start(func() { watch(calibrate, validate, reset) })
 }
 
 func (validator *PubSubValidator) validateWithContext(fnCtx, infuraCtx *pubsubValidationContext) error {
@@ -186,30 +186,51 @@ type CfxPubSubValidator struct {
 	cfx    sdk.ClientOperator // fullnode sdk client instance
 }
 
-func MustNewCfxPubSubValidator(conf *PSVConfig) *CfxPubSubValidator {
-	// Prepare fullnode client instance
-	cfx := rpcutil.MustNewCfxClient(conf.FullnodeRpcEndpoint)
-	// Prepare infura rpc service client instance
-	infura := rpcutil.MustNewCfxClient(conf.InfuraRpcEndpoint)
+func NewCfxPubSubValidator(conf *PSVConfig) (*CfxPubSubValidator, error) {
+	client, err := rpcutil.NewCfxClient(conf.FullnodeRpcEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	infura, err := rpcutil.NewCfxClient(conf.InfuraRpcEndpoint)
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+	return &CfxPubSubValidator{PubSubValidator: PubSubValidator{tasks: newValidatorTasks()}, cfx: client, infura: infura}, nil
+}
 
-	return &CfxPubSubValidator{cfx: cfx, infura: infura}
+func MustNewCfxPubSubValidator(conf *PSVConfig) *CfxPubSubValidator {
+	v, err := NewCfxPubSubValidator(conf)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize validator")
+	}
+	return v
 }
 
 func (validator *CfxPubSubValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
-	logrus.Info("Pubsub validator running to validate epoch data...")
+	validator.tasks.run(ctx, wg, func() {
 
-	// newHeads pubsub validation
-	validator.validatePubSubNewHeads()
+		logrus.Info("Pubsub validator running to validate epoch data...")
 
-	// epochs pubsub validation
-	validator.validatePubSubEpochs(types.EpochLatestState)
-	validator.validatePubSubEpochs(types.EpochLatestMined)
+		// newHeads pubsub validation
+		validator.validatePubSubNewHeads()
+
+		// epochs pubsub validation
+		validator.validatePubSubEpochs(types.EpochLatestState)
+		validator.validatePubSubEpochs(types.EpochLatestMined)
+
+	})
 }
 
 func (validator *CfxPubSubValidator) Destroy() {
-	// Close cfx client instance
-	validator.cfx.Close()
-	validator.infura.Close()
+	validator.tasks.destroyOnce.Do(func() {
+		validator.tasks.stop()
+
+		// Close cfx client instance
+		validator.cfx.Close()
+		validator.infura.Close()
+
+	})
 }
 
 func (validator *CfxPubSubValidator) validatePubSubNewHeads() {
@@ -219,7 +240,7 @@ func (validator *CfxPubSubValidator) validatePubSubNewHeads() {
 	fnPubSub := func() *pubsubValidationContext { // fullnode newHeads pubsub
 		fnCh = make(chan *types.BlockHeader, pubsubValidationChBufferSize)
 		fnCtx = newPubSubValidationContext(fnCh)
-		go validator.pubSubNewHeadsWithContext(validator.cfx, fnCtx)
+		validator.tasks.start(func() { validator.pubSubNewHeadsWithContext(validator.cfx, fnCtx) })
 
 		return fnCtx
 	}
@@ -227,7 +248,7 @@ func (validator *CfxPubSubValidator) validatePubSubNewHeads() {
 	infuraPubSub := func() *pubsubValidationContext { // infura newHeads pubsub
 		infuraCh = make(chan *types.BlockHeader, pubsubValidationChBufferSize)
 		infuraCtx = newPubSubValidationContext(infuraCh)
-		go validator.pubSubNewHeadsWithContext(validator.infura, infuraCtx)
+		validator.tasks.start(func() { validator.pubSubNewHeadsWithContext(validator.infura, infuraCtx) })
 
 		return infuraCtx
 	}
@@ -242,6 +263,8 @@ func (validator *CfxPubSubValidator) validatePubSubNewHeads() {
 			}
 
 			select {
+			case <-validator.tasks.ctx.Done():
+				return
 			case fnh := <-fnCh:
 				fnCtx.rBuf.Enqueue(fnh)
 				valErr = validate()
@@ -271,35 +294,45 @@ func (validator *CfxPubSubValidator) pubSubNewHeadsWithContext(cfx sdk.ClientOpe
 
 	subFunc := func() (*rpc.ClientSubscription, chan types.BlockHeader, error) {
 		nhCh := make(chan types.BlockHeader, pubsubValidationChBufferSize)
-		sub, err := cfx.SubscribeNewHeads(nhCh)
+		sub, err := rpcutil.CfxWithContext(validator.tasks.ctx, cfx).SubscribeNewHeads(nhCh)
 		return sub, nhCh, err
 	}
 
-	for {
+	for validator.tasks.ctx.Err() == nil {
 		csub, nhCh, err := subFunc()
 		if err != nil {
 			logger.WithError(err).
 				Error("Pubsub validator failed to do newHeads pubsub subscription")
-			time.Sleep(time.Second * 2)
+			if !validator.tasks.waitRetry(2 * time.Second) {
+				return
+			}
 			continue
 		}
 
 		psvCtx.setStatus(true)
 
-		for psvCtx.getStatus() {
-			select {
-			case err = <-csub.Err():
-				logger.WithError(err).
-					Error("Pubsub validator newHeads pubsub subscription error")
-				csub.Unsubscribe()
+		func() {
+			defer csub.Unsubscribe()
+			for psvCtx.getStatus() {
+				select {
+				case <-validator.tasks.ctx.Done():
+					return
+				case err = <-csub.Err():
+					logger.WithError(err).
+						Error("Pubsub validator newHeads pubsub subscription error")
+					csub.Unsubscribe()
 
-				if psvCtx.setStatus(false) {
-					psvCtx.errCh <- err
+					if psvCtx.setStatus(false) {
+						select {
+						case psvCtx.errCh <- err:
+						default:
+						}
+					}
+				case h := <-nhCh: // newHead received from pubsub
+					psvCtx.notify(&h)
 				}
-			case h := <-nhCh: // newHead received from pubsub
-				psvCtx.notify(&h)
 			}
-		}
+		}()
 	}
 }
 
@@ -310,7 +343,7 @@ func (validator *CfxPubSubValidator) validatePubSubEpochs(subEpochType *types.Ep
 	fnPubSub := func() *pubsubValidationContext { // fullnode epochs pubsub
 		fnCh = make(chan *types.WebsocketEpochResponse, pubsubValidationChBufferSize)
 		fnCtx = newPubSubValidationContext(fnCh)
-		go validator.pubSubEpochsWithContext(validator.cfx, fnCtx, subEpochType)
+		validator.tasks.start(func() { validator.pubSubEpochsWithContext(validator.cfx, fnCtx, subEpochType) })
 
 		return fnCtx
 	}
@@ -318,7 +351,7 @@ func (validator *CfxPubSubValidator) validatePubSubEpochs(subEpochType *types.Ep
 	infuraPubSub := func() *pubsubValidationContext { // infura epochs pubsub
 		infuraCh = make(chan *types.WebsocketEpochResponse, pubsubValidationChBufferSize)
 		infuraCtx = newPubSubValidationContext(infuraCh)
-		go validator.pubSubEpochsWithContext(validator.infura, infuraCtx, subEpochType)
+		validator.tasks.start(func() { validator.pubSubEpochsWithContext(validator.infura, infuraCtx, subEpochType) })
 
 		return infuraCtx
 	}
@@ -334,6 +367,8 @@ func (validator *CfxPubSubValidator) validatePubSubEpochs(subEpochType *types.Ep
 			}
 
 			select {
+			case <-validator.tasks.ctx.Done():
+				return
 			case fnh := <-fnCh:
 				fnCtx.rBuf.Enqueue(fnh)
 				valErr = validate()
@@ -370,35 +405,45 @@ func (validator *CfxPubSubValidator) pubSubEpochsWithContext(
 
 	subFunc := func() (*rpc.ClientSubscription, chan types.WebsocketEpochResponse, error) {
 		epochCh := make(chan types.WebsocketEpochResponse, pubsubValidationChBufferSize)
-		sub, err := cfx.SubscribeEpochs(epochCh, *subEpochType)
+		sub, err := rpcutil.CfxWithContext(validator.tasks.ctx, cfx).SubscribeEpochs(epochCh, *subEpochType)
 		return sub, epochCh, err
 	}
 
-	for {
+	for validator.tasks.ctx.Err() == nil {
 		csub, epochCh, err := subFunc()
 		if err != nil {
 			logger.WithError(err).
 				Error("Pubsub validator failed to do epochs pubsub subscription")
-			time.Sleep(time.Second * 2)
+			if !validator.tasks.waitRetry(2 * time.Second) {
+				return
+			}
 			continue
 		}
 
 		psvCtx.setStatus(true)
 
-		for psvCtx.getStatus() {
-			select {
-			case err = <-csub.Err():
-				logger.WithError(err).
-					Error("Pubsub validator epochs pubsub subscription error")
-				csub.Unsubscribe()
+		func() {
+			defer csub.Unsubscribe()
+			for psvCtx.getStatus() {
+				select {
+				case <-validator.tasks.ctx.Done():
+					return
+				case err = <-csub.Err():
+					logger.WithError(err).
+						Error("Pubsub validator epochs pubsub subscription error")
+					csub.Unsubscribe()
 
-				if psvCtx.setStatus(false) {
-					psvCtx.errCh <- err
+					if psvCtx.setStatus(false) {
+						select {
+						case psvCtx.errCh <- err:
+						default:
+						}
+					}
+				case h := <-epochCh: // epoch received from pubsub
+					psvCtx.notify(&h)
 				}
-			case h := <-epochCh: // epoch received from pubsub
-				psvCtx.notify(&h)
 			}
-		}
+		}()
 	}
 }
 
@@ -410,34 +455,47 @@ type EthPubSubValidator struct {
 	infura *node.Web3goClient // infura sdk client instance
 }
 
-func MustNewEthPubSubValidator(conf *PSVConfig) *EthPubSubValidator {
-	// Prepare fullnode client instance
-	eth := rpcutil.MustNewEthClient(conf.FullnodeRpcEndpoint)
-	// Prepare infura rpc service client instance
-	infura := rpcutil.MustNewEthClient(conf.InfuraRpcEndpoint)
+func NewEthPubSubValidator(conf *PSVConfig) (*EthPubSubValidator, error) {
+	client, err := rpcutil.NewEthClient(conf.FullnodeRpcEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	infura, err := rpcutil.NewEthClient(conf.InfuraRpcEndpoint)
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+	return &EthPubSubValidator{PubSubValidator: PubSubValidator{tasks: newValidatorTasks()}, eth: &node.Web3goClient{Client: client, URL: conf.FullnodeRpcEndpoint}, infura: &node.Web3goClient{Client: infura, URL: conf.InfuraRpcEndpoint}}, nil
+}
 
-	return &EthPubSubValidator{
-		eth: &node.Web3goClient{
-			Client: eth,
-			URL:    conf.FullnodeRpcEndpoint,
-		},
-		infura: &node.Web3goClient{
-			Client: infura,
-			URL:    conf.InfuraRpcEndpoint,
-		}}
+func MustNewEthPubSubValidator(conf *PSVConfig) *EthPubSubValidator {
+	v, err := NewEthPubSubValidator(conf)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to initialize validator")
+	}
+	return v
 }
 
 func (validator *EthPubSubValidator) Run(ctx context.Context, wg *sync.WaitGroup) {
-	logrus.Info("Pubsub validator running to validate epoch data...")
+	validator.tasks.run(ctx, wg, func() {
 
-	// newHeads pubsub validation
-	validator.validatePubSubNewHeads()
+		logrus.Info("Pubsub validator running to validate epoch data...")
+
+		// newHeads pubsub validation
+		validator.validatePubSubNewHeads()
+
+	})
 }
 
 func (validator *EthPubSubValidator) Destroy() {
-	// Close client instance
-	validator.eth.Close()
-	validator.infura.Close()
+	validator.tasks.destroyOnce.Do(func() {
+		validator.tasks.stop()
+
+		// Close client instance
+		validator.eth.Close()
+		validator.infura.Close()
+
+	})
 }
 
 func (validator *EthPubSubValidator) validatePubSubNewHeads() {
@@ -447,7 +505,7 @@ func (validator *EthPubSubValidator) validatePubSubNewHeads() {
 	fnPubSub := func() *pubsubValidationContext { // fullnode newHeads pubsub
 		fnCh = make(chan *types.BlockHeader, pubsubValidationChBufferSize)
 		fnCtx = newPubSubValidationContext(fnCh)
-		go validator.pubSubNewHeadsWithContext(validator.eth, fnCtx)
+		validator.tasks.start(func() { validator.pubSubNewHeadsWithContext(validator.eth, fnCtx) })
 
 		return fnCtx
 	}
@@ -455,7 +513,7 @@ func (validator *EthPubSubValidator) validatePubSubNewHeads() {
 	infuraPubSub := func() *pubsubValidationContext { // infura newHeads pubsub
 		infuraCh = make(chan *types.BlockHeader, pubsubValidationChBufferSize)
 		infuraCtx = newPubSubValidationContext(infuraCh)
-		go validator.pubSubNewHeadsWithContext(validator.infura, infuraCtx)
+		validator.tasks.start(func() { validator.pubSubNewHeadsWithContext(validator.infura, infuraCtx) })
 
 		return infuraCtx
 	}
@@ -470,6 +528,8 @@ func (validator *EthPubSubValidator) validatePubSubNewHeads() {
 			}
 
 			select {
+			case <-validator.tasks.ctx.Done():
+				return
 			case fnh := <-fnCh:
 				fnCtx.rBuf.Enqueue(fnh)
 				valErr = validate()
@@ -500,35 +560,45 @@ func (validator *EthPubSubValidator) pubSubNewHeadsWithContext(w3c *node.Web3goC
 	subFunc := func() (w3types.Subscription, chan *w3types.Header, error) {
 		nhCh := make(chan *w3types.Header, pubsubValidationChBufferSize)
 
-		sub, err := w3c.Eth.SubscribeNewHead(nhCh)
+		sub, err := w3c.WithContext(validator.tasks.ctx).Eth.SubscribeNewHead(nhCh)
 		return sub, nhCh, err
 	}
 
-	for {
+	for validator.tasks.ctx.Err() == nil {
 		csub, nhCh, err := subFunc()
 		if err != nil {
 			logger.WithError(err).
 				Error("Pubsub validator failed to do newHeads pubsub subscription")
-			time.Sleep(time.Second * 2)
+			if !validator.tasks.waitRetry(2 * time.Second) {
+				return
+			}
 			continue
 		}
 
 		psvCtx.setStatus(true)
 
-		for psvCtx.getStatus() {
-			select {
-			case err = <-csub.Err():
-				logger.WithError(err).
-					Error("Pubsub validator newHeads pubsub subscription error")
-				csub.Unsubscribe()
+		func() {
+			defer csub.Unsubscribe()
+			for psvCtx.getStatus() {
+				select {
+				case <-validator.tasks.ctx.Done():
+					return
+				case err = <-csub.Err():
+					logger.WithError(err).
+						Error("Pubsub validator newHeads pubsub subscription error")
+					csub.Unsubscribe()
 
-				if psvCtx.setStatus(false) {
-					psvCtx.errCh <- err
+					if psvCtx.setStatus(false) {
+						select {
+						case psvCtx.errCh <- err:
+						default:
+						}
+					}
+				case h := <-nhCh: // newHead received from pubsub
+					psvCtx.notify(&h)
 				}
-			case h := <-nhCh: // newHead received from pubsub
-				psvCtx.notify(&h)
 			}
-		}
+		}()
 	}
 }
 
@@ -609,7 +679,10 @@ func (ctx *pubsubValidationContext) notify(result interface{}) bool {
 	case 0: // sub.channel<-
 		return true
 	case 1: // never blocking for subscription queue overflow
-		ctx.errCh <- rpc.ErrSubscriptionQueueOverflow
+		select {
+		case ctx.errCh <- rpc.ErrSubscriptionQueueOverflow:
+		default:
+		}
 		return false
 	}
 

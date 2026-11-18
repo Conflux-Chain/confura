@@ -1,10 +1,12 @@
 package rate
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/acl"
@@ -26,37 +28,82 @@ type ConfigCheckSums struct {
 	AllowLists map[uint32][md5.Size]byte
 }
 
-func (m *Registry) AutoReload(interval time.Duration, reloader func() (*Config, error)) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	// last config finger prints
+// StartReload installs the initial configuration before returning. Subsequent
+// failures retain the last configuration. The caller must cancel and join wg
+// before closing the loader's database.
+func (m *Registry) StartReload(ctx context.Context, wg *sync.WaitGroup, interval, timeout time.Duration, load func(context.Context) (*Config, error)) error {
+	if interval <= 0 || timeout <= 0 {
+		return fmt.Errorf("security reload interval and timeout must be positive")
+	}
 	var cs ConfigCheckSums
-
-	// load immediately at first
-	if rconf, err := reloader(); err == nil {
-		m.reloadOnce(rconf, &cs)
-		cs = rconf.CheckSums
-	}
-
-	// load periodically
-	for range ticker.C {
-		rconf, err := reloader()
+	reload := func() error {
+		queryCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		cfg, err := load(queryCtx)
 		if err != nil {
-			logrus.WithError(err).Error("Failed to load rate limit configs")
-			continue
+			return err
 		}
-
-		m.reloadOnce(rconf, &cs)
-		cs = rconf.CheckSums
+		if err := queryCtx.Err(); err != nil {
+			return err
+		}
+		if cfg == nil {
+			return fmt.Errorf("security configuration is nil")
+		}
+		if err := m.reloadOnce(cfg, &cs); err != nil {
+			return err
+		}
+		cs = cfg.CheckSums
+		return nil
 	}
+	if err := reload(); err != nil {
+		return fmt.Errorf("load initial security configuration: %w", err)
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := reload(); err != nil && ctx.Err() == nil {
+					logrus.WithError(err).Error("Failed to load security configuration; retaining previous configuration")
+				}
+			}
+		}
+	}()
+	return nil
 }
 
-func (m *Registry) reloadOnce(rc *Config, lastCs *ConfigCheckSums) {
-	if rc != nil {
+func (m *Registry) reloadOnce(rc *Config, lastCs *ConfigCheckSums) error {
+	if rc == nil {
+		return fmt.Errorf("security configuration is nil")
+	}
+	for id, s := range rc.Strategies {
+		if s == nil || s.ID != id {
+			return fmt.Errorf("invalid strategy identity %d", id)
+		}
+		for _, opt := range s.LimitOptions {
+			if err := ValidateLimitOption(opt); err != nil {
+				return err
+			}
+		}
+	}
+	for id, al := range rc.AllowLists {
+		if al == nil || al.ID != id {
+			return fmt.Errorf("invalid allowlist identity %d", id)
+		}
+		if err := al.ValidateRules(); err != nil {
+			return err
+		}
+	}
+	{
 		m.reloadRateLimitStrategies(rc, lastCs)
 		m.reloadAclAllowLists(rc, lastCs)
 	}
+	return nil
 }
 
 func (m *Registry) reloadRateLimitStrategies(rc *Config, lastCs *ConfigCheckSums) {

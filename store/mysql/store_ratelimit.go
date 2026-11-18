@@ -1,10 +1,15 @@
 package mysql
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Conflux-Chain/confura/util/rate"
+	driver "github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // RateLimit rate limit keyset table
@@ -40,6 +45,7 @@ func (rls *RateLimitStore) AddRateLimit(
 	limitType rate.LimitType,
 	limitKey string,
 	memo string,
+	expected ...*ConfigSnapshot,
 ) error {
 	ratelimit := &RateLimit{
 		SID:       sid,
@@ -49,12 +55,34 @@ func (rls *RateLimitStore) AddRateLimit(
 		Memo:      memo,
 	}
 
-	return rls.db.Create(ratelimit).Error
+	// SQL errors and SQL trace output can include the full credential.
+	quiet := NewRateLimitStore(rls.db.Session(&gorm.Session{Logger: rls.db.Logger.LogMode(logger.Silent)}))
+	err := quiet.addRateLimitChecked(ratelimit, expected)
+	var dbErr *driver.MySQLError
+	if errors.As(err, &dbErr) {
+		if dbErr.Number == 1062 {
+			return errors.New("access key already exists")
+		}
+		return fmt.Errorf("write access key failed (MySQL error %d)", dbErr.Number)
+	}
+	return err
 }
 
 func (rls *RateLimitStore) DeleteRateLimit(limitKey string) (bool, error) {
 	res := rls.db.Delete(&RateLimit{}, "limit_key = ?", limitKey)
 	return res.RowsAffected > 0, res.Error
+}
+
+func (rls *RateLimitStore) DeleteRateLimitChecked(expected *RateLimit) (bool, error) {
+	res := rls.db.Where("id = ? AND limit_key = ? AND s_id = ? AND acl_id = ? AND limit_type = ? AND memo = ? AND updated_at = ?",
+		expected.ID, expected.LimitKey, expected.SID, expected.AclID, expected.LimitType, expected.Memo, expected.UpdatedAt).Delete(&RateLimit{})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return false, ErrConfigChanged
+	}
+	return true, nil
 }
 
 func (rls *RateLimitStore) LoadRateLimitKeyset(filter *rate.KeysetFilter) (res []*RateLimit, err error) {
@@ -98,4 +126,8 @@ func (rls *RateLimitStore) LoadRateLimitKeyInfos(filter *rate.KeysetFilter) (res
 	}
 
 	return res, nil
+}
+
+func (rls *RateLimitStore) LoadRateLimitKeyInfosContext(ctx context.Context, filter *rate.KeysetFilter) ([]*rate.KeyInfo, error) {
+	return NewRateLimitStore(rls.db.WithContext(ctx)).LoadRateLimitKeyInfos(filter)
 }

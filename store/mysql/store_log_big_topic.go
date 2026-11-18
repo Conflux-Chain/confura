@@ -47,6 +47,7 @@ type bigTopicLogStore[T store.ChainData] struct {
 	tils *TopicIndexedLogStore[T]
 	// notify channel for new bn partition created
 	bnPartitionNotifyChan chan<- *bnPartition
+	notifyDone            <-chan struct{}
 }
 
 func newBigTopicLogStore[T store.ChainData](
@@ -107,7 +108,10 @@ func (btls *bigTopicLogStore[T]) preparePartitions(dataSlice []T, guards ...func
 
 		if newCreated || !migrated {
 			partition.tabler = tlTabler
-			btls.bnPartitionNotifyChan <- &partition
+			select {
+			case <-btls.notifyDone:
+			case btls.bnPartitionNotifyChan <- &partition:
+			}
 		}
 
 		topic2Partitions[topic0.ID] = partition

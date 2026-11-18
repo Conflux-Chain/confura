@@ -30,11 +30,17 @@ func mustNewWorker[T store.ChainData](name string, client IRpcClient[T], chanSiz
 
 func (w *worker[T]) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epochTo, stepN uint64) {
 	defer wg.Done()
+	_ = w.sync(ctx, epochFrom, epochTo, stepN, false)
+}
 
+func (w *worker[T]) sync(ctx context.Context, epochFrom, epochTo, stepN uint64, failFast bool) error {
+	if stepN == 0 {
+		return errors.New("worker step must be positive")
+	}
 	for eno := epochFrom; eno <= epochTo; {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		default:
 			data, err := w.client.QueryChainData(ctx, eno, eno)
 			if err == nil && (len(data) != 1 || nilChainData(data[0]) || data[0].Number() != eno) {
@@ -45,18 +51,29 @@ func (w *worker[T]) Sync(ctx context.Context, wg *sync.WaitGroup, epochFrom, epo
 					"epochNo":    eno,
 					"workerName": w.name,
 				}).WithError(err).Info("Catch-up worker failed to fetch epoch")
-				time.Sleep(time.Second)
+				if failFast {
+					return err
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(time.Second):
+				}
 				break
 			}
 
 			select {
 			case <-ctx.Done():
-				return
+				return ctx.Err()
 			case w.resultChan <- data[0]:
+				if stepN > epochTo-eno {
+					return nil
+				}
 				eno += stepN
 			}
 		}
 	}
+	return nil
 }
 
 func (w *worker[T]) Close() {

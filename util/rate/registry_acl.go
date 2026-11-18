@@ -2,6 +2,7 @@ package rate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -98,7 +99,17 @@ func (r *aclRegistry) getKeyInfoValidator(ki *KeyInfo) (acl.Validator, bool) {
 	defer r.mu.Unlock()
 
 	v, ok := r.validators[ki.AclID]
+	if !ok {
+		return missingACL{}, true
+	}
 	return v, ok
+}
+
+// An optional ACL (ID zero) differs from a bound ACL that has disappeared.
+type missingACL struct{}
+
+func (missingACL) Validate(acl.Context) error {
+	return errors.New("bound access control policy is unavailable")
 }
 
 // allowlists reloading
