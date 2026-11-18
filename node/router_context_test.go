@@ -104,10 +104,10 @@ func TestSnapshotTimeoutKeepsNodesAndAllowsRefresh(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 	local := NewLocalRouter(map[Group][]string{GroupEthHttp: {"http://127.0.0.1:19001"}})
-	require.Error(t, local.pollOnce(client))
+	require.Error(t, local.pollOnce(context.Background(), client))
 	require.Equal(t, []string{"http://127.0.0.1:19001"}, local.ListNodesByGroup(GroupEthHttp))
 	unblock()
-	require.NoError(t, local.pollOnce(client))
+	require.NoError(t, local.pollOnce(context.Background(), client))
 	require.Equal(t, []string{"http://127.0.0.1:19002"}, local.ListNodesByGroup(GroupEthHttp))
 }
 

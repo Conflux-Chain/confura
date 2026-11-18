@@ -413,7 +413,7 @@ func NewLocalRouterFromNodeRPC(client *rpc.Client) (*LocalRouter, error) {
 		timeout: routerTimeout(),
 	}
 
-	if err := router.pollOnce(client); err != nil {
+	if err := router.pollOnce(ctx, client); err != nil {
 		return router, err
 	}
 
@@ -435,16 +435,19 @@ func (r *LocalRouter) pollContext(ctx context.Context, client *rpc.Client) {
 			return
 		case <-ticker.C:
 		}
-		if err := r.pollOnce(client); err != nil {
+		if err := r.pollOnce(ctx, client); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			logrus.WithError(err).Error("Failed to poll route groups from node manager RPC")
 		}
 	}
 }
 
-func (r *LocalRouter) pollOnce(client *rpc.Client) error {
+func (r *LocalRouter) pollOnce(parent context.Context, client *rpc.Client) error {
 	groupNodes := make(map[Group][]string)
 
-	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
+	ctx, cancel := context.WithTimeout(parent, r.timeout)
 	defer cancel()
 	if err := callNodeManager(ctx, client, &groupNodes, "node_listAll"); err != nil {
 		return errors.WithMessage(err, "failed to list all group nodes")
