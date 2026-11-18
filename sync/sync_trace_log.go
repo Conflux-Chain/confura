@@ -116,7 +116,13 @@ func NewTraceLogSyncer(clients []*sdk.Client, store *mysql.CfxStore) (_ *TraceLo
 func (s *TraceLogSyncer) Sync(ctx context.Context, wg *gosync.WaitGroup) error {
 	wg.Add(1)
 	defer wg.Done()
-	defer s.adapter.Close()
+	ctx, cancel := context.WithCancel(ctx)
+	var latestWorkers gosync.WaitGroup
+	defer func() {
+		cancel()
+		latestWorkers.Wait()
+		s.adapter.Close()
+	}()
 
 	// Phase 1: Catchup
 	params := sync.CatchupParamsDB[core.EpochData]{
@@ -155,9 +161,10 @@ func (s *TraceLogSyncer) Sync(ctx context.Context, wg *gosync.WaitGroup) error {
 	}
 
 	proc := tracelog.NewProcessor(s.registry, s.logStore, s.epochBlockMapStore)
-	if err := sync.StartLatestDB(ctx, wg, syncParams, proc); err != nil {
+	if err := sync.StartLatestDB(ctx, &latestWorkers, syncParams, proc); err != nil {
 		return err
 	}
+	latestWorkers.Wait()
 	return nil
 }
 
