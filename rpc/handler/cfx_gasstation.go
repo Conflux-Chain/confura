@@ -56,7 +56,7 @@ func MustNewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) *CfxGasSta
 		logrus.WithError(err).Fatal("Failed to get latest epoch number")
 	}
 
-	fromEpoch := latestEpoch.ToInt().Uint64() - uint64(cfg.HistoricalPeekCount)
+	fromEpoch := historicalStartHeight(latestEpoch.ToInt().Uint64(), cfg.HistoricalPeekCount)
 	h := &CfxGasStationHandler{
 		baseGasStationHandler: newBaseGasStationHandler(&cfg),
 		clientProvider:        cp,

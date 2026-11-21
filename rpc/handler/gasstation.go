@@ -52,6 +52,17 @@ type GasStationConfig struct {
 	Percentiles [3]float64 `default:"[1, 50, 99]"`
 }
 
+// historicalStartHeight clamps the requested history to the genesis height.
+func historicalStartHeight(latest uint64, count int) uint64 {
+	if count <= 0 {
+		return latest
+	}
+	if latest < uint64(count) {
+		return 0
+	}
+	return latest - uint64(count)
+}
+
 type baseGasStationHandler struct {
 	config        *GasStationConfig  // Gas station configuration
 	status        atomic.Value       // Gas station status

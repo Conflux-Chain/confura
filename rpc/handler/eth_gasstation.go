@@ -52,7 +52,7 @@ func MustNewEthGasStationHandlerFromViper(cp *node.EthClientProvider) *EthGasSta
 		logrus.WithError(err).Fatal("Failed to get latest block number")
 	}
 
-	fromBlock := latestBlockNumber.Uint64() - uint64(cfg.HistoricalPeekCount)
+	fromBlock := historicalStartHeight(latestBlockNumber.Uint64(), cfg.HistoricalPeekCount)
 	h := &EthGasStationHandler{
 		baseGasStationHandler: newBaseGasStationHandler(&cfg),
 		clientProvider:        cp,
