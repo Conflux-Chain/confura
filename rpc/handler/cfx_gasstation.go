@@ -58,7 +58,7 @@ func NewCfxGasStationHandlerFromViper(cp *node.CfxClientProvider) (*CfxGasStatio
 		return nil, err
 	}
 
-	fromEpoch := latestEpoch.ToInt().Uint64() - uint64(cfg.HistoricalPeekCount)
+	fromEpoch := historicalStartHeight(latestEpoch.ToInt().Uint64(), cfg.HistoricalPeekCount)
 	h := &CfxGasStationHandler{
 		baseGasStationHandler: newBaseGasStationHandler(&cfg),
 		clientProvider:        cp,

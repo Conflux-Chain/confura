@@ -12,6 +12,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestHistoricalStartHeight(t *testing.T) {
+	tests := []struct {
+		name   string
+		latest uint64
+		count  int
+		want   uint64
+	}{
+		{name: "genesis", latest: 0, count: 100, want: 0},
+		{name: "short history", latest: 99, count: 100, want: 0},
+		{name: "exact window", latest: 100, count: 100, want: 0},
+		{name: "mature chain", latest: 101, count: 100, want: 1},
+		{name: "zero window", latest: 10, count: 0, want: 10},
+		{name: "negative window", latest: 10, count: -1, want: 10},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, historicalStartHeight(tt.latest, tt.count))
+		})
+	}
+}
+
 func TestBlockPriorityFee(t *testing.T) {
 	blockFee := &BlockPriorityFee{}
 	blockFee.Append([]*TxnPriorityFee{
