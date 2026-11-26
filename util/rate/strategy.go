@@ -14,7 +14,7 @@ import (
 type LimitAlgoType string
 
 const (
-	// rate limit algorithms, only `fixed_window` and `token bucket` are supported for now.
+	// rate limit algorithms, only `fixed_window` and `token_bucket` are supported for now.
 	LimitAlgoFixedWindow LimitAlgoType = "fixed_window"
 	LimitAlgoTokenBucket LimitAlgoType = "token_bucket"
 )
