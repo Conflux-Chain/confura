@@ -111,7 +111,7 @@ func (c *ExpirableLruCache) get(key interface{}) (v interface{}, expired, found 
 
 	ev := cv.(*expirableValue)
 
-	if ev.expiresAt.Before(c.timeNowFunc()) { // expired
+	if !c.timeNowFunc().Before(ev.expiresAt) { // expired
 		return ev.value, true, true
 	}
 
