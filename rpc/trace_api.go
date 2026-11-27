@@ -19,6 +19,9 @@ func (api *traceAPI) Block(ctx context.Context, blockHash types.Hash) (*types.Lo
 
 func (api *traceAPI) Filter(ctx context.Context, filter types.TraceFilter) ([]types.LocalizedTrace, error) {
 	cfx := GetCfxClientFromContext(ctx)
+	if err := validateCfxTraceFilter(cfx, filter); err != nil {
+		return nil, err
+	}
 	return api.stateHandler.TraceFilter(ctx, cfx, filter)
 }
 
