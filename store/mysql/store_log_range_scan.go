@@ -18,7 +18,7 @@ const maxRangeScanCandidateLogs = 10_000
 
 // tryRangeScanLogs distinguishes an empty successful result from a route miss.
 func (ms *MysqlStore[T]) tryRangeScanLogs(ctx context.Context, filter store.LogFilter) ([]*store.Log, bool, error) {
-	cfg := ms.config.GetLogsRangeScan
+	cfg := ms.config.GetLogsMultiAddressOptimization
 	if !cfg.Enabled {
 		return nil, false, nil
 	}
@@ -28,7 +28,7 @@ func (ms *MysqlStore[T]) tryRangeScanLogs(ctx context.Context, filter store.LogF
 		return nil, false, nil
 	}
 
-	candidates, handled, err := ms.ls.getRangeScanCandidates(ctx, filter)
+	candidates, handled, err := ms.ls.getRangeScanCandidateLogs(ctx, filter)
 	if err != nil {
 		if timeout := checkGetLogsContext(ctx); timeout != nil {
 			err = timeout
@@ -53,9 +53,9 @@ func (ms *MysqlStore[T]) tryRangeScanLogs(ctx context.Context, filter store.LogF
 	return result, true, nil
 }
 
-// getRangeScanCandidates reads a fully covered range only when its estimated
-// and actual row counts fit the candidate cap. A miss leaves routing to the caller.
-func (ls *logStore[T]) getRangeScanCandidates(ctx context.Context, filter store.LogFilter) ([]*log, bool, error) {
+// getRangeScanCandidateLogs returns unfiltered logs when the partitions cover
+// the block range and both the estimated and actual counts fit the candidate cap.
+func (ls *logStore[T]) getRangeScanCandidateLogs(ctx context.Context, filter store.LogFilter) ([]*log, bool, error) {
 	partitions, uncovered, err := ls.searchPartitions(
 		ctx, bnPartitionedLogEntity, types.RangeUint64{
 			From: filter.BlockFrom,
