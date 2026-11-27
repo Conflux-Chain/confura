@@ -38,13 +38,13 @@ var allModels = []interface{}{
 type GetLogsRangeScanConfig struct {
 	Enabled      bool
 	MinAddresses int    `default:"32"`
-	MaxBlocks    uint64 // zero means unlimited
+	MaxBlocks    uint64 `default:"1"` // zero means unlimited
 }
 
 // Config represents the mysql configurations to open a database instance.
 type Config struct {
-	Enabled          bool
-	GetLogsRangeScan GetLogsRangeScanConfig
+	Enabled                         bool
+	GetLogsMultiAddressOptimization GetLogsRangeScanConfig
 
 	Host     string `default:"127.0.0.1:3306"`
 	Username string
@@ -81,8 +81,8 @@ func configFromViperKey(key string) (*Config, error) {
 	if err := viper.UnmarshalKey(key, &cfg); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", key, err)
 	}
-	if cfg.GetLogsRangeScan.Enabled && cfg.GetLogsRangeScan.MinAddresses <= 0 {
-		return nil, fmt.Errorf("getLogsRangeScan.minAddresses must be positive")
+	if cfg.GetLogsMultiAddressOptimization.Enabled && cfg.GetLogsMultiAddressOptimization.MinAddresses <= 0 {
+		return nil, fmt.Errorf("getlogsMultiAddressOptimization.minAddresses must be positive")
 	}
 	if cfg.Enabled && cfg.Dsn != "" {
 		dsn, err := gosql.ParseDSN(cfg.Dsn)

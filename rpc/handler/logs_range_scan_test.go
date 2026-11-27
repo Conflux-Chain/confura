@@ -45,7 +45,7 @@ func TestGetLogsRangeScanFinalByteLimit(t *testing.T) {
 			unselected, err := json.Marshal(map[string]string{"addr": other, "data": "0x" + strings.Repeat("ff", 1000)})
 			require.NoError(t, err)
 			require.NoError(t, db.Exec(`INSERT INTO logs_0 (id,bn,epoch,log_index,extra) VALUES (1,10,1,0,?),(2,11,1,0,?)`, selected, unselected).Error)
-			cfg := &mysql.Config{GetLogsRangeScan: mysql.GetLogsRangeScanConfig{Enabled: true, MinAddresses: 1}}
+			cfg := &mysql.Config{GetLogsMultiAddressOptimization: mysql.GetLogsRangeScanConfig{Enabled: true, MinAddresses: 1}}
 			var run func() (int, bool, error)
 			var expectedJSON []byte
 			selectedLog := store.Log{BlockNumber: 10, Epoch: 1, Extra: selected}

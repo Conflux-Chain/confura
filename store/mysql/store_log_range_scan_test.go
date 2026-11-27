@@ -37,7 +37,7 @@ func rangeScanFixture(t *testing.T, count int) (*MysqlStore[store.EthData], stor
 	if count > 0 {
 		require.NoError(t, db.Table("logs_0").CreateInBatches(rows, 100).Error)
 	}
-	ms := &MysqlStore[store.EthData]{config: &Config{GetLogsRangeScan: GetLogsRangeScanConfig{Enabled: true, MinAddresses: 32}}, ls: newLogStore[store.EthData](db, nil, nil, nil)}
+	ms := &MysqlStore[store.EthData]{config: &Config{GetLogsMultiAddressOptimization: GetLogsRangeScanConfig{Enabled: true, MinAddresses: 32}}, ls: newLogStore[store.EthData](db, nil, nil, nil)}
 	var addresses []string
 	for i := 1; i <= 32; i++ {
 		addresses = append(addresses, fmt.Sprintf("0x%040x", i))
@@ -71,7 +71,7 @@ func TestRangeScanRoutingAndFiltering(t *testing.T) {
 		require.NoError(t, e)
 		require.Equal(t, n >= 32, hit)
 	}
-	ms.config.GetLogsRangeScan.MinAddresses = 1
+	ms.config.GetLogsMultiAddressOptimization.MinAddresses = 1
 	f.Contracts = store.NewVariadicValue(fmt.Sprintf("0x%040x", 1))
 	f.Topics = []store.VariadicValue[string]{store.NewVariadicValue(fmt.Sprintf("0x%064x", 1))}
 	rows, hit, e := ms.tryRangeScanLogs(context.Background(), f)
@@ -89,11 +89,11 @@ func TestRangeScanRoutingAndFiltering(t *testing.T) {
 	require.NoError(t, e)
 	require.False(t, hit)
 	f.BlockTo = 11
-	ms.config.GetLogsRangeScan.MaxBlocks = 1
+	ms.config.GetLogsMultiAddressOptimization.MaxBlocks = 1
 	_, hit, e = ms.tryRangeScanLogs(context.Background(), f)
 	require.NoError(t, e)
 	require.False(t, hit)
-	ms.config.GetLogsRangeScan.Enabled = false
+	ms.config.GetLogsMultiAddressOptimization.Enabled = false
 	_, hit, e = ms.tryRangeScanLogs(context.Background(), f)
 	require.NoError(t, e)
 	require.False(t, hit)
@@ -234,7 +234,7 @@ func TestRangeScanCompletedMigrationAndPublicDispatch(t *testing.T) {
 	require.NoError(t, db.Create(&bnPartition{Entity: fmt.Sprintf("clogs_%d", cid), Count: 1, BnMin: sql.NullInt64{Int64: 10, Valid: true}, BnMax: sql.NullInt64{Int64: 20, Valid: true}}).Error)
 	// The other address is unknown to the index: select only the migrated contract.
 	f.Contracts = store.NewVariadicValue(fmt.Sprintf("0x%040x", 1))
-	ms.config.GetLogsRangeScan.MinAddresses = 1
+	ms.config.GetLogsMultiAddressOptimization.MinAddresses = 1
 	for _, ctx := range []context.Context{context.Background(), store.NewContextWithBoundChecksDisabled(context.Background())} {
 		old, e := ms.getContractLogs(ctx, f.Contracts.ToSlice(), f)
 		require.NoError(t, e)
@@ -261,10 +261,16 @@ func TestRangeScanConfiguration(t *testing.T) {
 	viper.Set(key, map[string]interface{}{"enabled": true})
 	defer viper.Set(key, map[string]interface{}{})
 	cfg := mustNewConfigFromViper(key)
-	require.False(t, cfg.GetLogsRangeScan.Enabled)
-	require.Equal(t, 32, cfg.GetLogsRangeScan.MinAddresses)
-	require.Zero(t, cfg.GetLogsRangeScan.MaxBlocks)
-	viper.Set(key, map[string]interface{}{"enabled": true, "getLogsRangeScan": map[string]interface{}{"enabled": true, "minAddresses": 0}})
+	require.False(t, cfg.GetLogsMultiAddressOptimization.Enabled)
+	require.Equal(t, 32, cfg.GetLogsMultiAddressOptimization.MinAddresses)
+	require.Equal(t, uint64(1), cfg.GetLogsMultiAddressOptimization.MaxBlocks)
+
+	viper.Set(key, map[string]interface{}{"getlogsMultiAddressOptimization": map[string]interface{}{"enabled": true, "maxBlocks": 0}})
+	cfg = mustNewConfigFromViper(key)
+	require.True(t, cfg.GetLogsMultiAddressOptimization.Enabled)
+	require.Zero(t, cfg.GetLogsMultiAddressOptimization.MaxBlocks)
+
+	viper.Set(key, map[string]interface{}{"enabled": true, "getlogsMultiAddressOptimization": map[string]interface{}{"enabled": true, "minAddresses": 0}})
 	logger := logrus.StandardLogger()
 	originalExit := logger.ExitFunc
 	t.Cleanup(func() { logger.ExitFunc = originalExit })
@@ -279,7 +285,7 @@ func TestRangeScanConfiguration(t *testing.T) {
 
 func TestRangeScanCoreMatchesSharedAndDedicated(t *testing.T) {
 	ms, db := newScanMysqlStoreTestHarness(t)
-	ms.config = &Config{GetLogsRangeScan: GetLogsRangeScanConfig{Enabled: true, MinAddresses: 2}}
+	ms.config = &Config{GetLogsMultiAddressOptimization: GetLogsRangeScanConfig{Enabled: true, MinAddresses: 2}}
 	createAddressScanTable(t, db)
 	require.NoError(t, db.Table("logs_0").AutoMigrate(&log{}))
 	require.NoError(t, db.Create(&bnPartition{Entity: "logs", BnMin: sql.NullInt64{Int64: 10, Valid: true}, BnMax: sql.NullInt64{Int64: 20, Valid: true}}).Error)

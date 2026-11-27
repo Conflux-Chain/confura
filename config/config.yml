@@ -272,12 +272,12 @@ eth:
 #     createBatchSize: 500
 #     # Read universal logs and filter multi-address getLogs in memory.
 #     # Candidate log count is capped at 10000 in code.
-#     getLogsRangeScan:
+#     getlogsMultiAddressOptimization:
 #       enabled: false
 #       # Minimum number of distinct addresses (inclusive).
 #       minAddresses: 32
-#       # Maximum block count; 0 means unlimited.
-#       maxBlocks: 0
+#       # Maximum number of blocks in the database query. Set to 0 for no block limit.
+#       maxBlocks: 1
 #     # Number of partitions for address indexed event log table.
 #     addressIndexedLogPartitions: 100
 #     # Number of partitions for topic0 indexed event log table.
@@ -310,12 +310,12 @@ eth:
 #     createBatchSize: 500
 #     # Read universal logs and filter multi-address getLogs in memory.
 #     # Candidate log count is capped at 10000 in code.
-#     getLogsRangeScan:
+#     getlogsMultiAddressOptimization:
 #       enabled: false
 #       # Minimum number of distinct addresses (inclusive).
 #       minAddresses: 32
-#       # Maximum block count; 0 means unlimited.
-#       maxBlocks: 0
+#       # Maximum number of blocks in the database query. Set to 0 for no block limit.
+#       maxBlocks: 1
 #     addressIndexedLogEnabled: true
 #     addressIndexedLogPartitions: 100
 #     topicIndexedLogEnabled: true
